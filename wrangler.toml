@@ -1,0 +1,24 @@
+name = "coparkour"
+main = "worker/index.js"
+compatibility_date = "2025-09-01"
+
+# ── 前端 ────────────────────────────────────────────────
+# public/ 直接由 Cloudflare 的 CDN 提供。
+# 靜態檔案的請求「免費且不計數」，不會吃掉 Worker 的每日額度，
+# 而且只有找不到對應檔案的路徑（/ws、/health）才會叫醒 Worker。
+[assets]
+directory = "./public"
+
+# ── 房間 ────────────────────────────────────────────────
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "GameRoom"
+
+# 免費方案只支援 SQLite backend 的 Durable Object，
+# 所以這裡一定要用 new_sqlite_classes（不是 new_classes）。
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GameRoom"]
+
+[observability]
+enabled = true

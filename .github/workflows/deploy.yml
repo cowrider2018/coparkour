@@ -1,0 +1,27 @@
+name: Deploy to Cloudflare
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # 地形驗證：物理參數被改壞、關卡跳不過去的話這裡會擋下來
+      - run: node tools/verify-level.mjs 60 40000
+
+      - run: npm ci
+
+      # 需要在 repo 的 Settings → Secrets 加一個 CLOUDFLARE_API_TOKEN
+      # （Cloudflare dashboard → My Profile → API Tokens → 用 "Edit Cloudflare Workers" 範本）
+      - run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node tools/verify-level.mjs 60 40000)",
+      "Bash(node gesture-test.mjs)"
+    ]
+  }
+}

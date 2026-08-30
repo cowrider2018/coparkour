@@ -1,0 +1,20 @@
+{
+  "name": "coparkour",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "verify": "node tools/verify-level.mjs 120 60000",
+    "verify:touch": "node tools/verify-touch.mjs",
+    "verify:jump": "node tools/verify-jump.mjs",
+    "verify:pad": "node tools/verify-pad.mjs",
+    "verify:all": "npm run verify && npm run verify:touch && npm run verify:jump && npm run verify:pad && npm run verify:cat",
+    "verify:cat": "node tools/verify-cat-shape.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
