@@ -9,6 +9,7 @@ import { Pad } from './pad.js';
 import { WORLD } from './constants.js';
 import { skyAt, hourForSeed, DAY_SECONDS } from './gfx/daycycle.js';
 import { Decor } from './gfx/decor.js';
+import { Trees } from './gfx/tree.js';
 import { CAT_SKINS } from './cat/cat.js';
 
 const $ = (id) => document.getElementById(id);
@@ -104,6 +105,7 @@ function buildLevel(newSeed) {
   player = new Player(level);
   renderer.setSeed(seed);
   renderer.decor = new Decor(seed);
+  renderer.trees = new Trees(seed);
   cam.init = false;
 
   hour0 = hourForSeed(seed);

@@ -37,6 +37,7 @@ export class Renderer {
   constructor(ctx) {
     this.ctx = ctx;
     this.decor = null;      // Decor
+    this.trees = null;      // Trees
     this.cell = makeCell(0);
     this.seed = 0;
   }
@@ -66,6 +67,12 @@ export class Renderer {
     const x0 = cam.x - 80, x1 = cam.x + VW + 80;
 
     this.markers(x0, x1, cam, VH, sky);
+    // 樹畫在平台之前：板子擋住樹冠，樹就退到關卡後面去，
+    // 一棵擋在路線上的樹會讓玩家看不見下一塊板子——那是遊戲性的問題，不是美術問題。
+    if (this.trees) {
+      this.trees.collect(level, x0, x1, time, s.wind);
+      this.trees.draw(ctx, sky);
+    }
     this.platforms(level, x0, x1, sky);
     if (this.decor) {
       this.decor.collect(level, x0, x1, time, sky.day);
