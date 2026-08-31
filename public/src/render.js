@@ -1,4 +1,4 @@
-import { PLAYER_W, PLAYER_H, WORLD } from './constants.js';
+import { PLAYER_W, PLAYER_H, WORLD, VIEW } from './constants.js';
 import { COIN_R } from './level.js';
 import { css, shade, mix3, skyBands, LOW_GLOW } from './gfx/daycycle.js';
 import { makeCell, field, gust } from './gfx/field.js';
@@ -18,15 +18,110 @@ const ALB = {
 };
 
 export class Camera {
-  constructor() { this.x = 0; this.y = 0; this.init = false; }
+  constructor() {
+    this.x = 0; this.y = 0; this.init = false;
+    this.zoom = 1;
+    this.zVel = 0;    // 視距的變化速度。等加速度控制器的狀態，不是每幀重算的
+    this.refY = 0;    // 量落腳點高低差的基準面：最後一次踩到地面／貼到牆的高度
+  }
+
+  // ── 動態視距 ────────────────────────────────────────
+  // 左右各取最近的 VIEW.count 個落腳點，每一個都要在自己的允許範圍內：最緊的那一檔
+  // 要落在邊界內側 5% 處（門檻 95%），往後每退一檔放寬 5%。取最嚴的那一條。
+  //
+  // 量的是錨點到「乾淨區」邊界的距離（扣掉 ins 的操作列），不是到畫布邊界——
+  // 不然辛苦框進來的板子會被手把蓋住，等於沒框。
+  // 落腳點的搜尋半徑用 zoomBase 推出來的原始寬度無關，是固定的 VIEW.span：
+  // 需求只跟地形長什麼樣有關，不跟當下的 zoom 有關，才不會自我回授。
+  fitZoom(level, p, W, H, zoomBase, fx, fy, ins, dt) {
+    // 死了就凍住：屍體會一路掉到 respawnY，再照規則算下去會把整個世界縮到最小。
+    if (p.dead && this.init) return this.zoom;
+    const fU = Math.max(0.05, fy - ins.t);        // 錨點到乾淨區上緣，佔畫面高的幾成
+    const fD = Math.max(0.05, (1 - ins.b) - fy);  // 錨點到乾淨區下緣
+    level.ensure(p.x + VIEW.span);
+
+    // 參考高度只在「踩到地面或貼著牆」時更新。用即時的 p.y 會讓落差跟著每一次跳躍的
+    // 拋物線上下擺，於是一路往同一個方向跑也會不停來回縮放。
+    if (!this.init || p.grounded || p.wallDir) this.refY = p.y;
+
+    // 量測的基準面不能只有地形。只用 refY 的話，貓原地跳起來時地形一動也沒動，
+    // 需求就完全不變——那 boostUp 根本無事可做。把基準面往貓的實際高度拉 catWeight：
+    // 貓離畫面中心越遠，下方（或上方）的落腳點在畫面上就被擠得越靠邊，
+    // 需求本來就該跟著變。0.5 ＝ 地形與貓各半。
+    const refEff = this.refY + (p.y - this.refY) * VIEW.catWeight;
+
+    // 一個落腳點「有多難框」：落差除以那一側可用的畫面比例。
+    // 除以 f 是必要的——上下可用的空間不一樣（fU / fD），純比落差會把往上 300
+    // 跟往下 300 當成一樣難，實際上往下難得多。
+    const hard = (dy) => (dy < 0 ? -dy / fU : dy / fD);
+
+    // dy <= (base + i*slack) * f * (H / zoom)，解出 zoom 的上限。
+    // i 不是「第幾近」而是「第幾難」——最近的 reorder 個先依 hard() 由難到易重排，
+    // 難的拿緊的門檻。最近的那個若被排到後面，代表它落差本來就小，
+    // 那條限制根本不會咬，所以重排不會讓它掉出畫面。
+    let need = zoomBase;
+    const fit = (list) => {
+      const n = list.length;
+      const k = Math.min(VIEW.reorder, n);
+      const ord = [];
+      for (let i = 0; i < k; i++) ord.push(i);
+      ord.sort((a, b) => hard(list[b]) - hard(list[a]));
+      for (let i = 0; i < n; i++) {
+        const v = i < k ? list[ord[i]] : list[i];
+        const dy = v < 0 ? -v : v;
+        if (dy < 1) continue;
+        const zi = (VIEW.base + i * VIEW.slack) * (v < 0 ? fU : fD) * H / dy;
+        if (zi < need) need = zi;
+      }
+    };
+    const fh = level.footholdsAround(p, refEff, VIEW.count, VIEW.span);
+    fit(fh.left);
+    fit(fh.right);
+    need = Math.max(VIEW.minZoom, Math.min(zoomBase, need));
+
+    if (!this.init) { this.zoom = need; this.zVel = 0; return need; }
+
+    // 等加速度：加速度大小永遠是 VIEW.accel，只有方向會變。
+    // 方向不能單看「當前比需求大還是小」——那是單擺，會永遠繞著需求來回盪。
+    // 要看的是「以現在的速度還煞不煞得住」：煞車距離 v²/2a 夠不到就繼續加速，
+    // 追過頭了就反向。這仍然是同一個等加速度，只是提前轉向，所以停得下來。
+    // 加速度的「大小」隨貓的垂直速度放大——貓正在上升或墜落，就是視野需求變動最快的時候，
+    // 這時候讓縮放跟著加速。放大的只有量值，方向仍然由下面的煞車距離決定，
+    // 所以不會因為它而過衝。上升與下落各有自己的量，最高點與落地都自動歸零。
+    const vy = p.vy < 0 ? -p.vy : p.vy;
+    const a = VIEW.accel * (1 + (p.vy < 0 ? VIEW.boostUp : VIEW.boostDown)
+      * Math.min(1, vy / VIEW.boostRef));
+    const err = need - this.zoom;
+    const v = this.zVel;
+    const brake = v * v / (2 * a);
+    const closing = (v > 0 && err > 0) || (v < 0 && err < 0);
+    const dir = closing && brake >= (err < 0 ? -err : err) ? (v > 0 ? -1 : 1)
+      : (err > 0 ? 1 : err < 0 ? -1 : 0);
+    this.zVel = v + dir * a * dt;
+    this.zoom += this.zVel * dt;
+
+    // 到站就熄火：殘量小於這一幀走得動的距離時直接歸位，免得在需求值上抖。
+    const step = a * dt * dt;
+    if ((need - this.zoom) * err <= 0 && (this.zVel < 0 ? -this.zVel : this.zVel) <= a * dt + step) {
+      this.zoom = need; this.zVel = 0;
+    }
+    if (this.zoom > zoomBase) { this.zoom = zoomBase; if (this.zVel > 0) this.zVel = 0; }
+    if (this.zoom < VIEW.minZoom) { this.zoom = VIEW.minZoom; if (this.zVel < 0) this.zVel = 0; }
+    return this.zoom;
+  }
+
   // fx / fy 是「玩家該落在畫面的幾成」。開手把時操作列吃掉兩側（或上下），
   // main.js 就把這兩個值往乾淨區的中心推——所以玩家永遠在看得到的那片正中間。
+  //
+  // 鏡頭只跟位置，不加速度提前量。提前量是大幅晃動的來源：掉落時 vy 一路衝到
+  // maxFall(1250)，乘上任何係數都會把取景往下甩一大段，落地 vy 歸零又整個彈回來。
   follow(p, W, H, dt, fx = 0.34, fy = 0.55) {
-    const tx = p.x - W * fx + p.vx * 0.16;
-    const ty = p.y - H * fy + p.vy * 0.08;
+    const tx = p.x - W * fx;
+    const ty = p.y - H * fy;
     if (!this.init) { this.x = tx; this.y = ty; this.init = true; return; }
     const k = 1 - Math.pow(0.0015, dt);
     this.x += (tx - this.x) * k;
+
     this.y += (ty - this.y) * k;
     this.y = Math.min(this.y, WORLD.yMax + 240 - H * 0.75);
     this.y = Math.max(this.y, WORLD.yMin - 320);

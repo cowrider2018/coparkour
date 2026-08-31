@@ -40,7 +40,7 @@ let net = null;
 let background = null;      // WebGL 背景層，載不起來就是 null
 let cats = null;            // WebGL 角色層（即時 3D 三階調），載不起來就是 null
 let seed = hashStr('local:' + ROOM);
-let W = 0, H = 0, zoom = 1;
+let W = 0, H = 0, zoom = 1, zoomBase = 1;
 let running = false;
 let bestDist = Number(localStorage.getItem('pk_best') || 0);
 let roomBoard = [];
@@ -79,7 +79,9 @@ function resize() {
   uiCanvas.width = Math.round(W * dpr);
   uiCanvas.height = Math.round(H * dpr);
   uictx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  zoom = Math.max(0.6, Math.min(1, W / 1000));
+  // 基準視距只跟畫布寬度有關；每幀的實際 zoom 由 cam.fitZoom() 從這裡往下調。
+  zoomBase = Math.max(0.6, Math.min(1, W / 1000));
+  zoom = Math.min(zoom, zoomBase) || zoomBase;
   if (background) background.resize(W, H, dpr);
   if (cats) cats.resize(W, H, dpr);
   ball.resize(W, H);
@@ -244,8 +246,11 @@ function frame(now) {
   const k = pad.k;
   const il = pad.inset.l * k, ir = pad.inset.r * k;
   const it = pad.inset.t * k, ib = pad.inset.b * k;
-  cam.follow(player, W / zoom, H / zoom, dt,
-    il + 0.34 * (1 - il - ir), it + 0.55 * (1 - it - ib));
+  const fx = il + 0.34 * (1 - il - ir);
+  const fy = it + 0.55 * (1 - it - ib);
+  // 視距要在 follow() 之前定案：follow 吃的是世界座標的視野大小，那由 zoom 決定。
+  zoom = cam.fitZoom(level, player, W, H, zoomBase, fx, fy, { t: it, b: ib }, dt);
+  cam.follow(player, W / zoom, H / zoom, dt, fx, fy);
   level.ensure(cam.x + W / zoom + WORLD.chunkAhead);
 
   const hour = (hour0 + (elapsed / DAY_SECONDS) * 24) % 24;

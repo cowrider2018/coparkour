@@ -2,7 +2,7 @@
 // 完全由 seed 決定。所有玩家用同一個 seed 從 0 開始生成，
 // 因此不需要伺服器同步任何地形資料，畫面上的世界一定一模一樣。
 import { mulberry32 } from './rng.js';
-import { PHYS, WORLD, JUMP_HEIGHT } from './constants.js';
+import { PHYS, WORLD, JUMP_HEIGHT, PLAYER_W, PLAYER_H } from './constants.js';
 
 const SLAB_H = 26;
 const SPIKE_H = 18;
@@ -441,6 +441,41 @@ export class Level {
       if (arr[i].x > x1) break;
       fn(arr[i]);
     }
+  }
+
+  // 以玩家為中心，左右各取最近的 n 個落腳點，回傳它們相對 refY 的高度差（由近到遠）。
+  // 動態視距靠這張清單決定要拉多遠：越近的落腳點容差越小，最近的那個必須完全看見。
+  //
+  // 落腳點有兩種。站得住的板子取頂面；細高柱取「側面的頂端與底部」——
+  // 蹬牆的時候腳踩的就是那條側面，上下兩端就是這面牆給得起的落點極限。
+  // 牆的判定跟 player.js 的 probeWall 對齊（h >= 60），再加上一個 w <= 40：
+  // 寬板子的側面雖然物理上也蹬得到，但那一側可能在 1000px 外，框它沒有意義。
+  //
+  // 排序用的是實際距離（含高度），不是單純的水平距離：蹬牆井裡左右柱的 x 幾乎一樣，
+  // 只比水平距離的話整排柱子會並列，分不出哪一根才是手邊那一根。
+  footholdsAround(box, refY, n, span) {
+    const px = box.x + PLAYER_W / 2, py = box.y + PLAYER_H / 2;
+    const dsL = [], dyL = [], dsR = [], dyR = [];
+    const push = (ds, dys, d2, dy) => {
+      let i = ds.length;
+      while (i > 0 && ds[i - 1] > d2) i--;
+      if (i >= n) return;
+      ds.splice(i, 0, d2); dys.splice(i, 0, dy);
+      if (ds.length > n) { ds.pop(); dys.pop(); }
+    };
+    this.forEachPlatform(px - span, px + span, (p) => {
+      // 正踩著／正貼著的那一塊不算：它的落差是 0，只會白白佔掉一個名額
+      if (box.x + PLAYER_W > p.x - 3 && box.x < p.x + p.w + 3 &&
+          box.y + PLAYER_H > p.y - 3 && box.y < p.y + p.h + 3) return;
+      const cx = px < p.x ? p.x : (px > p.x + p.w ? p.x + p.w : px);
+      const left = cx < px || (cx === px && p.x + p.w / 2 < px);
+      const ds = left ? dsL : dsR, dys = left ? dyL : dyR;
+      const dx = cx - px;
+      const add = (cy) => push(ds, dys, dx * dx + (cy - py) * (cy - py), cy - refY);
+      if (p.h >= 60 && p.w <= 40) { add(p.y); add(p.y + p.h); }
+      else if (p.w >= PLAYER_W) add(p.y);
+    });
+    return { left: dyL, right: dyR };
   }
 
   forEachSpike(x0, x1, fn) { this.forEachIn(this.spikes, x0, x1, fn); }
