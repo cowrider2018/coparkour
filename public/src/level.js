@@ -8,6 +8,35 @@ const SLAB_H = 26;
 const SPIKE_H = 18;
 export const COIN_R = 9;
 
+// 蹬牆井的階距。wallJumpVY²/2g（≈152）是「貼著牆滑到最高點才蹬」能爬的物理上限，
+// 實跑下來貼著上限排太苛刻——真正下腳的時機多半在滑落途中，不是最高點。
+// 乘 0.65 取 ≈99，等於整段滑牆的時間窗都還構得到下一根柱子。
+export const WALL_RISE = (PHYS.wallJumpVY * PHYS.wallJumpVY) / (2 * PHYS.gravity) * 0.65; // ≈99
+
+// 柱子長度 ≈94，也就是「抓得到牆」的容錯窗口——落腳點在正中間，上下各 ≈47。
+// 下限是 60：player.js 的 probeWall 只把高度 >= 60 的方塊當牆，比這矮就蹬不了。
+export const SHAFT_PILLAR_H = (WALL_RISE * 0.95 - 27) * 0.7 * 2;
+// 地板到「最低那根柱子底端」的距離。整排柱子跟著它一起上下移動，柱長和柱距都不動。
+// 排得低的好處是往上爬的空間留得多；壞處是全力起跳會直接越過第一根的柱頂
+//（柱頂只在地板上方 40+94=134，而全力跳的最高點是 JUMP_HEIGHT≈172），
+// 所以第一下要收著跳，或是等落下來的時候再貼上牆。實跑下來 40 最順。
+// 唯一的硬限制是 > 0：等於 0 就跟地板黏在一起，那道縫就不見了。
+export const SHAFT_BOTTOM_GAP = 40;
+// 第 i 根柱子的落腳點（＝柱子中心）相對井底的高度。柱距一律等於 WALL_RISE，
+// 整排的位置由 SHAFT_BOTTOM_GAP 決定，不是由第一次跳躍的高度決定。
+export const shaftCling = (i) => SHAFT_BOTTOM_GAP + SHAFT_PILLAR_H / 2 + WALL_RISE * i;
+// 柱子根數。一定要偶數：出口在右邊，最後一次得從左柱蹬出去才會往右飛。
+export const SHAFT_N = 4;
+// 出口平台比「最高那根柱子的頂端」再高這麼多（≈34）。
+// 從左柱蹬出去橫渡到右邊的那一瞬間大概爬了 100~130px，出口放太高就會撞在它的側面掉回井底。
+export const SHAFT_LIFT = WALL_RISE * 0.34;
+// 井底往上至少要留這麼多空間才排得下整排柱子。注意它只算到最高那根的「落腳點」，
+// 沒把柱子上半截跟 SHAFT_LIFT 算進去，所以出口實際上還會再高 ≈80px——
+// WORLD.yMin 本來就只是生成器的參考線，出口稍微高過它不影響任何判定。
+export const SHAFT_CLIMB = shaftCling(SHAFT_N - 1) + SHAFT_LIFT;
+export const SHAFT_DROP_MIN = 130; // 井底至少比入口再低這麼多
+export const SHAFT_DROP_MAX = 420; // 掉太久會看不到自己要落在哪；step() 用它擋掉太高的入口
+
 // 從高度差 rise（正=往上跳）算出「單次跳躍」最遠能跨過的水平距離。
 // 用彈道公式解，確保生成出來的關卡一定跳得過去。
 export function maxGapForRise(rise) {
@@ -56,13 +85,21 @@ export class Level {
     const diff = Math.min(1, this.cursorX / 16000); // 難度隨距離爬升
     const roll = r();
 
-    if (roll < 0.26) this.pFlat(diff);
-    else if (roll < 0.42) this.pStairs(diff);
-    else if (roll < 0.56) this.pPillars(diff);
-    else if (roll < 0.68) this.pBigGap(diff);
-    else if (roll < 0.80) this.pSpikeRun(diff);
-    else if (roll < 0.90) this.pHighRoad(diff);
-    else this.pWall(diff);
+    if (roll < 0.20) this.pFlat(diff);
+    else if (roll < 0.33) this.pStairs(diff);
+    else if (roll < 0.44) this.pPillars(diff);
+    else if (roll < 0.54) this.pBigGap(diff);
+    else if (roll < 0.64) this.pSpikeRun(diff);
+    else if (roll < 0.72) this.pHighRoad(diff);
+    else if (roll < 0.79) this.pWall(diff);
+    // 蹬牆井是從入口往下挖一段當井底，再往上疊固定四根柱子。
+    // 入口太高的話井底得挖到很深才排得下，掉進去要掉很久——先用階梯把高度帶下來。
+    else if (roll < 0.88) {
+      if (this.cursorY >= WORLD.yMin + 20 + SHAFT_CLIMB - SHAFT_DROP_MAX) this.pWallShaft(diff);
+      else this.pStairs(diff);
+    }
+    else if (roll < 0.94) this.pGate(diff);
+    else this.pFork(diff);
   }
 
   // 放一塊平台：gapWant = 想要的空隙，dy = 相對上一塊的高度變化（負=往上）
@@ -181,6 +218,184 @@ export class Level {
     const wx = p.x + 110 + r() * 70;
     this.addPlatform(wx, p.y - wallH, 26, wallH);
     this.coinAt(wx + 13, p.y - wallH - 40);
+  }
+
+  // ── 蹬牆井：左右交錯的細高石柱，一路蹬上去 ──────────────────
+  // 起點是井底那塊地板，終點是右柱頂端的出口，中間的柱子左右交錯，
+  // 每一根都是一次蹬牆。整口井都相對「入口高度」排：井底在入口下方一段，
+  // 柱子從井底往上疊，出口再跟著最高那根柱子走。
+  // 固定 SHAFT_N 根；整排柱子的位置由「地板 + SHAFT_BOTTOM_GAP」定錨。
+  //
+  // 地板跟柱子都不相連：右柱在地板右緣之外 G 遠，左柱懸在地板正上方 ≈139px。
+  // 跑到地板邊緣沒跳起來就直接漏下去；地板接得住從右柱蹬歪往左掉的失誤，
+  // 接不住從左柱蹬出去沒摸到右柱的——那個會往右飛出井外。
+  //
+  // 落腳點數必須是偶數：出口在右邊，最後一次一定要「從左柱蹬出去」才會往右飛。
+  pWallShaft(d) {
+    const r = this.rand;
+    const BW = 18;                      // 柱子很細，比貓還窄，站不住，只能蹬
+    const G = 96 + r() * (14 + 14 * d); // 兩根柱子的內側間距，也就是每次橫渡的距離；越寬越難
+
+    const H = SHAFT_PILLAR_H;
+
+    // 井底＝入口高度再往下挖一段，整口井跟著地形浮動；
+    // 但至少要挖到「四根柱子加出口都排得下」的深度，不然頂端會捅出世界外面。
+    const gap = 110 + r() * 60;
+    const floorW = 300 + r() * 160;
+    const baseY = Math.max(
+      this.cursorY + SHAFT_DROP_MIN + r() * 80,
+      WORLD.yMin + 20 + SHAFT_CLIMB,
+    );
+    const floor = this.addPlatform(this.cursorX + gap, baseY, floorW, SLAB_H + 30);
+    this.jumps.push({
+      fromX: this.cursorX, fromY: this.cursorY, toX: floor.x, toY: baseY,
+      gap, rise: this.cursorY - baseY,
+    });
+
+    // 整排柱子相對井底往上排：最低那根的底端剛好離地板 SHAFT_BOTTOM_GAP，
+    // 之後每一根往上一個 WALL_RISE。柱長全部一樣，柱距全部一樣。
+    const clingY = [];
+    for (let i = 0; i < SHAFT_N; i++) clingY.push(baseY - shaftCling(i));
+
+    // 地板右緣切齊「左柱的牆面」：起跳的第一段橫渡距離就等於 G，跟之後每一次蹬牆一樣寬。
+    // 地板往右多鋪一點就會縮短這一段，變成低空擦過第一根柱子底下飛出井外。
+    const XL = floor.x + floor.w - BW;
+    const XR = XL + BW + G;
+
+    // 柱子以自己的落腳點為中心，上下各留 H/2。先放完左柱才放右柱——
+    // platforms 必須依 x 遞增，前端的二分搜尋靠這個。
+    for (let i = 1; i < SHAFT_N; i += 2) this.addPlatform(XL, clingY[i] - H / 2, BW, H);
+    for (let i = 0; i < SHAFT_N; i += 2) this.addPlatform(XR, clingY[i] - H / 2, BW, H);
+
+    // 出口跟著最高那根柱子走（它一定在左柱，因為 SHAFT_N 是偶數）。
+    const topPillarY = clingY[SHAFT_N - 1] - H / 2; // 最高那根柱子的頂端
+    const exitY = topPillarY - SHAFT_LIFT;          // 再高 SHAFT_LIFT
+
+    const exit = this.addPlatform(XR, exitY, 260 + r() * 150, SLAB_H);
+
+    // 金幣掛在井的正中央：每一次橫渡都會掃過去，順便把路線畫給玩家看
+    const midX = XL + BW + G / 2;
+    for (const y of clingY) this.coinAt(midX, y - 20);
+
+    this.jumps.push({
+      fromX: XR, fromY: baseY, toX: exit.x, toY: exit.y,
+      gap: G, rise: baseY - exitY, kind: 'wall',
+    });
+    this.cursorX = exit.x + exit.w;
+    this.cursorY = exit.y;
+
+    // 爬完給一段下坡緩衝：喘口氣，順便把高度帶回中段，
+    // 不然後面每一塊平台都被 clamp 擠在 WORLD.yMin 附近。
+    this.place(110 + r() * 70, 150 + r() * 90, 260 + r() * 140);
+  }
+
+  // 一塊「包住某個落腳點」的牆：上下各留 pad 的餘裕，
+  // 這樣玩家抓得高一點低一點都還有牆可以蹬。
+  wallSlab(x, w, clingY, pad) {
+    return this.addPlatform(x, clingY - pad, w, pad * 2);
+  }
+
+  // ── 閘門柱：一根翻不過去的高柱擋在斷崖中央 ──────────────────
+  // 兩岸的距離刻意落在「單跳過不去、二段跳勉強夠」之間，所以柱子是唯一的中繼點；
+  // 柱頂又高過二段跳的極限，直接飛過去一定撞牆。
+  // 只能貼著左面往上蹬、翻到柱子另一側，再從右面蹬一次牆彈到對岸。
+  pGate(d) {
+    const r = this.rand;
+    // 先把兩岸壓低一點，柱頂才留得在畫面裡——看不到頂端的話玩家不會想到要爬。
+    const baseY = clamp(this.cursorY, WORLD.yMin + 300, WORLD.yMax);
+    const a = this.place(100 + r() * 80, baseY - this.cursorY, 250 + r() * 130);
+
+    const PW = 30;
+    const gap1 = 190 + r() * 40;
+    const gap2 = 210 + r() * (40 + 50 * d);
+    // gap1 + PW + gap2 ≈ 430..570：JUMP_RANGE(≈320) 過不去，二段跳(≈610)才勉強夠——
+    // 但柱高超過二段跳的高度上限，所以「勉強夠」那條路其實會撞在柱子上。
+    const px = a.x + a.w + gap1;
+    const pillarH = 380 + r() * 40;
+    this.addPlatform(px, baseY - pillarH, PW, pillarH + 80); // 往下多長 80，鑽不過去
+
+    const bY = clamp(baseY + (r() - 0.3) * 80, WORLD.yMin, WORLD.yMax);
+    const b = this.addPlatform(px + PW + gap2, bY, 300 + r() * 160, SLAB_H);
+
+    this.coinAt(px + PW / 2, baseY - pillarH - 44);            // 爬到柱頂的獎勵
+    for (let i = 1; i <= 3; i++) {                              // 從右面蹬出去的弧線
+      const t = i / 4;
+      this.coinAt(px + PW + gap2 * t, baseY - pillarH * 0.55 - Math.sin(t * Math.PI) * 60);
+    }
+
+    this.jumps.push({
+      fromX: a.x + a.w, fromY: baseY, toX: b.x, toY: bY,
+      gap: gap1 + PW + gap2, rise: baseY - bY, kind: 'wall',
+    });
+    this.cursorX = b.x + b.w;
+    this.cursorY = bY;
+  }
+
+  // ── 分岔路：上下兩條路平行往前，玩家自己選 ────────────────────
+  // 高路平坦、沒有陷阱，但一路上沒東西撿；低路有地刺，金幣全埋在地刺旁邊。
+  // 風險跟報酬一定要放在同一條路上才算選擇——所以高路只給安全，低路才給錢。
+  pFork(d) {
+    const r = this.rand;
+    // 兩條路要差 270px 以上，低路的人跳起來才不會撞到高路的底面
+    const baseY = clamp(this.cursorY, WORLD.yMin + 210, WORLD.yMax - 130);
+    const split = this.place(100 + r() * 70, baseY - this.cursorY, 210 + r() * 90);
+    const lowY = split.y + 120;
+    const highY = split.y - 150;
+    const startX = split.x + split.w;
+
+    const parts = [];   // 兩條路的 x 會交錯，先收集、排序，再一次放進 platforms
+    const spikes = [];
+    const coins = [];
+
+    // 低路：兩段長平台夾一個斷崖，平台上灑地刺，金幣壓在地刺旁邊
+    let x = startX + 110;
+    let prevX = startX, prevY = split.y, prevGap = 110;
+    let lowEnd = x;
+    for (let i = 0; i < 2; i++) {
+      const w = 280 + r() * 140;
+      parts.push({ x, y: lowY, w, h: SLAB_H });
+      this.jumps.push({ fromX: prevX, fromY: prevY, toX: x, toY: lowY, gap: prevGap, rise: prevY - lowY });
+      // 頭留 90px 落地站穩、尾留 120px 重新加速，跟 pSpikeRun 同一套規則
+      const room = w - 210;
+      const n = Math.max(1, Math.min(1 + Math.floor(r() * (1 + d)), Math.floor(room / 200)));
+      const slot = room / n;
+      for (let k = 0; k < n; k++) {
+        const sw = 34 + r() * 30;
+        const sx = x + 90 + slot * k + Math.max(0, slot - sw - 160) * r();
+        spikes.push({ x: sx, y: lowY - SPIKE_H, w: sw, h: SPIKE_H });
+        coins.push({ x: sx + sw / 2, y: lowY - 74 });
+        coins.push({ x: sx + sw / 2 + 40, y: lowY - 46 });
+      }
+      // 低路的報酬：除了地刺旁邊那幾枚，尾段再灑一排，讓「錢在下面」一眼看得出來
+      for (let c = 0; c < 3; c++) coins.push({ x: x + w - 150 + c * 38, y: lowY - 44 });
+      lowEnd = x + w;
+      prevX = lowEnd; prevY = lowY; prevGap = 130 + r() * 90;
+      x = lowEnd + prevGap;
+    }
+
+    // 匯流平台：低路的人跳過來，高路的人走到底直接掉下來
+    const mergeX = lowEnd + 150;
+    const mergeY = split.y + 60;
+    this.jumps.push({ fromX: lowEnd, fromY: lowY, toX: mergeX, toY: mergeY, gap: 150, rise: lowY - mergeY });
+
+    // 高路：一整條平的，只有進出口要抓準。右緣切齊匯流平台的左緣，走到底就落地。
+    const highX = startX + 170; // rise 150 → maxGapForRise(150) ≈ 217，這個距離跳得到
+    parts.push({ x: highX, y: highY, w: mergeX - highX, h: SLAB_H });
+    this.jumps.push({ fromX: startX, fromY: split.y, toX: highX, toY: highY, gap: 170, rise: split.y - highY });
+    coins.push({ x: highX + 60, y: highY - 40 });
+
+    parts.push({ x: mergeX, y: mergeY, w: 300 + r() * 160, h: SLAB_H });
+
+    parts.sort((p1, p2) => p1.x - p2.x);
+    for (const p of parts) this.addPlatform(p.x, p.y, p.w, p.h);
+    spikes.sort((s1, s2) => s1.x - s2.x);
+    for (const s of spikes) this.spikes.push(s);
+    coins.sort((c1, c2) => c1.x - c2.x);
+    for (const c of coins) this.coinAt(c.x, c.y);
+
+    const last = parts[parts.length - 1];
+    this.cursorX = last.x + last.w;
+    this.cursorY = mergeY;
   }
 
   maybeCoins(p, chance) {

@@ -11,6 +11,7 @@ import { PHYS, PLAYER_W, PLAYER_H } from '../public/src/constants.js';
 const SEEDS = Number(process.argv[2] || 40);
 const RUN_TO = Number(process.argv[3] || 30000);
 const STEP = 1 / 120;
+const TRACE_N = Number(process.env.TRACE) > 1 ? Number(process.env.TRACE) : 200;
 
 let geomFail = 0;
 const results = [];
@@ -22,6 +23,9 @@ for (let s = 0; s < SEEDS; s++) {
 
   // ── 1. 幾何檢查 ──
   for (const j of lvl.jumps) {
+    // kind:'wall' 的段落本來就不是一次跳躍跨過去的（蹬牆井、閘門柱），
+    // 彈道公式對它沒有意義，改由下面的機器人試跑來驗。
+    if (j.kind === 'wall') continue;
     const limit = maxGapForRise(Math.max(0, j.rise));
     if (!(j.gap <= limit + 1e-6) || !Number.isFinite(j.gap) || !Number.isFinite(j.toY)) {
       geomFail++;
@@ -65,44 +69,123 @@ function runBot(level, runTo) {
     get jumpHeld() { return this.jump; },
   };
   let t = 0, stuckAt = p.x, stuckT = 0;
-  const bot = { hold: 0, frame: 999 };
+  const bot = { hold: 0, frame: 999, climb: false, steer: 1, wjCool: 0 };
 
   const trace = process.env.TRACE ? [] : null;
   while (!p.dead && p.x < runTo && t < 900) {
-    input.jump = act(p, level, bot);
+    act(p, level, bot, input);
     p.update(STEP, input);
     bot.frame++;
     t += STEP;
     if (trace) {
-      trace.push(`x=${p.x.toFixed(0)} y=${p.y.toFixed(0)} vx=${p.vx.toFixed(0)} vy=${p.vy.toFixed(0)} g=${p.grounded ? 1 : 0} J=${input.jump ? 1 : 0} hold=${bot.hold} f=${bot.frame} aj=${p.airJumps}`);
-      if (trace.length > 200) trace.shift();
+      trace.push(`x=${p.x.toFixed(0)} y=${p.y.toFixed(0)} vx=${p.vx.toFixed(0)} vy=${p.vy.toFixed(0)} g=${p.grounded ? 1 : 0} w=${p.wallDir} J=${input.jump ? 1 : 0} c=${bot.climb ? 1 : 0} s=${bot.steer} hold=${bot.hold} f=${bot.frame} aj=${p.airJumps}`);
+      if (trace.length > TRACE_N) trace.shift();
     }
 
     if (p.x > stuckAt + 2) { stuckAt = p.x; stuckT = 0; }
-    else { stuckT += STEP; if (stuckT > 4) return { seed: level.seed, dist: p.dist, reason: '卡住' }; }
+    else {
+      stuckT += STEP;
+      if (stuckT > 4) {
+        if (trace) console.log(trace.slice(-TRACE_N).join('\n'));
+        return { seed: level.seed, dist: p.dist, reason: '卡住' };
+      }
+    }
   }
-  if (trace && p.dead) console.log(trace.slice(-260).join('\n'));
+  if (trace && p.dead) console.log(trace.slice(-TRACE_N).join('\n'));
   return { seed: level.seed, dist: p.dist, reason: p.dead ? p.deadReason : t >= 900 ? '逾時' : 'ok' };
 }
 
-function act(p, level, bot) {
+function act(p, level, bot, input) {
+  if (bot.wjCool > 0) bot.wjCool--;
+  steer(input, 1); // 預設一路往右
+
   if (p.grounded) {
+    bot.climb = false;
     const want = decide(p, level);
-    if (want === false) { bot.frame = 999; return false; }
+    if (want === false) { bot.frame = 999; input.jump = false; return; }
     bot.hold = want;
     bot.frame = 0;
     p.queueJump();
-    return true;
+    input.jump = true;
+    return;
   }
+
+  // ── 爬牆 ──────────────────────────────────────────────
+  // 貼到一面「頂端還遠在頭上」的高牆 = 跳不過去，只能蹬。
+  // 進入爬牆模式後就一直蹬，直到爬過牆頂或落地為止。
+  if (p.wallDir !== 0) {
+    const top = wallTop(level, p, p.wallDir);
+    if (bot.climb || (top !== null && top < p.y - 60)) {
+      bot.climb = true;
+      // 貼上牆的瞬間還在上升，這時蹬掉就白費了剩下的上升高度。
+      // 先貼著牆滑到最高點（vy 轉正）再蹬，一次才吃得滿 WALL_RISE。
+      if (bot.wjCool === 0 && p.vy > -60) {
+        // 對面也有牆 → 蹬過去（蹬牆井）；只有單面牆 → 蹬完再貼回同一面，
+        // 一次磨高一點，直到爬過柱頂（閘門柱）。
+        bot.steer = hasOpposingWall(level, p, -p.wallDir, 260) ? -p.wallDir : p.wallDir;
+        p.queueJump();
+        bot.wjCool = 10; // 蹬完那幾 frame wallDir 還在，別把下一次跳浪費掉
+        bot.frame = 0;
+        bot.hold = 60;
+        steer(input, bot.steer);
+        input.jump = true;
+        return;
+      }
+      steer(input, p.wallDir); // 推向牆面貼著滑，別讓 wallDir 掉了
+      // 這裡千萬不能放開跳躍鍵：貼上牆的時候人還在上升，
+      // 一放開就觸發 jumpCut 把上升速度砍掉一半，剩下的高度全沒了。
+      input.jump = true;
+      return;
+    }
+  }
+  if (bot.climb) steer(input, bot.steer);
+
   // 空中：按住跳躍鍵到預定的 frame 數（決定這一跳的高度）
-  if (bot.frame < bot.hold) return true;
+  if (bot.frame < bot.hold) { input.jump = true; return; }
   // 掉下去又沒落點 → 補二段跳（全力）
   if (p.vy > 40 && p.airJumps > 0 && !landingAhead(p, level)) {
     p.queueJump();
     bot.hold = bot.frame + 60;
-    return true;
+    input.jump = true;
+    return;
   }
-  return false;
+  input.jump = false;
+}
+
+function steer(input, dir) {
+  input.right = dir > 0;
+  input.left = dir < 0;
+}
+
+// 現在貼著的那面高牆的頂端 y（沒貼著牆就回 null）
+function wallTop(level, p, dir, reach = 6) {
+  const y0 = p.y + 4, y1 = p.y + PLAYER_H - 4;
+  const lo = dir > 0 ? p.x + PLAYER_W - 4 : p.x - reach;
+  const hi = dir > 0 ? p.x + PLAYER_W + reach : p.x + 4;
+  let top = null;
+  level.forEachPlatform(lo - 8, hi + 8, (pl) => {
+    if (pl.h < 60) return;
+    if (y1 <= pl.y || y0 >= pl.y + pl.h) return;
+    const face = dir > 0 ? pl.x : pl.x + pl.w; // 會撞上的是哪一面
+    if (face < lo || face > hi) return;
+    if (top === null || pl.y < top) top = pl.y;
+  });
+  return top;
+}
+
+// 反方向 dist 之內還有沒有另一面高牆？（決定要蹬過去還是貼回原牆）
+// 高度只要大致對得上就算——對面那塊牆通常比現在的落腳點還高一截。
+function hasOpposingWall(level, p, dir, dist) {
+  const lo = dir > 0 ? p.x + PLAYER_W - 4 : p.x - dist;
+  const hi = dir > 0 ? p.x + PLAYER_W + dist : p.x + 4;
+  let found = false;
+  level.forEachPlatform(lo - 8, hi + 8, (pl) => {
+    if (found || pl.h < 60) return;
+    if (pl.y > p.y + 200 || pl.y + pl.h < p.y - 300) return;
+    const face = dir > 0 ? pl.x : pl.x + pl.w;
+    if (face >= lo && face <= hi) found = true;
+  });
+  return found;
 }
 
 // 在地面上時決定要不要跳、以及要按住幾個 frame（false = 不跳）
@@ -233,8 +316,13 @@ function nextLanding(level, nose) {
 function landingAhead(p, level) {
   const footY = p.y + PLAYER_H;
   let land = false;
-  level.forEachPlatform(p.x - 30, p.x + PLAYER_W + 240, (pl) => {
-    if (pl.y >= footY - 6 && pl.y < footY + 260 && pl.x + pl.w > p.x) land = true;
+  level.forEachPlatform(p.x - 30, p.x + PLAYER_W + 700, (pl) => {
+    if (land || pl.y < footY - 6 || pl.x + pl.w <= p.x) return;
+    // 深度上限跟著「掉下去要多久」走：剛爬完一道牆會停在很高的地方，
+    // 下面那塊平台可能在 600px 以下，但掉那麼久也早就飄過去了，那才算落點。
+    // 寫死一個深度會讓爬完牆的高空誤判成「沒地方落」，白補一次二段跳就飄過頭。
+    const t = Math.sqrt((2 * Math.max(0, pl.y - footY)) / PHYS.gravity);
+    if (pl.x <= p.x + PLAYER_W + 240 + PHYS.runSpeed * t) land = true;
   });
   return land;
 }
