@@ -115,7 +115,6 @@ function buildLevel(newSeed) {
   elapsed = 0;
 
   $('seedTag').textContent = '#' + seed.toString(16).padStart(8, '0');
-  $('weatherTag').textContent = weather.label;
 }
 
 // 一個房間的天氣：七成晴、兩成雨、一成雪。同房間所有人一致。
@@ -186,10 +185,12 @@ function connect(name) {
   net.connect();
 }
 
+// 連線狀態說兩次：房名藥丸的底色（常駐看得到）＋「更多」裡的文字
 function setStatus(text, kind) {
-  const el = $('conn');
-  el.textContent = text;
-  el.className = 'pill ' + kind;
+  $('conn').textContent = text;
+  const pill = $('roomPill');
+  pill.className = 'pill room ' + kind;
+  pill.title = text;
 }
 
 // ── UI ─────────────────────────────────────────────────
@@ -210,6 +211,8 @@ function renderBoard() {
 
   $('online').textContent = rows.length + ' 人在線';
   $('reseedBtn').disabled = !(net && net.connected && alone);
+  // 兩個人以上就永遠換不成了，按鈕捲出去把位置讓給「複製房間連結」
+  $('reseedBtn').classList.toggle('gone', rows.length > 2);
 }
 
 function esc(s) {
@@ -320,16 +323,9 @@ function frame(now) {
     $('dist').textContent = player.dist;
     $('coins').textContent = player.coins;
     $('best').textContent = bestDist;
-    $('speed').textContent = Math.round(Math.abs(player.vx));
-    $('clock').textContent = fmtHour(hour);
-    if (net && net.rtt != null) $('rtt').textContent = net.rtt + 'ms';
+    $('rtt').textContent = net && net.rtt != null ? net.rtt + 'ms' : '--';
     renderBoard();
   }
-}
-
-function fmtHour(h) {
-  const hh = Math.floor(h), mm = Math.floor((h - hh) * 60);
-  return String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
 }
 
 // ── 圖層：WebGL 背景 + 貓 ──────────────────────────────
@@ -434,6 +430,17 @@ function hudMovers() {
   return [...document.querySelectorAll('.hud-top .stat'), document.querySelector('.hud-side')];
 }
 
+// 「更多」：房名、即時排名、延遲以外的東西都在裡面。
+// 手把模式操作列裝不下，預設收起，要看再展開（它自己會捲）。
+function setHudMore(open) {
+  document.querySelector('.hud-side').classList.toggle('more-open', open);
+  $('moreBtn').setAttribute('aria-expanded', String(open));
+}
+
+function hudMoreOpen() {
+  return document.querySelector('.hud-side').classList.contains('more-open');
+}
+
 function setPadMode(on, animate = true) {
   if (padOn === on) return;
   padOn = on;
@@ -447,7 +454,10 @@ function setPadMode(on, animate = true) {
   $('swapBtn').disabled = !on;
   $('sideRow').classList.toggle('off', !on);
 
-  const apply = () => document.body.classList.toggle('pad', on);
+  const apply = () => {
+    document.body.classList.toggle('pad', on);
+    setHudMore(!on);
+  };
   if (animate) flip(hudMovers(), apply); else apply();
 }
 
@@ -469,6 +479,7 @@ function setSettingsOpen(open) {
 $('setToggle').addEventListener('click', () =>
   setSettingsOpen(!$('settings').classList.contains('open')));
 
+$('moreBtn').addEventListener('click', () => setHudMore(!hudMoreOpen()));
 $('padSwitch').addEventListener('click', () => setPadMode(!padOn));
 $('padSwitch').addEventListener('animationend', (e) => e.currentTarget.classList.remove('moving'));
 $('padBtn').addEventListener('click', () => setPadMode(!padOn));
@@ -486,10 +497,14 @@ addEventListener('keydown', (e) => {
 });
 
 // 開機先把記住的設定套上去，這一次不播動畫（沒有「從哪裡飛過來」可言）
+setHudMore(!padOn);
 setPadSide(padSwap);
 if (padOn) { padOn = false; setPadMode(true, false); }
 
-if (!SERVER) $('serverHint').classList.remove('hidden');
+if (!SERVER) {
+  $('serverHint').classList.remove('hidden');
+  $('rtt').hidden = true;          // 單機沒有延遲可言，那顆藥丸就不要佔位
+}
 bootGraphics();
 requestAnimationFrame(frame);
 
@@ -504,5 +519,5 @@ window.__parkour = {
   setHour(h) { hour0 = h; elapsed = 0; },
   setWeather(w) { weather = Object.assign(weather, w); },
   ghosts, cam, restart, pad, ball,
-  setPad: setPadMode, setPadSide,
+  setPad: setPadMode, setPadSide, setHudMore,
 };

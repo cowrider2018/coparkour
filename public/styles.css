@@ -129,6 +129,21 @@ html, body {
 }
 
 .pill b { color: var(--ink); }
+.pill.ok b, .pill.warn b, .pill.bad b { color: inherit; }
+/* 房名和延遲綁成一組：空間夠就並列同一行，要換行也是整組跟小開關分開。
+   真的擠不下才在組內折行——房名先縮到剩省略號，延遲才會掉下去。 */
+.idpair {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;   /* 折行時延遲自己靠右，不會孤零零掛在左下角 */
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* 房名是常駐那一顆，底色就是連線狀態，所以要撐得住長房名 */
+.pill.room { flex: 1 1 auto; min-width: 46px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill.lag { flex: none; font-variant-numeric: tabular-nums; }
 .pill.ok { color: #0b1a14; background: var(--accent); border-color: transparent; }
 .pill.warn { color: #2a2000; background: #ffd36e; border-color: transparent; }
 .pill.bad { color: #fff; background: var(--danger); border-color: transparent; }
@@ -167,6 +182,60 @@ html, body {
 
 .ghostbtn:hover:not(:disabled) { background: rgba(255, 255, 255, .12); }
 .ghostbtn:disabled { opacity: .38; cursor: not-allowed; }
+
+/* ── 「更多」：房名／排名／延遲以外的東西都住在這裡 ──────
+   高度用 grid 的 0fr→1fr 補間，收起來是真的 0，不留內距。
+   展開的內容直接接在排名下面，跟排名共用同一個捲動區（.hudscroll）——
+   不是另外掛一段自己會捲的東西。 */
+.more {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  transition: grid-template-rows 340ms var(--ease-out);
+}
+
+.hud-side:not(.more-open) .more { grid-template-rows: minmax(0, 0fr); }
+.morebody { min-height: 0; overflow: hidden; }
+
+/* 排名和「更多」是同一段，捲動也是同一件事 */
+.hudscroll {
+  min-height: 0;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(143, 183, 255, .28) transparent;
+}
+
+.hudscroll::-webkit-scrollbar { width: 4px; }
+.hudscroll::-webkit-scrollbar-thumb { background: rgba(143, 183, 255, .28); border-radius: 2px; }
+.hudscroll::-webkit-scrollbar-track { background: transparent; }
+
+/* 收起時箭頭朝下（可展開），展開就翻過來 */
+.more-btn svg { transition: transform 300ms var(--ease-spring); }
+.hud-side.more-open .more-btn svg { transform: rotate(180deg); }
+
+/* 房間超過兩個人就換不了地形了，按鈕往左捲出去收乾淨——
+   留一顆按不動的灰按鈕只是佔位，不如把空間還給「複製房間連結」。 */
+#reseedBtn {
+  overflow: hidden;
+  white-space: nowrap;
+  transition:
+    flex-grow 340ms var(--ease-out), max-width 340ms var(--ease-out),
+    max-height 340ms var(--ease-out), margin 340ms var(--ease-out),
+    padding 340ms var(--ease-out), border-width 340ms var(--ease-out),
+    transform 340ms var(--ease-out), opacity 200ms var(--ease-out);
+}
+
+#reseedBtn.gone {
+  flex-grow: 0;
+  max-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-width: 0;
+  transform: translateX(-16px);
+  opacity: 0;
+  pointer-events: none;
+}
 
 /* ── 覆蓋層 ─────────────────────────────────────────── */
 .overlay {
@@ -296,17 +365,19 @@ code { font: 600 11px ui-monospace, monospace; background: rgba(0, 0, 0, .35); p
   .stat b { font-size: 15px; }
   .stat.big b { font-size: 20px; }
   .stat small { font-size: 9px; }
-  .stat:nth-child(4) { display: none; }        /* 速度 */
-
   .hud-side { width: 136px; padding: 8px; }
+  /* 一百三十幾 px 的欄位，「房間」兩個字省掉——底色和位置已經說明它是什麼了，
+     省下來的寬度剛好夠房名和延遲並列同一行 */
+  .hud-side .pill.room .rl { display: none; }
   .hud-side h3 { margin: 9px 0 4px; font-size: 9px; }
   .hud-side .row.muted { font-size: 9px; }
   .list { font-size: 10.5px; }
   .list li { padding: 2px 4px; gap: 5px; }
   .ghostbtn { font-size: 10px; padding: 5px 4px; margin-top: 8px; }
 
-  /* 本房紀錄在手機上收起來，畫面留給遊戲 */
-  .hud-side h3.records, #bestList { display: none; }
+  /* 本房紀錄在手機上收起來，畫面留給遊戲（手把模式另有「更多」可展開） */
+  body:not(.pad) .hud-side h3.records,
+  body:not(.pad) #bestList { display: none; }
 }
 
 
@@ -350,11 +421,6 @@ code { font: 600 11px ui-monospace, monospace; background: rgba(0, 0, 0, .35); p
 .chip-calico  { background: linear-gradient(120deg, #2e2723 33%, #f2ece2 33% 66%, #e8862f 66%); }
 
 .catnote { margin: -8px 0 14px; font-size: 11px; color: #ffd36e; text-align: left; }
-
-@media (max-width: 620px) {
-  .stat:nth-child(5) { display: none; }
-}
-
 
 /* ── 操作列：手把模式 ────────────────────────────────────
    橫向是左右兩根直欄，直向是上下兩條橫帶。上儀表板、下操作元件，
@@ -469,24 +535,33 @@ body.pad .hud-side {
   overflow: hidden;
 }
 
-body.pad #liveList { flex: 1 1 auto; min-height: 0; overflow: hidden; }
-body.pad #bestList { flex: 0 1 auto; min-height: 0; overflow: hidden; }
-/* 列表再怎麼擠，最後那排按鈕都要留在看得到的地方 */
-body.pad .hud-side .row:last-child { margin-top: auto; flex: none; }
-
-/* 橫向：直欄。五格數字排成兩欄，速度和時刻在窄螢幕也放得回來。 */
-body.pad.pad-land .hud-top {
-  left: calc(var(--sa-l) + 8px);
-  width: calc(var(--rail) - 16px);
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+/* 左欄：直的三格，由上而下個人最佳、公尺、金幣。
+   排序用 order，DOM 不動——非手把模式還是公尺打頭的橫排。 */
+body.pad .hud-top {
+  flex-direction: column;
   gap: 5px;
 }
 
-body.pad.pad-land .hud-top .stat { min-width: 0; padding: 5px 4px; }
-body.pad.pad-land .hud-top .stat.big { grid-column: 1 / -1; }
-body.pad.pad-land .hud-top .stat:nth-child(4),
-body.pad.pad-land .hud-top .stat:nth-child(5) { display: block; }
+body.pad .hud-top .stat.best { order: 0; }
+body.pad .hud-top .stat.dist { order: 1; }
+body.pad .hud-top .stat.coins { order: 2; }
+body.pad .hud-top .stat { padding: 4px 8px; }
+
+/* 第一排釘在上面，底下整段自己捲——展開「更多」只是這段變長 */
+body.pad .hudscroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  pointer-events: auto;      /* 手把模式沒有水球，這塊可以安心收觸控 */
+  touch-action: pan-y;
+}
+
+/* 橫向：直欄。三格從上往下疊，寬度就是整根直欄。 */
+body.pad.pad-land .hud-top {
+  left: calc(var(--sa-l) + 8px);
+  width: calc(var(--rail) - 16px);
+}
+
+body.pad.pad-land .hud-top .stat { min-width: 0; }
 
 body.pad.pad-land .hud-side {
   right: calc(var(--sa-r) + 8px);
@@ -496,35 +571,50 @@ body.pad.pad-land .hud-side {
 
 /* 直欄裡每一行都是錢，藥丸和小開關先瘦一圈，第一排才不會折成三行 */
 body.pad.pad-land .hud-side .pill { font-size: 10px; padding: 2px 7px; }
+body.pad.pad-land .hud-side .pill.room .rl { display: none; }
 body.pad.pad-land .hud-side .row { gap: 4px; }
+body.pad.pad-land .padctl { flex-wrap: wrap; justify-content: flex-end; }
 body.pad.pad-land .iconbtn { width: 22px; height: 20px; }
 body.pad.pad-land .iconbtn svg { width: 13px; height: 13px; }
 
 /* 直欄只有十幾公分寬，兩顆按鈕並排會把標題折成三行——改成上下疊 */
-body.pad.pad-land .hud-side .row:last-child { flex-direction: column; gap: 5px; }
-body.pad.pad-land .hud-side .row:last-child .ghostbtn { width: 100%; margin-top: 0; }
+body.pad.pad-land .hud-side .row.btns { flex-direction: column; gap: 5px; }
+body.pad.pad-land .hud-side .row.btns .ghostbtn { width: 100%; margin-top: 0; }
+/* 直欄裡按鈕是上下疊的，退場改成往上收；高度先給個上限才補得出動畫 */
+body.pad.pad-land #reseedBtn { max-height: 48px; }
+body.pad.pad-land #reseedBtn.gone { max-height: 0; transform: translateY(-12px); }
 
 /* 直向：上下橫帶。兩塊儀表板並排擠進上帶，操作元件全在下帶。 */
 body.pad.pad-port .hud-top {
   left: calc(var(--sa-l) + 10px);
-  max-width: calc(100% - var(--sa-l) - var(--sa-r) - 172px);
-  flex-wrap: wrap;
+  width: 104px;
+  gap: 4px;
 }
+
+/* 上帶最矮只有 104px，三格疊起來站不進去——所以直向的每一格改成
+   數字和標籤同一行，一格 24px 出頭，矮螢幕也不會掉出橫帶。 */
+body.pad.pad-port .hud-top .stat {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 5px;
+  padding: 3px 8px;
+}
+
+body.pad.pad-port .hud-top .stat b { display: inline; font-size: 15px; }
+body.pad.pad-port .hud-top .stat.big b { font-size: 19px; }
+body.pad.pad-port .hud-top .stat small { font-size: 9px; }
 
 body.pad.pad-port .hud-side {
   width: 152px;
   padding: 7px;
   max-height: calc(var(--barT) + var(--sa-t) - 6px);
+  transition: max-height 340ms var(--ease-out);
 }
 
-/* 操作列本來就窤，本房紀錄先讓位，別把最下面那排按鈕擠出可視範圍。
-   螢幕真的夠高才把它請回來。 */
-body.pad .hud-side h3.records,
-body.pad #bestList { display: none; }
-
-@media (min-height: 700px) {
-  body.pad.pad-land .hud-side h3.records,
-  body.pad.pad-land #bestList { display: block; }
+/* 展開時長出上帶之外，浮在遊戲上；下界停在操作元件之前，不擋搖桿 */
+body.pad.pad-port .hud-side.more-open {
+  max-height: min(52vh, calc(var(--ctrl) - var(--sa-t) - 14px));
 }
 
 /* ── 開關 ───────────────────────────────────────────────
@@ -753,15 +843,16 @@ body.pad #bestList { display: none; }
 
 .iconbtn svg { width: 15px; height: 15px; }
 
-/* 兩顆小開關綁成一組，要換行就一起換，不會一顆在上一顆在下 */
-.padctl { display: flex; gap: 5px; flex: none; }
+/* 三顆小開關綁成一組，要換行就一起換，不會一顆在上一顆在下；
+   折行時整組靠右——它們是控制項，不跟左邊的字混在一起 */
+.padctl { display: flex; gap: 5px; flex: none; margin-left: auto; }
 .iconbtn:hover:not(:disabled) { color: var(--ink); }
 .iconbtn[aria-pressed="true"] { color: var(--accent); border-color: rgba(94, 242, 192, .5); background: rgba(94, 242, 192, .12); }
 .iconbtn:disabled { opacity: .3; cursor: not-allowed; }
 
 @media (prefers-reduced-motion: reduce) {
   .rail, .sw-knob, .sw-fill, .sw-track, .seg-ind,
-  .setbody, .chev { transition-duration: 120ms !important; }
+  .setbody, .chev, .more, .more-btn svg, #reseedBtn { transition-duration: 120ms !important; }
   .sw.moving .sw-drop { animation: none !important; }
 }
 
