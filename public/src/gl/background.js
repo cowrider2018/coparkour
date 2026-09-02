@@ -55,6 +55,15 @@ const R_OFF = [-30.0, 22.0, 83.0, 165.0];
 const R_HAZE = [0.86, 0.62, 0.37, 0.15];
 const R_ALB = [1.0, 0.84, 0.68, 0.54];
 
+/* 每層一個固定的受光量，不逐像素算。跟 render.js 備援山脈的那條
+   `0.10 + i * 0.09` 是同一組數字——兩層 canvas 要看起來像同一個場景，
+   山脈的著色規則就得是同一條。 */
+const R_NDL = [0.10, 0.19, 0.28, 0.37];
+
+/* 跟備援山脈的 shade(..., 1.6) 是同一個增益。平的受光量比原本逐像素
+   算出來的平均低（原本迎光的坡面可以衝到 1），少了這一項近山會整片壓成黑。 */
+const R_GAIN = 1.6;
+
 /* 山脊的底色，偏藍紫——跟 PALETTE.hillFar/hillNear 是同一家人。
 
    這是「反照率」，不是「畫出來的顏色」，兩者差一個 2.4 倍的直接光增益
@@ -63,6 +72,14 @@ const R_ALB = [1.0, 0.84, 0.68, 0.54];
    空氣透視都看不出來。真實的岩石與矮樹叢大約在 0.08 到 0.12 之間，
    而 shadeDirect 的增益就是為那個範圍校準的。 */
 const R_TINT = [0.075, 0.085, 0.115];
+
+/* ……但它現在是預設值，不是常數。遠山跟腳下的草皮是同一片地理的兩個尺度，
+   所以季節換的時候它們要一起換：夏天遠山是被矮樹叢蓋住的綠、秋天轉琥珀、
+   冬天壓成雪的藍灰。實際的值由 draw() 的 f.ridgeTint 傳進來（見 gfx/season.js），
+   沒傳就退回上面那組。
+
+   為什麼是 lerp 而不是像草那樣抽籤：一整條山脈是一個面，不是一群個體，
+   沒有東西可以拿來抽。抽籤的規則屬於「有很多個」的東西。 */
 
 /* ── 落下的東西 ────────────────────────────────────────────────
    雨滴數依強度給。上限是為了 SwiftShader 這種沒有 GPU 的環境留條活路。 */
@@ -139,6 +156,7 @@ uniform float uDay;       // sky.day
 uniform float uTime;
 uniform int uSeed;
 uniform vec4 uPhase[4];   // 每層山脊、每個波的相位偏移，由 seed 決定
+uniform vec3 uRidgeTint;  // 這一段 x 的季節給的遠山反照率
 
 ${GLSL_HASH}
 ${GLSL_COLOR}
@@ -201,7 +219,9 @@ const float R_AMP[4]   = float[4](${R_AMP.map((v) => v.toFixed(1)).join(', ')});
 const float R_OFF[4]   = float[4](${R_OFF.map((v) => v.toFixed(1)).join(', ')});
 const float R_HAZE[4]  = float[4](${R_HAZE.map((v) => v.toFixed(3)).join(', ')});
 const float R_ALB[4]   = float[4](${R_ALB.map((v) => v.toFixed(3)).join(', ')});
-const vec3 R_TINT = vec3(${R_TINT.map((v) => v.toFixed(3)).join(', ')});
+const float R_NDL[4]   = float[4](${R_NDL.map((v) => v.toFixed(3)).join(', ')});
+const float R_GAIN     = ${R_GAIN.toFixed(2)};
+
 
 /* ── 星星 ──────────────────────────────────────────────────────
    格子邊長（視野單位）、多少格子裡有星星、星星多大（佔格子的比例）。
@@ -357,20 +377,21 @@ void main() {
     float cover = smoothstep(-pxv, pxv, Y - surf);
     if (cover <= 0.0) continue;
 
-    /* 法線。切線是 (1, dY/dX)，y 往下，所以朝上的那一條垂線是 (g, -1)。
-       斜坡往右下走（g > 0）時法線往右上倒——這就是為什麼夕陽會挑
-       山脊的一邊打亮，另一邊留在暗處。 */
-    float g = R_AMP[i] * f.y;
-    vec2 n = normalize(vec2(g, -1.0));
-    // 光的方向投影到側視平面上；螢幕的 y 往下，所以 dir.y 要翻號
-    vec2 L = normalize(vec2(uLightDir.x, -uLightDir.y) + vec2(1e-6));
-    float facing = max(dot(n, L), 0.0);
+    /* 一層山＝一個顏色。這裡曾經逐像素算法線（切線 (1, dY/dX) 的垂線），
+       讓夕陽挑山脊的一邊打亮、另一邊留在暗處——但那道亮暗是連續變化的，
+       整片山看起來就是一團漸層，四層之間的分界反而被它洗掉了。
+       山脈這個尺度上要讀的是「有幾層、哪層比較近」，那是層與層之間的
+       色差在講的事，不是一層之內的明暗在講的。所以受光量改成每層一個常數。
+
+       f.y（解析導數）因此用不到了。它還是被算出來，因為 ridgeField 是
+       高度與斜率一起出的；編譯器會把死掉的那一半消掉。 */
+    float facing = R_NDL[i];
 
     /* 遊戲裡每個東西的顏色都走這一行：
        albedo × (tint × facing × 2.4 + ambient × 1.5)。
        跟 daycycle.js 的 shade() 逐項相同，所以山脊跟平台是被同一盞燈
        照的——這是兩層 canvas 看起來像同一個場景的全部原因。 */
-    vec3 alb = R_TINT * R_ALB[i];
+    vec3 alb = uRidgeTint * R_ALB[i];
 
     /* uAmbient 是「一個朝上的平面收到的天光」。一道遠山的斜坡不是那樣：
        它只看得到半邊天，而且自己的地形會互相遮蔽。白天這件事被地面
@@ -380,12 +401,23 @@ void main() {
        沒有這一折，夜裡最近那層山會比它背後的天空還亮，整個下半畫面
        變成一片發光的navy，山看起來像光源而不是地面。 */
     float skyBounce = mix(0.42, 1.0, uDay);
-    vec3 lit = alb * (uTint * facing * 2.4 + uAmbient * 1.5 * skyBounce);
+    vec3 lit = alb * (uTint * facing * 2.4 + uAmbient * 1.5 * skyBounce) * R_GAIN;
 
-    /* 往「空氣」靠過去，而不是往某個固定的灰色。air 裡面含著這個
-       像素位置的地平線輝光，所以黃昏時遠山會自己吃到橘色，不需要
-       第二套顏色來對齊。 */
-    lit = mix(lit, air, R_HAZE[i] * hazeGain);
+    /* 往「空氣」靠過去，而不是往某個固定的灰色，所以黃昏時遠山會自己
+       吃到天空的顏色，不需要第二套顏色來對齊。
+
+       但要靠過去的是「這一層山所在的高度上的空氣」，不是「這個像素的空氣」。
+       讀逐像素的 air 等於把天空的上下漸層印在山身上，一層山又變回一團漸層；
+       改讀單一個 hor 又太粗——四層山跨了地平線上下一大段，全部拉向同一個
+       地平線色會把它們洗成同一片藍，四層的色差（也就是深度）就沒了。
+
+       所以在這一層的基準線上取一次天空色：一層一個值，山身上是平的，
+       而層與層之間仍然差著它們各自站的那段空氣。 */
+    float vyBase = 1.0 - (base - p * uCam.y) / uView.y;
+    float eBase = clamp((vyBase - hUv) / SKY_H, -1.0, 1.0);
+    vec3 hazeTo = mix(bot, hor, smoothstep(-0.30, 0.0, eBase));
+    hazeTo = mix(hazeTo, top, smoothstep(0.0, 1.0, eBase));
+    lit = mix(lit, hazeTo, R_HAZE[i] * hazeGain);
     col = mix(col, lit, cover);
   }
 
@@ -617,7 +649,7 @@ export class Background {
   /**
    * 一幀一組 draw call。
    * @param {{cam:{x:number,y:number}, view:{w:number,h:number}, sky:object,
-   *          seed:number, time:number,
+   *          seed:number, time:number, ridgeTint?:number[],
    *          weather?:{rain?:number, snow?:number, wind?:number}}} f
    */
   draw(f) {
@@ -654,6 +686,8 @@ export class Background {
     gl.uniform1f(u.uDay, sky.day);
     gl.uniform1f(u.uTime, time);
     gl.uniform1i(u.uSeed, s | 0);
+    const rt = f.ridgeTint || R_TINT;
+    gl.uniform3f(u.uRidgeTint, rt[0], rt[1], rt[2]);
     gl.uniform4fv(u.uPhase, this._phase);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 

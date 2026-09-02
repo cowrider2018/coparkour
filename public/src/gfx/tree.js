@@ -10,6 +10,7 @@
 //                       改成把採集範圍往兩側推 MARGIN，樹在畫面外就已經是完整的。
 import { makeCell, slowGust, gust } from './field.js';
 import { css, shade, mix3 } from './daycycle.js';
+import { seasonPick } from './season.js';
 
 const TREE_CELL = 168;       // 一格一棵候選
 const MARGIN = 300;          // 採集範圍往兩側推多遠（樹在畫面外就長好）
@@ -23,17 +24,18 @@ const TUFT_RESERVE = 70;
 const BARK_LIT = [0.185, 0.155, 0.125];
 
 // ── 季節帶 ──────────────────────────────────────────────────
-// 每 1000 m 換一季，同一段裡只會有一類樹。
-// 分界只看樹自己的 x，所以跟其他東西一樣是無狀態的：不必記「現在是第幾季」，
-// 也不會因為鏡頭往回拉就換一批樹。玩家跑過 1000 m 會看到整片林相換掉，
-// 這比逐棵抽籤混在一起有力得多——一致性讀起來像地理，隨機讀起來像雜訊。
-const SEASON_SPAN = 10000;   // 標記是 x/10 m，所以 1000 m = 10000 世界單位
-
+// 分界與過渡帶由 gfx/season.js 統一決定，草、土、遠山、樹讀的是同一條線——
+// 不然會出現「草已經黃了但樹還全綠」那種各換各的分界。
+//
+// 過渡帶上樹跟草用同一個規則：每棵樹自己抽籤選邊（seasonPick），
+// 不是把兩季的樹混成一種中間色的樹。走進交界處會先看到零星幾棵已經轉紅的，
+// 再往前紅的愈來愈多——那是密度在漸變，不是顏色在漸變。
+//
 // kinds 是這一季能長的物種，cut 是雜湊落點的上界（照順序取第一個小於的）
-const SEASONS = [
-  { label: '綠', kinds: [0, 1], cut: [0.625, 1] },   // 闊葉 + 針葉
-  { label: '秋', kinds: [2],    cut: [1] },          // 只有闊葉，暖色
-  { label: '冬', kinds: [3, 4], cut: [0.55, 1] },    // 積雪的針葉，或落光了的枯枝
+const SEASON_KINDS = [
+  { kinds: [0, 1], cut: [0.625, 1] },   // 綠：闊葉 + 針葉
+  { kinds: [2],    cut: [1] },          // 秋：只有闊葉，暖色
+  { kinds: [3, 4], cut: [0.55, 1] },    // 冬：積雪的針葉，或落光了的枯枝
 ];
 
 // 五個物種。同一份骨架程式，差別只在參數：
@@ -145,7 +147,7 @@ export class Trees {
    */
   grow(ix, iz, x, top, t, W) {
     const C = this.cell;
-    const S = seasonAt(x);
+    const S = SEASON_KINDS[seasonPick(x, C(ix, iz, 301))];
     const r = C(ix, iz, 302);
     let si = S.kinds[0];
     for (let i = 0; i < S.kinds.length; i++) {
@@ -282,12 +284,6 @@ export class Trees {
       }
     }
   }
-}
-
-/** 這棵樹站在第幾季裡。只看 x，所以往回跑看到的還是同一片林子。 */
-function seasonAt(x) {
-  const i = Math.floor(x / SEASON_SPAN) % SEASONS.length;
-  return SEASONS[i < 0 ? i + SEASONS.length : i];
 }
 
 /** 這個點在樹上的高度比例，0 = 根、1 = 樹頂。 */

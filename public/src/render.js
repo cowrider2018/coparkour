@@ -2,20 +2,27 @@ import { PLAYER_W, PLAYER_H, WORLD, VIEW } from './constants.js';
 import { COIN_R } from './level.js';
 import { css, shade, mix3, skyBands, LOW_GLOW } from './gfx/daycycle.js';
 import { makeCell, field, gust } from './gfx/field.js';
+import { SEASON, seasonPick, seasonBlend } from './gfx/season.js';
 
 // ── 世界的 albedo ───────────────────────────────────────────
 // 全部是 linear，經過 daycycle 的 shade() 打光、acesTone() 落地。
 // 直接拿這些數字當 CSS 顏色會又亮又灰——見計畫書的地雷 01。
-const NEON = [0.368, 0.949, 0.753];   // 平台上緣的霓虹燈條，自發光
+//
+// 地形本身的顏色不在這裡，在 gfx/season.js：土跟草皮是跟著 x 走的地理，
+// 不是一組全域常數。
 const ALB = {
-  platTop:  [0.130, 0.520, 0.360],
-  platBody: [0.028, 0.062, 0.098],
-  platEdge: [0.055, 0.150, 0.180],
   spike:    [0.620, 0.110, 0.150],
   coin:     [0.720, 0.480, 0.090],
   self:     [0.130, 0.520, 0.360],
   ghost:    [0.180, 0.290, 0.560],
 };
+
+// ── 卡通地形的尺寸 ──────────────────────────────────────────
+const CAP_H = 10;        // 草皮那一條有多厚
+const DRIP = 8;          // 草皮往土裡垂下多深（那些一綹一綹的舌頭）
+const DRIP_SCALE = 0.62; // 舌頭的波長縮放，越小越碎（最短的一項約 8 單位）
+const CAP_SEG = 14;      // 過渡帶上多寬抽一次籤（細一點才像密度，粗了像磚）
+const INK = 2;           // 卡通描邊有多粗
 
 export class Camera {
   constructor() {
@@ -170,7 +177,7 @@ export class Renderer {
     }
     this.platforms(level, x0, x1, sky);
     if (this.decor) {
-      this.decor.collect(level, x0, x1, time, sky.day);
+      this.decor.collect(level, x0, x1, time, sky);
       this.decor.draw(ctx, sky, s.wind);
     }
     this.spikes(level, x0, x1, sky);
@@ -254,7 +261,10 @@ export class Renderer {
     const hazeGate = Math.min(1, Math.max(0, (lum(B.hor) - 0.002) / 0.088));
     for (let i = 0; i < RIDGE.length; i++) {
       const [plx, sc, amp, off, haze, ab] = RIDGE[i];
-      const lit = shade([0.075 * ab, 0.085 * ab, 0.115 * ab], sky, 0.10 + i * 0.09, 1.6);
+      // 遠山也吃季節。用鏡頭中心一個點去查就夠了：整條山脈是一個面，
+      // 玩家不會同時看到兩季的山，而過渡帶上它會隨著鏡頭平順地換過去。
+      const rt = seasonBlend(cam.x + W / (zoom * 2), 'ridge');
+      const lit = shade([rt[0] * ab, rt[1] * ab, rt[2] * ab], sky, 0.10 + i * 0.09, 1.6);
       ctx.fillStyle = css(mix3(lit, B.hor, haze * hazeGate));
       ctx.beginPath();
       ctx.moveTo(0, H);
@@ -282,22 +292,87 @@ export class Renderer {
     ctx.textAlign = 'left';
   }
 
+  /**
+   * 一塊地：描邊、土、草皮、受光的頂緣。四層，全部是實色——
+   * 卡通的體積感來自「幾個乾淨的色塊 + 一圈暗描邊」，不是來自漸層。
+   *
+   * 描邊的做法是先填一個大一圈的深色 roundRect，再把土疊在裡面。
+   * 用 stroke() 的話線寬會跟著 zoom 走（動態視距一縮，描邊就變成粗黑框），
+   * 而「大一圈的實心塊」是世界座標裡的量，縮放時跟其他東西一起縮。
+   *
+   * 草皮的下緣是 field()——那條非諧波正弦不會重複，所以一路跑下去
+   * 不會看到同一組草舌週期性出現。它同時也是連續函數，所以過渡帶上
+   * 相鄰兩段抽到不同季節時，兩段的邊界完全對得起來，不會有縫。
+   */
   platforms(level, x0, x1, sky) {
     const ctx = this.ctx;
-    const body = css(shade(ALB.platBody, sky, 0.35, 1.7));
-    const edge = css(shade(ALB.platEdge, sky, 0.55, 1.7));
-    // 燈條是自發光的：亮度不隨日夜變，所以夜裡它相對更顯眼——正是霓虹該有的樣子。
-    // 只往環境光的色偏挪一點點，免得它跟整個畫面脫節。
-    const top = css(mix3(NEON, sky.ambient, 0.12), 0.62);
+    const C = this.cell;
     level.forEachPlatform(x0, x1, (p) => {
       const skirt = Math.max(p.h, 34);
-      ctx.fillStyle = body;
-      roundRect(ctx, p.x, p.y, p.w, skirt, 6);
+      const iz = Math.round(p.y / 17);
+
+      // 土是一個面，不是一群個體，所以季節在這裡用 lerp 而不是抽籤——
+      // 沒有東西可以拿來抽。草才抽（見 season.js 的開頭）。
+      const soil = seasonBlend(p.x + p.w * 0.5, 'soil');
+      const deep = seasonBlend(p.x + p.w * 0.5, 'deep');
+      ctx.fillStyle = css(shade(mix3(deep, [0, 0, 0], 0.30), sky, 0.34, 1.3));
+      roundRect(ctx, p.x, p.y, p.w, skirt, 7);
       ctx.fill();
-      ctx.fillStyle = edge;
-      ctx.fillRect(p.x, p.y + 6, p.w, 2);
-      ctx.fillStyle = top;
-      roundRect(ctx, p.x, p.y, p.w, 6, 3);
+      ctx.fillStyle = css(shade(soil, sky, 0.42, 1.5));
+      roundRect(ctx, p.x + INK, p.y + INK, p.w - INK * 2, skirt - INK * 2, 5);
+      ctx.fill();
+      // 土的下半段壓暗一階。兩個實色階＝一個圓柱面，這是最便宜的體積
+      ctx.fillStyle = css(shade(deep, sky, 0.30, 1.4));
+      roundRect(ctx, p.x + INK, p.y + skirt * 0.58, p.w - INK * 2, skirt * 0.42 - INK, 5);
+      ctx.fill();
+
+      // ── 草皮 ──
+      // 一段一段抽籤（過渡帶上兩季交錯），同一季的段落收進同一個 path，
+      // 一季一次 fill。一個畫面通常只跨到兩季，所以實際上是兩次。
+      //
+      // 段的寬度與兩側的彎法都不是固定值，而是「這道接縫的序號」的雜湊：
+      // 等寬的直立分段會排成一列看得見的磚，那是最假的過渡。關鍵在於同一道接縫
+      // 被左右兩段問到時算出同一組數字，所以抖歸抖，縫仍然嚴絲合縫。
+      //
+      // 外層是季節、內層才是分段，所以整段掃描要重跑幾次（每季一次）。
+      // 那比留一份 Path2D 便宜：一格分段只是四次雜湊，而 Path2D 是每幀每塊板子
+      // 都要新配置的物件——這份程式從頭到尾不在畫面迴圈裡配記憶體。
+      const xa = p.x + INK, xb = p.x + p.w - INK;
+      if (xb - xa < 2) return;
+      const i0 = Math.floor(xa / CAP_SEG), i1 = Math.ceil(xb / CAP_SEG);
+      const edgeX = (i) => {
+        const v = i * CAP_SEG + (C(i, iz, 32) - 0.5) * CAP_SEG * 0.7;
+        return v < xa ? xa : v > xb ? xb : v;
+      };
+      // 每道接縫是一條有弧度的曲線，不是一刀直下。板子的兩端不准彎出去。
+      const seamB = (i, x) => (x <= xa || x >= xb ? 0 : (C(i, iz, 33) - 0.5) * 9);
+      const seamM = (i, x) => (x <= xa || x >= xb ? 0 : (C(i, iz, 34) - 0.5) * 11);
+      for (let si = 0; si < SEASON.length; si++) {
+        ctx.beginPath();
+        let drawn = false;
+        let sx = xa, b0 = 0, m0 = 0;
+        for (let i = i0; i <= i1; i++) {
+          const ex = i === i1 ? xb : edgeX(i + 1);
+          if (ex - sx >= 0.5) {
+            const b1 = seamB(i + 1, ex), m1 = seamM(i + 1, ex);
+            if (seasonPick(sx, C(i, iz, 31)) === si) {
+              capSeg(ctx, sx, ex, p.y, b0, m0, b1, m1);
+              drawn = true;
+            }
+            sx = ex; b0 = b1; m0 = m1;
+          }
+          if (sx >= xb) break;
+        }
+        if (drawn) {
+          ctx.fillStyle = css(shade(SEASON[si].cap, sky, 0.62, 1.25));
+          ctx.fill();
+        }
+      }
+
+      // 頂緣的受光邊。這一條同時是遊戲性的東西：它就是「這裡踩得到」的那條線，
+      // 所以它比草皮亮一階，而且永遠貼齊 p.y——碰撞面在哪，看起來就在哪。
+      ctx.fillStyle = css(shade(seasonBlend(p.x + p.w * 0.5, 'lit'), sky, 0.95, 1.35));
+      roundRect(ctx, xa, p.y, xb - xa, 3, 1.5);
       ctx.fill();
     });
   }
@@ -383,6 +458,30 @@ export function playerState(p) {
   if (!p.grounded && p.wallDir !== 0) return 'wall';
   if (!p.grounded) return p.vy > 60 ? 'fall' : 'air';
   return Math.abs(p.vx) > 24 ? 'run' : 'idle';
+}
+
+/**
+ * 草皮的一段：上緣是直的（那是碰撞面，不能亂動），兩側是彎的，
+ * 下緣是垂進土裡的草舌。
+ *
+ * 下緣只讀 x，所以相鄰兩段共用的那個底點算出來完全相同；兩側的曲線由共用的
+ * 那道接縫決定，而一條二次曲線倒著走還是同一條曲線。三條邊都對得起來，
+ * 分段抽籤才不會露縫。
+ */
+function capSeg(ctx, xa, xb, y, sa, ca, sb, cb) {
+  const bl = xa + sa, br = xb + sb;
+  const yb = y + CAP_H, ym = y + CAP_H * 0.55;
+  ctx.moveTo(xa, y);
+  ctx.lineTo(xb, y);
+  ctx.quadraticCurveTo(xb + cb, ym, br, yb + dripAt(br));
+  for (let x = br - 3; x > bl; x -= 3) ctx.lineTo(x, yb + dripAt(x));
+  ctx.lineTo(bl, yb + dripAt(bl));
+  ctx.quadraticCurveTo(xa + ca, ym, xa, y);
+  ctx.closePath();
+}
+
+function dripAt(x) {
+  return (0.5 + 0.5 * field(x, DRIP_SCALE, null)) * DRIP;
 }
 
 function lum(c) { return c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722; }

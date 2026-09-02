@@ -1,20 +1,33 @@
-// ── 平台上的裝飾：草叢與花 ──────────────────────────────────
+// ── 鋪在土上的草皮，以及長在裡面的花與蟲 ────────────────────
 // 完全由座標雜湊決定，所以：
 //   · 無狀態——只算看得見的視窗，離開畫面就丟掉，記憶體不隨距離成長
 //   · 多人一致——同一個 room seed + 同一個格子 = 同一叢草，網路零成本
 //   · 可往回看——鏡頭往左拉，草還在原地
 //
-// 三個從 AETHER 搬來的做法：
-//   clump-and-thin  半徑用 u 不是 sqrt(u)，再用 u²·0.92 淘汰 → 花叢沒有邊界
-//   每叢一色        一致性讀起來像物種，逐朵抖色讀起來像雜訊
+// 草的目標是「一張鋪在土地上的地毯」，不是「一排立正的牙籤」。三件事撐起那個厚重感：
+//
+//   扇形       一叢草是從同一個根往四面張開的一蓬（FAN 給到 ±70°），
+//              最外圈幾乎是躺著往外鋪的。全部朝上的草只有輪廓沒有面積。
+//   有前後排   每根草在草皮裡有一個深度 d：後排的根部比地面高一點（從草皮後面探出來），
+//              前排的低一點（垂到板子的前緣外，把那條硬邊蓋掉）。厚度就是這樣來的。
+//   分階不分高 一根草整根同一個顏色，階由「它朝哪邊 + 它在第幾排」決定，
+//              而且畫的順序就是由深到淺＝由後到前。所以四階同時是明暗、是深度、
+//              也是畫家演算法的排序鍵——一次分組買到三件事。
+//
+// 其他兩個從 AETHER 搬來的做法照舊：
+//   clump-and-thin  花叢半徑用 u 不是 sqrt(u)，再用 u²·0.92 淘汰 → 花叢沒有邊界
 //   縮小而非淡出    進出視野靠改高度，不靠 alpha，所以不用排序也不會 pop
 import { makeCell, gust, leafWidth } from './field.js';
-import { css, shade, mix3 } from './daycycle.js';
+import { css, shade } from './daycycle.js';
+import { SEASON, seasonPick } from './season.js';
 
-const TUFT_CELL = 26;        // 一格出一叢草
+const TUFT_CELL = 20;        // 一格出一叢草（比舊版密：地毯要密才叫地毯）
 const CLUMP_CELL = 132;      // 一格出一叢花
-const BLADE_H = 11;
-const MAX_BLADES = 900;      // Canvas 2D 是 O(數量)，一定要有硬上限
+const BLADE_H = 14;
+const MAT_DEPTH = 10;        // 草皮的厚度：最後排與最前排的根部差多少
+const FAN = 2.45;            // 一叢草張開的總角度（弧度）
+const BANDS = 4;             // 明暗／深度的階數，第 5 階（＝BANDS）留給枯掉的
+const MAX_BLADES = 1300;     // Canvas 2D 是 O(數量)，一定要有硬上限
 const MAX_FLOWERS = 130;
 const MAX_CREATURES = 44;
 
@@ -41,10 +54,6 @@ const PETALS = [
   [0.330, 0.170, 0.700],
   [0.880, 0.105, 0.025],
 ];
-const GRASS_ROOT = [0.038, 0.072, 0.022];
-const GRASS_TIP = [0.155, 0.290, 0.072];
-const GRASS_DRY = [0.290, 0.230, 0.062];
-const STEM = [0.045, 0.115, 0.030];
 
 export class Decor {
   constructor(roomSeed) {
@@ -53,6 +62,7 @@ export class Decor {
     this.flowers = [];
     this.bugs = [];
     this.density = 1;
+    this.mask = 0;      // 這一幀出現了哪些（季節 × 階），draw() 用它跳過空的組
   }
 
   /**
@@ -61,12 +71,17 @@ export class Decor {
    * @param {number} x0 視窗左緣（世界座標）
    * @param {number} x1 視窗右緣
    * @param {number} t  秒
+   * @param {object} sky daycycle 的 skyAt()——這裡要它的 day 與光的水平方位
    */
-  collect(level, x0, x1, t, day) {
+  collect(level, x0, x1, t, sky) {
     const C = this.cell;
     const blades = this.blades, flowers = this.flowers, bugs = this.bugs;
-    let nb = 0, nf = 0, ng = 0;
-    const night = 1 - (day === undefined ? 1 : day);
+    let nb = 0, nf = 0, ng = 0, mask = 0;
+    const day = sky && sky.day !== undefined ? sky.day : 1;
+    const night = 1 - day;
+    // 光打在草皮上的水平方位。朝著光的那一面亮、背光的暗——
+    // 這是「不同面向」唯一需要的一個數字，日出到日落它會自己把亮面掃過去。
+    const L = sky && sky.dir ? Math.max(-1, Math.min(1, sky.dir[0])) : 0;
     const cap = Math.round(MAX_BLADES * this.density);
 
     level.forEachPlatform(x0 - 40, x1 + 40, (p) => {
@@ -80,26 +95,50 @@ export class Decor {
         if (nb >= cap) return;
         const bx = ix * TUFT_CELL;
         if (bx < p.x + 3 || bx > p.x + p.w - 3) continue;
-        if (C(ix, iz, 1) > 0.86 * this.density) continue;
 
-        // 一叢 2–4 根，每根自己的高度、寬度、傾斜、受風程度
-        const n = 3 + Math.floor(C(ix, iz, 2) * 3);
+        // 這一叢站哪一季。抽籤在「叢」這一層，不在「根」這一層：
+        // 一致性讀起來像物種，逐根抖色讀起來像雜訊。
+        const si = seasonPick(bx, C(ix, iz, 7));
+        const P = SEASON[si];
+        if (C(ix, iz, 1) > 0.93 * this.density * P.thick) continue;
+
+        const tilt = (C(ix, iz, 2) - 0.5) * 0.5;        // 整叢往哪邊倒
+        const n = 5 + Math.floor(C(ix, iz, 3) * 4);     // 一叢 5–8 片
+        const open = 0.66 + C(ix, iz, 4) * 0.48;        // 這叢張多開
         for (let k = 0; k < n && nb < cap; k++) {
-          const s = k * 6 + 12;
-          const x = bx + (C(ix, iz, s) - 0.5) * TUFT_CELL * 0.82;
+          const s = k * 7 + 16;
+          // u ∈ 0..1 是這根草在扇形上的位置，兩端是最外圈那兩片
+          const u = (k + 0.5) / n + (C(ix, iz, s) - 0.5) * 0.20;
+          const spread = (u - 0.5) * 2;                 // -1..1
+          const flat = spread < 0 ? -spread : spread;
+          // 根部散開的幅度只有葉尖的一小半，一叢草才像從一處長出來的；
+          // 但也不能太小，不然叢與叢之間會露出底下那條平的草皮
+          const x = bx + spread * TUFT_CELL * 0.40;
           if (x < p.x + 2 || x > p.x + p.w - 2) continue;
-          const hh = C(ix, iz, s + 1);
           const rim = edgeFade(x, x0, x1);
           if (rim <= 0.02) continue;
+
+          const d = C(ix, iz, s + 4);                   // 在草皮裡的前後排
+          const a = tilt + spread * FAN * 0.5 * open;
           const b = blades[nb] || (blades[nb] = {});
           b.x = x;
-          b.y = top;
-          b.h = BLADE_H * (0.55 + hh * 0.75) * rim;   // 縮小而非淡出
-          b.w = 1.1 + C(ix, iz, s + 2) * 1.3;
-          b.lean = (C(ix, iz, s + 3) - 0.5) * 0.7;
-          b.susc = 0.75 + C(ix, iz, s + 4) * 0.55;    // 受風程度
-          b.tone = hh;
-          b.dry = smoothstep(0.70, 1.0, C(ix, iz, s + 5)) * 0.6;
+          // 後排的根比地面高、前排的低到板子的前緣外：草皮因此有厚度，
+          // 而且板子頂端那條硬邊被最前排壓掉了
+          b.y = top + (d - 0.45) * MAT_DEPTH * P.thick;
+          b.a = a;
+          // 越往外越短：外圈是趴著往外鋪的那一層，不是站著的那一層
+          b.h = BLADE_H * (0.68 + C(ix, iz, s + 1) * 0.58) * (1 - flat * 0.32) * rim * P.thick;
+          b.w = (2.2 + C(ix, iz, s + 2) * 1.5) * (1 - flat * 0.18) * rim;  // 有寬度才有體積
+          b.curl = (0.30 + C(ix, iz, s + 3) * 0.70) * (spread < 0 ? -1 : 1) * (0.35 + flat);
+          b.susc = 0.75 + C(ix, iz, s + 5) * 0.55;      // 受風程度
+
+          // 階＝六成看前後排、四成看朝向對不對著光。
+          // 畫的順序就是這個階，所以它同時是排序鍵——不需要真的排序。
+          const key = 0.60 * d + 0.40 * (0.5 + 0.5 * Math.sin(a) * L);
+          let band = key <= 0 ? 0 : key >= 1 ? BANDS - 1 : (key * BANDS) | 0;
+          if (C(ix, iz, s + 6) > 0.93) band = BANDS;    // 枯掉的那幾根，畫在最上面
+          b.key = si * (BANDS + 1) + band;
+          mask |= 1 << b.key;
           nb++;
         }
       }
@@ -108,8 +147,10 @@ export class Decor {
       const cf = Math.floor(Math.max(p.x, x0) / CLUMP_CELL);
       const ct = Math.floor(Math.min(p.x + p.w, x1) / CLUMP_CELL);
       for (let ix = cf; ix <= ct && nf < MAX_FLOWERS; ix++) {
-        if (C(ix, iz, 91) > 0.42 * this.density) continue;
-        const cx = ix * CLUMP_CELL + (0.14 + C(ix, iz, 92) * 0.72) * CLUMP_CELL;
+        const cx0 = ix * CLUMP_CELL;
+        const fs = SEASON[seasonPick(cx0, C(ix, iz, 90))];
+        if (C(ix, iz, 91) > 0.42 * this.density * fs.bloom) continue;   // 冬天幾乎不開
+        const cx = cx0 + (0.14 + C(ix, iz, 92) * 0.72) * CLUMP_CELL;
         if (cx < p.x + 14 || cx > p.x + p.w - 14) continue;
         const R = 16 + C(ix, iz, 93) * 34;
         const tint = PETALS[Math.min(4, (C(ix, iz, 94) * 5) | 0)];   // 每叢一色
@@ -124,11 +165,12 @@ export class Decor {
           const f = flowers[nf] || (flowers[nf] = {});
           f.x = x;
           f.y = top;
-          f.h = BLADE_H * (1.15 + C(ix, iz, s + 3) * 0.8) * rim;
+          f.h = BLADE_H * (1.30 + C(ix, iz, s + 3) * 0.9) * rim;   // 要高過草皮才看得到
           f.r = (1.8 + C(ix, iz, s + 4) * 1.6) * rim;
           f.lean = (C(ix, iz, s + 5) - 0.5) * 0.5;
           f.susc = 0.8 + C(ix, iz, s + 6) * 0.5;
           f.tint = tint;
+          f.stem = fs.ramp[1];                            // 莖跟著這一季的草走
           nf++;
         }
 
@@ -159,6 +201,7 @@ export class Decor {
     this.nb = nb;
     this.nf = nf;
     this.ng = ng;
+    this.mask = mask;
     this.t = t;
     this.night = night;
   }
@@ -189,52 +232,48 @@ export class Decor {
 
   /**
    * 一次畫完。批次成少數幾個 path —— Canvas 2D 每個 fill 都是一次提交，
-   * 所以九百根草分成三個色階三次 fill，而不是九百次。
+   * 所以一千根草分成幾個色階幾次 fill，而不是一千次。
+   *
+   * 迴圈的順序（階在外、季節在內）是有意的：同一畫面通常只有一到兩季，
+   * 但**階一定要由小到大**——那就是由後排到前排、由暗到亮，
+   * 也就是這片草皮的畫家演算法。過渡帶上兩季的草交錯生長，
+   * 它們的前後排必須一起排序，不然會出現「秋草整片蓋在綠草前面」那種假分層。
    */
   draw(ctx, sky, wind) {
     const t = this.t;
     const W = wind === undefined ? 0.55 : wind;
 
-    // 草分三個色階，每階一次 fill
-    for (let band = 0; band < 3; band++) {
-      const f = band / 2;
-      let col = mix3(GRASS_ROOT, GRASS_TIP, 0.35 + f * 0.65);
-      ctx.fillStyle = css(shade(col, sky, 0.55, 1.35));
-      ctx.beginPath();
-      let drawn = false;
-      for (let i = 0; i < this.nb; i++) {
-        const b = this.blades[i];
-        if (((b.tone * 3) | 0) !== band) continue;
-        blade(ctx, b, t, W);
-        drawn = true;
+    for (let band = 0; band <= BANDS; band++) {
+      for (let si = 0; si < SEASON.length; si++) {
+        const key = si * (BANDS + 1) + band;
+        if (!(this.mask & (1 << key))) continue;   // 這一幀沒有這一組，連掃都不用掃
+        const P = SEASON[si];
+        const col = band === BANDS ? P.dry : P.ramp[band];
+        // ndl 跟著階走：最前排／朝光的那一階本來就收到最多直接光
+        ctx.fillStyle = css(shade(col, sky, 0.36 + band * 0.21, 1.15));
+        ctx.beginPath();
+        for (let i = 0; i < this.nb; i++) {
+          const b = this.blades[i];
+          if (b.key !== key) continue;
+          blade(ctx, b, t, W);
+        }
+        ctx.fill();
       }
-      if (drawn) ctx.fill();
     }
-
-    // 乾掉的那些（hash 決定，只有頂端變色）
-    ctx.fillStyle = css(shade(GRASS_DRY, sky, 0.55, 1.0));
-    ctx.beginPath();
-    let anyDry = false;
-    for (let i = 0; i < this.nb; i++) {
-      const b = this.blades[i];
-      if (b.dry < 0.32) continue;
-      blade(ctx, b, t, W, 0.55);
-      anyDry = true;
-    }
-    if (anyDry) ctx.fill();
 
     // 花莖
-    ctx.strokeStyle = css(shade(STEM, sky, 0.6, 2.2));
-    ctx.lineWidth = 1.1;
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
     for (let i = 0; i < this.nf; i++) {
       const f = this.flowers[i];
-      const sw = Math.sin(t * 1.6 + f.x * 0.02) * 0;
-      const bend = (gust(f.x, t) - 0.5) * 2 * W * f.susc * 7 + f.lean * 5 + sw;
+      const bend = (gust(f.x, t) - 0.5) * 2 * W * f.susc * 7 + f.lean * 5;
       ctx.moveTo(f.x, f.y);
       ctx.quadraticCurveTo(f.x + bend * 0.4, f.y - f.h * 0.6, f.x + bend, f.y - f.h);
     }
-    if (this.nf) ctx.stroke();
+    if (this.nf) {
+      ctx.strokeStyle = css(shade(this.flowers[0].stem, sky, 0.6, 1.5));
+      ctx.stroke();
+    }
 
     // 花瓣：同一叢同一色，所以按 tint 分組
     for (let pi = 0; pi < PETALS.length; pi++) {
@@ -338,19 +377,36 @@ function ellipse(ctx, cx, cy, rx, ry) {
   ctx.ellipse(cx, cy, Math.max(0.2, rx), Math.max(0.2, ry), 0, 0, 6.2832);
 }
 
-// 一根草：繞著根部旋轉，不是剪切。
-// 剪切過的草葉會愈倒愈長，而一整片同時變長的草是最明顯的假風。
-function blade(ctx, b, t, W, tipOnly) {
-  const bend = (gust(b.x, t) - 0.5) * 2 * W * b.susc;
-  const a = b.lean + bend * 0.85;
-  const h = tipOnly ? b.h * tipOnly : b.h;
-  const y0 = tipOnly ? b.y - b.h * (1 - tipOnly) : b.y;
-  const tipX = b.x + Math.sin(a) * h;
-  const tipY = y0 - Math.cos(a) * h;
-  const w = b.w * (tipOnly ? 0.7 : 1);
-  ctx.moveTo(b.x - w * 0.5, y0);
-  ctx.quadraticCurveTo(b.x + Math.sin(a) * h * 0.35 - w * 0.2, y0 - h * 0.55, tipX, tipY);
-  ctx.quadraticCurveTo(b.x + Math.sin(a) * h * 0.35 + w * 0.2, y0 - h * 0.55, b.x + w * 0.5, y0);
+/**
+ * 一片葉子：脊線加上沿法線的錐形偏移。
+ *
+ * 為什麼不是隨手兩條曲線：那樣「寬度」不是一個量，只是兩條線碰巧離多遠，
+ * 於是葉子傾斜時會自己變胖變瘦。這裡寬度是沿著法線量的，傾斜多少都一樣厚——
+ * 草有沒有體積就是這個量說了算。
+ *
+ * 兩側的控制點不對稱（0.86 對 1.25）：外側鼓、內側瘦，這就是卡通葉子的側影。
+ * 捲度 curl 把葉尖往外推，外圈的葉子因此是往外趴的一道弧，不是一根斜的針。
+ *
+ * 而且整片葉子繞根部旋轉，不是剪切——剪切過的草會愈倒愈長，
+ * 一整片同時變長的草是最明顯的假風。
+ */
+function blade(ctx, b, t, W) {
+  // 躺平的葉子受風小：|cos(a)| 就是它還剩多少「立著」的成分
+  const up = Math.cos(b.a);
+  const bend = (gust(b.x, t) - 0.5) * 2 * W * b.susc * (up < 0 ? -up : up);
+  const a = b.a + bend;
+  const h = b.h;
+  const ux = Math.sin(a), uy = -Math.cos(a);     // 沿著葉子往尖端
+  const vx = -uy, vy = ux;                       // 法線（a=0 時指向右）
+  const c = b.curl * h;
+  const mx = b.x + ux * h * 0.52 + vx * c * 0.20;
+  const my = b.y + uy * h * 0.52 + vy * c * 0.20;
+  const tx = b.x + ux * h + vx * c * 0.62;
+  const ty = b.y + uy * h + vy * c * 0.62;
+  const hw = b.w * 0.5;
+  ctx.moveTo(b.x - vx * hw, b.y - vy * hw);
+  ctx.quadraticCurveTo(mx - vx * hw * 0.86, my - vy * hw * 0.86, tx, ty);
+  ctx.quadraticCurveTo(mx + vx * hw * 1.25, my + vy * hw * 1.25, b.x + vx * hw, b.y + vy * hw);
   ctx.closePath();
 }
 
@@ -358,11 +414,6 @@ function blade(ctx, b, t, W, tipOnly) {
 function edgeFade(x, x0, x1) {
   const m = 46;
   return Math.min(1, Math.min((x - x0) / m, (x1 - x) / m));
-}
-
-function smoothstep(a, b, x) {
-  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
 }
 
 export { leafWidth };

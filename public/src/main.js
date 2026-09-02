@@ -10,6 +10,7 @@ import { WORLD } from './constants.js';
 import { skyAt, hourForSeed, DAY_SECONDS } from './gfx/daycycle.js';
 import { Decor } from './gfx/decor.js';
 import { Trees } from './gfx/tree.js';
+import { seasonBlend } from './gfx/season.js';
 import { CAT_SKINS } from './cat/cat.js';
 
 const $ = (id) => document.getElementById(id);
@@ -265,6 +266,9 @@ function frame(now) {
       background.draw({
         cam, view: { w: W / zoom, h: H / zoom },
         sky, seed, time, weather,
+        // 遠山跟腳下的草皮讀同一條季節線。查鏡頭中心那一點就夠了：
+        // 一整條山脈是一個面，過渡帶上它會隨鏡頭平順地換過去。
+        ridgeTint: seasonBlend(cam.x + W / (zoom * 2), 'ridge'),
       });
     } catch (e) { background = null; }
   } else if (background) {
