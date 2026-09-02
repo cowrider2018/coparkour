@@ -229,10 +229,10 @@ export class Renderer {
       ctx.globalAlpha = 1;
     }
 
-    // 地平線輝光，朝天體方位
-    const bodyX = W * (0.5 + sky.dir[0] * 0.43);
+    // 地平線輝光，朝太陽的方位——不是朝「現在天上那一顆」的方位
+    const glowX = W * (0.5 + sky.glowX * 0.43);
     if (B.warm > 0.02) {
-      const gg = ctx.createRadialGradient(bodyX, horizon, 0, bodyX, horizon, W * 0.5);
+      const gg = ctx.createRadialGradient(glowX, horizon, 0, glowX, horizon, W * 0.5);
       const c = css(LOW_GLOW, 0.9 * B.warm).slice(4, -1);
       gg.addColorStop(0, `rgba(${c},${0.8 * B.warm})`);
       gg.addColorStop(1, "rgba(0,0,0,0)");
@@ -240,15 +240,28 @@ export class Renderer {
       ctx.fillRect(0, 0, W, horizon + 2);
     }
 
-    // 日月
+    // 日月。盤面與光暈用 sky.body（天上那一顆自己的顏色），不用
+    // sky.tint——後者在交接時是兩盞燈的疊加，會畫出藍色的落日。
+    const bodyX = W * (0.5 + sky.dir[0] * 0.43);
     const bodyY = horizon - sky.dir[1] * horizon * 0.62;
+    // 夜裡多一層很寬的暈。夜空被調暗了，靠它把月亮附近的天空撐起來——
+    // 那是月光在空氣裡的散射，也是「月亮是一個光源」唯一看得見的證據。
+    const dark = 1 - sky.day;
+    if (dark > 0.02) {
+      const R = H * 0.30;
+      const bg = ctx.createRadialGradient(bodyX, bodyY, 0, bodyX, bodyY, R);
+      bg.addColorStop(0, `rgba(${css(sky.body, 0.9).slice(4, -1)},${0.22 * dark})`);
+      bg.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, horizon + 2);
+    }
     const halo = ctx.createRadialGradient(bodyX, bodyY, 0, bodyX, bodyY, 82);
-    halo.addColorStop(0, css(sky.tint, 1.5));
+    halo.addColorStop(0, css(sky.body, 1.5));
     halo.addColorStop(1, "rgba(0,0,0,0)");
     ctx.globalAlpha = 0.5; ctx.fillStyle = halo;
     ctx.beginPath(); ctx.arc(bodyX, bodyY, 82, 0, 6.2832); ctx.fill();
     ctx.globalAlpha = 1;
-    ctx.fillStyle = css(sky.tint, 4);
+    ctx.fillStyle = css(sky.body, 4);
     ctx.beginPath(); ctx.arc(bodyX, bodyY, sky.up ? 11 : 9, 0, 6.2832); ctx.fill();
 
     // 四層非諧波山脈。近的比較暗、霾比較少——那個 lerp 就是深度感的全部。
@@ -258,13 +271,23 @@ export class Renderer {
       [0.22, 18, 98, 83, 0.37, 0.68],
       [0.40, 22, 150, 165, 0.15, 0.54],
     ];
-    const hazeGate = Math.min(1, Math.max(0, (lum(B.hor) - 0.002) / 0.088));
+    const hazeGate = Math.min(1, Math.max(0, (lum(B.hor) - 0.002) / 0.053));
+    // 跟 shader 的 skyBounce 同一件事：一道遠山的斜坡只看得到半邊天，
+    // 而白天地面彼此反射的太陽光把這件事補回來大半，夜裡沒有那道反射。
+    // 沒有這一折，夜裡最近那層山會比它背後的天空還亮。
+    // veil 歸零：山脊與相機之間的空氣是下面那句 mix 往 B.hor 混的東西，
+    // 加兩次會把四層山抬平回同一片藍。
+    const bounce = {
+      ...sky,
+      ambient: sky.ambient.map((c) => c * (0.42 + 0.58 * sky.day)),
+      veil: [0, 0, 0],
+    };
     for (let i = 0; i < RIDGE.length; i++) {
       const [plx, sc, amp, off, haze, ab] = RIDGE[i];
       // 遠山也吃季節。用鏡頭中心一個點去查就夠了：整條山脈是一個面，
       // 玩家不會同時看到兩季的山，而過渡帶上它會隨著鏡頭平順地換過去。
       const rt = seasonBlend(cam.x + W / (zoom * 2), 'ridge');
-      const lit = shade([rt[0] * ab, rt[1] * ab, rt[2] * ab], sky, 0.10 + i * 0.09, 1.6);
+      const lit = shade([rt[0] * ab, rt[1] * ab, rt[2] * ab], bounce, 0.10 + i * 0.09, 1.6);
       ctx.fillStyle = css(mix3(lit, B.hor, haze * hazeGate));
       ctx.beginPath();
       ctx.moveTo(0, H);

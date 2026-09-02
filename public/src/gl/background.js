@@ -150,7 +150,10 @@ uniform vec2 uRes;        // drawing buffer 的實際像素數
 uniform vec2 uCam;        // 視野左上角的世界座標
 uniform vec2 uView;       // 視野涵蓋多少世界單位
 uniform vec3 uLightDir;   // sky.dir，y 是仰角的 sin
-uniform vec3 uTint;       // sky.tint，已經含強度
+uniform vec3 uTint;       // sky.tint，已經含強度。這是「那盞燈」
+uniform vec3 uBody;       // sky.body，天上那一顆自己的顏色
+uniform vec3 uSkyVeil;    // sky.skyVeil，月亮照亮的那層空氣
+uniform float uGlowX;     // sky.glowX，霞光該燒的那一側（太陽的方位）
 uniform vec3 uAmbient;    // sky.ambient
 uniform float uDay;       // sky.day
 uniform float uTime;
@@ -266,9 +269,12 @@ void main() {
   float low = 1.0 - smoothstep(-0.02, 0.62, uLightDir.y);
   float warm = low * smoothstep(0.0, 0.45, uDay);
 
-  vec3 top = mix(mix(NOON_TOP, DUSK_TOP, warm), NIGHT_TOP, 1.0 - uDay);
-  vec3 hor = mix(mix(NOON_HOR, DUSK_HOR, warm), NIGHT_HOR, 1.0 - uDay);
-  vec3 bot = mix(mix(NOON_BOT, DUSK_BOT, warm), NIGHT_BOT, 1.0 - uDay);
+  /* NIGHT_* 是「沒有月亮的夜」。月亮升起來天空自己會亮，而且亮得比
+     地面上的東西多——天空就是那層空氣本身，厚度是無限。山脊在夜裡
+     重新變回剪影靠的就是這個差額。 */
+  vec3 top = mix(mix(NOON_TOP, DUSK_TOP, warm), NIGHT_TOP, 1.0 - uDay) + uSkyVeil;
+  vec3 hor = mix(mix(NOON_HOR, DUSK_HOR, warm), NIGHT_HOR, 1.0 - uDay) + uSkyVeil;
+  vec3 bot = mix(mix(NOON_BOT, DUSK_BOT, warm), NIGHT_BOT, 1.0 - uDay) + uSkyVeil;
 
   float e = clamp(ely, -1.0, 1.0);
   vec3 air = mix(bot, hor, smoothstep(-0.30, 0.0, e));
@@ -284,7 +290,9 @@ void main() {
      ——那是調色，不是日出。日落之所以成立，是因為被燒的那半邊天跟
      已經轉紫的那半邊天有對比。 */
   if (warm > 0.002) {
-    float az = 1.0 - abs(vUv.x - bodyUv.x) * 1.6;
+    /* 用 uGlowX 而不是 bodyUv.x：天黑之後站在那個方位的是月亮，霞光
+       是太陽留下來的，兩者在 06:00 / 18:00 差整整 180°。 */
+    float az = 1.0 - abs(vUv.x - (0.5 + uGlowX * SKY_X)) * 1.6;
     float toward = smoothstep(-0.30, 1.0, az);
     float band = exp(-max(ely, 0.0) * 4.6) * smoothstep(-0.40, -0.02, ely);
     air += LOW_GLOW * warm * toward * toward * band;
@@ -294,20 +302,30 @@ void main() {
      這一段跟圓盤本身分開：光暈算「空氣」，遠山會透過霧吃到它；
      圓盤不算，因為山擋在太陽前面時你看到的是山，不是太陽。
 
-     夜裡光暈必須收緊，否則同樣的寬度攤在暗一百倍的天空上會把月亮
-     整個吞掉，留下一團看不出邊界的白霧。 */
-  air += uTint * mix(0.030, 0.14, uDay)
-       * exp(-dBody * mix(70.0, 16.0, uDay));
+     兩段。緊的那段是盤面外緣那一圈，夜裡要更緊也要更強：夜空被
+     uSkyVeil 抬起來之後，為全黑天空調的 0.030 攤上去只差一階。
+
+     寬的那段只有夜裡有，而且是這整套夜景的重點——它就是 uSkyVeil
+     省下來的那一半，只是改成以月亮為中心。均勻的抬升讓整片天一起亮，
+     月亮就沒有東西可以襯；同樣的光量收攏到月亮周圍，天遠的地方暗下去，
+     月亮附近亮起來，於是「那是一個光源」這件事才看得見。 */
+  air += uBody * mix(0.26, 0.14, uDay)
+       * exp(-dBody * mix(48.0, 16.0, uDay));
+  air += uBody * 0.070 * (1.0 - uDay) * exp(-dBody * 4.2);
 
   vec3 col = air;
 
   /* ── 圓盤 ───────────────────────────────────────────────────
-     不需要知道自己是太陽還是月亮：uTint 已經同時帶著那顆星的顏色跟
+     不需要知道自己是太陽還是月亮：uBody 已經同時帶著那顆星的顏色跟
      強度，所以同樣兩行畫得出正午的白太陽、黃昏的紅太陽、跟夜裡的
-     小月亮。乘 4.0 是為了讓正午的盤面在 tonemap 之後確實 clip 到白。*/
+     小月亮。乘 4.0 是為了讓正午的盤面在 tonemap 之後確實 clip 到白。
+
+     這裡讀 uBody 而不是 uTint：uTint 在交接的十幾分鐘裡是日月兩盞燈
+     的疊加，那對打光是對的（世界只有一份光），但天上就是只有一顆，
+     用疊加值畫盤面會得到一顆藍色的落日。*/
   float discR = 0.021;
   float aa = 1.0 / max(uRes.y, 1.0) * 1.5;
-  col += uTint * 4.0 * smoothstep(discR + aa, discR - aa, dBody);
+  col += uBody * 4.0 * smoothstep(discR + aa, discR - aa, dBody);
 
   /* ── 星星 ───────────────────────────────────────────────────
      不是一個 JS 陣列，是把螢幕空間切成格子再雜湊格子索引。差別在於
@@ -355,7 +373,10 @@ void main() {
      第一版把 R_HAZE 當成固定值，於是夜裡遠山被洗成幾乎全黑、近山反而
      是整個畫面最亮的東西——空氣透視整個反過來。讀 hor 而不是這個像素
      的 air，是因為霧的量是一整片天空的性質，不是某個像素的。 */
-  float hazeGain = smoothstep(0.002, 0.09, dot(hor, vec3(0.30, 0.59, 0.11)));
+  /* 上限 0.055 而不是 0.09：這道 gate 是為了不要把遠山霧進一片全黑的
+     天空，而月亮照亮的夜空已經不是全黑了。留 0.09 的話夜裡 gate 只有
+     一半，四層山會霧不開，重新塌成同一片藍。白天遠遠超過上限，不受影響。*/
+  float hazeGain = smoothstep(0.002, 0.055, dot(hor, vec3(0.30, 0.59, 0.11)));
 
   for (int i = 0; i < 4; i++) {
     float p = R_PLX[i];
@@ -401,6 +422,8 @@ void main() {
        沒有這一折，夜裡最近那層山會比它背後的天空還亮，整個下半畫面
        變成一片發光的navy，山看起來像光源而不是地面。 */
     float skyBounce = mix(0.42, 1.0, uDay);
+    /* 這裡不加 sky.veil。山脊與相機之間的那層空氣是下面 R_HAZE 往
+       天空混的那一步在算的，加兩次會把四層山一起抬回同一片藍。 */
     vec3 lit = alb * (uTint * facing * 2.4 + uAmbient * 1.5 * skyBounce) * R_GAIN;
 
     /* 往「空氣」靠過去，而不是往某個固定的灰色，所以黃昏時遠山會自己
@@ -682,6 +705,9 @@ export class Background {
     gl.uniform2f(u.uView, view.w, view.h);
     gl.uniform3f(u.uLightDir, sky.dir[0], sky.dir[1], sky.dir[2]);
     gl.uniform3f(u.uTint, sky.tint[0], sky.tint[1], sky.tint[2]);
+    gl.uniform3f(u.uBody, sky.body[0], sky.body[1], sky.body[2]);
+    gl.uniform3f(u.uSkyVeil, sky.skyVeil[0], sky.skyVeil[1], sky.skyVeil[2]);
+    gl.uniform1f(u.uGlowX, sky.glowX);
     gl.uniform3f(u.uAmbient, sky.ambient[0], sky.ambient[1], sky.ambient[2]);
     gl.uniform1f(u.uDay, sky.day);
     gl.uniform1f(u.uTime, time);
