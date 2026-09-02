@@ -24,6 +24,24 @@ const DRIP_SCALE = 0.62; // 舌頭的波長縮放，越小越碎（最短的一�
 const CAP_SEG = 14;      // 過渡帶上多寬抽一次籤（細一點才像密度，粗了像磚）
 const INK = 2;           // 卡通描邊有多粗
 
+// ── 木柱 ────────────────────────────────────────────────────
+// 「細而高」＝一根柱子。蹬牆井的細柱、閘門的高柱、路邊那道矮牆走的是三個
+// 生成器，但玩家看到的是同一件事：一根只能蹬、不能站的直立物。地形板子最窄
+// 也有 52 寬、26 高，跟柱子（≤30 寬）差得夠遠，所以形狀本身就足以分類——
+// 生成器不必知道自己會被畫成什麼，關卡那邊一行都不用改。
+const TRUNK_MAX_W = 46;   // 再寬就當地形，照土＋草皮畫
+const TRUNK_RATIO = 1.6;  // 高至少要是寬的這麼多倍
+
+// 樹幹的色階。跟 gfx/tree.js 的樹皮是同一家的顏色（那邊的 BARK_LIT 是
+// 這裡的 lit），所以柱子看起來像那些樹的同一種木頭，不是另一種材質。
+const WOOD = {
+  bark: [0.072, 0.052, 0.036],   // 中間調
+  lit:  [0.155, 0.120, 0.082],   // 朝光的那一側
+  dim:  [0.034, 0.025, 0.018],   // 背光的那一側——比中間調暗一階，不是黑的
+  dark: [0.016, 0.011, 0.008],   // 溝與描邊
+  ring: [0.180, 0.110, 0.055],   // 節的心
+};
+
 export class Camera {
   constructor() {
     this.x = 0; this.y = 0; this.init = false;
@@ -331,6 +349,9 @@ export class Renderer {
     const ctx = this.ctx;
     const C = this.cell;
     level.forEachPlatform(x0, x1, (p) => {
+      // 細而高的一律走木頭那一套：土跟草皮長不到牆面上，
+      // 一根裹著草皮的土柱看起來像地形被拔起來，不像可以蹬的東西。
+      if (p.w <= TRUNK_MAX_W && p.h >= p.w * TRUNK_RATIO) { this.trunk(p, sky); return; }
       const skirt = Math.max(p.h, 34);
       const iz = Math.round(p.y / 17);
 
@@ -398,6 +419,95 @@ export class Renderer {
       roundRect(ctx, xa, p.y, xb - xa, 3, 1.5);
       ctx.fill();
     });
+  }
+
+  /**
+   * 一根柱子：一截樹幹。由外往內四件事——描邊、樹皮的三個明暗階、
+   * 樹皮的溝與節、頂端的斷面。
+   *
+   * 一樣全部是實色階。圓柱的體積感來自「亮面／中間調／暗面」三塊，
+   * 跟土的兩階是同一個把戲，只是柱子要分左右而不是分上下。
+   *
+   * 亮面在哪一側跟著 sky.glowX 走，所以一天之內亮面會自己從一側掃到另一側，
+   * 夜裡則跟著月亮——glowX 已經幫忙翻過邊了，這裡直接讀就對。
+   */
+  trunk(p, sky) {
+    const ctx = this.ctx;
+    const C = this.cell;
+    const iz = Math.round(p.y / 17);
+    const xa = p.x + INK, xb = p.x + p.w - INK, w = xb - xa;
+    const ya = p.y + INK, yb = p.y + p.h - INK, h = yb - ya;
+    if (w < 2 || h < 2) return;
+
+    // 描邊跟土用同一招：先填一個大一圈的深色塊，不是 stroke()——
+    // 線寬要跟著動態視距一起縮，不然一縮小整根柱子就變成一條粗黑線。
+    ctx.fillStyle = css(shade(WOOD.dark, sky, 0.28, 1.2));
+    roundRect(ctx, p.x, p.y, p.w, p.h, 6);
+    ctx.fill();
+    ctx.fillStyle = css(shade(WOOD.bark, sky, 0.44, 1.35));
+    roundRect(ctx, xa, ya, w, h, 4);
+    ctx.fill();
+
+    // 兩側各壓一條：亮面貼著光那一側，暗面貼另一側，中間留一條中間調。
+    const lx = sky.glowX === undefined ? 0.4 : sky.glowX;
+    const lw = Math.max(1.5, w * 0.30), dw = Math.max(1.2, w * 0.24);
+    ctx.fillStyle = css(shade(WOOD.dim, sky, 0.34, 1.3));
+    roundRect(ctx, lx >= 0 ? xa : xb - dw, ya, dw, h, 3);
+    ctx.fill();
+    ctx.fillStyle = css(shade(WOOD.lit, sky, 0.70, 1.4));
+    roundRect(ctx, lx >= 0 ? xb - lw : xa, ya, lw, h, 3);
+    ctx.fill();
+
+    // ── 樹皮的溝 ──
+    // 一道溝不是一路到底的直線，是一截一截斷開的，長度與間斷都由雜湊給——
+    // 通到底的直線會讓柱子看起來像鐵皮壓出來的。橫向的抖動讀 field()，
+    // 跟草舌是同一條非諧波正弦，所以柱子疊多高都不會看到同一段紋路重複。
+    // 全部收進一個 path 一次 fill：一根柱子最多四道溝，但只有一次 fill。
+    const ng = Math.max(2, Math.min(5, Math.round(w / 6)));
+    const gw = Math.max(0.9, w * 0.065);
+    const amp = Math.min(1.5, w * 0.075);
+    const lo = xa + gw / 2 + amp, hi = xb - gw / 2 - amp;
+    ctx.fillStyle = css(shade(WOOD.dark, sky, 0.30, 1.2));
+    ctx.beginPath();
+    for (let k = 0; k < ng; k++) {
+      const t = (k + 0.5 + (C(k, iz, 41) - 0.5) * 0.5) / ng;
+      const cx = Math.min(hi, Math.max(lo, xa + t * w));
+      let y = ya + 2 + C(k, iz, 42) * 70;
+      for (let s = 0; s < 40 && y < yb - 4; s++) {
+        const y1 = Math.min(yb - 3, y + 22 + C(k, iz + s, 43) * 54);
+        if (y1 - y > 9) furrow(ctx, cx, y, y1, gw, amp, k * 53.7);
+        y = y1 + 9 + C(k, iz + s, 44) * 26;
+      }
+    }
+    ctx.fill();
+
+    // ── 節 ──
+    // 側枝斷掉留下的疤：一圈深色套一顆亮心。兩個實色就讀得出來，
+    // 而且它是唯一一個「橫的」特徵——柱子上其他每一筆都是直的，
+    // 少了它整根會像一段有紋路的柱體，不像一段木頭。
+    const kn = Math.floor(h / 130);
+    const kr = Math.min(w * 0.26, 4.2);
+    if (kr >= 1.6) {
+      for (let k = 0; k < kn; k++) {
+        if (C(k, iz, 45) > 0.42) continue;
+        const ky = ya + ((k + 0.2 + C(k, iz, 46) * 0.6) / kn) * h;
+        ctx.save();
+        ctx.translate(xa + w * (0.3 + C(k, iz, 47) * 0.4), ky);
+        ctx.scale(1, 0.62 + C(k, iz, 48) * 0.3);
+        ctx.fillStyle = css(shade(WOOD.dark, sky, 0.30, 1.2));
+        ctx.beginPath(); ctx.arc(0, 0, kr, 0, 6.2832); ctx.fill();
+        ctx.fillStyle = css(shade(WOOD.ring, sky, 0.55, 1.3));
+        ctx.beginPath(); ctx.arc(0, 0, kr * 0.5, 0, 6.2832); ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // 頂緣的受光邊。跟草皮那一條是同一個角色，也是遊戲性的東西：
+    // 它就是「這裡踩得到／抓得到」的那條線，所以永遠貼齊 p.y。
+    // 只有這一條線，沒有斷面——鏡頭是水平的，柱子的頂面看不到。
+    ctx.fillStyle = css(shade(WOOD.lit, sky, 0.95, 1.35));
+    roundRect(ctx, xa, p.y, w, 2.5, 1.2);
+    ctx.fill();
   }
 
   spikes(level, x0, x1, sky) {
@@ -500,6 +610,22 @@ function capSeg(ctx, xa, xb, y, sa, ca, sb, cb) {
   for (let x = br - 3; x > bl; x -= 3) ctx.lineTo(x, yb + dripAt(x));
   ctx.lineTo(bl, yb + dripAt(bl));
   ctx.quadraticCurveTo(xa + ca, ym, xa, y);
+  ctx.closePath();
+}
+
+/**
+ * 樹皮上的一道溝：一條沿著 y 走的窄帶，左右緣由 field() 抖出來。
+ * 抖動只讀 y，所以同一根柱子上下相接的兩截溝天生對得起來；
+ * 相位由呼叫端給，不同的溝才不會抖成一模一樣的兩條。
+ */
+function furrow(ctx, cx, y0, y1, w, amp, ph) {
+  const hw = w / 2;
+  ctx.moveTo(cx + field(y0 + ph, 0.55, null) * amp - hw, y0);
+  for (let y = y0 + 6; y < y1; y += 6) ctx.lineTo(cx + field(y + ph, 0.55, null) * amp - hw, y);
+  ctx.lineTo(cx + field(y1 + ph, 0.55, null) * amp - hw, y1);
+  ctx.lineTo(cx + field(y1 + ph, 0.55, null) * amp + hw, y1);
+  for (let y = y1 - 6; y > y0; y -= 6) ctx.lineTo(cx + field(y + ph, 0.55, null) * amp + hw, y);
+  ctx.lineTo(cx + field(y0 + ph, 0.55, null) * amp + hw, y0);
   ctx.closePath();
 }
 
