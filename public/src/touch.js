@@ -39,15 +39,15 @@ export function waveAt(dAbs, t) {
   return Math.sin(WAVE_K * dAbs + WAVE_W * t);
 }
 
-const MINT = [94, 242, 192];
+const LEAF = [155, 217, 78];
 
-// 白 → 薄荷綠。張力越大越綠，快跳了一看就知道。
+// 白 → 葉綠。張力越大越綠，快跳了一看就知道。
 // 手把（pad.js）共用這條色階——兩種操作方式要看起來是同一個世界。
 export function tint(t, a) {
   const k = t * t;
-  const r = Math.round(255 + (MINT[0] - 255) * k);
-  const g = Math.round(255 + (MINT[1] - 255) * k);
-  const b = Math.round(255 + (MINT[2] - 255) * k);
+  const r = Math.round(255 + (LEAF[0] - 255) * k);
+  const g = Math.round(255 + (LEAF[1] - 255) * k);
+  const b = Math.round(255 + (LEAF[2] - 255) * k);
   return `rgba(${r},${g},${b},${a})`;
 }
 
@@ -476,9 +476,9 @@ export class WaterBall {
       const g = ctx.createRadialGradient(-rr * 0.3, -rr * 0.3, 0, 0, 0, rr);
       g.addColorStop(0, `rgba(255,255,255,${0.72 * fade})`);
       g.addColorStop(0.7, `rgba(255,255,255,${0.34 * fade})`);
-      g.addColorStop(1, `rgba(210,255,240,${0.5 * fade})`);
+      g.addColorStop(1, `rgba(236,250,196,${0.5 * fade})`);
       ctx.fillStyle = g;
-      ctx.shadowColor = `rgba(160,255,225,${0.5 * fade})`;
+      ctx.shadowColor = `rgba(196,240,140,${0.5 * fade})`;
       ctx.shadowBlur = 6;
       ctx.beginPath();
       ctx.arc(0, 0, rr, 0, TAU);
@@ -529,7 +529,7 @@ export class WaterBall {
     const a = Math.min(1, this.hintT / 1.5) * 0.75;
     ctx.font = '500 13px system-ui, -apple-system, "Noto Sans TC", sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillStyle = `rgba(232,240,255,${a})`;
+    ctx.fillStyle = `rgba(247,239,221,${a})`;
     ctx.fillText('按住畫面左右拖曳移動 · 手指甩出水球即跳躍', W / 2, H - 34);
   }
 }

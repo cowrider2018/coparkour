@@ -393,10 +393,10 @@ export class Pad {
 
     // 軌道
     const track = capsule(cx, cy, w, h);
-    ctx.fillStyle = 'rgba(6,11,28,0.46)';
+    ctx.fillStyle = 'rgba(24,18,11,0.46)';
     ctx.fill(track);
     ctx.lineWidth = 1.2;
-    ctx.strokeStyle = 'rgba(94,242,192,' + (0.14 + 0.16 * liq).toFixed(3) + ')';
+    ctx.strokeStyle = 'rgba(155,217,78,' + (0.14 + 0.16 * liq).toFixed(3) + ')';
     ctx.stroke(track);
 
     // 中線刻度：只在靜止時看得到，一推就讓位給水
@@ -404,7 +404,7 @@ export class Pad {
     ctx.globalAlpha *= 0.5 - 0.4 * liq;
     ctx.setLineDash([2, 5]);
     ctx.lineWidth = 1;
-    ctx.strokeStyle = 'rgba(143,183,255,0.5)';
+    ctx.strokeStyle = 'rgba(226,196,142,0.5)';
     ctx.beginPath();
     ctx.moveTo(cx - travel, cy);
     ctx.lineTo(cx + travel, cy);
@@ -417,7 +417,7 @@ export class Pad {
       const on = Math.max(0, dir * a);
       ctx.save();
       ctx.globalAlpha *= 0.34 * (1 - on * 0.92);
-      ctx.strokeStyle = 'rgba(143,183,255,0.75)';
+      ctx.strokeStyle = 'rgba(226,196,142,0.75)';
       ctx.lineWidth = 1.8;
       const ex = cx + dir * (w / 2 - h * 0.28), q = h * 0.15;
       ctx.beginPath();
@@ -448,14 +448,14 @@ export class Pad {
       ctx.globalAlpha *= 1 - liq;
       ctx.beginPath();
       ctx.arc(kx, cy, kr, 0, TAU);
-      ctx.fillStyle = 'rgba(232,240,255,0.07)';
+      ctx.fillStyle = 'rgba(247,239,221,0.07)';
       ctx.fill();
       ctx.lineWidth = 1.8;
-      ctx.strokeStyle = 'rgba(232,240,255,0.5)';
+      ctx.strokeStyle = 'rgba(247,239,221,0.5)';
       ctx.stroke();
       ctx.beginPath();
       ctx.arc(kx, cy, 2.2, 0, TAU);
-      ctx.fillStyle = 'rgba(232,240,255,0.75)';
+      ctx.fillStyle = 'rgba(247,239,221,0.75)';
       ctx.fill();
       ctx.restore();
     }
@@ -479,7 +479,7 @@ export class Pad {
 
     // 外環：按著時整圈亮起來——「還按著」就是「還在長高」，這件事要看得到
     ctx.lineWidth = 1.4;
-    ctx.strokeStyle = 'rgba(94,242,192,' + (0.16 + 0.5 * liq).toFixed(3) + ')';
+    ctx.strokeStyle = 'rgba(155,217,78,' + (0.16 + 0.5 * liq).toFixed(3) + ')';
     ctx.beginPath();
     ctx.arc(cx, cy, r + 6, 0, TAU);
     ctx.stroke();
@@ -489,10 +489,10 @@ export class Pad {
       ctx.globalAlpha *= 1 - liq;
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, TAU);
-      ctx.fillStyle = 'rgba(6,11,28,0.46)';
+      ctx.fillStyle = 'rgba(24,18,11,0.46)';
       ctx.fill();
       ctx.lineWidth = 1.6;
-      ctx.strokeStyle = 'rgba(232,240,255,0.42)';
+      ctx.strokeStyle = 'rgba(247,239,221,0.42)';
       ctx.stroke();
       ctx.restore();
     }
@@ -509,7 +509,7 @@ export class Pad {
     // 向上的箭頭：這顆鍵在說什麼，一眼就懂
     ctx.save();
     ctx.globalAlpha *= 0.55 + 0.45 * liq;
-    ctx.strokeStyle = liq > 0.02 ? tint(0.4 + 0.6 * liq, 0.95) : 'rgba(232,240,255,0.62)';
+    ctx.strokeStyle = liq > 0.02 ? tint(0.4 + 0.6 * liq, 0.95) : 'rgba(247,239,221,0.62)';
     ctx.lineWidth = Math.max(2, r * 0.09);
     const q = r * 0.30, y = cy + q * 0.45 - press * r * 0.06;
     ctx.beginPath();
@@ -535,7 +535,7 @@ export class Pad {
       const g = ctx.createRadialGradient(x - rr * 0.3, y - rr * 0.3, 0, x, y, rr);
       g.addColorStop(0, 'rgba(255,255,255,' + (0.72 * fade).toFixed(3) + ')');
       g.addColorStop(0.7, 'rgba(255,255,255,' + (0.34 * fade).toFixed(3) + ')');
-      g.addColorStop(1, 'rgba(210,255,240,' + (0.5 * fade).toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(236,250,196,' + (0.5 * fade).toFixed(3) + ')');
       ctx.fillStyle = g;
       ctx.beginPath();
       ctx.arc(x, y, rr, 0, TAU);

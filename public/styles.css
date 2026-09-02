@@ -17,14 +17,38 @@
   --ease-spring: cubic-bezier(.22, 1.2, .36, 1);
   --ease-io: cubic-bezier(.65, 0, .35, 1);
 
-  --bg: #0d1330;
-  --ink: #e8f0ff;
-  --muted: #93a4cc;
-  --accent: #5ef2c0;
-  --accent2: #8fb7ff;
-  --danger: #ff5d73;
-  --panel: rgba(12, 18, 42, 0.72);
-  --line: rgba(143, 183, 255, 0.18);
+  --bg: #1e1810;
+  --ink: #f7efdd;
+  --muted: #b5a184;
+  --accent: #9bd94e;
+  --accent2: #f2c14e;
+  --danger: #ef5b3f;
+
+  /* 連線狀態的三個底色。房名藥丸常駐在畫面上，底色就是連線狀態本身，
+     所以綠／黃／紅要鋪滿整塊——一眼就看到，不用讀字。
+     紅比 --danger 深一階，白字才壓得住（--danger 是拿來當字用的）。 */
+  --warn: #ffd36e;
+  --bad: #c93a1d;
+  --panel: rgba(38, 29, 19, 0.74);
+  --line: rgba(226, 196, 142, 0.20);
+  --line-strong: #7d684c;
+
+  /* 純色色塊用的實心色。主選單完全不透明、不發光，所以那裡一律用這幾個，
+     不用上面那些帶 alpha 的——疊在草地上才不會透出綠色。 */
+  --card: #2b2218;        /* 卡片底 */
+  --field: #191309;       /* 輸入框、開關軌道這類凹陷 */
+  --btn: #3a2f21;         /* 按鈕、藥丸的實心底 */
+  --btn-hi: #4b3d2b;      /* 同上，hover */
+  --sel: #4a3a15;         /* 選中：暗琥珀色塊 */
+  --edge: #4a3b29;        /* 實心描邊 */
+  --accent-shade: #5c9628; /* 「開始跑」的唇邊，比 accent 暗一階 */
+
+  /* 綠只留給「開始跑」和連線正常那一個字。棕色底上再鋪綠色塊就糊成一片，
+     所以選中、開啟、聚焦這些狀態一律用琥珀——它跟木頭同一個色系，
+     亮起來很清楚但不跟底色打架。 */
+  --accent2-shade: #b8862a; /* 琥珀色塊的唇邊 */
+  --accent2-deep: #a87722;  /* 開關填滿用的深琥珀，襯得住奶油白旋鈕 */
+  --on-ink: #33240a;        /* 壓在琥珀色塊上的深色字 */
 }
 
 * { box-sizing: border-box; }
@@ -88,7 +112,7 @@ html, body {
   line-height: 1.15;
 }
 
-.stat.big b { font-size: 30px; color: var(--accent); }
+.stat.big b { font-size: 30px; color: var(--accent2); }
 
 .stat small { color: var(--muted); font-size: 10px; letter-spacing: .04em; }
 
@@ -124,7 +148,7 @@ html, body {
   padding: 3px 8px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, .04);
+  background: var(--btn);
   color: var(--muted);
 }
 
@@ -144,9 +168,9 @@ html, body {
 /* 房名是常駐那一顆，底色就是連線狀態，所以要撐得住長房名 */
 .pill.room { flex: 1 1 auto; min-width: 46px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pill.lag { flex: none; font-variant-numeric: tabular-nums; }
-.pill.ok { color: #0b1a14; background: var(--accent); border-color: transparent; }
-.pill.warn { color: #2a2000; background: #ffd36e; border-color: transparent; }
-.pill.bad { color: #fff; background: var(--danger); border-color: transparent; }
+.pill.ok { color: #1d2b09; background: var(--accent); border-color: transparent; }
+.pill.warn { color: var(--on-ink); background: var(--warn); border-color: transparent; }
+.pill.bad { color: #fff; background: var(--bad); border-color: transparent; }
 
 .list { list-style: none; margin: 0; padding: 0; font-size: 12px; }
 
@@ -158,14 +182,14 @@ html, body {
   border-radius: 7px;
 }
 
-.list li.me { background: rgba(94, 242, 192, .13); color: var(--accent); font-weight: 600; }
+.list li.me { background: var(--sel); color: var(--accent2); font-weight: 600; }
 .list li.empty { color: var(--muted); font-size: 11px; }
 .list li.out { opacity: .45; }
 .list li.out .nm::after { content: ' ☠'; font-size: 10px; }
 .list .rank { width: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .list .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list .ds { font-variant-numeric: tabular-nums; color: var(--accent2); }
-.list li.me .ds { color: var(--accent); }
+.list li.me .ds { color: var(--accent2); }
 
 .ghostbtn {
   flex: 1;
@@ -175,12 +199,12 @@ html, body {
   padding: 6px 8px;
   border-radius: 9px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, .05);
+  background: var(--btn);
   color: var(--ink);
   cursor: pointer;
 }
 
-.ghostbtn:hover:not(:disabled) { background: rgba(255, 255, 255, .12); }
+.ghostbtn:hover:not(:disabled) { background: var(--btn-hi); }
 .ghostbtn:disabled { opacity: .38; cursor: not-allowed; }
 
 /* ── 「更多」：房名／排名／延遲以外的東西都住在這裡 ──────
@@ -201,11 +225,11 @@ html, body {
   min-height: 0;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  scrollbar-color: rgba(143, 183, 255, .28) transparent;
+  scrollbar-color: rgba(226, 196, 142, .28) transparent;
 }
 
 .hudscroll::-webkit-scrollbar { width: 4px; }
-.hudscroll::-webkit-scrollbar-thumb { background: rgba(143, 183, 255, .28); border-radius: 2px; }
+.hudscroll::-webkit-scrollbar-thumb { background: rgba(226, 196, 142, .28); border-radius: 2px; }
 .hudscroll::-webkit-scrollbar-track { background: transparent; }
 
 /* 收起時箭頭朝下（可展開），展開就翻過來 */
@@ -249,8 +273,7 @@ html, body {
   align-content: safe center;
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: rgba(6, 10, 26, .74);
-  backdrop-filter: blur(6px);
+  background: rgba(24, 18, 11, .78);
   padding: 20px;
 }
 
@@ -259,12 +282,11 @@ html, body {
 
 .card {
   width: min(440px, 100%);
-  background: linear-gradient(180deg, rgba(24, 33, 72, .96), rgba(14, 20, 48, .96));
-  border: 1px solid var(--line);
+  background: var(--card);
+  border: 1px solid var(--edge);
   border-radius: 20px;
   padding: 26px;
   text-align: center;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, .5);
 }
 
 .card.small { width: min(360px, 100%); }
@@ -273,10 +295,7 @@ html, body {
   margin: 0 0 6px;
   font-size: 34px;
   letter-spacing: .04em;
-  background: linear-gradient(92deg, var(--accent), var(--accent2));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--ink);
 }
 
 .card h2 { margin: 0 0 14px; font-size: 20px; color: var(--danger); }
@@ -290,13 +309,13 @@ input {
   font-size: 15px;
   padding: 11px 13px;
   border-radius: 11px;
-  border: 1px solid var(--line);
-  background: rgba(0, 0, 0, .3);
+  border: 1px solid var(--edge);
+  background: var(--field);
   color: var(--ink);
   margin-bottom: 16px;
 }
 
-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+input:focus { outline: 2px solid var(--accent2); outline-offset: 1px; }
 
 .primary {
   width: 100%;
@@ -306,17 +325,22 @@ input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
   padding: 13px;
   border: 0;
   border-radius: 12px;
-  background: linear-gradient(92deg, var(--accent), #7fe9ff);
-  color: #06231c;
+  background: var(--accent);
+  color: #22300c;
   cursor: pointer;
+  /* 厚度：底下墊一條深一階的同色唇邊，零模糊、純色。
+     按下去唇邊收掉、色塊往下沉 4px，手感跟看起來是同一件事。 */
+  box-shadow: 0 4px 0 var(--accent-shade);
+  transition: transform 90ms var(--ease-out), box-shadow 90ms var(--ease-out);
 }
 
 .primary:hover { filter: brightness(1.08); }
+.primary:active { transform: translateY(4px); box-shadow: 0 0 0 var(--accent-shade); }
 .kbdhint { opacity: .55; font-size: 12px; font-weight: 500; }
 
 .keys { margin-top: 18px; font-size: 12px; color: var(--muted); line-height: 2; }
 .keys .touchhint { display: none; }
-.keys .touchhint b { color: var(--accent); }
+.keys .touchhint b { color: var(--accent2); }
 
 @media (hover: none) and (pointer: coarse) {
   .keys .touchhint { display: block; }
@@ -326,10 +350,10 @@ kbd {
   display: inline-block;
   padding: 1px 6px;
   margin: 0 1px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--edge);
   border-bottom-width: 2px;
   border-radius: 5px;
-  background: rgba(255, 255, 255, .06);
+  background: var(--btn);
   color: var(--ink);
   font: 600 11px ui-monospace, monospace;
 }
@@ -338,19 +362,19 @@ kbd {
   margin: 18px 0 0;
   padding: 11px;
   border-radius: 10px;
-  background: rgba(255, 211, 110, .12);
-  border: 1px solid rgba(255, 211, 110, .3);
-  color: #ffd36e;
+  background: #3d3117;
+  border: 1px solid #6d5726;
+  color: var(--accent2);
   font-size: 11.5px;
   line-height: 1.7;
   text-align: left;
 }
 
-code { font: 600 11px ui-monospace, monospace; background: rgba(0, 0, 0, .35); padding: 1px 5px; border-radius: 4px; }
+code { font: 600 11px ui-monospace, monospace; background: var(--field); padding: 1px 5px; border-radius: 4px; }
 
 .result { display: flex; gap: 8px; margin-bottom: 18px; }
-.result > div { flex: 1; background: rgba(0, 0, 0, .28); border-radius: 11px; padding: 10px 4px; }
-.result b { display: block; font-size: 20px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.result > div { flex: 1; background: var(--field); border-radius: 11px; padding: 10px 4px; }
+.result b { display: block; font-size: 20px; color: var(--accent2); font-variant-numeric: tabular-nums; }
 .result small { font-size: 10px; color: var(--muted); }
 
 /* ── 窄螢幕：把 HUD 縮到不會跟排行榜打架 ─────────────── */
@@ -394,8 +418,8 @@ code { font: 600 11px ui-monospace, monospace; background: rgba(0, 0, 0, .35); p
   font-size: 13px;
   padding: 9px 6px;
   border-radius: 11px;
-  border: 1px solid var(--line);
-  background: rgba(0, 0, 0, .3);
+  border: 1px solid var(--edge);
+  background: var(--field);
   color: var(--muted);
   cursor: pointer;
 }
@@ -403,15 +427,18 @@ code { font: 600 11px ui-monospace, monospace; background: rgba(0, 0, 0, .35); p
 .skin:hover { border-color: var(--line-strong); color: var(--ink); }
 
 .skin[aria-pressed="true"] {
-  border-color: var(--accent);
-  background: rgba(94, 242, 192, .12);
-  color: var(--accent);
+  border-color: transparent;
+  background: var(--accent2);
+  color: var(--on-ink);
+  font-weight: 600;
+  box-shadow: 0 3px 0 var(--accent2-shade);
+  transform: translateY(-1px);
 }
 
 .chip {
   width: 15px; height: 15px;
   border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, .45);
+  border: 1px solid #241c12;
   flex: none;
 }
 
@@ -420,7 +447,7 @@ code { font: 600 11px ui-monospace, monospace; background: rgba(0, 0, 0, .35); p
 .chip-tabby   { background: linear-gradient(135deg, #9a7346 50%, #d9c39e 50%); }
 .chip-calico  { background: linear-gradient(120deg, #2e2723 33%, #f2ece2 33% 66%, #e8862f 66%); }
 
-.catnote { margin: -8px 0 14px; font-size: 11px; color: #ffd36e; text-align: left; }
+.catnote { margin: -8px 0 14px; font-size: 11px; color: var(--accent2); text-align: left; }
 
 /* ── 操作列：手把模式 ────────────────────────────────────
    橫向是左右兩根直欄，直向是上下兩條橫帶。上儀表板、下操作元件，
@@ -438,46 +465,23 @@ code { font: 600 11px ui-monospace, monospace; background: rgba(0, 0, 0, .35); p
 
 body.pad .rail { opacity: 1; }
 
-/* 內緣不用實線切——兩端淡出的髮絲線，中央才像「被讓出來」而不是「被框起來」 */
-/* 背景：襯到模糊。不然平台上緣那條霓虹橫穿過去時會從操作列底下透出來，
-   把儀器畫成一團亂。模糊層實作在 ::before 並自帶遮罩，背景／模糊／淡出
-   因此是同一件事；髮絲線放 ::after，不會被遮罩一起吃掉。 */
+/* 底板是一整塊單色，四個方向同一塊——不淡出、不分方向漸變，
+   所以四條規則收成 ::before 一條。內緣用整條同色髮絲線切（::after），
+   邊界是硬的：操作列就是一塊色塊，中間那片才是遊戲。
+   底下仍然襯模糊，不然地形的亮邊會從色塊底下透上來把儀器攪亂。 */
 .rail::before {
   content: "";
   position: absolute;
   inset: 0;
+  background: rgba(24, 18, 11, .86);
   backdrop-filter: blur(10px) saturate(.82);
   -webkit-backdrop-filter: blur(10px) saturate(.82);
-}
-
-.pad-land #railA::before {
-  background: linear-gradient(90deg, rgba(7, 11, 28, .88), rgba(7, 11, 28, .70));
-  -webkit-mask-image: linear-gradient(90deg, #000 0 58%, transparent 100%);
-  mask-image: linear-gradient(90deg, #000 0 58%, transparent 100%);
-}
-
-.pad-land #railB::before {
-  background: linear-gradient(270deg, rgba(7, 11, 28, .88), rgba(7, 11, 28, .70));
-  -webkit-mask-image: linear-gradient(270deg, #000 0 58%, transparent 100%);
-  mask-image: linear-gradient(270deg, #000 0 58%, transparent 100%);
-}
-
-.pad-port #railA::before {
-  background: linear-gradient(180deg, rgba(7, 11, 28, .88), rgba(7, 11, 28, .70));
-  -webkit-mask-image: linear-gradient(180deg, #000 0 64%, transparent 100%);
-  mask-image: linear-gradient(180deg, #000 0 64%, transparent 100%);
-}
-
-.pad-port #railB::before {
-  background: linear-gradient(0deg, rgba(7, 11, 28, .88), rgba(7, 11, 28, .70));
-  -webkit-mask-image: linear-gradient(0deg, #000 0 64%, transparent 100%);
-  mask-image: linear-gradient(0deg, #000 0 64%, transparent 100%);
 }
 
 .rail::after {
   content: "";
   position: absolute;
-  background: linear-gradient(180deg, transparent, rgba(94, 242, 192, .22) 20%, rgba(94, 242, 192, .22) 80%, transparent);
+  background: rgba(226, 196, 142, .22);
 }
 
 .pad-land .rail { top: 0; bottom: 0; }
@@ -502,7 +506,6 @@ body.pad .rail { opacity: 1; }
 
 .pad-port .rail::after {
   left: 7%; right: 7%; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(94, 242, 192, .22) 20%, rgba(94, 242, 192, .22) 80%, transparent);
 }
 
 .pad-port #railA {
@@ -649,7 +652,7 @@ body.pad.pad-port .hud-side.more-open {
   content: "";
   flex: 1;
   height: 1px;
-  background: var(--line);
+  background: var(--edge);
   transition: background 220ms var(--ease-out);
 }
 
@@ -658,11 +661,11 @@ body.pad.pad-port .hud-side.more-open {
 
 .setttl { flex: none; }
 .sethead:hover { color: var(--ink); }
-.sethead:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+.sethead:focus-visible { outline: 2px solid var(--accent2); outline-offset: 3px; border-radius: 6px; }
 
-.settings.open .sethead { color: var(--accent); }
+.settings.open .sethead { color: var(--accent2); }
 .settings.open .sethead::before,
-.settings.open .sethead::after { background: rgba(94, 242, 192, .3); }
+.settings.open .sethead::after { background: var(--accent2-deep); }
 
 /* 三角形：收起朝下（可展開），展開就翻過來 */
 .chev {
@@ -702,11 +705,11 @@ body.pad.pad-port .hud-side.more-open {
   gap: 11px;
   align-content: start;
   scrollbar-width: thin;
-  scrollbar-color: rgba(143, 183, 255, .28) transparent;
+  scrollbar-color: #6b5a41 transparent;
 }
 
 .setlist::-webkit-scrollbar { width: 5px; }
-.setlist::-webkit-scrollbar-thumb { background: rgba(143, 183, 255, .28); border-radius: 3px; }
+.setlist::-webkit-scrollbar-thumb { background: #6b5a41; border-radius: 3px; }
 .setlist::-webkit-scrollbar-track { background: transparent; }
 
 .setrow {
@@ -737,16 +740,16 @@ body.pad.pad-port .hud-side.more-open {
   position: absolute;
   inset: 0;
   border-radius: 999px;
-  border: 1px solid var(--line);
-  background: rgba(0, 0, 0, .34);
+  border: 1px solid var(--edge);
+  background: var(--field);
   overflow: hidden;
-  transition: border-color 380ms var(--ease-out), box-shadow 380ms var(--ease-out);
+  transition: border-color 380ms var(--ease-out);
 }
 
 .sw-fill {
   position: absolute;
   inset: 0;
-  background: linear-gradient(92deg, rgba(94, 242, 192, .26), rgba(94, 242, 192, .52));
+  background: var(--accent2-deep);
   clip-path: inset(0 100% 0 0);
   transition: clip-path 420ms var(--ease-out);
 }
@@ -765,14 +768,13 @@ body.pad.pad-port .hud-side.more-open {
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  background: radial-gradient(circle at 34% 30%, #ffffff, #d9efe7 58%, #a3dcca);
-  box-shadow: 0 1px 5px rgba(0, 0, 0, .45);
+  background: var(--ink);
 }
 
 .sw[aria-checked="true"] .sw-fill { clip-path: inset(0 0 0 0); }
 .sw[aria-checked="true"] .sw-knob { transform: translateX(24px); }
-.sw[aria-checked="true"] .sw-track { border-color: rgba(94, 242, 192, .55); box-shadow: 0 0 16px rgba(94, 242, 192, .22); }
-.sw:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 999px; }
+.sw[aria-checked="true"] .sw-track { border-color: var(--accent2); }
+.sw:focus-visible { outline: 2px solid var(--accent2); outline-offset: 3px; border-radius: 999px; }
 
 @keyframes sw-squash {
   0%   { transform: scale(1, 1); }
@@ -789,9 +791,9 @@ body.pad.pad-port .hud-side.more-open {
   flex: none;
   display: flex;
   padding: 3px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--edge);
   border-radius: 999px;
-  background: rgba(0, 0, 0, .34);
+  background: var(--field);
 }
 
 .seg-ind {
@@ -801,8 +803,9 @@ body.pad.pad-port .hud-side.more-open {
   left: 3px;
   width: calc(50% - 3px);
   border-radius: 999px;
-  background: linear-gradient(92deg, rgba(94, 242, 192, .18), rgba(94, 242, 192, .34));
-  border: 1px solid rgba(94, 242, 192, .42);
+  background: var(--accent2);
+  border: 0;
+  box-shadow: 0 2px 0 var(--accent2-shade);
   transition: transform 300ms var(--ease-io);
 }
 
@@ -822,7 +825,7 @@ body.pad.pad-port .hud-side.more-open {
   transition: color 240ms var(--ease-out);
 }
 
-.seg button[aria-pressed="true"] { color: var(--accent); }
+.seg button[aria-pressed="true"] { color: var(--on-ink); font-weight: 600; }
 
 /* 遊戲中的小開關，跟房間資訊同一排 */
 .iconbtn {
@@ -835,7 +838,7 @@ body.pad.pad-port .hud-side.more-open {
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, .05);
+  background: var(--btn);
   color: var(--muted);
   cursor: pointer;
   transition: color 220ms var(--ease-out), border-color 220ms var(--ease-out), background 220ms var(--ease-out);
@@ -847,7 +850,7 @@ body.pad.pad-port .hud-side.more-open {
    折行時整組靠右——它們是控制項，不跟左邊的字混在一起 */
 .padctl { display: flex; gap: 5px; flex: none; margin-left: auto; }
 .iconbtn:hover:not(:disabled) { color: var(--ink); }
-.iconbtn[aria-pressed="true"] { color: var(--accent); border-color: rgba(94, 242, 192, .5); background: rgba(94, 242, 192, .12); }
+.iconbtn[aria-pressed="true"] { color: var(--accent2); border-color: var(--accent2); background: var(--sel); }
 .iconbtn:disabled { opacity: .3; cursor: not-allowed; }
 
 @media (prefers-reduced-motion: reduce) {
