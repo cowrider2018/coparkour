@@ -4,17 +4,17 @@
 // 檢查兩件事：
 //   1. 幾何檢查 — 每一次跨越的水平距離都在單次跳躍的彈道範圍內。這一關是硬的：
 //      沒過就代表關卡真的產生了跳不過去的地方，那是遊戲壞了。
-//   2. 機器人試跑 — 用真的物理引擎跑一隻 bot，看它能跑多遠。這一關有門檻但不要求全通：
-//      bot 是啟發式的，跑不完只代表這隻 bot 笨，不代表關卡有問題。實測它每一口蹬牆井
-//      的通過率約九成，而一趟 4000m 要連過三口，所以完跑率天生就在八成上下。
-//      門檻抓在 65%，掉到那以下就代表有東西真的壞了（例如物理參數被改動）。
+//   2. 機器人試跑 — 用真的物理引擎跑一隻 bot，看它能跑多遠。
+//      現在要求全部跑完：bot 會算彈道抓牆、也會用「按住幾格」把每一次蹬牆的高度
+//      對到下一根柱子，實測 120 個 seed 跑 6000m、60 個 seed 跑 10000m 都是全通。
+//      有 seed 跑不完就代表有東西真的變了（物理參數、地形生成、或 bot 自己）。
 import { Level, maxGapForRise } from '../public/src/level.js';
 import { Player } from '../public/src/player.js';
 // 機器人的腦搬到 public/src/bot.js 了（NPC 也用同一顆）。這裡永遠傳預設的 dir=+1，
 // 行為必須跟搬家前逐字相同——改動 bot.js 之後請比對這支工具印出來的四個數字。
 import { makeBot, makeInput, act } from '../public/src/bot.js';
 
-const PASS_RATE = 0.65;   // 完跑率的門檻，見檔頭的說明
+const PASS_RATE = 1;   // 完跑率的門檻。見檔頭：現在是「一個都不能少」
 const SEEDS = Number(process.argv[2] || 40);
 const RUN_TO = Number(process.argv[3] || 30000);
 const STEP = 1 / 120;

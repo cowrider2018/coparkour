@@ -14,7 +14,7 @@ const STEP = 1 / 120;
 /** 腦的狀態。每一個受控角色一份。 */
 export function makeBot() {
   // grab = 這一跳是為了抓住前面那面牆才跳的（見 decide 的第 ③ 條）
-  return { hold: 0, frame: 999, climb: false, steer: 1, wjCool: 0, grab: false, wallY: 0 };
+  return { hold: 0, frame: 999, climb: false, steer: 1, wjCool: 0, grab: false };
 }
 
 /** Player 讀的是 axis / jumpHeld（鍵盤與水球共用的介面），腦只設 left/right/jump。 */
@@ -62,53 +62,44 @@ export function act(p, level, bot, input, dir = 1, climb = true) {
     // 用那個門檻會被判成「跳得過去的矮牆」，於是貼著它滑下去掉回井底。
     if (bot.climb || bot.grab || (top !== null && top < p.y - 60)) {
       bot.climb = true;
-      if (top !== null) bot.wallY = top;   // 記住這面牆的頂端
-      // 貼上牆的瞬間還在上升，這時蹬掉就白費了剩下的上升高度。
-      // 先貼著牆滑到最高點（vy 轉正）再蹬，一次才吃得滿 WALL_RISE。
-      // 什麼時候該蹬？兩種牆的答案不一樣：
-      //   · 單面牆（閘門柱）：滑到最高點再蹬，一次磨高一點。
-      //   · 對面也有牆（蹬牆井）：不能蹬滿。一次蹬牆的物理上限是 152px，但井裡的柱子
-      //     只隔 99px——蹬在最高點會從對面那根柱子的頂上飛過去，然後一路掉出井外。
-      //     所以改成問「現在蹬出去，會貼到對面的哪個高度」，落在對面柱子的側面範圍內才蹬。
-      //     還在上升時算出來的落點太高，它會自己等；滑下來一點就進窗口了。
-      const opposed = hasOpposingWall(level, p, -p.wallDir, 260);
-      const ready = opposed ? wallJumpOutcome(level, p, -p.wallDir) !== null : p.vy > -60;
-      if (bot.wjCool === 0 && ready) {
-        bot.steer = opposed ? -p.wallDir : p.wallDir;
+      // 什麼時候該蹬、按住幾格？兩種牆的答案不一樣：
+      //   · 對面也有牆（蹬牆井）：碰到就蹬，用按住的格數把落點放到對面柱子上。
+      //     算得出計畫才蹬；算不出來就繼續滑，滑低一點再問一次。
+      //   · 單面牆（閘門柱）：對面沒東西可去，只能蹬完再貼回同一面磨高度，
+      //     那就照舊——滑到最高點、按滿。
+      const plan = bot.wjCool === 0 && hasOpposingWall(level, p, -p.wallDir, 260)
+        ? planWallJump(level, p, -p.wallDir) : null;
+      if (bot.wjCool === 0 && (plan || p.vy > -60)) {
+        bot.steer = plan ? -p.wallDir : p.wallDir;
         p.queueJump();
         bot.wjCool = 10; // 蹬完那幾 frame wallDir 還在，別把下一次跳浪費掉
         bot.frame = 0;
-        bot.hold = 60;
+        bot.hold = plan ? plan.hold : 60;
         steer(input, bot.steer);
         input.jump = true;
         return;
       }
       steer(input, p.wallDir); // 推向牆面貼著滑，別讓 wallDir 掉了
-      // 這裡千萬不能放開跳躍鍵：貼上牆的時候人還在上升，
-      // 一放開就觸發 jumpCut 把上升速度砍掉一半，剩下的高度全沒了。
-      input.jump = true;
+      // 貼著牆滑的時候不能放開跳躍鍵：人還在上升，一放開就觸發 jumpCut
+      // 把上升速度砍掉一半，剩下的高度全沒了。
+      //
+      // 但「剛蹬出去的那幾格」是例外：蹬完之後 wallDir 還會維持幾格才掉，
+      // 這條路徑會再跑過幾次。那幾格正是要按照計畫放開跳躍鍵的時候——
+      // 壓著不放的話按住格數就形同虛設，那一蹬永遠是滿的 152px。
+      input.jump = bot.wjCool > 0 ? bot.frame < bot.hold : true;
       return;
     }
   }
-  // 升過剛剛那面牆的頂端就先收工，回到「往前走」，也把空中的二段跳救援放回來。
-  // 少了這一條，爬出井口的那一刻它還記著最後一次蹬牆的方向（那是往回的），
-  // 於是頭也不回地飄回井底——爬上去又掉下來，一輩子。
-  //
-  // 收得早一點是量出來的，不是猜的：留在爬牆模式裡就用不到二段跳的救援。
-  // 試過「兩側的牆都在腳底下才收工」與「目標那一側沒牆才收工」，兩種都是 20/40；
-  // 這種「升過剛剛那面牆就收工」是 32/40。
-  if (bot.climb && bot.wallY && p.y + PLAYER_H <= bot.wallY + 4) {
-    bot.climb = false;
-    bot.grab = false;
-    bot.wallY = 0;
-  }
+  // 爬牆模式一直開到落地為止（落地時 grounded 那一段會清掉）。
+  // 每一蹬都是算過的：方向那一側一定有東西（對面的柱子，或出口平台），
+  // 所以「沿著 bot.steer 推」永遠是對的，不需要中途判斷「爬完了沒」。
   if (bot.climb) steer(input, bot.steer);
 
   // 空中：按住跳躍鍵到預定的 frame 數（決定這一跳的高度）
   if (bot.frame < bot.hold) { input.jump = true; return; }
   // 掉下去又沒落點 → 補二段跳（全力）。沒有二段跳的角色 airJumps 一直是 0，這條不會發動。
-  // 正在飛去抓牆的時候不能補：那一跳的落點本來就不是地面，是牆面上的一段高度窗口，
-  // 補下去會把身體射到柱頂之上、從柱子上面飛過去（本來就是這樣摔死的）。
+  // 但正在爬牆的時候不能補（bot.grab 從「決定去抓牆」一路撐到落地）：那些跳的落點
+  // 本來就不是地面，而是牆面上的一段高度窗口，補下去會把身體射到柱頂之上飛過去。
   if (p.vy > 40 && p.airJumps > 0 && !bot.grab && !landingAhead(p, level, dir)) {
     p.queueJump();
     bot.hold = bot.frame + 60;
@@ -155,45 +146,70 @@ export function hasOpposingWall(level, p, dir, dist) {
 }
 
 /**
- * 現在從牆上蹬出去，會發生什麼事？
- *   'wall' = 貼到對面那根柱子的側面（蹬牆井中段）
- *   'land' = 落在某塊板子上（蹬牆井的最後一蹬，目標是出口平台）
- *   null   = 兩者皆非，白蹬一次
+ * 從牆上蹬出去，按住跳躍鍵幾格最好？（沒有好結果就回 null）
  *
- * 蹬牆的初速是固定的（wallJumpVY / wallJumpVX），所以結果只由「現在的高度」決定——
- * 直接把那一段軌跡跑出來、沿路查地形就知道了。等於在腦裡先蹬一次看看。
+ * 關鍵是「蹬牆的高度也吃 jumpCut」：放開跳躍鍵那一瞬間上升速度會被砍成 0.42 倍。
+ * 所以按住的格數就是一個旋鈕——按滿 60 格升 152px（wallJumpVY²/2g），
+ * 第 1 格就放開只升 27px。蹬牆井的柱距是 99px，剛好落在旋鈕的中段。
  *
- * 水平速度照 player.js 走：wallStick 那段鎖住輸入（維持 wallJumpVX），
- * 之後推向對面，速度上限回到 runSpeed，多出來的部分用空中加速度收掉。
+ * 以前這裡是按滿再靠「等到滑下來的高度剛好」湊，那等於把旋鈕丟掉、拿滑牆當調節器；
+ * 滑速被 wallSlideSpeed 壓著，窗口一錯過就只能繼續往下掉。現在改成碰到牆就蹬，
+ * 用格數把落點放到對面柱子上——蹬牆的 vy 是覆寫的，進場速度不影響結果，
+ * 所以碰到牆的那一刻起跳＝從那根柱子的最低點起跳＝可用的高度最大。
+ *
+ * 挑選順序：能落到板子上最好（那是出井口的最後一蹬），否則挑「貼得最高」的那一格。
+ * 兩者都要求比現在高，不然那一蹬只是原地打轉。
  */
-export function wallJumpOutcome(level, p, dir) {
-  let vy = -PHYS.wallJumpVY, vx = PHYS.wallJumpVX, x = p.x, y = p.y, stick = PHYS.wallStick;
+export function planWallJump(level, p, dir) {
+  let best = null;
+  for (let hold = 1; hold <= 60; hold += 1) {
+    const r = simWallJump(level, p, dir, hold);
+    if (!r) continue;
+    const score = (r.kind === 'land' ? 1e6 : 0) - r.y;
+    if (!best || score > best.score) best = { hold, kind: r.kind, y: r.y, x: r.x, score };
+  }
+  return best;
+}
+
+/**
+ * 蹬一次牆會怎麼樣：'wall' = 貼到對面的柱子、'land' = 站到某塊板子上、null = 白蹬。
+ * 只認「比現在高」的結果，掉回下面那層不算數。
+ *
+ * 水平速度照 player.js 走：wallStick 那 0.12 秒鎖住輸入（維持 wallJumpVX = 430），
+ * 之後推向對面，速度被 clamp 回 runSpeed = 385。
+ */
+export function simWallJump(level, p, dir, hold) {
+  let vy = -PHYS.wallJumpVY, x = p.x, y = p.y, stick = PHYS.wallStick;
+  const foot0 = p.y + PLAYER_H;
   for (let i = 0; i < 240; i++) {
+    if (i > 0) {
+      vy += PHYS.gravity * STEP;
+      if (i === hold && vy < 0) vy *= PHYS.jumpCut;   // 放開跳躍鍵
+      if (vy > PHYS.maxFall) vy = PHYS.maxFall;
+    }
+    const vx = stick > 0 ? PHYS.wallJumpVX : PHYS.runSpeed;
     if (stick > 0) stick -= STEP;
-    else if (vx > PHYS.runSpeed) vx = Math.max(PHYS.runSpeed, vx - PHYS.accelAir * STEP);
-    vy += PHYS.gravity * STEP;
-    if (vy > PHYS.maxFall) vy = PHYS.maxFall;
     const py = y, px = x;
     y += vy * STEP;
     x += dir * vx * STEP;
-    let hit = null;
+    let out = null;
     level.forEachPlatform(Math.min(px, x) - 8, Math.max(px, x) + PLAYER_W + 8, (pl) => {
-      if (hit) return;
+      if (out) return;
       if (!(x + PLAYER_W > pl.x && x < pl.x + pl.w)) return;
       if (pl.h >= 60) {
         // 柱子：身體跟柱身重疊就是貼上了（跟 probeWall 同一個判準，上下各收 4px）
-        if (y + PLAYER_H > pl.y + 4 && y < pl.y + pl.h - 4) hit = 'wall';
-      } else if (vy > 0 && py + PLAYER_H <= pl.y && y + PLAYER_H >= pl.y) {
-        hit = 'land'; // 下降中、腳穿過頂面 = 站上去了
+        if (y + PLAYER_H > pl.y + 4 && y < pl.y + pl.h - 4 && y < p.y - 8) out = 'wall';
+      } else if (vy > 0 && py + PLAYER_H <= pl.y && y + PLAYER_H >= pl.y && pl.y < foot0 - 8) {
+        out = 'land'; // 下降中、腳穿過頂面 = 站上去了
       }
     });
-    if (hit) return hit;
+    if (out) return { kind: out, x, y };
     if (y > p.y + 260) return null; // 掉這麼多還沒著落，這一蹬是白蹬
   }
   return null;
 }
 
-// 在地面上時決定要不要跳、以及要按住幾個 frame（false = 不跳）
+// 在地面上時決定要不要跳、以及要按住幾個 frame（false = 不跳）// 在地面上時決定要不要跳、以及要按住幾個 frame（false = 不跳）
 export function decide(p, level, dir = 1, climb = true, bot = null) {
   if (bot) bot.grab = false;
   const footY = p.y + PLAYER_H;
