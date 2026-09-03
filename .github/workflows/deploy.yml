@@ -21,6 +21,9 @@ jobs:
       # NPC 驗證：走丟、卡住、或是「兩個人看到的 NPC 不在同一個地方」都會擋下來
       - run: node tools/verify-npc.mjs 16 600
 
+      # NPC 成本：有沒有哪一幀會被 NPC 拖垮（驗的是每幀的工作量上限，跟機器快慢無關）
+      - run: node tools/verify-perf.mjs
+
       - run: npm ci
 
       # 需要在 repo 的 Settings → Secrets 加一個 CLOUDFLARE_API_TOKEN

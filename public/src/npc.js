@@ -32,6 +32,7 @@ export const NPC = {
   slot: 6,          // 一個時槽幾秒
   move: 2,          // 其中前幾秒在移動（剩下的都在待機）
   anchorSlots: 2000, // 鏈每隔幾槽回家歸零一次（≈3.3 小時）。見下面 anchorOf() 的說明
+  catchup: 300,     // 每一幀最多幫鏈推進幾個時槽（見 Chain.advance 的說明）
   activePx: 3000,   // 離玩家這麼遠以外的不模擬也不畫
   trackPx: 15000,   // 這個範圍內的鏈要算，鄰居規則才看得到彼此
   span: 700,        // 找落腳點的搜尋半徑
@@ -73,7 +74,8 @@ function mix(seed, i, k) {
  * 上不去的細柱（那是設計給蹬牆用的，NPC 不會蹬牆），住在那裡的貓一輩子只會在兩點之間來回。
  * 所以由近而遠挑，第一塊「至少有三個去得了的落腳點」的才是家。
  */
-function homeSpot(level, i) {
+function homeSpot(cache, i) {
+  const level = cache.level;
   const cx = i * SPACING + SPACING / 2;
   level.ensure(cx + 2000 + NPC.span);
   const cands = [];
@@ -85,18 +87,14 @@ function homeSpot(level, i) {
   cands.sort((a, b) => Math.abs(a.x + a.w / 2 - cx) - Math.abs(b.x + b.w / 2 - cx));
   for (const p of cands.slice(0, 6)) {
     const spot = spotOn(p, p.x + p.w / 2);
-    if (exits(level, spot) >= 3) return spot;
+    if (exits(cache, spot) >= 3) return spot;
   }
   return spotOn(cands[0], cands[0].x + cands[0].w / 2);
 }
 
 /** 從這個落腳點去得了幾個地方（含腳下這塊板子的另一端） */
-function exits(level, spot) {
-  const s = level.standSpotsAround(spot.x, spot.y, 4, NPC.span, spot.p);
-  let n = ownEnds(spot).length;
-  for (const c of s.left) if (twoWay(level, spot, c)) n++;
-  for (const c of s.right) if (twoWay(level, spot, c)) n++;
-  return n;
+function exits(cache, spot) {
+  return cache.at(spot).length;
 }
 
 /** 平台上的一個落腳點。x 會夾進「站得穩」的範圍內。 */
@@ -129,7 +127,7 @@ const STEP = 1 / 120;
 //   · 地板上有助跑空間 → 全速衝過去起跳，起跳點反推得出來（拋物線多長就退多遠）。
 //   · 站在細柱上（比貓還窄）→ 沒有助跑，只能原地跳，水平距離全靠空中加速補。
 //     這時起跳點是定的，改變的是「按住幾格」跟「空中推幾成」，兩個一起湊出剛好的落點。
-function planPost(level, from, target) {
+function computePost(level, from, target) {
   const post = target.p;
   const y0 = from.y - PLAYER_H;          // 站在起點時 box 的 y
   const landY = post.y - PLAYER_H;       // 站上柱頂時 box 的 y
@@ -143,24 +141,41 @@ function planPost(level, from, target) {
   const need = (C - from.x) * dir;
   const shortlist = [];
 
+  // landX（跳出去多遠）對 hold（跳躍鍵按住幾格）是單調遞增的，所以「落點剛好對」的按壓
+  // 時間是一段連續區間。先把需求換算成 landX 的區間，再二分找到入口、出界就收工——
+  // 不必把 7 種速度 × 60 段按壓全部模擬一遍。那個「一算就掉一幀」的尖峰就是這樣來的。
+  const wLo = standing ? need - tol : (dir > 0 ? C - hi : lo - C);
+  const wHi = standing ? need + tol : (dir > 0 ? C - lo : hi - C);
+
   for (const k of [1, 0.86, 0.72, 0.6, 0.5, 0.42, 0.34]) {
     const cap = PHYS.runSpeed * k;
-    for (let hold = 1; hold <= 60; hold++) {
-      const landX = flight(standing ? 0 : cap, cap, y0, hold, landY, null, 0);
+    const v0 = standing ? 0 : cap;
+    const land = (hold) => flight(v0, cap, y0, hold, landY, null, 0);
+
+    // 這個速度整段都構不到（或全部飛過頭）就整組跳過，只花兩次模擬
+    const far = land(60);
+    if (far === null || far < wLo) continue;
+    const near = land(1);
+    if (near !== null && near > wHi) continue;
+
+    // 二分找到第一個「跳得夠遠」的按壓時間
+    let g = 1, h = 60;
+    while (g < h) {
+      const m = (g + h) >> 1;
+      const v = land(m);
+      if (v === null || v < wLo) g = m + 1; else h = m;
+    }
+
+    for (let hold = g; hold <= 60; hold++) {
+      const landX = land(hold);
       if (landX === null) continue;
-      let c0;
-      if (standing) {
-        if (Math.abs(need - landX) > tol) continue; // 這組湊不到那個距離
-        c0 = from.x;
-      } else {
-        c0 = C - dir * landX;
-        if (c0 < lo || c0 > hi) continue;           // 起跳點得落在腳下這塊板子上
-      }
+      if (landX > wHi) break;                       // 再按下去只會更遠
+      const c0 = standing ? from.x : C - dir * landX;
       // 前緣越過柱子的近側面時，腳底一定要已經高過柱頂
       const faceX = (face - c0) * dir - HALF;
-      const clear = flight(standing ? 0 : cap, cap, y0, hold, landY, faceX, post.y);
+      const clear = flight(v0, cap, y0, hold, landY, faceX, post.y);
       if (clear === null) continue;
-      shortlist.push({ c0, v0: standing ? 0 : cap, hold, k, dir, clear });
+      shortlist.push({ c0, v0, hold, k, dir, clear });
     }
   }
 
@@ -168,7 +183,7 @@ function planPost(level, from, target) {
   // 就正好擋在半路上。所以最後一關是用真的物理預演一次：餘裕最大的先試，
   // 第一個真的站得上去的就是計畫。預演跑的是同一套 player.js，所以它成立就是真的成立。
   shortlist.sort((a, b) => b.clear - a.clear);
-  for (const pl of shortlist.slice(0, 8)) {
+  for (const pl of shortlist.slice(0, 4)) {   // 預演一次要跑兩百多步真物理，餘裕最大的先試
     if (rehearse(level, from, target, pl)) return pl;
   }
   return null;
@@ -312,26 +327,73 @@ function twoWay(level, a, b) {
   return reachable(level, a, b) && reachable(level, b, a);
 }
 
-// 從 cur 抽下一個落腳點：左右各 4 個「別的」落腳點，再加上腳下這塊板子的另一端。
-// ban 非 0 時只准往那個方向找（鄰居規則）。
-function pickSpot(level, cur, rng, ban) {
+// ── 候選點的記憶 ────────────────────────────────────────
+// 一條鏈重播兩千個時槽，走的其實是同一小塊地形上的同幾個點——那是一個很小的圖上的
+// 隨機漫步，不是每次都走到新地方。每一槽都重掃一次地形（範圍查詢 + 最多 8 次雙向可達性，
+// 柱頂還要再掃一次擋路的東西）是白費的，所以照「落腳點」記起來。
+//
+// 記得住的前提是這份答案永遠不會變：地形是照 seed 依序長出來的、只會往後長、
+// 長出來就不再變動，而且每次建表之前都先 ensure 過那個範圍。
+// 鍵用板子的物件本身（不會誤撞）加上量化過的 x（同一塊板子上的不同站位）。
+class SpotCache {
+  constructor(level) {
+    this.level = level;
+    this.byPlat = new Map();
+    this.plans = new Map();   // 柱頂計畫：同一段躍遷會一再重複，算一次就夠
+  }
+
+  /** 從 from 跳上 to 那根柱子的計畫（算不出來就記 null，下次不必再算一遍）。 */
+  plan(from, to) {
+    const k = Math.round(from.x * 4) + ':' + Math.round(from.y * 4) + '>' +
+      Math.round(to.p.x * 4) + ':' + Math.round(to.p.y * 4);
+    if (this.plans.has(k)) return this.plans.get(k);
+    const v = computePost(this.level, from, to);
+    this.plans.set(k, v);
+    return v;
+  }
+
+  at(spot) {
+    let inner = this.byPlat.get(spot.p);
+    if (!inner) { inner = new Map(); this.byPlat.set(spot.p, inner); }
+    const k = Math.round(spot.x * 4);
+    let list = inner.get(k);
+    if (!list) { list = buildCands(this.level, spot); inner.set(k, list); }
+    return list;
+  }
+}
+
+// 從 cur 看得到、而且去得了的所有落腳點：左右各 4 個「別的」，再加上腳下這塊板子的另一端。
+// 順序就是抽籤的順序，不能動——它決定了鏈的內容。
+function buildCands(level, cur) {
   // 掃描之前先確保地形長到那裡。地形是照 seed 依序長出來的，多長一段不會改變已經有的東西，
   // 但「還沒長出來」會讓兩台電腦看到不一樣的候選——那就不同步了。
   level.ensure(cur.x + NPC.span + 100);
   const s = level.standSpotsAround(cur.x, cur.y, 4, NPC.span, cur.p);
-  const cands = [];
-  const add = (c) => {
-    if ((c.x - cur.x) * ban < 0) return;
-    cands.push(c);
-  };
+  const out = [];
   // 只走「回得來」的路。往下掉 400px 很容易，爬回來卻不一定爬得上去——
   // 少了這一條，隨機漫步遲早會掉進某個爬不出來的坑，然後在那裡走一輩子
   //（蹬牆井的井底就是這種坑：它有地板，但四周只有上不去的細柱）。
-  for (const c of s.right) if (twoWay(level, cur, c)) add(c);
-  for (const c of s.left) if (twoWay(level, cur, c)) add(c);
-  for (const c of ownEnds(cur)) add(c);
-  if (!cands.length) return cur; // 那一側沒有去得了的地方 → 原地再待機一輪
-  return cands[Math.floor(rng() * cands.length) % cands.length];
+  for (const c of s.right) if (twoWay(level, cur, c)) out.push(c);
+  for (const c of s.left) if (twoWay(level, cur, c)) out.push(c);
+  for (const c of ownEnds(cur)) out.push(c);
+  return out;
+}
+
+// 抽下一個落腳點。ban 非 0 時只准往那個方向找（鄰居規則）。
+// 兩趟走訪、不配置任何陣列：這支函式在重播時會被叫上千次。
+function pickSpot(cache, cur, rng, ban) {
+  const cands = cache.at(cur);
+  let n = 0;
+  for (let i = 0; i < cands.length; i++) {
+    if (ban === 0 || (cands[i].x - cur.x) * ban >= 0) n++;
+  }
+  if (!n) return cur; // 那一側沒有去得了的地方 → 原地再待機一輪
+  let pick = Math.floor(rng() * n) % n;
+  for (let i = 0; i < cands.length; i++) {
+    if (ban !== 0 && (cands[i].x - cur.x) * ban < 0) continue;
+    if (pick-- === 0) return cands[i];
+  }
+  return cur;
 }
 
 // ── 一條鏈 ──────────────────────────────────────────────
@@ -344,21 +406,86 @@ class Chain {
     this.k = -1;
     this.anchor = -1;
     this.spot = null;
+    this.prev = null;      // 前一槽的落腳點
+    this.prevK = -1;
+    // 無規則鏈要記下每一槽的 x：真鏈重播的時候會回頭問「你第 j 槽在哪」，
+    // 沒有這份紀錄就得把無規則鏈倒帶回錨點重算一遍，等於同一段路走兩次。
+    this.xs = free ? [] : null;
   }
 
+  /**
+   * 第 k 槽的落腳點。
+   *
+   * 「往回要一格」要特別接住：Npc 每次換槽都要問 k（這一槽的起點）和 k+1（目標），
+   * 但池子已經先把鏈推到 k+1 了。沒有這一手的話，問 k 會讓整條鏈從錨點重建——
+   * 一間開了三小時的房就是每次換槽重播兩千個時槽，而且是無預算的那種。
+   */
   at(k) {
+    if (this.spot !== null && this.anchor === anchorOf(k)) {
+      if (k === this.k) return this.spot;
+      if (k === this.prevK && this.prev !== null) return this.prev;
+    }
+    const fuel = this.pool.fuel;
+    this.pool.fuel = Infinity;
+    const ok = this.advance(k);
+    this.pool.fuel = fuel;
+    return ok ? this.spot : null;
+  }
+
+  /** 這條鏈算到第 k 槽了嗎（無規則鏈有歷史，算過就一直記得）。 */
+  has(k) {
+    return this.spot !== null && this.anchor === anchorOf(k) && this.k >= k;
+  }
+
+  ready(k) {
+    return this.spot !== null && this.anchor === anchorOf(k) && this.k === k;
+  }
+
+  /** 第 k 槽時這條鏈在哪個 x。只有無規則鏈答得出來——只有它記了歷史。 */
+  xAt(k) {
+    return this.has(k) ? this.xs[k - this.anchor] : null;
+  }
+
+  /**
+   * 往前推進到第 k 槽。花的是「整個池子這一幀的預算」（pool.fuel），用完就停在半路，
+   * 下一幀接著走。
+   *
+   * 為什麼要限量：一間開了三小時的房，新加入的人得從錨點重播兩千個時槽才知道那隻貓
+   * 現在站在哪。全部擠在一幀裡就是一次掉幀——而那一幀正好是「貓出現」的那一幀，
+   * 玩家看到的就是「貓一出現就頓一下」。攤到十幾幀去，貓晚 0.1 秒出現，沒有人看得出來。
+   *
+   * 預算為什麼要整個池子共用：真鏈每走一步都要問鄰居「你那一槽在哪」，鄰居沒算到就得
+   * 先幫它算。分開記預算的話，這條隱藏的路會繞過限制——那個 6ms 的尖峰就是這樣來的。
+   *
+   * 鄰居沒追上時真鏈會停下來等，不會自己往前衝：那一步的答案本來就取決於鄰居，
+   * 猜一個會讓結果跟著各人的幀率跑掉，那就不同步了。
+   */
+  advance(k) {
+    if (this.free && this.has(k)) return true;
     const a = anchorOf(k);
     if (this.spot === null || this.anchor !== a || this.k > k) {
       this.anchor = a;
       this.k = a;
-      this.spot = homeSpot(this.pool.level, this.i);
-      if (!this.spot) return null;
+      this.prev = null;
+      this.prevK = -1;
+      this.spot = homeSpot(this.pool.cache, this.i);
+      if (this.xs) { this.xs.length = 0; if (this.spot) this.xs.push(this.spot.x); }
+      if (!this.spot) return false;
     }
-    while (this.k < k) {
+    while (this.k < k && this.pool.fuel > 0) {
+      // 鄰居的無規則鏈要先算到這一槽，這一步才算得出來
+      if (!this.free && !this.pool.neighborsReady(this.i, this.k)) break;
+      // 幫鄰居追進度也是花預算的，花完就停在這裡——不然這一步會透支
+      if (this.pool.fuel <= 0) break;
+      this.prev = this.spot;
+      this.prevK = this.k;
       this.spot = this.step(this.k);
       this.k++;
+      this.pool.fuel--;
+      this.pool.steps++;
+      if (this.xs) this.xs.push(this.spot.x);
     }
-    return this.spot;
+    return this.free ? this.has(k) : this.k === k;
   }
 
   step(k) {
@@ -369,7 +496,7 @@ class Chain {
       // 反方向＝遠離對方。剛好重疊（差 0）時往右，只是要有個定論。
       if (other !== null) ban = this.spot.x - other >= 0 ? 1 : -1;
     }
-    return pickSpot(this.pool.level, this.spot, rng, ban);
+    return pickSpot(this.pool.cache, this.spot, rng, ban);
   }
 }
 
@@ -424,8 +551,16 @@ class Npc {
     const own = this.owner;
     if (!own) return this.chain.at(k);
     const s = this.pool.slotOf(own);
-    if (k > s) return this.patrolSpot(k) || this.chain.at(s);
+    // 定居之後只看那塊板子。找不到板子（地形還沒長到那裡）就先不出場，
+    // 不要回頭把整條鏈重算一遍——那是一次幾千個時槽的重播。
+    if (k > s) return this.patrolSpot(k);
     return this.chain.at(k);
+  }
+
+  /** 這一槽還需不需要動用鏈？定居之後的踱步只看伺服器發的那塊板子，不需要。 */
+  needsChain(k) {
+    const own = this.owner;
+    return !own || k <= this.pool.slotOf(own) + 1;
   }
 
   place(spot) {
@@ -456,7 +591,7 @@ class Npc {
       // 只有在上一槽失手——沒跳到、掉進坑裡——的時候才看得出來：它就是那個救援機制。
       this.place(from);
       // 目標是柱頂的話，先把整段助跑與起跳算好（見 planPost 的說明）
-      this.plan = to.p.h >= 60 && to.p !== from.p ? planPost(this.pool.level, from, to) : null;
+      this.plan = to.p.h >= 60 && to.p !== from.p ? this.pool.cache.plan(from, to) : null;
       this.ctl.airborne = false;
       this.ctl.runningUp = false;
       this.ctl.holdLeft = 0;
@@ -544,6 +679,9 @@ export class NpcPool {
     this.map = new Map();   // 編號 → Npc（模擬中的）
     this.chains = new Map(); // 編號 → 無規則鏈（給鄰居規則參考）
     this.owners = new Map(); // 編號 → {name, slot, x, y, mine}
+    this.cache = new SpotCache(level); // 落腳點 → 候選清單。重播兩千個時槽全靠它
+    this.fuel = 0;          // 這一幀還能幫鏈推進幾個時槽（見 Chain.advance）
+    this.steps = 0;         // 累計推進了幾個時槽。tools/verify-perf.mjs 用它確認沒有繞過預算的路
     this.t0 = 0;            // 世界時鐘的原點（ms），由伺服器發
     this.offset = 0;        // 本機時鐘與伺服器的差
   }
@@ -552,6 +690,7 @@ export class NpcPool {
   rebind(seed, level, t0) {
     this.seed = seed >>> 0;
     this.level = level;
+    this.cache = new SpotCache(level);
     this.t0 = t0 || Date.now();
     this.map.clear();
     this.chains.clear();
@@ -617,13 +756,24 @@ export class NpcPool {
     let best = null, bestD = NEAR;
     for (const j of [i - 1, i + 1]) {
       if (j < 0) continue;
-      const c = this.freeChain(j);
-      const s = c.at(k);
-      if (!s) continue;
-      const d = Math.abs(s.x - mine);
-      if (d < bestD) { bestD = d; best = s.x; }
+      const x = this.freeChain(j).xAt(k);
+      if (x === null) continue;
+      const d = Math.abs(x - mine);
+      if (d < bestD) { bestD = d; best = x; }
     }
     return best;
+  }
+
+  /** 第 i 隻的左右鄰居，無規則鏈都算到第 k 槽了嗎？沒有就順手幫它們算（一樣吃預算）。 */
+  neighborsReady(i, k) {
+    let ok = true;
+    for (const j of [i - 1, i + 1]) {
+      if (j < 0) continue;
+      const c = this.freeChain(j);
+      if (c.has(k)) continue;
+      if (!c.advance(k)) ok = false;
+    }
+    return ok;
   }
 
   freeChain(i) {
@@ -651,23 +801,33 @@ export class NpcPool {
     // 只有離玩家夠近的才真的模擬。「夠近」量的是牠現在的落腳點，不是牠的家——
     // 遊蕩久了牠可能離家很遠。用無規則鏈當位置的估計值就夠了（跟真鏈最多差一次躍遷）。
     const k = Math.floor(worldT / NPC.slot);
+    // 這一幀能花在「把鏈算到現在」的預算，所有鏈共用。用完的下一幀繼續。
+    this.fuel = NPC.catchup;
+
     for (const [i, n] of this.map) {
-      if (Math.abs(n.x - focusX) > NPC.activePx + NPC.reach) { this.map.delete(i); continue; }
+      // 還在追鏈、還沒放到位的那一隻，身上的座標是 Player 的預設值，不能拿來判距離——
+      // 拿它判會變成「建了就被回收、下一幀再建」，那隻貓永遠不會出場。
+      const px = n.ready ? n.x : (n.chain.spot ? n.chain.spot.x : focusX);
+      if (Math.abs(px - focusX) > NPC.activePx + NPC.reach) { this.map.delete(i); continue; }
+      // 買下來定居之後就不必再算鏈了：踱步只看伺服器發的那塊板子
+      if (n.needsChain(k + 1) && !n.chain.advance(k + 1)) { n.ready = false; continue; }
       n.update(dt, worldT);
     }
+
     for (let i = iMin; i <= iMax; i++) {
       if (this.map.has(i)) continue;
-      const s = this.freeChain(i).at(k);
-      if (!s || Math.abs(s.x - focusX) > NPC.activePx) continue;
+      const c = this.freeChain(i);
+      if (!c.advance(k)) continue;                    // 還在算，下一幀再看
+      if (Math.abs(c.xAt(k) - focusX) > NPC.activePx) continue;
       const n = new Npc(this, i);
       this.map.set(i, n);
-      n.update(dt, worldT);
+      if (n.chain.advance(k + 1)) n.update(dt, worldT);
     }
   }
 
   /** 診斷用：從 from 跳到 target 的柱頂，做得到嗎？（tools/verify-npc.mjs 與 _diag 用） */
   tryHop(from, target) {
-    const plan = planPost(this.level, from, target);
+    const plan = this.cache.plan(from, target);
     return plan ? rehearse(this.level, from, target, plan) : false;
   }
 
