@@ -478,6 +478,36 @@ export class Level {
     return { left: dyL, right: dyR };
   }
 
+  // 以 (cx,cy) 為中心，左右各取最近的 n 個「站得住的落腳點」，回傳座標（由近到遠）。
+  // NPC 用它挑下一個目標點；動態視距用的是上面那個 footholdsAround。
+  //
+  // 兩者的取樣規則故意不一樣，不要合併：
+  //   · 視距要框住「腳有可能碰到的地方」，所以細高柱取的是側面的上下兩端（蹬牆的落點）。
+  //   · NPC 站得住才算數，所以這裡一律只取頂面——柱頂可以站，柱子的側面不行。
+  // 目標的 x 取「平台頂面上離 cx 最近的那一點，再往內縮一點」：
+  // 遠處的大平台就走到它靠近這一側的邊、細柱就是柱心，兩種都落得穩。
+  standSpotsAround(cx, cy, n, span, exclude) {
+    const L = [], R = [];
+    const push = (arr, spot) => {
+      let i = arr.length;
+      while (i > 0 && arr[i - 1].d2 > spot.d2) i--;
+      if (i >= n) return;
+      arr.splice(i, 0, spot);
+      if (arr.length > n) arr.pop();
+    };
+    this.forEachPlatform(cx - span, cx + span, (p) => {
+      if (p === exclude) return;
+      if (p.w < 12) return;                      // 站不住的細片（目前的生成器不會產生）
+      const inset = Math.min(40, p.w / 2);
+      const tx = clamp(cx, p.x + inset, p.x + p.w - inset);
+      const dx = tx - cx, dy = p.y - cy;
+      const spot = { x: tx, y: p.y, p, d2: dx * dx + dy * dy };
+      if (dx === 0) { push(L, spot); push(R, spot); return; } // 正上／正下方：兩側都算
+      push(dx < 0 ? L : R, spot);
+    });
+    return { left: L, right: R };
+  }
+
   forEachSpike(x0, x1, fn) { this.forEachIn(this.spikes, x0, x1, fn); }
   forEachCoin(x0, x1, fn) { this.forEachIn(this.coins, x0, x1, fn); }
 }

@@ -6,7 +6,8 @@ import { Net, GhostPool } from './net.js';
 import { Input } from './input.js';
 import { WaterBall } from './touch.js';
 import { Pad } from './pad.js';
-import { WORLD } from './constants.js';
+import { WORLD, PLAYER_W, PLAYER_H, PX_PER_M } from './constants.js';
+import { NpcPool, NPC, priceFor } from './npc.js';
 import { skyAt, hourForSeed, DAY_SECONDS } from './gfx/daycycle.js';
 import { Decor } from './gfx/decor.js';
 import { Trees } from './gfx/tree.js';
@@ -46,6 +47,11 @@ let running = false;
 let bestDist = Number(localStorage.getItem('pk_best') || 0);
 let roomBoard = [];
 let alone = true;
+let npcs = null;            // 在地圖上遊蕩的 NPC（位置是世界時間的函數，不走網路）
+let wallet = 0;             // 伺服器記的金幣餘額（死掉不歸零、同房同人累積）
+let flushed = 0;            // 這條命撿到的金幣裡，已經回報給伺服器的部分
+let flushAt = 0;
+let myName = '無名跑者';
 let skin = localStorage.getItem('pk_skin') || CAT_SKINS[0];
 if (!CAT_SKINS.includes(skin)) skin = CAT_SKINS[0];
 
@@ -102,10 +108,22 @@ function resize() {
 addEventListener('resize', resize);
 
 // ── 關卡 / 重生 ────────────────────────────────────────
-function buildLevel(newSeed) {
+function buildLevel(newSeed, t0) {
   seed = newSeed >>> 0;
   level = new Level(seed);
   player = new Player(level);
+  // 單機沒有伺服器發時鐘，就自己記一個：這樣重新整理之後 NPC 還在原本的節奏上
+  const key = 'pk_t0:' + ROOM + ':' + seed;
+  let epoch = t0 || Number(localStorage.getItem(key) || 0);
+  if (!epoch) { epoch = Date.now(); }
+  if (!t0) localStorage.setItem(key, String(epoch));
+  if (npcs) {
+    npcs.rebind(seed, level, epoch);
+  } else {
+    npcs = new NpcPool(seed, level);
+    npcs.t0 = epoch;
+  }
+  if (!SERVER) loadLocalRoom();
   renderer.setSeed(seed);
   renderer.decor = new Decor(seed);
   renderer.trees = new Trees(seed);
@@ -130,7 +148,13 @@ function weatherForSeed(s) {
 function restart() {
   if (!level) return;
   for (const c of level.coins) c.taken = false;
-  player.reset();
+  // 買過重生點就從最遠的那個出生。距離照世界座標算，所以一開跑就有里程——
+  // 這正是買重生點的意義。
+  const sp = npcs ? npcs.mySpawn(myName) : null;
+  if (sp) level.ensure(sp.x + WORLD.chunkAhead);
+  player.reset(sp ? { x: sp.x - PLAYER_W / 2, y: sp.y } : undefined);
+  if (sp) cam.init = false;   // 不然鏡頭會從起點一路橫掃過去
+  flushed = 0;
   $('dead').classList.add('hidden');
   running = true;
 }
@@ -171,15 +195,43 @@ function connect(name) {
       welcome: (m) => {
         ghosts.clear();
         for (const p of m.players || []) ghosts.upsert(p.id, p.name, p.skin);
-        if ((m.seed >>> 0) !== seed) { buildLevel(m.seed); restart(); }
+        if ((m.seed >>> 0) !== seed) { buildLevel(m.seed, m.t0); restart(); }
+        // 世界時鐘：t0 是原點，now 用來校正本機時鐘（誤差是 ping 的一半）
+        if (npcs) {
+          npcs.setClock(m.t0, m.now ? m.now - Date.now() : 0);
+          npcs.setOwners(m.owners || []);
+        }
+        wallet = m.coins || 0;
+        flushed = player ? player.coins : 0;
         roomBoard = m.board || [];
         renderBoard();
+      },
+      // 有人買下了一隻 NPC（自己買的也會收到）
+      own: (m) => {
+        if (!npcs) return;
+        npcs.setOwner(m);
+        const n = npcs.list().find((q) => q.i === m.i);
+        if (n) n.say(m.name === myName ? '成交！這裡是你的重生點了' : m.name + ' 買下了這裡');
+      },
+      wallet: (m) => { wallet = m.v || 0; },
+      buyfail: (m) => {
+        const n = npcs && npcs.list().find((q) => q.i === m.i);
+        if (!n) return;
+        n.invite = 0;
+        n.say(m.why === 'taken' ? '這隻已經有主人了' : `還差 ${Math.max(0, (m.need || 0) - (m.have || 0))} 枚金幣`);
       },
       join: (m) => { ghosts.upsert(m.id, m.name, m.skin); renderBoard(); },
       leave: (m) => { ghosts.remove(m.id); if (cats) cats.forget(m.id); renderBoard(); },
       s: (m) => ghosts.onState(m),
       board: (m) => { roomBoard = m.list || []; renderBoard(); },
-      seed: (m) => { buildLevel(m.seed); roomBoard = []; restart(); renderBoard(); },
+      seed: (m) => {
+        // 換地形＝換一個世界：重生點、錢包、時鐘全部跟著重來（伺服器那邊也清了）
+        buildLevel(m.seed, m.t0);
+        wallet = 0;
+        roomBoard = [];
+        restart();
+        renderBoard();
+      },
       full: () => setStatus('房間已滿', 'bad'),
     },
   });
@@ -222,7 +274,7 @@ function esc(s) {
 
 // ── 主迴圈 ─────────────────────────────────────────────
 const STEP = 1 / 120;
-let acc = 0, last = 0, uiTick = 0, wasDead = false;
+let acc = 0, last = 0, uiTick = 0, wasDead = false, npcAcc = 0;
 
 function frame(now) {
   requestAnimationFrame(frame);
@@ -243,6 +295,16 @@ function frame(now) {
     let steps = 0;
     while (acc >= STEP && steps++ < 8) { input.tick(STEP); player.update(STEP, input); acc -= STEP; }
     if (steps >= 8) acc = 0;
+  }
+
+  // NPC 走自己的時鐘，不受「玩家死了」影響——牠們是世界的一部分，不是這一局的一部分。
+  // 餵進去的世界時間由伺服器的 t0 決定，所以同一個房間的每個人算出來的都一樣。
+  if (npcs && player) {
+    npcAcc += dt;
+    const wt = npcs.worldTime();
+    let ns = 0;
+    while (npcAcc >= STEP && ns < 8) { npcs.update(player.x, STEP, wt + ns * STEP); npcAcc -= STEP; ns++; }
+    if (ns >= 8) npcAcc = 0;
   }
 
   // 相機對準「看得到的那一片」的中心：操作列吃掉多少，取景就往回讓多少。
@@ -277,8 +339,9 @@ function frame(now) {
   }
 
   const list = ghosts.sample(now);
+  const npcList = npcs ? npcs.list() : [];
   renderer.draw(W, H, {
-    cam, level, player, ghosts: list, time, zoom, sky, skin,
+    cam, level, player, ghosts: list, npcs: npcList, myName, time, zoom, sky, skin,
     wind: weather.wind, glBackground: !!background, hasCats: !!cats,
   });
 
@@ -288,6 +351,11 @@ function frame(now) {
       cats.begin(cam, { w: W / zoom, h: H / zoom }, sky);
       for (const g of list) {
         cats.cat(g.id, g.x, g.y, g.facing, g.state, g.vx || 0, dt, g.skin, 0.58, g.vy || 0);
+      }
+      // NPC 用滿的不透明度：牠們真的在這個世界裡，不是別人畫面的投影
+      for (const n of npcList) {
+        cats.cat('npc' + n.i, n.x, n.y, n.p.facing, playerState(n.p),
+          Math.abs(n.p.vx), dt, CAT_SKINS[n.i % CAT_SKINS.length], 1, n.p.vy);
       }
       if (!player.dead) {
         cats.cat('me', player.x, player.y, player.facing,
@@ -313,9 +381,14 @@ function frame(now) {
     running = false;
     if (player.dist > bestDist) { bestDist = player.dist; localStorage.setItem('pk_best', String(bestDist)); }
     if (net) net.sendScore(player.dist, player.coins, player.deadReason);
+    flushCoins(true);
+    const sp = npcs ? npcs.mySpawn(myName) : null;
+    $('retryBtn').innerHTML = sp
+      ? `從 ${Math.round(sp.x / PX_PER_M)}m 重新開始 <span class="kbdhint">R</span>`
+      : `再跑一次 <span class="kbdhint">R</span>`;
     $('deadReason').textContent = player.deadReason;
     $('deadDist').textContent = player.dist + ' m';
-    $('deadCoins').textContent = player.coins;
+    $('deadCoins').textContent = coinTotal();
     $('deadBest').textContent = bestDist + ' m';
     $('dead').classList.remove('hidden');
   }
@@ -325,10 +398,115 @@ function frame(now) {
   if (uiTick > 0.1) {
     uiTick = 0;
     $('dist').textContent = player.dist;
-    $('coins').textContent = player.coins;
+    $('coins').textContent = coinTotal();
+    if (now - flushAt > 60000) flushCoins(false);
     $('best').textContent = bestDist;
     $('rtt').textContent = net && net.rtt != null ? net.rtt + 'ms' : '--';
     renderBoard();
+  }
+}
+
+// ── NPC：金幣、重生點、點擊購買 ────────────────────────
+// 錢包在伺服器那邊（死掉不歸零、同房同人累積）。這裡只記「本條命撿到的金幣裡，
+// 已經回報過多少」，顯示的數字則是餘額加上還沒回報的那一段。
+function coinTotal() {
+  return wallet + (player ? player.coins - flushed : 0);
+}
+
+function flushCoins(force) {
+  if (!player) return;
+  const add = player.coins - flushed;
+  if (add <= 0 && !force) return;
+  flushed = player.coins;
+  flushAt = performance.now();
+  if (add <= 0) return;
+  wallet += add;                       // 先自己加上去，伺服器回來的值會覆蓋它
+  if (net && net.connected) net.send({ t: 'coins', n: add });
+  else saveLocalRoom();
+}
+
+// 單機／離線時的房間狀態。連上線之後一律以伺服器為準。
+function localKey() { return 'pk_room:' + ROOM + ':' + seed; }
+
+function loadLocalRoom() {
+  let st = {};
+  try { st = JSON.parse(localStorage.getItem(localKey()) || '{}'); } catch { /* 壞了就當空的 */ }
+  wallet = st.wallet || 0;
+  if (npcs) npcs.setOwners(st.owners || []);
+}
+
+function saveLocalRoom() {
+  if (SERVER && net && net.connected) return;
+  try {
+    localStorage.setItem(localKey(), JSON.stringify({
+      wallet, owners: npcs ? [...npcs.owners.values()] : [],
+    }));
+  } catch { /* 存不下就算了 */ }
+}
+
+// 玩家必須是靜止的才點得到 NPC。跑動中誤觸會直接偷走一次操作
+//（水球正在控制左右、手把正在推），那比買不到重生點嚴重得多。
+function playerStill() {
+  return !!player && !player.dead && player.grounded &&
+    Math.abs(player.vx) < 8 && input.axis === 0;
+}
+
+// 螢幕座標 → 世界座標。跟 render.js 的 ctx.scale(zoom)+translate(-round(cam)) 是同一組變換。
+function screenToWorld(sx, sy) {
+  const r = uiCanvas.getBoundingClientRect();
+  return {
+    x: Math.round(cam.x) + (sx - r.left) / zoom,
+    y: Math.round(cam.y) + (sy - r.top) / zoom,
+  };
+}
+
+// 掛在 window 的捕獲階段：命中 NPC 才吃掉這次點擊，其餘一律放行給水球／手把。
+// （掛在畫布上不行——同一個節點上的監聽器照註冊順序跑，水球註冊得比較早。）
+addEventListener('pointerdown', (e) => {
+  if (!running || !npcs || !playerStill()) return;
+  const w = screenToWorld(e.clientX, e.clientY);
+  const n = npcs.nearest(w.x, w.y, 46);        // 點在貓身上
+  if (!n) return;
+  const dx = n.cx - (player.x + PLAYER_W / 2);
+  const dy = n.cy - (player.y + PLAYER_H / 2);
+  if (dx * dx + dy * dy > NPC.talkPx * NPC.talkPx) return; // 沒有極靠近就不算
+  e.preventDefault();
+  e.stopPropagation();
+  tapNpc(n);
+}, true);
+
+// 兩段式：第一次點跳出邀請，第二次點成交。
+function tapNpc(n) {
+  const own = n.owner;
+  if (own) {
+    n.say(own.name === myName ? '這裡是你的重生點' : own.name + ' 的重生點');
+    return;
+  }
+  const price = priceFor(npcs.ownedBy(myName));
+  if (n.invite > 0) {
+    n.invite = 0;
+    flushCoins(true);                 // 先把這條命撿到的金幣結清，才知道買不買得起
+    if (wallet < price) { n.say(`還差 ${price - wallet} 枚金幣`); return; }
+    buyNpc(n, price);
+  } else {
+    n.invite = 4;
+    n.say(`在這裡設重生點？${price} 枚金幣 — 再點一次成交`, 4);
+  }
+}
+
+function buyNpc(n, price) {
+  // 買的是「牠現在站的那塊板子」：重生點 X 是板子中心、Y 是頂面。
+  const plat = npcs.platformAt(n.cx, n.p.y + PLAYER_H) || n.target.p;
+  const x = Math.round(plat.x + plat.w / 2);
+  const y = Math.round(plat.y);
+  if (net && net.connected) {
+    net.send({ t: 'buy', i: n.i, x, y });       // 成不成由伺服器裁定（先到先得）
+    n.say('……');
+  } else {
+    wallet -= price;
+    npcs.setOwner({ i: n.i, name: myName, at: Date.now(), x, y });
+    saveLocalRoom();
+    n.say('成交！這裡是你的重生點了');
   }
 }
 
@@ -365,6 +543,7 @@ async function bootGraphics() {
 // ── 啟動 ───────────────────────────────────────────────
 function start() {
   const name = ($('nameInput').value || '').trim().slice(0, 14) || '無名跑者';
+  myName = name;
   localStorage.setItem('pk_name', name);
   localStorage.setItem('pk_skin', skin);
   $('menu').classList.add('hidden');
@@ -391,6 +570,7 @@ function buildSkinPicker() {
   });
 }
 
+myName = localStorage.getItem('pk_name') || '無名跑者';
 $('nameInput').value = localStorage.getItem('pk_name') || '';
 $('roomTag').textContent = ROOM;
 $('best').textContent = bestDist;
@@ -523,5 +703,10 @@ window.__parkour = {
   setHour(h) { hour0 = h; elapsed = 0; },
   setWeather(w) { weather = Object.assign(weather, w); },
   ghosts, cam, restart, pad, ball,
+  get npcs() { return npcs; },
+  get wallet() { return wallet; },
+  get running() { return running; },
+  input,
+  giveCoins(n) { if (player) player.coins += n; },
   setPad: setPadMode, setPadSide, setHudMore,
 };

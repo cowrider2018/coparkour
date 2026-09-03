@@ -23,6 +23,10 @@ export const PHYS = {
   respawnY: 1100, // 掉到這個高度以下就算死亡
 };
 
+// 世界的比例尺。距離對玩家一律以公尺呈現（儀表板、NPC 的間距都是），
+// 內部座標則一律是 px——換算只在邊界上做這一次。
+export const PX_PER_M = 10;
+
 export const PLAYER_W = 26;
 export const PLAYER_H = 40;
 

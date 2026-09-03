@@ -1,15 +1,24 @@
-import { PHYS, PLAYER_W, PLAYER_H, WORLD } from './constants.js';
+import { PHYS, PLAYER_W, PLAYER_H, WORLD, PX_PER_M } from './constants.js';
 import { COIN_R, clamp } from './level.js';
 
 export class Player {
-  constructor(level) {
+  /**
+   * @param {object} opts
+   *   airJumps  二段跳次數。NPC 傳 0（它不會二段跳），玩家不傳就是 PHYS.airJumps。
+   *   mortal    false = 不吃金幣、不被地刺殺、掉出世界也不死。NPC 是世界的一部分，
+   *             不能偷玩家的錢，也不該因為一次失誤就消失（掉下去由 npc.js 把它接回落腳點）。
+   */
+  constructor(level, opts = {}) {
     this.level = level;
+    this.maxAirJumps = opts.airJumps == null ? PHYS.airJumps : opts.airJumps;
+    this.mortal = opts.mortal !== false;
     this.reset();
   }
 
-  reset() {
-    this.x = 80;
-    this.y = WORLD.startY - PLAYER_H;
+  /** @param {{x:number,y:number}} [spawn] 出生點（y 是站的那個面）。不給就是關卡起點。 */
+  reset(spawn) {
+    this.x = spawn ? spawn.x : 80;
+    this.y = (spawn ? spawn.y : WORLD.startY) - PLAYER_H;
     this.vx = 0;
     this.vy = 0;
     this.grounded = false;
@@ -18,7 +27,7 @@ export class Player {
     this.bufferT = 0;
     this.wallStickT = 0;
     this.heldJump = false;
-    this.airJumps = PHYS.airJumps;
+    this.airJumps = this.maxAirJumps;
     this.facing = 1;
     this.dead = false;
     this.deadReason = '';
@@ -34,7 +43,7 @@ export class Player {
   }
 
   get dist() {
-    return Math.max(0, Math.round(this.maxX / 10)); // 10px = 1 公尺
+    return Math.max(0, Math.round(this.maxX / PX_PER_M));
   }
 
   // dt 固定為 1/120 秒，確保物理在任何裝置上表現一致
@@ -87,7 +96,7 @@ export class Player {
         this.facing = -this.wallDir;
         this.wallStickT = PHYS.wallStick;
         this.bufferT = 0;
-        this.airJumps = PHYS.airJumps;
+        this.airJumps = this.maxAirJumps;
         this.squash = 1;
       } else if (this.airJumps > 0) {
         this.airJumps--;
@@ -113,7 +122,7 @@ export class Player {
     this.moveY(this.vy * dt);
 
     if (wasGrounded && !this.grounded) this.coyoteT = PHYS.coyoteTime;
-    if (this.grounded) this.airJumps = PHYS.airJumps;
+    if (this.grounded) this.airJumps = this.maxAirJumps;
 
     this.squash = Math.max(0, this.squash - dt * 5);
     this.anim += Math.abs(this.vx) * dt * 0.05;
@@ -121,6 +130,9 @@ export class Player {
     if (this.x > this.maxX) this.maxX = this.x;
 
     // ── 危險物 ──
+    // NPC（mortal:false）完全不碰這一段：地形由玩家那邊生成、金幣是玩家的、
+    // 掉出世界由 npc.js 收拾。
+    if (!this.mortal) return;
     lvl.ensure(this.x + WORLD.chunkAhead);
     this.checkSpikes();
     this.collectCoins();

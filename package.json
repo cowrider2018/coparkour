@@ -11,7 +11,8 @@
     "verify:touch": "node tools/verify-touch.mjs",
     "verify:jump": "node tools/verify-jump.mjs",
     "verify:pad": "node tools/verify-pad.mjs",
-    "verify:all": "npm run verify && npm run verify:touch && npm run verify:jump && npm run verify:pad && npm run verify:cat",
+    "verify:npc": "node tools/verify-npc.mjs 24 600",
+    "verify:all": "npm run verify && npm run verify:touch && npm run verify:jump && npm run verify:pad && npm run verify:npc && npm run verify:cat",
     "verify:cat": "node tools/verify-cat-shape.mjs"
   },
   "devDependencies": {

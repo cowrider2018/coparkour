@@ -15,6 +15,7 @@ const ALB = {
   coin:     [0.720, 0.480, 0.090],
   self:     [0.130, 0.520, 0.360],
   ghost:    [0.180, 0.290, 0.560],
+  npc:      [0.330, 0.200, 0.470],
 };
 
 // ── 卡通地形的尺寸 ──────────────────────────────────────────
@@ -170,7 +171,7 @@ export class Renderer {
   /**
    * @param {number} W 畫布 CSS 寬
    * @param {number} H 畫布 CSS 高
-   * @param {object} s { cam, level, player, ghosts, time, zoom, sky, wind, glBackground }
+   * @param {object} s { cam, level, player, ghosts, npcs, myName, time, zoom, sky, wind, glBackground }
    */
   draw(W, H, s) {
     const ctx = this.ctx;
@@ -205,6 +206,16 @@ export class Renderer {
     for (const g of ghosts) {
       if (!s.hasCats) this.block(g.x, g.y, g.facing, ALB.ghost, 0.58, 0, sky);
       this.label(g.x, g.y, g.name, s.hasCats ? 1 : 0.58);
+    }
+
+    // NPC：名牌之外還有對話泡（購買邀請），買下來的那一隻頭上插一支旗
+    for (const n of s.npcs || []) {
+      const own = n.owner;
+      const mine = own && own.name === s.myName;
+      if (mine) this.flag(own.x, own.y, time);
+      if (!s.hasCats) this.block(n.x, n.y, n.p.facing, ALB.npc, 1, 0, sky);
+      this.label(n.x, n.y, own ? (mine ? '★ 你的重生點' : own.name + ' 的重生點') : n.name, 1);
+      if (n.saysT > 0 && n.says) this.bubble(n.x, n.y, n.says);
     }
     if (!player.dead && !s.hasCats) {
       this.block(player.x, player.y, player.facing, ALB.self, 1, player.squash, sky);
@@ -581,6 +592,53 @@ export class Renderer {
     ctx.fillStyle = '#dce9ff';
     ctx.fillText(name, cx, y - 25);
     ctx.textAlign = 'left';
+    ctx.restore();
+  }
+
+  /** 對話泡。畫在名牌上面一層，尖角朝下指著那隻貓。 */
+  bubble(x, y, text) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.font = '600 12px system-ui, -apple-system, "Noto Sans TC", sans-serif';
+    ctx.textAlign = 'center';
+    const cx = x + PLAYER_W / 2;
+    const w = ctx.measureText(text).width + 18;
+    const top = y - 66, h = 22;
+    ctx.fillStyle = 'rgba(255,247,228,0.95)';
+    roundRect(ctx, cx - w / 2, top, w, h, 9);
+    ctx.fill();
+    ctx.beginPath();                     // 尖角
+    ctx.moveTo(cx - 5, top + h);
+    ctx.lineTo(cx + 5, top + h);
+    ctx.lineTo(cx, top + h + 7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#3a2a12';
+    ctx.fillText(text, cx, top + 15);
+    ctx.textAlign = 'left';
+    ctx.restore();
+  }
+
+  /** 自己的重生點：一支會飄的小旗，插在那塊板子的中央。 */
+  flag(x, y, time) {
+    const ctx = this.ctx;
+    const h = 34;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(20,14,8,0.85)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x, y - h);
+    ctx.stroke();
+    const wave = Math.sin(time * 3) * 2.5;
+    ctx.fillStyle = '#ffd36e';
+    ctx.beginPath();
+    ctx.moveTo(x, y - h);
+    ctx.quadraticCurveTo(x + 12, y - h + 4 + wave, x + 22, y - h + 2);
+    ctx.lineTo(x + 22, y - h + 13);
+    ctx.quadraticCurveTo(x + 12, y - h + 11 + wave, x, y - h + 14);
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
   }
 }

@@ -7,6 +7,10 @@
 //   1. 發給同房間的所有人同一個 seed（地形由前端自己生成）
 //   2. 把每個人的座標轉送給同房間的其他人
 //   3. 記錄本房最佳成績
+//   4. 發一個共同的世界時鐘 t0，以及 NPC 的擁有權與金幣餘額
+//
+// NPC 的座標一個位元組都不會經過這裡：它們的位置是「世界時間的函數」，
+// 每個人自己算得出來（見 public/src/npc.js）。伺服器只需要給大家同一個時鐘原點。
 // 用 WebSocket Hibernation API，沒人講話時 DO 會休眠、不計費。
 
 const MAX_PLAYERS = 12;      // 一間房上限
@@ -15,6 +19,10 @@ const MSG_PER_SEC = 40;      // 每人每秒訊息上限（超過直接丟棄）
 const BOARD_SIZE = 10;
 const STATES = new Set(['run', 'idle', 'air', 'fall', 'wall', 'dead']);
 const SKINS = new Set(['orangin', 'tabby', 'calico']);
+// 重生點的價格。跟 public/src/npc.js 的 NPC.prices 是同一張表，改了要一起改——
+// 客戶端拿它顯示，伺服器拿它驗，兩邊不一樣的話買家會看到「金幣不足」卻不知道為什麼。
+const PRICES = [50, 150, 300];
+const MAX_COIN_DELTA = 20000; // 單次回報的金幣上限（跟排行榜一樣，只擋離譜值，不是防作弊）
 
 export default {
   async fetch(request, env) {
@@ -70,15 +78,22 @@ export class GameRoom {
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({ id, name, skin });
 
-    const seed = await this.getSeed();
+    const world = await this.getWorld();
     const board = (await this.ctx.storage.get('board')) || [];
+    const owners = (await this.ctx.storage.get('owners')) || [];
+    const wallet = (await this.ctx.storage.get('wallet')) || {};
     const players = [];
     for (const ws of sockets) {
       const a = safeAttach(ws);
       if (a) players.push({ id: a.id, name: a.name, skin: a.skin || 'orangin', ...(this.latest.get(a.id) || {}) });
     }
 
-    server.send(JSON.stringify({ t: 'welcome', id, seed, players, board, max: MAX_PLAYERS }));
+    server.send(JSON.stringify({
+      t: 'welcome', id, seed: world.seed, players, board, max: MAX_PLAYERS,
+      // t0 是這個房間的世界時鐘原點，now 讓客戶端校正自己的時鐘
+      t0: world.t0, now: Date.now(),
+      owners, coins: wallet[name] || 0,
+    }));
     this.broadcast({ t: 'join', id, name, skin }, server);
 
     return new Response(null, { status: 101, webSocket: client });
@@ -130,13 +145,57 @@ export class GameRoom {
         await this.recordScore(a.name, num(m.d), num(m.c));
         break;
 
+      // 撿到的金幣。客戶端只送「上次回報之後又撿了多少」，死掉不歸零、同房同人累積。
+      case 'coins': {
+        const add = Math.max(0, Math.min(MAX_COIN_DELTA, num(m.n)));
+        if (!add) break;
+        const v = await this.addCoins(a.name, add);
+        try { ws.send(JSON.stringify({ t: 'wallet', v })); } catch { /* ignore */ }
+        break;
+      }
+
+      // 買一個重生點。先到先得，價格由伺服器這一份表決定。
+      // x/y 是那塊板子的中心與頂面，存下來之後所有人都用它，NPC 就在那塊板子上定居。
+      case 'buy': {
+        const i = num(m.i);
+        if (i < 0) break;
+        const owners = (await this.ctx.storage.get('owners')) || [];
+        if (owners.some((o) => o.i === i)) {
+          try { ws.send(JSON.stringify({ t: 'buyfail', i, why: 'taken' })); } catch { /* ignore */ }
+          break;
+        }
+        const wallet = (await this.ctx.storage.get('wallet')) || {};
+        const mine = owners.filter((o) => o.name === a.name).length;
+        const price = PRICES[Math.min(mine, PRICES.length - 1)];
+        const have = wallet[a.name] || 0;
+        if (have < price) {
+          try { ws.send(JSON.stringify({ t: 'buyfail', i, why: 'poor', need: price, have })); } catch { /* ignore */ }
+          break;
+        }
+        wallet[a.name] = have - price;
+        const own = { i, name: a.name, at: Date.now(), x: num(m.x), y: num(m.y) };
+        owners.push(own);
+        await this.ctx.storage.put('owners', owners);
+        await this.ctx.storage.put('wallet', wallet);
+        this.broadcast({ t: 'own', ...own }); // 不帶 except：買家自己也要收到
+        try { ws.send(JSON.stringify({ t: 'wallet', v: wallet[a.name] })); } catch { /* ignore */ }
+        break;
+      }
+
       case 'reseed': {
         // 只有房間裡剩自己一個人時才能換地形，避免打斷別人
         if (this.ctx.getWebSockets().length > 1) return;
+        // ── 換地形是個人測試用的功能，這一段是它的配套 ──────────────
+        // 地形換掉，重生點就沒有意義了（那是舊地圖上的座標），錢包也一起歸零，
+        // 免得在舊地圖刷到的金幣帶到新地圖。要移除這個測試手段的話，整個 case 一起刪。
         const seed = randSeed();
+        const t0 = Date.now();
         await this.ctx.storage.put('seed', seed);
+        await this.ctx.storage.put('t0', t0);
         await this.ctx.storage.put('board', []);
-        this.broadcast({ t: 'seed', seed });
+        await this.ctx.storage.put('owners', []);
+        await this.ctx.storage.put('wallet', {});
+        this.broadcast({ t: 'seed', seed, t0 });
         this.broadcast({ t: 'board', list: [] });
         break;
       }
@@ -171,13 +230,28 @@ export class GameRoom {
     return r.n <= MSG_PER_SEC;
   }
 
-  async getSeed() {
-    let s = await this.ctx.storage.get('seed');
-    if (typeof s !== 'number') {
-      s = randSeed();
-      await this.ctx.storage.put('seed', s);
+  // 一間房的世界：seed 決定地形，t0 決定「現在是這個世界的第幾秒」。
+  // 兩個是一組的——換地形就等於換一個世界，時鐘也跟著從頭開始。
+  async getWorld() {
+    let seed = await this.ctx.storage.get('seed');
+    let t0 = await this.ctx.storage.get('t0');
+    if (typeof seed !== 'number') {
+      seed = randSeed();
+      await this.ctx.storage.put('seed', seed);
     }
-    return s;
+    if (typeof t0 !== 'number') {
+      t0 = Date.now();
+      await this.ctx.storage.put('t0', t0);
+    }
+    return { seed, t0 };
+  }
+
+  async addCoins(name, add) {
+    const wallet = (await this.ctx.storage.get('wallet')) || {};
+    const v = Math.min(1e9, (wallet[name] || 0) + add);
+    wallet[name] = v;
+    await this.ctx.storage.put('wallet', wallet);
+    return v;
   }
 
   async recordScore(name, dist, coins) {
