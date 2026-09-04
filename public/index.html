@@ -82,8 +82,14 @@
     <label for="nameInput">你的名字</label>
     <input id="nameInput" maxlength="14" placeholder="無名跑者" autocomplete="off" />
 
-    <label for="skinPicker">你的貓</label>
-    <div id="skinPicker" class="skins" role="group" aria-label="選擇花色"></div>
+    <label for="lookPicker">你的角色</label>
+    <!-- 左右各一半：左邊是選中的那一隻本人（跟 /preview/ 同一支 showcase），
+         右邊是九種造型排成 3×3。框是空的：天空、地面與畫布由 showcase.js
+         放進來，畫不出來就收掉。 -->
+    <div class="lookpick">
+      <div id="lookView" class="view" aria-hidden="true"></div>
+      <div id="lookPicker" class="looks" role="group" aria-label="選擇角色"></div>
+    </div>
     <p id="catNote" class="catnote"></p>
 
     <button id="startBtn" class="primary">開始跑</button>

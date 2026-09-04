@@ -405,23 +405,75 @@ code { font: 600 11px ui-monospace, monospace; background: var(--field); padding
 }
 
 
-/* ── 花色選擇 ───────────────────────────────────────── */
-.skins { display: flex; gap: 8px; margin-bottom: 16px; }
+/* ── 選角色 ──────────────────────────────────────
+   左一半是選中的那隻本人，右一半是九種造型。兩半嚴格一樣寬（兩個 1fr），
+   而且框是正方形，所以右邊那區也是正方形——三行三列就是九顆正方形按鈕。
 
+   框的尺寸全交給 CSS（showcase.js 只量它），所以 aspect-ratio 說了算。 */
+.lookpick {
+  display: grid;
+  /* minmax(0, 1fr) 而不是 1fr：1fr 的下限是 auto，所以右邊那九顆按鈕的
+     min-content 一超過它該得的一半，它就會把左邊擠小——在 360 px 的
+     手機上真的會（量到過 112 對 142）。下限歸零之後，一半就是一半。 */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+/* 沒有框也沒有背景：這一格不是一扇開在卡片上的窗，是一隻站在卡片上的動物。
+   畫布本來就是透明的（CatLayer 每幀清成 rgba(0,0,0,0)），而天空跟地面線
+   由 showcase 的 `scenery: false` 整組不建——所以這裡不必蓋掉什麼，
+   底下就真的什麼都沒有。aspect-ratio 仍然留著：它是這一格佔多大的地方，
+   跟看不看得見是兩回事，右半邊的九宮格靠它才對得起來。 */
+.lookpick .view {
+  aspect-ratio: 1;
+  /* 動物種類多到右邊那疊按鈕比這個正方形還高時，讓它們往下長，框自己
+     維持正方形待在上面——不然框會被拉成長方形，而框的比例就是動物的
+     取景。 */
+  align-self: start;
+  cursor: grab;
+}
+.lookpick .view.held { cursor: grabbing; }
+/* 這台裝置畫不出來。留一個空框比沒有框更像壞掉了。 */
+.lookpick .view.off { display: none; }
+/* 框收掉之後，九顆按鈕自己拿整列 */
+.lookpick .view.off + .looks { grid-column: 1 / -1; }
+
+/* 全部的造型，一行一種動物、一列一件毛色。行列數不寫死：--cols / --rows
+   由 main.js 從名單數出來寫進來（見 looks.js 的 lookGrid），每一格的位置
+   也是那裡指定的，所以參差的名單只是某一行右邊少幾格，不會整個錯開。
+   後備的 3 只有在 JS 還沒跑到之前那一瞬用得上。
+
+   列寫成 1fr 就夠了，不需要另外訂一個最小高度：1fr 的下限本來就是內容
+   撐出來的最小高度（一顆球 + 一行字 ≈ 43 px）。動物少的時候有多餘的空間，
+   按鈕就把整個正方形平分掉；多到平分會低於那 43 px 時，網格自己往下長，
+   而框靠 align-self: start 留在上面維持正方形。三種動物的現況落在前者，
+   一格也沒有動。 */
+.looks {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 3), 1fr);
+  grid-template-rows: repeat(var(--rows, 3), 1fr);
+  gap: 8px;
+}
+
+/* 九顆一個樣子：上面一顆顏色球，下面物種名。球在上而不是名字旁邊，是
+   因為按鈕只有卡片的六分之一寬：並排的話「垂耳犬」會被擠成兩行。 */
 .skin {
-  flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 5px;
   font: inherit;
-  font-size: 13px;
-  padding: 9px 6px;
+  font-size: 12px;
+  line-height: 1.2;
+  padding: 4px 2px;
   border-radius: 11px;
   border: 1px solid var(--edge);
   background: var(--field);
   color: var(--muted);
   cursor: pointer;
+  /* 中文可以逐字斷行，而這裡的名字短到斷了只會難讀 */
+  white-space: nowrap;
 }
 
 .skin:hover { border-color: var(--line-strong); color: var(--ink); }
@@ -435,16 +487,25 @@ code { font: 600 11px ui-monospace, monospace; background: var(--field); padding
   transform: translateY(-1px);
 }
 
+/* 顏色球：兩件毛色就左右各一半，三件就切成三等分，漸層由 looks.js 給。
+   毛色名不寫在按鈕上（九顆都寫就沒有一致的格式可言），而是進 aria-label
+   跟 title，所以讀螢幕跟滑鼠停留都還說得出「貓・三花」。 */
 .chip {
-  width: 15px; height: 15px;
+  width: 14px; height: 14px;
   border-radius: 50%;
   border: 1px solid #241c12;
   flex: none;
 }
 
-/* 三個花色的代表色，取自 cat.bin 各 skin 的平均色 */
-/* 每一種造型的色票現在由 looks.js 給、main.js 直接寫成 inline 漸層——
-   多一種動物或多一件毛色不必再來這裡加一條規則。 */
+/* 卡片窄下來之後，一顆按鈕只剩三十幾 px，而「垂耳犬」三個字 12 px 就要 36。
+   字跟球一起收一號，不讓它溢出來；九宮格本身不變，因為一行一種動物這件事
+   比字大一點重要。 */
+@media (max-width: 430px) {
+  .lookpick { gap: 10px; }
+  .looks { gap: 6px; }
+  .skin { font-size: 10px; gap: 3px; padding: 3px 1px; }
+  .chip { width: 12px; height: 12px; }
+}
 
 .catnote { margin: -8px 0 14px; font-size: 11px; color: var(--accent2); text-align: left; }
 
@@ -875,8 +936,8 @@ body.pad.pad-port .hud-side.more-open {
   .card h1 { font-size: 26px; }
   .sub { margin-bottom: 12px; font-size: 12px; }
   input { padding: 8px 11px; margin-bottom: 11px; }
-  .skins { margin-bottom: 11px; }
-  .skin { padding: 7px 5px; }
+  .lookpick { margin-bottom: 11px; gap: 10px; }
+  .skin { gap: 4px; }
   .settings { margin-top: 10px; }
   .setlist { gap: 8px; padding: 10px 2px 4px; }
   .primary { padding: 10px; }

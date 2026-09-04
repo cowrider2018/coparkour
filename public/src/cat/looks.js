@@ -22,10 +22,20 @@
    dependency graph and it stays there.
 
    ── adding one ───────────────────────────────────────────────────
-   A colourway: add it to that animal's list below, and to `dog.js`'s
-   own coat table. A whole animal: add its id here and its recipe to
-   `species.js`. Nothing else needs telling — the menu, the catalogue
-   page and the server all read this file.
+   A colourway: add it to that animal's list below, to `SKIN_NAME` and
+   `SWATCH` below that, and to `dog.js`'s own coat table. A whole
+   animal: add its id here, its name to `MODEL_NAME`, and its recipe to
+   `species.js`.
+
+   Nothing else needs telling. The server reads this file, the catalogue
+   page builds itself from `SPECIES`, and the menu's grid counts its own
+   rows and columns off `lookGrid()` — including animals whose coat
+   counts differ from everyone else's.
+
+   The one step that is not automatic and will not break anything if you
+   skip it is the name and the swatch: an unregistered coat falls back to
+   its raw id and a grey chip, which looks like a bug and isn't one.
+   `tools/verify-looks.mjs` fails on it so it does not ship that way.
    ------------------------------------------------------------------ */
 
 /** The cat's three, in cat.bin's own order. */
@@ -52,6 +62,39 @@ export const DEFAULT_LOOK = LOOKS[0];
 
 /** @param {string} look @returns {boolean} */
 export const isLook = (look) => LOOKS.includes(look);
+
+/**
+ * 同樣一份名單，攤成一張表：一行一種動物，一列一件毛色。
+ *
+ * 選單要的是這個形狀而不是扁平的 LOOKS。扁平的名單交給 CSS 自動換行，
+ * 只有在「每種動物的毛色數都一樣」時才會排成整齊的表——第一次有動物
+ * 帶兩件或四件毛色，後面每一行就全部錯開，而那是靜靜發生的。
+ *
+ * 這裡把每一格的行列都算出來，所以參差的名單也只是右邊少幾格，不會錯行。
+ * cols 取最寬的那一行，rows 就是動物數。
+ *
+ * 收 models / skins 當參數而不是直接讀上面那兩個常數，是為了驗證器能餵
+ * 一份參差的假名單進來問「那你怎麼排」——不然這件事只有等真的加了第四種
+ * 動物才會知道。
+ *
+ * @param {string[]} [models]
+ * @param {Record<string, string[]>} [skins]
+ * @returns {{cols: number, rows: number, cells: {look: string, row: number, col: number}[]}}
+ */
+export function lookGrid(models = MODELS, skins = MODEL_SKINS) {
+  const cells = [];
+  models.forEach((model, row) => {
+    (skins[model] || []).forEach((skin, col) => {
+      // row / col 從 1 起算：CSS grid 的行列編號就是這樣數的。
+      cells.push({ look: `${model}/${skin}`, row: row + 1, col: col + 1 });
+    });
+  });
+  return {
+    cols: models.reduce((n, m) => Math.max(n, (skins[m] || []).length), 0),
+    rows: models.length,
+    cells,
+  };
+}
 
 /* ── names and swatches ───────────────────────────────────────────
    Presentation, and deliberately not the coat's own colours: a coat is
@@ -81,7 +124,8 @@ export const skinName = (skin) => SKIN_NAME[skin] || skin;
 
 /** `look` → what to call it and what to paint its chip.
  *  The two halves come out separately as well as joined, because callers
- *  want them apart: the catalogue heads a card with the animal and
+ *  want them apart: the menu's button carries the animal and leaves the
+ *  coat to the chip, and the catalogue heads a card with the animal and
  *  labels each coat under it. It used to split the joined string back
  *  apart on the ・, which worked, but only by accident. */
 export function lookInfo(look) {

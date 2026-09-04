@@ -13,8 +13,9 @@ import { Decor } from './gfx/decor.js';
 import { Trees } from './gfx/tree.js';
 import { seasonBlend } from './gfx/season.js';
 import { CAT_SKINS } from './cat/cat.js';
-import { LOOKS, DEFAULT_LOOK, isLook, lookInfo } from './cat/looks.js';
+import { lookGrid, DEFAULT_LOOK, isLook, lookInfo, swatchCss } from './cat/looks.js';
 import { speciesModels } from './cat/species.js';
+import { Showcase, beat } from './cat/showcase.js';
 
 const $ = (id) => document.getElementById(id);
 const cfg = window.GAME_CONFIG || {};
@@ -43,6 +44,7 @@ let player = null;
 let net = null;
 let background = null;      // WebGL 背景層，載不起來就是 null
 let cats = null;            // WebGL 角色層（即時 3D 三階調），載不起來就是 null
+let lookView = null;        // 開始選單左邊那一格：你選中的那隻本人
 let seed = hashStr('local:' + ROOM);
 let W = 0, H = 0, zoom = 1, zoomBase = 1;
 let running = false;
@@ -283,6 +285,9 @@ let acc = 0, last = 0, uiTick = 0, wasDead = false, npcAcc = 0;
 
 function frame(now) {
   requestAnimationFrame(frame);
+  /* 選單那一格在遊戲開始之前就要動，而這時還沒有 level——所以它在提早
+     返回的那一行之前。開跑之後它被收掉，這裡就只剩一個 null 檢查。 */
+  if (lookView) drawLookView(now);
   if (!level) return;
   if (!last) last = now;
   let dt = (now - last) / 1000;
@@ -517,6 +522,62 @@ function buyNpc(n, price) {
 }
 
 // ── 圖層：WebGL 背景 + 貓 ──────────────────────────────
+/* cat.bin 只讀一次、只解一次。
+
+   選單那一格跟遊戲各自開一層 GL（兩張畫布不可能共用 buffer），但 CPU
+   這邊的網格是同一份：兩隻狗的網格是從貓現場揉出來的，揉兩次只是把
+   同一件事做兩遍。回傳的是 promise 而不是資料，所以兩邊同時要也只會
+   fetch 一次。 */
+let rosterOnce = null;
+function catRoster() {
+  if (!rosterOnce) {
+    rosterOnce = (async () => {
+      const { parseCat } = await import('./cat/rig.js');
+      const res = await fetch('./assets/cat.bin');
+      if (!res.ok) throw new Error(`cat.bin: HTTP ${res.status}`);
+      return speciesModels(parseCat(await res.arrayBuffer()));
+    })();
+  }
+  return rosterOnce;
+}
+
+/* 選單左邊那一格。跟 /preview/ 的圖鑑是同一支 showcase，所以選單裡看到的
+   步態、光、大小跟圖鑑上的不是「很像」，是同一組數字。 */
+async function bootLookView() {
+  const box = $('lookView');
+  if (NOGL) { box.classList.add('off'); return; }
+  try {
+    const { CatLayer } = await import('./cat/cat.js');
+    const roster = await catRoster();
+    lookView = new Showcase(
+      box,
+      /* desynchronized 關掉：這一格不在回答手指，換不到延遲，卻會在部分
+         行動 GPU 上把透明的畫布變成不透明的黑底。見 cat.js 那邊的註解。 */
+      (canvas) => new CatLayer(canvas, roster,
+        { boxW: PLAYER_W, boxH: PLAYER_H, desynchronized: false }),
+      /* 沒有布景：這一格站在卡片上，卡片自己就是它的背景。
+         fill 比圖鑑大，因為這裡只站一隻而不是一排三隻；但它是一個
+         比例，所以手機上框縮成 143 px，動物也跟著縮，不會溢出去。 */
+      { looks: [look], scenery: false, fill: 0.38 },
+    );
+  } catch (e) {
+    /* 畫不出來就收掉整個框，名單自己擴成整列。這台裝置畫不出貓這件事
+       已經由 bootGraphics 的 catNote 講了，不用再講一次。 */
+    lookView = null;
+    box.classList.add('off');
+  }
+}
+
+/* 那一格自己的時間。遊戲的 dt 是固定步進累加器算的，而這裡只是一隻小跑
+   的動物，兩件事沒有關係。 */
+let lookLast = 0, lookClock = 0;
+function drawLookView(now) {
+  const dt = lookLast ? Math.min(0.05, (now - lookLast) / 1000) : 0;
+  lookLast = now;
+  lookClock += dt;
+  lookView.draw(dt, beat(lookClock));
+}
+
 async function bootGraphics() {
   if (!NOGL) {
     try {
@@ -536,7 +597,7 @@ async function bootGraphics() {
   try {
     const { CatLayer } = await import('./cat/cat.js');
     /* 一層裝下所有物種。名冊由 species.js 給，這裡不認識任何一種動物。 */
-    cats = await CatLayer.load(fxCanvas, './assets/cat.bin', { models: speciesModels });
+    cats = new CatLayer(fxCanvas, await catRoster(), {});
     fxCanvas.style.display = 'block';
     cats.resize(W, H, Math.min(devicePixelRatio || 1, 2));
     $('catNote').textContent = '';
@@ -554,40 +615,62 @@ function start() {
   localStorage.setItem('pk_name', name);
   localStorage.setItem('pk_look', look);
   $('menu').classList.add('hidden');
+  /* 選完了就不需要了，而它手上拿著一個 WebGL context——還給瀏覽器，不要讓
+     一個看不見的框跟遊戲比 GPU。 */
+  if (lookView) { lookView.dispose(); lookView = null; }
   buildLevel(seed);
   restart();
   connect(name);
   resize();
 }
 
-/* 選單就是 LOOKS 本身。名字和色票都從 looks.js 來，所以多一種動物或多一件
-   毛色不用改這裡——那正是把名單放在一個地方的理由。 */
-function buildSkinPicker() {
-  const box = $('skinPicker');
-  box.innerHTML = LOOKS.map((id) => {
-    const info = lookInfo(id);
-    const stops = info.swatch.length === 2
-      ? `${info.swatch[0]} 50%, ${info.swatch[1]} 50%`
-      : info.swatch.map((c, i, a) => `${c} ${Math.round((i / a.length) * 100)}% ${Math.round(((i + 1) / a.length) * 100)}%`).join(', ');
-    return `<button type="button" class="skin" data-look="${id}" aria-pressed="${id === look}">
-       <span class="chip" style="background:linear-gradient(135deg, ${stops})"></span>${info.name}
-     </button>`;
-  }).join('');
+/* 選單就是名單本身，連版面也是：`lookGrid()` 把名單攤成一張表，一行一種
+   動物、一列一件毛色，欄數列數都是數出來的，寫進 CSS 變數讓網格照著長。
+   多一種動物或多一件毛色，這裡跟樣式表都不用改。
+
+   每一格的行列是明確指定的，不是丟給網格自動排。差別在參差的名單：某種
+   動物帶兩件或四件毛色時，自動排會從那一行開始整個錯開，而且是靜靜地錯；
+   指定行列則只是那一行右邊少幾格。
+
+   每顆都是同一個格式：顏色球 + 物種名。毛色名不入畫面，因為每顆都寫就不
+   可能還是同一個格式；它進 aria-label 跟 title，所以讀螢幕跟停留都說得出完整
+   的「貓・三花」——同一行的幾顆寫著同一個「貓」、只差在球的顏色，看不見
+   顏色的人需要那個名字。 */
+function buildLookPicker() {
+  const box = $('lookPicker');
+
+  const paint = () => {
+    if (lookView) lookView.looks = [look];
+    const grid = lookGrid();
+    box.style.setProperty('--cols', grid.cols);
+    box.style.setProperty('--rows', grid.rows);
+    box.innerHTML = grid.cells.map(({ look: id, row, col }) => {
+      const info = lookInfo(id);
+      return `<button type="button" class="skin" data-look="${id}"
+         style="grid-row:${row};grid-column:${col}"
+         aria-pressed="${id === look}" aria-label="${info.name}" title="${info.name}">
+         <span class="chip" style="background:${swatchCss(info.swatch)}"></span>${info.modelName}
+       </button>`;
+    }).join('');
+  };
+
   box.addEventListener('click', (e) => {
     const b = e.target.closest('.skin');
-    if (!b) return;
+    if (!b || b.dataset.look === look || !isLook(b.dataset.look)) return;
     look = b.dataset.look;
     localStorage.setItem('pk_look', look);
-    box.querySelectorAll('.skin').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.look === look)));
+    paint();
     if (net) net.setLook(look);
   });
+
+  paint();
 }
 
 myName = localStorage.getItem('pk_name') || '無名跑者';
 $('nameInput').value = localStorage.getItem('pk_name') || '';
 $('roomTag').textContent = ROOM;
 $('best').textContent = bestDist;
-buildSkinPicker();
+buildLookPicker();
 $('startBtn').addEventListener('click', start);
 $('nameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') start(); });
 $('retryBtn').addEventListener('click', restart);
@@ -702,6 +785,7 @@ if (!SERVER) {
   $('serverHint').classList.remove('hidden');
   $('rtt').hidden = true;          // 單機沒有延遲可言，那顆藥丸就不要佔位
 }
+bootLookView();
 bootGraphics();
 requestAnimationFrame(frame);
 
