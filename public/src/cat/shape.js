@@ -213,10 +213,18 @@ export const SIL_RADIUS = [0.40, 0.70];
  * out of its own ink. Across yaws the number moves by about 1%, which
  * is why one of it per part is enough.
  *
+ * The part table and the ride table are ARGUMENTS rather than the
+ * module constants, because a second animal built on this rig has its
+ * own parts — a dog's muzzle is a rectangle the cat has no bone for.
+ * The cat's own tables stay the defaults, so every existing caller
+ * reads the same as before.
+ *
  * @param {object} data  the parsed cat.bin
  * @param {import('./rig.js').Rig} rig
+ * @param {Array}  parts the part table; defaults to the cat's
+ * @param {object} ride  bone → host part; defaults to the cat's
  */
-export function measureShapes(data, rig) {
+export function measureShapes(data, rig, parts = SHAPE_PARTS, ride = SHAPE_RIDE) {
   const { header, position, index, colors } = data;
   const nv = header.vertexCount;
   const group = (n) => header.groups.find((g) => g.name === n);
@@ -241,7 +249,7 @@ export function measureShapes(data, rig) {
     }
   }
 
-  const parts = SHAPE_PARTS.map((p) => {
+  const shaped = parts.map((p) => {
     const bone = rig.bone(p.bone);
     const box = boxes.get(bone);
     if (!box) throw new Error(`cat shape: bone "${p.bone}" has no outline geometry`);
@@ -262,8 +270,8 @@ export function measureShapes(data, rig) {
      what makes the rectangle the size of the PART rather than the size
      of the box drawn round it, and it is what lets every `scale` above
      be 1 and mean it. */
-  measureNorm(parts, data, rig, lit);
-  for (const p of parts) {
+  measureNorm(shaped, data, rig, lit);
+  for (const p of shaped) {
     p.half = p.half.map((h, k) => h * p.norm * p.scale[k]);
     /* The extents already carry it, so the bend must not divide by it
        twice. What is left is the artistic multiplier — and only the
@@ -284,16 +292,16 @@ export function measureShapes(data, rig) {
   /** bone → {part, ride}. Everything else is left exactly alone. */
   const byBone = new Int8Array(rig.count).fill(-1);
   const rides = new Uint8Array(rig.count);
-  parts.forEach((p, i) => { byBone[p.bone] = i; });
-  for (const [child, host] of Object.entries(SHAPE_RIDE)) {
-    const hi = parts.findIndex((p) => p.name === host);
+  shaped.forEach((p, i) => { byBone[p.bone] = i; });
+  for (const [child, host] of Object.entries(ride)) {
+    const hi = shaped.findIndex((p) => p.name === host);
     if (hi < 0) continue;
     const b = rig.bone(child);
     byBone[b] = hi;
     rides[b] = 1;
   }
 
-  return { parts, tail, byBone, rides };
+  return { parts: shaped, tail, byBone, rides };
 }
 
 /**

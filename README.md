@@ -149,6 +149,8 @@ public/
       background.js  WebGL2 背景層
     cat/
       cat.js         WebGL2 角色層：即時 3D + 三階調著色
+      shape.js       把每個部位彎成圓角矩形的那段（量測 + GLSL）
+      dog.js         同一份 cat.bin 重組成狗：鼻樑、短尾、寬耳、黃毛
       rig.js  pose.js  骨架與姿勢（來自 frontend-sandbox）
 worker/index.js   路由 + GameRoom Durable Object
 tools/
@@ -156,6 +158,9 @@ tools/
   verify-npc.mjs    NPC 不走丟、不卡住，而且每個人看到的都一樣
   verify-perf.mjs   沒有哪一幀會被 NPC 拖垮（驗每幀的工作量上限，不是碼錶）
   verify-buy.mjs    購買動線的端對端（要瀏覽器，不進 CI）
+  verify-cat-shape.mjs  圓角矩形貓：輪廓、三階調、頂點色、墨線
+  verify-dog.mjs    狗：兩種耳朵各畫四個角度，外加索引結構的檢查
+  lib/soft-raster.mjs   上面兩支共用的軟體光柵器（頂點著色器的 JS 版）
 wrangler.toml
 ```
 

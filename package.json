@@ -13,8 +13,9 @@
     "verify:pad": "node tools/verify-pad.mjs",
     "verify:npc": "node tools/verify-npc.mjs 24 600",
     "verify:perf": "node tools/verify-perf.mjs",
-    "verify:all": "npm run verify && npm run verify:touch && npm run verify:jump && npm run verify:pad && npm run verify:npc && npm run verify:perf && npm run verify:cat",
-    "verify:cat": "node tools/verify-cat-shape.mjs"
+    "verify:all": "npm run verify && npm run verify:touch && npm run verify:jump && npm run verify:pad && npm run verify:npc && npm run verify:perf && npm run verify:cat && npm run verify:dog",
+    "verify:cat": "node tools/verify-cat-shape.mjs",
+    "verify:dog": "node tools/verify-dog.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

@@ -107,7 +107,9 @@
 import { PHYS, PLAYER_W, PLAYER_H } from '../constants.js';
 import { parseCat, Rig } from './rig.js';
 import { Driver, Sway, applyPose, TAIL_AXIS, TAIL_LIFT } from './pose.js';
-import { measureShapes, SHAPE_GLSL, TAIL_CAP_GLSL, SHAPE_PARTS, FACE_LIFT } from './shape.js';
+import {
+  measureShapes, SHAPE_GLSL, TAIL_CAP_GLSL, SHAPE_PARTS, SHAPE_RIDE, FACE_LIFT,
+} from './shape.js';
 
 export const CAT_SKINS = ['orangin', 'tabby', 'calico'];
 
@@ -117,7 +119,6 @@ export const CAT_SKINS = ['orangin', 'tabby', 'calico'];
 const MODEL_REST_HEIGHT = 3.9922;
 /** …drawn at this many collision-box heights. See the header. */
 const CAT_HEIGHT_IN_BOXH = 1.10;
-const UNITS_PER_BOXH = MODEL_REST_HEIGHT / CAT_HEIGHT_IN_BOXH;   // 3.6293
 
 /** Horizontal centre of the model, in world Z. The rest pose spans
     −1.93 (tail) … +1.85 (whiskers), so this is its middle, and it is
@@ -128,6 +129,29 @@ const CENTER_Z = -0.04;
     (model +X). The model spans about −1.35…+1.55, so this leaves room
     for the outline shell and for a pose that reaches. */
 const DEPTH_HALF = 4.0;
+
+/* ── what the layer needs to know about the animal it is drawing ──
+   Everything above is a property of the CAT, and the cat is no longer
+   the only thing this file draws: `dog.js` builds a second animal on
+   the same rig, the same shader and the same bend, and it has its own
+   colourways, its own rectangle for a muzzle the cat has no bone for,
+   and its own middle — a muzzle sticking half a unit further forward
+   moves the point that should sit on the box's centre line.
+
+   So the four numbers that vary are gathered here, and a parsed asset
+   may carry a `model` of its own; `CatLayer` falls back to this one,
+   which is exactly what it used to hardcode. */
+export const CAT_MODEL = {
+  skins: CAT_SKINS,
+  parts: SHAPE_PARTS,
+  ride: SHAPE_RIDE,
+  restHeight: MODEL_REST_HEIGHT,
+  heightInBoxH: CAT_HEIGHT_IN_BOXH,
+  centerZ: CENTER_Z,
+  /** bone → how far to sink its ink. The cat's whole outline is one
+      grown shell of one mesh, so it has nothing to merge. */
+  inkSink: {},
+};
 
 /* ── stride ───────────────────────────────────────────────────────
    The feet are asked to keep pace with the ground, so the stride RATE
@@ -434,7 +458,7 @@ const MAX_SUB_DT = 0.005;
 const SWAY_N = 17;   // must equal Sway.count
 const SWAY_NONE = 0, SWAY_TAIL = 1, SWAY_WHISKER_L = 3;
 
-const VERT = (boneN, partN) => `#version 300 es
+const VERT = (boneN, partN, centerZ) => `#version 300 es
 precision highp float;
 #define BONE_N ${boneN}
 #define SWAY_N ${SWAY_N}
@@ -476,6 +500,26 @@ uniform int uTailBone;
 uniform float uInkMode;
 /** Toward the camera, for the face only. See FACE_LIFT. */
 uniform float uFaceLift;
+/** Per bone: how far to push that bone's INK shell BACK, in model
+    units, and only on the ink pass. Zero for every bone of the cat.
+
+    This is how two parts come to share one outline. The ink is an
+    inverted hull whose far side is drawn behind its own part's fill, so
+    a part gets a ring exactly where nothing of its own covers it — and
+    that is per PART. A muzzle standing out in front of a head has its
+    ring drawn over the head's cheek, because the muzzle's shell really
+    is nearer than the head there, and what the eye reads is a seam
+    across the face rather than one animal.
+
+    Sinking the muzzle's ink past the head's own depth makes the head's
+    FILL win wherever there is head, and leaves the ring standing
+    wherever there is not. What comes out is one line around the union
+    of the two, which is what a snout on a head looks like.
+
+    Per bone rather than per part, because it costs one uniform array
+    and no extra draw call: the ink is still the same single pass over
+    the same inverted hull. */
+uniform float uInkSink[BONE_N];
 
 out vec3 vNormal;
 out vec3 vColor;
@@ -554,7 +598,7 @@ vec3 swayNormal(vec3 n, float o, int group) {
    the ear sitting on top of it have to agree about where they are to
    well under a pixel, every frame. */
 vec2 screenOf(vec3 w) {
-  float rz = -w.x * uYaw.y + (w.z - ${CENTER_Z.toFixed(4)}) * uYaw.x;
+  float rz = -w.x * uYaw.y + (w.z - ${centerZ.toFixed(4)}) * uYaw.x;
   return vec2(uPlace.x + rz * uPlace.z, uPlace.y - (w.y - uGroundY) * uPlace.w);
 }
 /** A DIRECTION, in (screen-right, screen-up) — no CENTER_Z, and the
@@ -612,8 +656,8 @@ void main() {
      why the cull faces below are now constant and why the inverted
      hull keeps working at every angle in between: it is the same solid
      seen from a new direction rather than a reflected one. */
-  float rx = world.x * uYaw.x + (world.z - ${CENTER_Z.toFixed(4)}) * uYaw.y;
-  float rz = -world.x * uYaw.y + (world.z - ${CENTER_Z.toFixed(4)}) * uYaw.x;
+  float rx = world.x * uYaw.x + (world.z - ${centerZ.toFixed(4)}) * uYaw.y;
+  float rz = -world.x * uYaw.y + (world.z - ${centerZ.toFixed(4)}) * uYaw.x;
 
   vec3 n = mat3(bone) * normal;
   vNormal = vec3(n.x * uYaw.x + n.z * uYaw.y, n.y, -n.x * uYaw.y + n.z * uYaw.x);
@@ -660,7 +704,8 @@ void main() {
   gl_Position = vec4(
     screen.x * uXform.x + uXform.y,
     screen.y * uXform.z + uXform.w,
-    (rx - (face ? uFaceLift : 0.0)) * ${(1 / DEPTH_HALF).toFixed(6)},
+    (rx - (face ? uFaceLift : 0.0) + (uInkMode > 0.5 ? uInkSink[b] : 0.0))
+      * ${(1 / DEPTH_HALF).toFixed(6)},
     1.0);
 }
 `;
@@ -1002,12 +1047,29 @@ export class CatLayer {
     });
 
     this._data = data;
+    /* Which animal this is. A builder such as `dog.js` hands its own
+       descriptor down on the parsed data; anything that came straight
+       off cat.bin is the cat. */
+    const model = this._model = data.model || CAT_MODEL;
+    /** The colourways this asset actually carries, in the model's own
+        order — the first of them is the default and the one the ground
+        is measured on. */
+    this._skins = model.skins.filter((s) => data.colors.has(s));
+    if (!this._skins.length) throw new Error("cat: asset carries none of the model's skins");
+    /** World px per model unit at boxH = 1. */
+    this._unitsPerBoxH = model.restHeight / model.heightInBoxH;
     this._rig = new Rig(data.header);
     /* `mesh` style still compiles the bend, with every bone mapped to
        no part, so there is one shader to keep rather than two. */
-    this._shapeParts = SHAPE_PARTS.length;
+    this._shapeParts = model.parts.length;
     this._noBend = new Int32Array(this._rig.count).fill(-1);
-    this._prog = buildProgram(gl, VERT(this._rig.count, this._shapeParts), FRAG);
+    /** Per bone, how far its ink is pushed back. See uInkSink. */
+    this._inkSink = new Float32Array(this._rig.count);
+    for (const [name, by] of Object.entries(model.inkSink || {})) {
+      this._inkSink[this._rig.bone(name)] = by;
+    }
+    this._prog = buildProgram(gl,
+      VERT(this._rig.count, this._shapeParts, model.centerZ), FRAG);
     this._chanN = this._rig.count * 9;
 
     /* ── the eye on the far side ──
@@ -1089,7 +1151,7 @@ export class CatLayer {
        skin so it happens at most three times a frame. */
     this._vaos = new Map();
     this._cbufs = new Map();
-    for (const name of CAT_SKINS) {
+    for (const name of this._skins) {
       const colors = data.colors.get(name);
       if (!colors) continue;
       const cbuf = arrayBuf(colors);
@@ -1171,7 +1233,8 @@ export class CatLayer {
    */
   _measureShape() {
     if (this._style !== 'shape') { this._shape = null; return; }
-    const { parts, tail, byBone, rides } = measureShapes(this._data, this._rig);
+    const { parts, tail, byBone, rides } =
+      measureShapes(this._data, this._rig, this._model.parts, this._model.ride);
     const n = parts.length;
     const pa = new Float32Array(n * 4), pb = new Float32Array(n * 4);
     const pn = new Float32Array(n);
@@ -1199,7 +1262,7 @@ export class CatLayer {
       part: U('uPart[0]'), partB: U('uPartB[0]'), partNorm: U('uPartNorm[0]'),
       bonePart: U('uBonePart[0]'), boneRide: U('uBoneRide[0]'),
       tailRadius: U('uTailRadius'), tailBone: U('uTailBone'), inkOut: U('uInkOut'),
-      faceLift: U('uFaceLift'),
+      faceLift: U('uFaceLift'), inkSink: U('uInkSink[0]'),
       inkMode: U('uInkMode'), ink: U('uInk'),
       keyLit: U('uKeyLit'), midTone: U('uMidTone'), shadowTone: U('uShadowTone'),
       lightDir: U('uLightDir'), bandEdge: U('uBandEdge'),
@@ -1223,7 +1286,7 @@ export class CatLayer {
    */
   _measureGround() {
     const rig = this._rig, data = this._data;
-    const colors = data.colors.get(CAT_SKINS[0]);
+    const colors = data.colors.get(this._skins[0]);
     const nv = data.header.vertexCount;
 
     const drv = new Driver();
@@ -1345,6 +1408,14 @@ export class CatLayer {
    * to debounce it — holding it steady, flipping it once, or flipping
    * it every frame are all sensible inputs and all animate sensibly.
    *
+   * Anything BETWEEN −1 and +1 is a heading in between, and 0 is the
+   * animal looking straight down the camera: the target is facing ×
+   * π/2, and ψ is already measured from the camera precisely so that
+   * "how far round" means something (see TURN_RATE). The game only ever
+   * has a side to give, so it only ever passes ±1 and gets exactly what
+   * it always did; `preview/dog.html` is what wants the half-turns, and
+   * it drives the same turn this way rather than reaching past it.
+   *
    * `vy` is the character's vertical velocity in world px/s, screen
    * axis, so falling is POSITIVE. Optional, and a caller that leaves it
    * out gets what this always did — the tail simply does not know the
@@ -1354,7 +1425,9 @@ export class CatLayer {
     try {
       if (!this._frameOK) return;
       const st = STATES.indexOf(state) >= 0 ? state : 'idle';
-      const dir = facing < 0 ? -1 : 1;
+      // A caller that leaves it out gets the right-facing profile, as
+      // the old `facing < 0 ? -1 : 1` gave it.
+      const dir = Number.isFinite(facing) ? Math.max(-1, Math.min(1, facing)) : 1;
       const c = this._catState(id, dir);
       /* `facing` is a target for the turn now, not a mirror flag: the
          cat is asked to face that way and takes TURN_RATE to get
@@ -1386,7 +1459,7 @@ export class CatLayer {
 
       this._queue.push({
         c,
-        skin: this._vaos.has(skin) ? skin : CAT_SKINS[0],
+        skin: this._vaos.has(skin) ? skin : this._skins[0],
         centerX: x + boxW * 0.5,
         feetY: y + boxH,
         alpha: a,
@@ -1464,6 +1537,7 @@ export class CatLayer {
         gl.uniform1i(u.tailBone, sh.tail.bone);
         gl.uniform1f(u.tailRadius, sh.tail.radius);
         gl.uniform1f(u.faceLift, FACE_LIFT);
+        gl.uniform1fv(u.inkSink, this._inkSink);
       }
       gl.uniform3fv(u.keyLit, t.keyLit);
       gl.uniform3fv(u.midTone, t.mid);
@@ -1525,7 +1599,7 @@ export class CatLayer {
        cat needs. */
     gl.depthRange(item.near, item.far);
 
-    const S = this.boxH / UNITS_PER_BOXH;          // world px per model unit
+    const S = this.boxH / this._unitsPerBoxH;      // world px per model unit
     gl.uniform4f(u.place, item.centerX, item.feetY, S, S);
     gl.uniform1f(u.alpha, item.alpha);
 
@@ -1617,7 +1691,7 @@ export class CatLayer {
       /* A character arrives already facing the way it was asked to
          face: spawning at ψ = 0 would make every cat in the level turn
          to face outward on its first frame. */
-      const yaw0 = facing < 0 ? -HALF_PI : HALF_PI;
+      const yaw0 = facing * HALF_PI;
       const aim0 = facing < 0 ? this._restAim : -this._restAim;
       drv.pose.aimYaw = aim0;
 
@@ -1668,7 +1742,7 @@ export class CatLayer {
    * that moves smoothly rather than one that jumps once a frame.
    */
   _turn(c, d, facing) {
-    const target = facing < 0 ? -HALF_PI : HALF_PI;
+    const target = facing * HALF_PI;
 
     /* No wrapping and no shortest-arc test: ψ and its target are both
        inside [−π/2, +π/2], so the difference is the turn, it is never
@@ -1697,7 +1771,11 @@ export class CatLayer {
        rounding error against a π of remaining error; at rest it is all
        that is left. */
     const err = target - c.yaw;
-    const bias = target < 0 ? this._restAim : -this._restAim;
+    /* Signed off the target, so a heading of 0 — the animal already
+       looking at the camera — asks for no bias at all, instead of the
+       ±restAim that "which side is it on" would have to invent for a
+       cat that is on neither. At ±1 it is the same number it was. */
+    const bias = -this._restAim * Math.sign(target);
     let want = err + bias;
     if (want > HEAD_YAW_MAX) want = HEAD_YAW_MAX;
     else if (want < -HEAD_YAW_MAX) want = -HEAD_YAW_MAX;
