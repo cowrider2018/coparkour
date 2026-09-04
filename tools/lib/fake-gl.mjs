@@ -73,9 +73,15 @@ export function fakeGL() {
 }
 
 export function fakeCanvas(gl) {
-  return {
+  const c = {
     width: 800, height: 400,
-    getContext: () => gl,
+    /** 開 context 時要到的那組屬性，原封不動留著讓驗證器檢查。
+        `desynchronized` 是其中唯一會讓一張透明畫布變成不透明黑底的，
+        所以它是誰開的、開成什麼樣，值得被驗到。 */
+    attrs: null,
+    getContext: (kind, attrs) => { c.attrs = attrs || null; return gl; },
     addEventListener: () => {},
   };
+  return c;
 }
+

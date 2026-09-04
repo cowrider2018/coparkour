@@ -31,10 +31,28 @@ const roster = [
 ];
 
 const gl = fakeGL();
-const layer = new CatLayer(fakeCanvas(gl), roster, {});
+const canvas = fakeCanvas(gl);
+const layer = new CatLayer(canvas, roster, {});
 
 const fails = [];
 const ok = (cond, msg) => { if (!cond) fails.push(msg); };
+
+/* ── 0. context 屬性 ──────────────────────────────────
+   alpha 要是真的，因為這一層的下面還有別人（遊戲是平台，選單是卡片）。
+
+   desynchronized 是這裡唯一一個可以把那份 alpha 作廢的旗標：它讓瀏覽器把
+   畫布拿出正常的合成路徑，而部分行動 GPU 的做法是一層沒有 alpha 的硬體
+   overlay——透明的畫布回來就是不透明的黑底。遊戲那一層換得到延遲，選單那
+   一格換不到，所以它得是一個呼叫端說了算的選項。 */
+
+ok(canvas.attrs && canvas.attrs.alpha === true, 'context 沒有要 alpha');
+ok(canvas.attrs.premultipliedAlpha === true, 'premultipliedAlpha 變了，面的混合會跟著錯');
+ok(canvas.attrs.desynchronized === true, '不給選項時應該保持遊戲本來的低延遲');
+const plain = fakeCanvas(gl);
+new CatLayer(plain, roster, { desynchronized: false }).dispose();
+ok(plain.attrs.desynchronized === false,
+  'desynchronized: false 沒有被轉進去（手機上的黑底就是這行）');
+ok(plain.attrs.alpha === true, '關掉 desynchronized 不該順手把 alpha 也關掉');
 
 /* ── 1. 名冊與 look 解析 ────────────────────────────────────────── */
 

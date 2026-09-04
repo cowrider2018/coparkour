@@ -135,7 +135,8 @@ function build(cat) {
       const roster = [{ id: spec.id, data: built.get(spec.id) }];
       boxes.push(new Showcase(
         card.querySelector('.view'),
-        (canvas) => new CatLayer(canvas, roster, { boxW: PLAYER_W, boxH: PLAYER_H }),
+        (canvas) => new CatLayer(canvas, roster,
+          { boxW: PLAYER_W, boxH: PLAYER_H, desynchronized: false }),
         { looks: spec.skins.map((sk) => `${spec.id}/${sk}`) },
       ));
     } catch (e) { fail(e); }

@@ -1372,7 +1372,7 @@ export class CatLayer {
   /**
    * @param {HTMLCanvasElement} canvas
    * @param {object|Array} roster  one parsed asset, or `[{id, data}, …]`
-   * @param {object} [opts]
+   * @param {object} [opts]  `{ boxW, boxH, style, restAim, desynchronized }`
    */
   constructor(canvas, roster, opts = {}) {
     this.canvas = canvas;
@@ -1403,7 +1403,15 @@ export class CatLayer {
       premultipliedAlpha: true,
       preserveDrawingBuffer: false,
       powerPreference: 'high-performance',
-      desynchronized: true,
+      /* Low latency, at the cost of being the ONE attribute here that a
+         browser is allowed to honour by taking the canvas off the normal
+         compositing path — on some mobile GPUs that means a hardware
+         overlay plane with no alpha, and a transparent canvas comes back
+         opaque black. That is a fair trade for the game layer, which is
+         answering a finger. It is not a trade at all for a menu box
+         showing one idle animal, so callers that are not the game pass
+         `desynchronized: false` and keep their transparency. */
+      desynchronized: opts.desynchronized !== false,
     });
     if (!gl) throw new Error('cat: WebGL2 unavailable');
     this.gl = gl;
