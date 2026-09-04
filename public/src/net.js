@@ -2,12 +2,14 @@ import { NET } from './constants.js';
 
 // 與 Cloudflare Worker（Durable Object）之間的 WebSocket 連線。
 // 伺服器只做三件事：發房間 seed、轉送別人的座標、記排行榜。
+import { DEFAULT_LOOK } from './cat/looks.js';
+
 export class Net {
-  constructor({ url, room, name, skin, on }) {
+  constructor({ url, room, name, look, on }) {
     this.baseUrl = url;
     this.room = room;
     this.name = name;
-    this.skin = skin || 'orangin';
+    this.look = look || DEFAULT_LOOK;
     this.on = on || {};
     this.ws = null;
     this.id = null;
@@ -35,7 +37,8 @@ export class Net {
     if (!u.pathname.endsWith('/ws')) u.pathname = u.pathname.replace(/\/$/, '') + '/ws';
     u.searchParams.set('room', this.room);
     u.searchParams.set('name', this.name);
-    u.searchParams.set('skin', this.skin);
+    // 線上的欄位名維持 skin，值是 look：換掉會跟舊的伺服器與舊分頁對不上。
+    u.searchParams.set('skin', this.look);
 
     this.emit('status', 'connecting');
     const ws = new WebSocket(u.toString());
@@ -100,8 +103,8 @@ export class Net {
   }
 
   /** 換花色。只在改變時送一次，不進每幀的狀態封包。 */
-  setSkin(s) {
-    this.skin = s;
+  setLook(s) {
+    this.look = s;
     this.send({ t: 'skin', s });
   }
 
@@ -124,13 +127,16 @@ export class Net {
 export class GhostPool {
   constructor() { this.map = new Map(); }
 
-  upsert(id, name, skin) {
+  upsert(id, name, look) {
     if (!this.map.has(id)) {
-      this.map.set(id, { id, name, skin: skin || 'orangin', buf: [], dist: 0, coins: 0, state: 'air', facing: 1 });
+      this.map.set(id, {
+        id, name, look: look || DEFAULT_LOOK,
+        buf: [], dist: 0, coins: 0, state: 'air', facing: 1,
+      });
     }
     const g = this.map.get(id);
     if (name) g.name = name;
-    if (skin) g.skin = skin;
+    if (look) g.look = look;
     return g;
   }
 
@@ -156,7 +162,7 @@ export class GhostPool {
     const out = [];
     for (const g of this.map.values()) {
       if (now - (g.lastSeen || 0) > NET.staleMs) continue;
-      out.push({ id: g.id, name: g.name, skin: g.skin, dist: g.dist || 0, coins: g.coins || 0, state: g.state });
+      out.push({ id: g.id, name: g.name, look: g.look, dist: g.dist || 0, coins: g.coins || 0, state: g.state });
     }
     return out;
   }
@@ -185,7 +191,7 @@ export class GhostPool {
         vy,
         id: g.id,
         name: g.name,
-        skin: g.skin,
+        look: g.look,
         x: a.x + (b.x - a.x) * k,
         y: a.y + (b.y - a.y) * k,
         facing: b.f || 1,

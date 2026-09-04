@@ -67,11 +67,12 @@
 import { Rig } from './rig.js';
 import { SHAPE_PARTS, SHAPE_RIDE } from './shape.js';
 import { Driver, applyPose, TAIL_AXIS } from './pose.js';
+import { DOG_SKINS, DOG_EARS } from './looks.js';
 
-/** The dog's colourways. The name is the coat. */
-export const DOG_SKINS = ['yellow', 'grey', 'cow'];
-/** The two ear variants. Same mesh, different resting angle. */
-export const DOG_EARS = ['prick', 'drop'];
+/* The names live in looks.js, which the server reads too; what lives
+   here is what they are MADE of. Re-exported so callers can keep asking
+   the dog what colours a dog comes in. */
+export { DOG_SKINS, DOG_EARS };
 
 /* ── the coats ────────────────────────────────────────────────────
    A colourway is not a palette applied to the dog. It is a palette

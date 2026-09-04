@@ -110,8 +110,12 @@ import { Driver, Sway, applyPose, TAIL_AXIS, TAIL_LIFT } from './pose.js';
 import {
   measureShapes, SHAPE_GLSL, TAIL_CAP_GLSL, SHAPE_PARTS, SHAPE_RIDE, FACE_LIFT,
 } from './shape.js';
+import { CAT_SKINS } from './looks.js';
 
-export const CAT_SKINS = ['orangin', 'tabby', 'calico'];
+/* Re-exported because every caller that draws a cat used to get the
+   list from here. The list itself lives in looks.js now — see there for
+   why it has to be at the bottom of the dependency graph. */
+export { CAT_SKINS };
 
 /* ── how big the cat is, and where its feet are ─────────────────── */
 
@@ -480,6 +484,20 @@ uniform vec4 uPlace;
 /** The body's yaw about the vertical, as (cos θ, sin θ). θ = ψ − π/2,
     so (1, 0) is the rest pose in right-facing profile. See TURN_RATE. */
 uniform vec2 uYaw;
+/** The camera's pitch, as (cos φ, sin φ), applied AFTER the yaw and
+    about the screen's own horizontal axis: it tips the view up over the
+    animal or down under it. (1, 0) — level — for the whole game.
+
+    It has to come after the yaw and not before, because it is a camera
+    and not a joint. Rotating the model would tip it out of its own
+    collision box and off the platform it stands on; rotating the VIEW
+    leaves the animal upright in the world and moves where that world is
+    seen from, which is what looking at a thing from above means.
+
+    Only the layer's own pin() sets it, and pinning is not something the
+    game does. Level, this is the identity in every line it appears in,
+    which is why it costs nothing to leave in. */
+uniform vec2 uPitch;
 /** World px → clip. (ax, bx, ay, by), so clip.x = wx·ax + bx. */
 uniform vec4 uXform;
 /** The model Y that stands on the box's bottom edge. */
@@ -598,14 +616,18 @@ vec3 swayNormal(vec3 n, float o, int group) {
    the ear sitting on top of it have to agree about where they are to
    well under a pixel, every frame. */
 vec2 screenOf(vec3 w) {
+  float rx = w.x * uYaw.x + (w.z - ${centerZ.toFixed(4)}) * uYaw.y;
   float rz = -w.x * uYaw.y + (w.z - ${centerZ.toFixed(4)}) * uYaw.x;
-  return vec2(uPlace.x + rz * uPlace.z, uPlace.y - (w.y - uGroundY) * uPlace.w);
+  float up = (w.y - uGroundY) * uPitch.x - rx * uPitch.y;
+  return vec2(uPlace.x + rz * uPlace.z, uPlace.y - up * uPlace.w);
 }
 /** A DIRECTION, in (screen-right, screen-up) — no CENTER_Z, and the
     sign on Y flipped once here so everything downstream can think in
     (right, UP) while "wy" still grows downward. */
 vec2 projectDir(vec3 d) {
-  return vec2((-d.x * uYaw.y + d.z * uYaw.x) * uPlace.z, d.y * uPlace.w);
+  float rx = d.x * uYaw.x + d.z * uYaw.y;
+  return vec2((-d.x * uYaw.y + d.z * uYaw.x) * uPlace.z,
+              (d.y * uPitch.x - rx * uPitch.y) * uPlace.w);
 }
 
 ${SHAPE_GLSL(partN, boneN)}
@@ -659,6 +681,18 @@ void main() {
   float rx = world.x * uYaw.x + (world.z - ${centerZ.toFixed(4)}) * uYaw.y;
   float rz = -world.x * uYaw.y + (world.z - ${centerZ.toFixed(4)}) * uYaw.x;
 
+  /* Turned by the YAW only, and deliberately not by the pitch. The
+     normal that goes to the fragment shader is what the key light is
+     measured against, and the light is meant to be the hour's — up in
+     the world, over the animal. Turning the normal with the camera as
+     well would nail the sun to the viewer's forehead: tipped 50° over
+     the animal's back, every upward surface would face the light at
+     once and the three tones would collapse into one. What is wanted
+     from tipping the view is a look at the animal, not a different
+     lighting of it.
+
+     The pitch is still needed one line further down, where the depth
+     axis is what is being asked for rather than the light. */
   vec3 n = mat3(bone) * normal;
   vNormal = vec3(n.x * uYaw.x + n.z * uYaw.y, n.y, -n.x * uYaw.y + n.z * uYaw.x);
   vColor = aColor.rgb;
@@ -674,8 +708,8 @@ void main() {
      +X: the camera is at −X, so nearer is smaller, as gl.LESS wants.
      Yaw leaves Y alone, so the ground measurement is unaffected by it
      and a turning cat's feet stay on the box's floor. */
-  vec2 screen = vec2(uPlace.x + rz * uPlace.z,
-                     uPlace.y - (world.y - uGroundY) * uPlace.w);
+  float up = (world.y - uGroundY) * uPitch.x - rx * uPitch.y;
+  vec2 screen = vec2(uPlace.x + rz * uPlace.z, uPlace.y - up * uPlace.w);
 
   /* ── and then the outline is made rectangular ──
      Everything above this line is the cat as it was: real bones, real
@@ -694,17 +728,22 @@ void main() {
   int part = uBonePart[b];
   if (part >= 0 && uBoneRide[b] == 0 && !face) {
     /* How edge-on this vertex is: 1 exactly on the silhouette, 0
-       facing the camera. The depth axis is vNormal.x, so this is one
-       subtraction and it needs nothing the shader did not already
-       have. */
-    float sil = 1.0 - abs(normalize(vNormal).x);
+       facing the camera. vNormal is turned by the yaw but not by the
+       pitch — see above — so the view's depth axis is its x and y mixed
+       by the pitch, which is the one place that mixing is wanted. Level,
+       it is vNormal.x and nothing has changed. */
+    vec3 vn = normalize(vNormal);
+    float sil = 1.0 - abs(vn.x * uPitch.x + vn.y * uPitch.y);
     screen = warpToRect(screen, part, sil);
   }
 
+  /* Depth takes the pitch too, or a view from above would still sort
+     the animal as if seen from the side. */
+  float depth = rx * uPitch.x + (world.y - uGroundY) * uPitch.y;
   gl_Position = vec4(
     screen.x * uXform.x + uXform.y,
     screen.y * uXform.z + uXform.w,
-    (rx - (face ? uFaceLift : 0.0) + (uInkMode > 0.5 ? uInkSink[b] : 0.0))
+    (depth - (face ? uFaceLift : 0.0) + (uInkMode > 0.5 ? uInkSink[b] : 0.0))
       * ${(1 / DEPTH_HALF).toFixed(6)},
     1.0);
 }
@@ -986,67 +1025,36 @@ function buildProgram(gl, vsrc, fsrc) {
   return p;
 }
 
-/* ═══ the layer ═══════════════════════════════════════════════════ */
+/* ═══ one model ═══════════════════════════════════════════════════
+   Everything about ONE animal: its asset, its skeleton, its program,
+   its buffers, its measurements. A layer holds as many of these as it
+   was given and picks between them per character.
 
-export class CatLayer {
+   It has to be a whole object and not a few extra arrays, because the
+   program is compiled around the asset — the bone count and the part
+   count are `#define`s and the centre Z is a literal — so two animals
+   with different skeletons cannot share one. Everything downstream of
+   that follows: its own uniform locations, its own VAOs, its own
+   measured ground.
+
+   The field names are the ones the layer used when it could only hold
+   one, and deliberately so: every method moved here reads exactly as it
+   did, which is what makes it possible to see that this was a move and
+   not a rewrite. */
+
+class Model {
   /**
-   * Load `cat.bin` and take over the given canvas with a WebGL2
-   * context. Rejects if WebGL2 is unavailable or the fetch fails, so
-   * the caller can fall back to whatever it drew before.
-   *
-   * @param {HTMLCanvasElement} canvas  the #fx canvas
-   * @param {string} url                where cat.bin lives
-   * @param {object} opts   `{ signal, boxW, boxH }`
+   * @param {WebGL2RenderingContext} gl
+   * @param {object} data  a parsed asset — cat.bin, or something
+   *   `dog.js` built out of it
+   * @param {object} opts  `{ style, restAim }`, the layer's own
    */
-  static async load(canvas, url, opts = {}) {
-    if (!canvas) throw new Error('cat: no canvas');
-    const res = await fetch(url, { signal: opts.signal });
-    if (!res.ok) throw new Error(`cat.bin: HTTP ${res.status}`);
-    const data = parseCat(await res.arrayBuffer());
-    const layer = new CatLayer(canvas, data, opts);
-    return layer;
-  }
-
-  constructor(canvas, data, opts = {}) {
-    this.canvas = canvas;
-    this.boxW = opts.boxW || PLAYER_W;
-    this.boxH = opts.boxH || PLAYER_H;
-    /** The head's standing bias toward the viewer when there is no turn
-        to lead. See REST_AIM; exposed so it can be dialled, or set to 0
-        for a cat in strict profile, without editing the module. */
-    this._restAim = opts.restAim == null ? REST_AIM : Math.abs(opts.restAim);
-    /** `shape` (the default) draws the body as rounded rectangles and
-        keeps only the ears and the face as triangles; `mesh` is the
-        asset drawn whole, which is what this was before and is kept
-        because it costs one branch and settles any argument about what
-        the stylisation changed. */
-    this._style = opts.style === 'mesh' ? 'mesh' : 'shape';
-    this.lost = false;
-
-    /** Live counters for the frame just drawn. */
-    this.stats = { cats: 0, culled: 0, draws: 0, tris: 0 };
-
-    const gl = canvas.getContext('webgl2', {
-      // Transparent, because the platforms are on the Canvas2D layer
-      // underneath and have to show through.
-      alpha: true,
-      depth: true,
-      stencil: false,
-      antialias: true,
-      premultipliedAlpha: true,
-      preserveDrawingBuffer: false,
-      powerPreference: 'high-performance',
-      desynchronized: true,
-    });
-    if (!gl) throw new Error('cat: WebGL2 unavailable');
+  constructor(gl, data, opts) {
     this.gl = gl;
-
-    canvas.addEventListener('webglcontextlost', (e) => {
-      e.preventDefault();
-      this.lost = true;
-    });
-
     this._data = data;
+    this._style = opts.style;
+    this._restAim = opts.restAim;
+
     /* Which animal this is. A builder such as `dog.js` hands its own
        descriptor down on the parsed data; anything that came straight
        off cat.bin is the cat. */
@@ -1054,7 +1062,7 @@ export class CatLayer {
     /** The colourways this asset actually carries, in the model's own
         order — the first of them is the default and the one the ground
         is measured on. */
-    this._skins = model.skins.filter((s) => data.colors.has(s));
+    this._skins = model.skins.filter((sk) => data.colors.has(sk));
     if (!this._skins.length) throw new Error("cat: asset carries none of the model's skins");
     /** World px per model unit at boxH = 1. */
     this._unitsPerBoxH = model.restHeight / model.heightInBoxH;
@@ -1107,19 +1115,20 @@ export class CatLayer {
     this._measureShape();
     this._measureGround();
 
-    /** id → per-character animation state. */
-    this._cats = new Map();
-    /** Cats queued this frame, drawn in `end()`. */
-    this._queue = [];
-    this._frameOK = false;
-
     // Scratch, reused every frame so a frame allocates nothing.
     this._scratch = new Float32Array(this._chanN);
-    this._eyeScratch = { far: -1, scale: 1 };
-    this._tones = {
-      keyLit: [1, 1, 1], mid: [0.6, 0.6, 0.6], shadow: [0.3, 0.3, 0.3],
-      key: [0, 1, 0], light: new Float32Array(3), unlitGain: 1, ink: INK.slice(),
-    };
+  }
+
+  /** Give back everything this model holds on the GPU. */
+  dispose() {
+    const gl = this.gl;
+    for (const v of this._vaos.values()) gl.deleteVertexArray(v);
+    for (const b of this._cbufs.values()) gl.deleteBuffer(b);
+    gl.deleteBuffer(this._pbuf);
+    gl.deleteBuffer(this._nbuf);
+    gl.deleteBuffer(this._ibo);
+    gl.deleteProgram(this._prog);
+    this._shape = null;
   }
 
   /* ── setup ────────────────────────────────────────────────────── */
@@ -1257,7 +1266,7 @@ export class CatLayer {
       bones: U('uBones[0]'), swayQ: U('uSwayQ[0]'),
       swayBend: U('uSwayBend[0]'), whisker: U('uWhisker[0]'),
       place: U('uPlace'), xform: U('uXform'), groundY: U('uGroundY'),
-      yaw: U('uYaw'),
+      yaw: U('uYaw'), pitch: U('uPitch'),
       grow: U('uGrow'), unlitStart: U('uUnlitStart'),
       part: U('uPart[0]'), partB: U('uPartB[0]'), partNorm: U('uPartNorm[0]'),
       bonePart: U('uBonePart[0]'), boneRide: U('uBoneRide[0]'),
@@ -1330,6 +1339,152 @@ export class CatLayer {
       const my = lowestY(rig.update(), data.position, colors, nv);
       this._groundAdjust[name] = this.groundY - my;
     }
+  }
+
+}
+
+/* ═══ the layer ═══════════════════════════════════════════════════ */
+
+export class CatLayer {
+  /**
+   * Load `cat.bin` and take over the given canvas with a WebGL2
+   * context. Rejects if WebGL2 is unavailable or the fetch fails, so
+   * the caller can fall back to whatever it drew before.
+   *
+   * `opts.models` turns the one asset into the roster the layer will
+   * hold: it is handed the parsed cat.bin and returns
+   * `[{ id, data }, …]`. Left out, the layer holds the cat alone, which
+   * is what it always held.
+   *
+   * @param {HTMLCanvasElement} canvas  the #fx canvas
+   * @param {string} url                where cat.bin lives
+   * @param {object} opts   `{ signal, boxW, boxH, models }`
+   */
+  static async load(canvas, url, opts = {}) {
+    if (!canvas) throw new Error('cat: no canvas');
+    const res = await fetch(url, { signal: opts.signal });
+    if (!res.ok) throw new Error(`cat.bin: HTTP ${res.status}`);
+    const data = parseCat(await res.arrayBuffer());
+    const roster = opts.models ? opts.models(data) : data;
+    return new CatLayer(canvas, roster, opts);
+  }
+
+  /**
+   * @param {HTMLCanvasElement} canvas
+   * @param {object|Array} roster  one parsed asset, or `[{id, data}, …]`
+   * @param {object} [opts]
+   */
+  constructor(canvas, roster, opts = {}) {
+    this.canvas = canvas;
+    this.boxW = opts.boxW || PLAYER_W;
+    this.boxH = opts.boxH || PLAYER_H;
+    /** The head's standing bias toward the viewer when there is no turn
+        to lead. See REST_AIM; exposed so it can be dialled, or set to 0
+        for a cat in strict profile, without editing the module. */
+    this._restAim = opts.restAim == null ? REST_AIM : Math.abs(opts.restAim);
+    /** `shape` (the default) draws the body as rounded rectangles and
+        keeps only the ears and the face as triangles; `mesh` is the
+        asset drawn whole, which is what this was before and is kept
+        because it costs one branch and settles any argument about what
+        the stylisation changed. */
+    this._style = opts.style === 'mesh' ? 'mesh' : 'shape';
+    this.lost = false;
+
+    /** Live counters for the frame just drawn. */
+    this.stats = { cats: 0, culled: 0, draws: 0, tris: 0 };
+
+    const gl = canvas.getContext('webgl2', {
+      // Transparent, because the platforms are on the Canvas2D layer
+      // underneath and have to show through.
+      alpha: true,
+      depth: true,
+      stencil: false,
+      antialias: true,
+      premultipliedAlpha: true,
+      preserveDrawingBuffer: false,
+      powerPreference: 'high-performance',
+      desynchronized: true,
+    });
+    if (!gl) throw new Error('cat: WebGL2 unavailable');
+    this.gl = gl;
+
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      this.lost = true;
+    });
+
+    /* ── the roster ──
+       One layer, many animals, and it has to be one layer: `begin`
+       clears the canvas, so a second layer stacked on the same one
+       would wipe the first, and two canvases cannot sort against each
+       other's depth. A cat and a dog standing in front of one another
+       is the whole reason this is a map and not a field.
+
+       They share the context, the frame, the queue and the depth
+       slices; what they do not share is the program, because that is
+       compiled around the skeleton. See Model. */
+    const list = Array.isArray(roster) ? roster : [{ id: 'cat', data: roster }];
+    if (!list.length) throw new Error('cat: no models to draw');
+    /** id → Model. Insertion order matters: the first is the default. */
+    this._models = new Map();
+    list.forEach(({ id, data }, i) => {
+      const m = new Model(gl, data, { style: this._style, restAim: this._restAim });
+      /* Where it sits in the roster, and the only thing `end` may sort
+         models by. The obvious key — the program object — is an opaque
+         handle, and comparing two of them with `<` coerces both to
+         "[object Object]": every pair compares equal, the comparator
+         stops being an ordering, and the sort quietly leaves the queue
+         interleaved. Which costs a program switch per character. */
+      m._order = i;
+      this._models.set(id, m);
+    });
+    this._defaultId = list[0].id;
+
+    /** id → per-character animation state. */
+    this._cats = new Map();
+    /** id → a heading pinned by the caller. See `pin`. */
+    this._pins = new Map();
+    /** Cats queued this frame, drawn in `end()`. */
+    this._queue = [];
+    this._frameOK = false;
+
+    this._eyeScratch = { far: -1, scale: 1 };
+    this._tones = {
+      keyLit: [1, 1, 1], mid: [0.6, 0.6, 0.6], shadow: [0.3, 0.3, 0.3],
+      key: [0, 1, 0], light: new Float32Array(3), unlitGain: 1, ink: INK.slice(),
+    };
+  }
+
+  /**
+   * A LOOK — which animal, wearing which colourway — resolved to the
+   * pair the layer draws with.
+   *
+   * One flat string, "model/skin", because that is the shape the rest
+   * of the game needs it in: it is stored, sent over the wire, checked
+   * by the server and handed back here, and every one of those is
+   * happier with one opaque token than with two fields that can
+   * disagree. A bare "tabby" is the default model wearing it, which is
+   * what every existing caller passes.
+   *
+   * Anything unrecognised falls back rather than throwing: a look is
+   * data that arrived over a socket, and a character with a name this
+   * build has never heard of should be drawn as SOMETHING.
+   *
+   * @param {string} look
+   */
+  _look(look) {
+    const slash = typeof look === 'string' ? look.indexOf('/') : -1;
+    const wanted = slash < 0 ? this._defaultId : look.slice(0, slash);
+    const m = this._models.get(wanted) || this._models.get(this._defaultId);
+    const skin = slash < 0 ? look : look.slice(slash + 1);
+    return { m, skin: m._vaos.has(skin) ? skin : m._skins[0] };
+  }
+
+  /** Every look this layer can draw, as the flat ids `cat()` takes. */
+  looks() {
+    const out = [];
+    for (const [id, m] of this._models) for (const sk of m._skins) out.push(`${id}/${sk}`);
+    return out;
   }
 
   /* ── frame ────────────────────────────────────────────────────── */
@@ -1421,20 +1576,21 @@ export class CatLayer {
    * out gets what this always did — the tail simply does not know the
    * character is in the air. See AIR_TAU.
    */
-  cat(id, x, y, facing, state, speed, dt, skin, alpha, vy) {
+  cat(id, x, y, facing, state, speed, dt, look, alpha, vy) {
     try {
       if (!this._frameOK) return;
       const st = STATES.indexOf(state) >= 0 ? state : 'idle';
       // A caller that leaves it out gets the right-facing profile, as
       // the old `facing < 0 ? -1 : 1` gave it.
       const dir = Number.isFinite(facing) ? Math.max(-1, Math.min(1, facing)) : 1;
-      const c = this._catState(id, dir);
+      const { m, skin } = this._look(look);
+      const c = this._catState(id, dir, m);
       /* `facing` is a target for the turn now, not a mirror flag: the
          cat is asked to face that way and takes TURN_RATE to get
          there. A caller that flips it every frame gets a cat rocking a
          few degrees in place — it never commits to either side — which
          is the honest picture of that input rather than a strobe. */
-      this._poseCat(c, st, speed, dt, dir, vy || 0);
+      this._poseCat(c, st, speed, dt, dir, vy || 0, this._pins.get(id));
 
       const a = alpha == null ? 1 : Math.min(1, Math.max(0, alpha));
       if (!(a > 0)) return;
@@ -1458,8 +1614,7 @@ export class CatLayer {
       }
 
       this._queue.push({
-        c,
-        skin: this._vaos.has(skin) ? skin : this._skins[0],
+        c, m, skin,
         centerX: x + boxW * 0.5,
         feetY: y + boxH,
         alpha: a,
@@ -1486,9 +1641,13 @@ export class CatLayer {
         q[i].near = (n - 1 - i) / n;
         q[i].far = (n - i) / n;
       }
-      q.sort((a, b) => (a.skin < b.skin ? -1 : a.skin > b.skin ? 1 : 0));
+      /* By MODEL first and then by skin: a model change costs a
+         program and a fresh set of uniforms, a skin change costs a VAO
+         bind, so the expensive one is the outer loop. */
+      q.sort((a, b) => (a.m !== b.m
+        ? a.m._order - b.m._order
+        : (a.skin < b.skin ? -1 : a.skin > b.skin ? 1 : 0)));
 
-      gl.useProgram(this._prog);
       gl.enable(gl.DEPTH_TEST);
       gl.depthFunc(gl.LESS);
       gl.depthMask(true);
@@ -1518,39 +1677,16 @@ export class CatLayer {
          making for two characters that happen to overlap. */
       gl.disable(gl.BLEND);
 
-      const u = this._u, t = this._tones;
-      gl.uniform4f(u.xform,
-        2 / this._view.w, -1 - 2 * this._cam.x / this._view.w,
-        -2 / this._view.h, 1 + 2 * this._cam.y / this._view.h);
-      gl.uniform1f(u.groundY, this.groundY);
-      gl.uniform1i(u.unlitStart, this._unlitStart);
-      const sh = this._shape;
-      /* The bend's whole configuration, and it never changes after
-         load — but a uniform is per-program state, so it is re-sent
-         once a frame rather than tracked. Nine floats a part. */
-      gl.uniform1iv(u.bonePart, sh ? sh.bonePart : this._noBend);
-      gl.uniform1iv(u.boneRide, sh ? sh.boneRide : this._noBend);
-      if (sh) {
-        gl.uniform4fv(u.part, sh.pa);
-        gl.uniform4fv(u.partB, sh.pb);
-        gl.uniform1fv(u.partNorm, sh.pn);
-        gl.uniform1i(u.tailBone, sh.tail.bone);
-        gl.uniform1f(u.tailRadius, sh.tail.radius);
-        gl.uniform1f(u.faceLift, FACE_LIFT);
-        gl.uniform1fv(u.inkSink, this._inkSink);
-      }
-      gl.uniform3fv(u.keyLit, t.keyLit);
-      gl.uniform3fv(u.midTone, t.mid);
-      gl.uniform3fv(u.shadowTone, t.shadow);
-      gl.uniform3fv(u.ink, t.ink);
-      gl.uniform2f(u.bandEdge, BAND_EDGE[0], BAND_EDGE[1]);
-      gl.uniform1f(u.unlitGain, t.unlitGain);
-
-      let boundSkin = null;
+      let boundModel = null, boundSkin = null;
       for (let i = 0; i < n; i++) {
         const item = q[i];
+        if (item.m !== boundModel) {
+          this._useModel(item.m);
+          boundModel = item.m;
+          boundSkin = null;
+        }
         if (item.skin !== boundSkin) {
-          gl.bindVertexArray(this._vaos.get(item.skin));
+          gl.bindVertexArray(item.m._vaos.get(item.skin));
           boundSkin = item.skin;
         }
         this._drawOne(item);
@@ -1560,6 +1696,47 @@ export class CatLayer {
       gl.depthRange(0, 1);
       this.stats.cats = n;
     } catch (e) { /* never take the frame down */ }
+  }
+
+  /**
+   * Make one model current: its program, and everything on it that does
+   * not change from character to character.
+   *
+   * Once per model per frame rather than once per frame, and that is
+   * the whole cost of holding more than one — a uniform belongs to a
+   * program, so a second animal means sending this block again. It is
+   * about eighty floats.
+   */
+  _useModel(m) {
+    const gl = this.gl, u = m._u, t = this._tones;
+    gl.useProgram(m._prog);
+    gl.uniform4f(u.xform,
+        2 / this._view.w, -1 - 2 * this._cam.x / this._view.w,
+        -2 / this._view.h, 1 + 2 * this._cam.y / this._view.h);
+    gl.uniform1f(u.groundY, m.groundY);
+    gl.uniform1i(u.unlitStart, m._unlitStart);
+    const sh = m._shape;
+      /* The bend's whole configuration, and it never changes after
+         load — but a uniform is per-program state, so it is re-sent
+         once a frame rather than tracked. Nine floats a part. */
+    gl.uniform1iv(u.bonePart, sh ? sh.bonePart : m._noBend);
+    gl.uniform1iv(u.boneRide, sh ? sh.boneRide : m._noBend);
+      if (sh) {
+        gl.uniform4fv(u.part, sh.pa);
+        gl.uniform4fv(u.partB, sh.pb);
+        gl.uniform1fv(u.partNorm, sh.pn);
+        gl.uniform1i(u.tailBone, sh.tail.bone);
+        gl.uniform1f(u.tailRadius, sh.tail.radius);
+        gl.uniform1f(u.faceLift, FACE_LIFT);
+      gl.uniform1fv(u.inkSink, m._inkSink);
+      }
+      gl.uniform3fv(u.keyLit, t.keyLit);
+      gl.uniform3fv(u.midTone, t.mid);
+      gl.uniform3fv(u.shadowTone, t.shadow);
+      gl.uniform3fv(u.ink, t.ink);
+      gl.uniform2f(u.bandEdge, BAND_EDGE[0], BAND_EDGE[1]);
+      gl.uniform1f(u.unlitGain, t.unlitGain);
+
   }
 
   /**
@@ -1586,7 +1763,7 @@ export class CatLayer {
    * binds. The triangle count is what it is, and `stats` reports it.
    */
   _drawOne(item) {
-    const gl = this.gl, u = this._u, c = item.c;
+    const gl = this.gl, m = item.m, u = m._u, c = item.c;
 
     /* Each cat gets its own slice of the depth range instead of a
        depth clear between cats. Twelve clears of a full-screen depth
@@ -1599,7 +1776,7 @@ export class CatLayer {
        cat needs. */
     gl.depthRange(item.near, item.far);
 
-    const S = this.boxH / this._unitsPerBoxH;      // world px per model unit
+    const S = this.boxH / m._unitsPerBoxH;         // world px per model unit
     gl.uniform4f(u.place, item.centerX, item.feetY, S, S);
     gl.uniform1f(u.alpha, item.alpha);
 
@@ -1609,6 +1786,7 @@ export class CatLayer {
        here are the only ones the turn costs. */
     const sinP = Math.sin(c.yaw), cosP = Math.cos(c.yaw);
     gl.uniform2f(u.yaw, sinP, -cosP);
+    gl.uniform2f(u.pitch, Math.cos(c.pitch), Math.sin(c.pitch));
 
     /* The key light swings its screen-horizontal component with the
        cat and keeps its depth and height fixed. sin ψ is exactly the
@@ -1638,13 +1816,13 @@ export class CatLayer {
     gl.uniform1f(u.inkOut, 0);
     gl.uniform1f(u.grow, 0);
     gl.cullFace(gl.BACK);
-    for (const s of this._solid) {
-      gl.drawElements(gl.TRIANGLES, s.count, this._indexType, s.start * this._indexBytes);
+    for (const s of m._solid) {
+      gl.drawElements(gl.TRIANGLES, s.count, m._indexType, s.start * m._indexBytes);
       this.stats.draws++;
       this.stats.tris += s.count / 3;
     }
 
-    if (this._outline) {
+    if (m._outline) {
       /* The ink is grown to a fixed number of CSS pixels rather than a
          fixed number of model units, so the line keeps its weight at
          every zoom. Device px per model unit is (world px per unit) ×
@@ -1659,22 +1837,70 @@ export class CatLayer {
          line from the hull the way they always did. */
       gl.uniform1f(u.inkOut, (INK_PX * (this._dpr || 1)) / Math.max(this._pxScale || 1, 1e-3));
       gl.cullFace(gl.FRONT);
-      gl.drawElements(gl.TRIANGLES, this._outline.count, this._indexType,
-        this._outline.start * this._indexBytes);
+      gl.drawElements(gl.TRIANGLES, m._outline.count, m._indexType,
+        m._outline.start * m._indexBytes);
       this.stats.draws++;
-      this.stats.tris += this._outline.count / 3;
+      this.stats.tris += m._outline.count / 3;
     }
+  }
+
+  /**
+   * Hold a character at an absolute heading instead of letting it turn
+   * toward a `facing`, or pass null to give it back.
+   *
+   * `pitch` tips the VIEW up over the animal or down under it, also in
+   * radians, positive looking down from above. It is a camera angle and
+   * not a joint: the animal stays upright in the world and on its own
+   * floor line, and what moves is where it is being seen from. Left out
+   * or zero, the view is level, which is where the game always keeps
+   * it.
+   *
+   * `yaw` is ψ, in radians, measured exactly as the turn measures it:
+   * +π/2 is the right-facing profile, 0 is the animal looking down the
+   * camera, −π/2 the left profile. Unlike `facing` it is NOT bounded to
+   * those two ends and NOT wrapped — π is the animal's back, 3π is the
+   * same back one and a half turns later, and both are drawn. The
+   * bounds exist so that the GAME cannot accidentally show a character
+   * from behind (see TURN_RATE); a caller that has asked for an angle
+   * has not asked by accident.
+   *
+   * Keep it continuous across frames. The tail's spring chain is handed
+   * the heading to trail, so a jump from π to −π is a real jump to it
+   * and the tail cracks like a whip.
+   *
+   * While pinned the head stops leading: there is no turn left for it
+   * to cover, and the resting bias toward the camera has no meaning
+   * once the animal is past its own profiles. The gait still gets the
+   * lean and the tail swish, taken from how fast the pin is actually
+   * moving, so spinning one by hand looks like spinning an animal.
+   *
+   * @param {string} id
+   * @param {number|null} yaw
+   * @param {number} [pitch]
+   */
+  pin(id, yaw, pitch) {
+    try {
+      if (yaw == null || !Number.isFinite(yaw)) this._pins.delete(id);
+      else this._pins.set(id, { yaw, pitch: Number.isFinite(pitch) ? pitch : 0 });
+    } catch (e) { /* never take the frame down */ }
   }
 
   /** Drop per-cat state for a character that left. */
   forget(id) {
-    try { this._cats.delete(id); } catch (e) { /* nothing to do */ }
+    try { this._cats.delete(id); this._pins.delete(id); } catch (e) { /* nothing to do */ }
   }
 
   /* ── per-character animation ──────────────────────────────────── */
 
-  _catState(id, facing) {
+  _catState(id, facing, m) {
     let c = this._cats.get(id);
+    /* A character that changed ANIMAL starts again. Its channel buffers
+       and its bone matrices are sized to the skeleton it was drawn with,
+       and there is no sensible way to blend a cat's pose into a dog's —
+       what a look change means is that a different creature is standing
+       there now. Its id, and so its place in the depth order, is the
+       one thing that survives. */
+    if (c && c.m !== m) c = undefined;
     if (!c) {
       const drv = new Driver();
       /* The head's aim rides on the channel `pose.js` keeps for exactly
@@ -1705,11 +1931,14 @@ export class CatLayer {
       sway.seed(yaw0, aim0);
 
       c = {
+        m,
         drv,
         sway,
         state: null,
         /** ψ: 0 is nose-at-camera, ±π/2 the two profiles. See TURN_RATE. */
         yaw: yaw0,
+        /** φ: the view's pitch, and zero for anything the game draws. */
+        pitch: 0,
         /** The neck's own angle, added to ψ to get where the head points. */
         aim: aim0,
         /** Signed, −1…1, the gait's lean and tail-swish input. */
@@ -1717,10 +1946,10 @@ export class CatLayer {
         /** vy, low-passed at AIR_TAU, in px/s. Zero is the honest
             seed: a character is spawned standing on something. */
         vySmooth: 0,
-        chan: new Float32Array(this._chanN),
-        blendFrom: new Float32Array(this._chanN),
+        chan: new Float32Array(m._chanN),
+        blendFrom: new Float32Array(m._chanN),
         blendT: 1,
-        bones: new Float32Array(this._rig.count * 16),
+        bones: new Float32Array(m._rig.count * 16),
       };
       this._cats.set(id, c);
     }
@@ -1741,7 +1970,25 @@ export class CatLayer {
    * Called once per animation sub-step so the sway chains see a drive
    * that moves smoothly rather than one that jumps once a frame.
    */
-  _turn(c, d, facing) {
+  _turn(c, d, facing, pin) {
+    /* Pinned: the caller owns ψ outright. Everything below this is
+       about GETTING somewhere — a rate limit, the bounds, a head that
+       leads and then unwinds — and none of it applies to an angle that
+       has already been decided. What is still wanted is the lean and
+       the tail swish, and those come from how far the pin moved, which
+       is the same measurement the free turn makes. */
+    if (pin != null) {
+      const was = c.yaw;
+      c.yaw = pin.yaw;
+      c.pitch = pin.pitch;
+      c.turnRate = d > 0
+        ? Math.max(-1, Math.min(1, (c.yaw - was) / (TURN_LEAN_REF * d)))
+        : 0;
+      c.aim += (0 - c.aim) * (1 - Math.exp(-d / AIM_RELEASE));
+      return;
+    }
+    c.pitch = 0;
+
     const target = facing * HALF_PI;
 
     /* No wrapping and no shortest-arc test: ψ and its target are both
@@ -1845,7 +2092,7 @@ export class CatLayer {
     let k = (m - 0.62) / (0.94 - 0.62);
     k = k < 0 ? 0 : k > 1 ? 1 : k;
     k = k * k * (3 - 2 * k);
-    out.far = s >= 0 ? this._eyePlusX : this._eyeMinusX;
+    out.far = s >= 0 ? c.m._eyePlusX : c.m._eyeMinusX;
     out.scale = 1 - k;
     return out;
   }
@@ -1863,8 +2110,8 @@ export class CatLayer {
    * still one, so a cat that has been running for a while is running at
    * exactly the amplitude the Driver says.
    */
-  _poseCat(c, state, speed, dt, facing, vy) {
-    const rig = this._rig;
+  _poseCat(c, state, speed, dt, facing, vy, pin) {
+    const rig = c.m._rig;
     const d = Math.min(0.1, Math.max(0, dt || 0));
     const sp = Math.abs(speed) || 0;
 
@@ -1890,7 +2137,7 @@ export class CatLayer {
          given ψ as the body heading its chains trail, so one turn moves
          the shoulders, the head, the whiskers and the tail together
          instead of four separate things being told about it. */
-      this._turn(c, sd, facing);
+      this._turn(c, sd, facing, pin);
       c.drv.pose.aimYaw = c.aim;
       p = c.drv.step(sd, speed01, c.turnRate, strideHz);
       /* Smoothed in HERE and not once a frame, for the same reason the
@@ -1909,7 +2156,7 @@ export class CatLayer {
     const authored = AUTHORED[state];
     if (authored) {
       authored.fn(rig, rig._cache);
-      rig.position[rig._cache.root * 3 + 1] += this._groundAdjust[state];
+      rig.position[rig._cache.root * 3 + 1] += c.m._groundAdjust[state];
     }
     /* Last, and multiplied rather than assigned, so it composes with
        both `applyPose` and the authored poses instead of overruling
@@ -1922,7 +2169,7 @@ export class CatLayer {
       rig.scale[e + 1] *= eye.scale;
       rig.scale[e + 2] *= eye.scale;
     }
-    const target = packChannels(rig, this._scratch);
+    const target = packChannels(rig, c.m._scratch);
 
     if (c.state === null) {
       c.chan.set(target);
@@ -2018,13 +2265,8 @@ export class CatLayer {
   dispose() {
     try {
       const gl = this.gl;
-      for (const v of this._vaos.values()) gl.deleteVertexArray(v);
-      for (const b of this._cbufs.values()) gl.deleteBuffer(b);
-      gl.deleteBuffer(this._pbuf);
-      gl.deleteBuffer(this._nbuf);
-      gl.deleteBuffer(this._ibo);
-      gl.deleteProgram(this._prog);
-      this._shape = null;
+      for (const m of this._models.values()) m.dispose();
+      this._models.clear();
       this._cats.clear();
     } catch (e) { /* nothing to do */ }
   }

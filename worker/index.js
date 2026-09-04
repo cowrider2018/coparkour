@@ -13,12 +13,15 @@
 // 每個人自己算得出來（見 public/src/npc.js）。伺服器只需要給大家同一個時鐘原點。
 // 用 WebSocket Hibernation API，沒人講話時 DO 會休眠、不計費。
 
+import { isLook, DEFAULT_LOOK } from '../public/src/cat/looks.js';
+
 const MAX_PLAYERS = 12;      // 一間房上限
 const MAX_MSG_BYTES = 2048;  // 單則訊息大小上限
 const MSG_PER_SEC = 40;      // 每人每秒訊息上限（超過直接丟棄）
 const BOARD_SIZE = 10;
 const STATES = new Set(['run', 'idle', 'air', 'fall', 'wall', 'dead']);
-const SKINS = new Set(['orangin', 'tabby', 'calico']);
+// 造型名單跟前端共用同一份（public/src/cat/looks.js）。那支檔案刻意沒有
+// 任何 import，所以把它拉進 Worker 不會順手把渲染器和骨架一起拉進來。
 // 重生點的價格。跟 public/src/npc.js 的 NPC.prices 是同一張表，改了要一起改——
 // 客戶端拿它顯示，伺服器拿它驗，兩邊不一樣的話買家會看到「金幣不足」卻不知道為什麼。
 const PRICES = [50, 150, 300];
@@ -308,7 +311,7 @@ function cleanRoom(v) {
 
 function cleanSkin(v) {
   const s = String(v || '');
-  return SKINS.has(s) ? s : 'orangin';
+  return isLook(s) ? s : DEFAULT_LOOK;
 }
 
 function cleanName(v) {

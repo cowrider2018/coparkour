@@ -443,9 +443,8 @@ code { font: 600 11px ui-monospace, monospace; background: var(--field); padding
 }
 
 /* 三個花色的代表色，取自 cat.bin 各 skin 的平均色 */
-.chip-orangin { background: linear-gradient(135deg, #e8862f 50%, #f2ece2 50%); }
-.chip-tabby   { background: linear-gradient(135deg, #9a7346 50%, #d9c39e 50%); }
-.chip-calico  { background: linear-gradient(120deg, #2e2723 33%, #f2ece2 33% 66%, #e8862f 66%); }
+/* 每一種造型的色票現在由 looks.js 給、main.js 直接寫成 inline 漸層——
+   多一種動物或多一件毛色不必再來這裡加一條規則。 */
 
 .catnote { margin: -8px 0 14px; font-size: 11px; color: var(--accent2); text-align: left; }
 

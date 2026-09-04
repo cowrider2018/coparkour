@@ -13,6 +13,8 @@ import { Decor } from './gfx/decor.js';
 import { Trees } from './gfx/tree.js';
 import { seasonBlend } from './gfx/season.js';
 import { CAT_SKINS } from './cat/cat.js';
+import { LOOKS, DEFAULT_LOOK, isLook, lookInfo } from './cat/looks.js';
+import { speciesModels } from './cat/species.js';
 
 const $ = (id) => document.getElementById(id);
 const cfg = window.GAME_CONFIG || {};
@@ -52,8 +54,11 @@ let wallet = 0;             // 伺服器記的金幣餘額（死掉不歸零、�
 let flushed = 0;            // 這條命撿到的金幣裡，已經回報給伺服器的部分
 let flushAt = 0;
 let myName = '無名跑者';
-let skin = localStorage.getItem('pk_skin') || CAT_SKINS[0];
-if (!CAT_SKINS.includes(skin)) skin = CAT_SKINS[0];
+/* 造型：一個扁平的 "模型/毛色"，存這裡、上網路、進伺服器都是同一個字串。
+   舊存檔存的是裸毛色名（'tabby'），一律當成貓的那一件補回去。 */
+let look = localStorage.getItem('pk_look')
+  || (localStorage.getItem('pk_skin') ? `cat/${localStorage.getItem('pk_skin')}` : '');
+if (!isLook(look)) look = DEFAULT_LOOK;
 
 // 手把：預設關閉，開了就記住（含左右配置）
 let padOn = localStorage.getItem('pk_pad') === '1';
@@ -184,7 +189,7 @@ pad.mix = padSwap ? 1 : 0;   // 開機就是這個配置，不用播對調動畫
 function connect(name) {
   if (!SERVER) { setStatus('單機模式', 'warn'); return; }
   net = new Net({
-    url: SERVER, room: ROOM, name, skin,
+    url: SERVER, room: ROOM, name, look,
     on: {
       status: (s) => {
         if (s === 'online') setStatus('已連線', 'ok');
@@ -194,7 +199,7 @@ function connect(name) {
       },
       welcome: (m) => {
         ghosts.clear();
-        for (const p of m.players || []) ghosts.upsert(p.id, p.name, p.skin);
+        for (const p of m.players || []) ghosts.upsert(p.id, p.name, p.look);
         if ((m.seed >>> 0) !== seed) { buildLevel(m.seed, m.t0); restart(); }
         // 世界時鐘：t0 是原點，now 用來校正本機時鐘（誤差是 ping 的一半）
         if (npcs) {
@@ -220,7 +225,7 @@ function connect(name) {
         n.invite = 0;
         n.say(m.why === 'taken' ? '這隻已經有主人了' : `還差 ${Math.max(0, (m.need || 0) - (m.have || 0))} 枚金幣`);
       },
-      join: (m) => { ghosts.upsert(m.id, m.name, m.skin); renderBoard(); },
+      join: (m) => { ghosts.upsert(m.id, m.name, m.look); renderBoard(); },
       leave: (m) => { ghosts.remove(m.id); if (cats) cats.forget(m.id); renderBoard(); },
       s: (m) => ghosts.onState(m),
       board: (m) => { roomBoard = m.list || []; renderBoard(); },
@@ -341,7 +346,7 @@ function frame(now) {
   const list = ghosts.sample(now);
   const npcList = npcs ? npcs.list() : [];
   renderer.draw(W, H, {
-    cam, level, player, ghosts: list, npcs: npcList, myName, time, zoom, sky, skin,
+    cam, level, player, ghosts: list, npcs: npcList, myName, time, zoom, sky, look,
     wind: weather.wind, glBackground: !!background, hasCats: !!cats,
   });
 
@@ -350,16 +355,17 @@ function frame(now) {
     try {
       cats.begin(cam, { w: W / zoom, h: H / zoom }, sky);
       for (const g of list) {
-        cats.cat(g.id, g.x, g.y, g.facing, g.state, g.vx || 0, dt, g.skin, 0.58, g.vy || 0);
+        cats.cat(g.id, g.x, g.y, g.facing, g.state, g.vx || 0, dt, g.look, 0.58, g.vy || 0);
       }
       // NPC 用滿的不透明度：牠們真的在這個世界裡，不是別人畫面的投影
       for (const n of npcList) {
         cats.cat('npc' + n.i, n.x, n.y, n.p.facing, playerState(n.p),
-          Math.abs(n.p.vx), dt, CAT_SKINS[n.i % CAT_SKINS.length], 1, n.p.vy);
+          // 旅貓還是貓。要讓路上什麼都有，把這行換成 LOOKS 就行。
+          Math.abs(n.p.vx), dt, `cat/${CAT_SKINS[n.i % CAT_SKINS.length]}`, 1, n.p.vy);
       }
       if (!player.dead) {
         cats.cat('me', player.x, player.y, player.facing,
-          playerState(player), Math.abs(player.vx), dt, skin, 1, player.vy);
+          playerState(player), Math.abs(player.vx), dt, look, 1, player.vy);
       }
       cats.end();
     } catch (e) {
@@ -529,7 +535,8 @@ async function bootGraphics() {
   if (NOGL) { $('catNote').textContent = '（強制備援模式：角色是方塊）'; return; }
   try {
     const { CatLayer } = await import('./cat/cat.js');
-    cats = await CatLayer.load(fxCanvas, './assets/cat.bin');
+    /* 一層裝下所有物種。名冊由 species.js 給，這裡不認識任何一種動物。 */
+    cats = await CatLayer.load(fxCanvas, './assets/cat.bin', { models: speciesModels });
     fxCanvas.style.display = 'block';
     cats.resize(W, H, Math.min(devicePixelRatio || 1, 2));
     $('catNote').textContent = '';
@@ -545,7 +552,7 @@ function start() {
   const name = ($('nameInput').value || '').trim().slice(0, 14) || '無名跑者';
   myName = name;
   localStorage.setItem('pk_name', name);
-  localStorage.setItem('pk_skin', skin);
+  localStorage.setItem('pk_look', look);
   $('menu').classList.add('hidden');
   buildLevel(seed);
   restart();
@@ -553,20 +560,26 @@ function start() {
   resize();
 }
 
+/* 選單就是 LOOKS 本身。名字和色票都從 looks.js 來，所以多一種動物或多一件
+   毛色不用改這裡——那正是把名單放在一個地方的理由。 */
 function buildSkinPicker() {
   const box = $('skinPicker');
-  const LABEL = { orangin: '橘白', tabby: '虎斑', calico: '三花' };
-  box.innerHTML = CAT_SKINS.map((s) =>
-    `<button type="button" class="skin" data-skin="${s}" aria-pressed="${s === skin}">
-       <span class="chip chip-${s}"></span>${LABEL[s] || s}
-     </button>`).join('');
+  box.innerHTML = LOOKS.map((id) => {
+    const info = lookInfo(id);
+    const stops = info.swatch.length === 2
+      ? `${info.swatch[0]} 50%, ${info.swatch[1]} 50%`
+      : info.swatch.map((c, i, a) => `${c} ${Math.round((i / a.length) * 100)}% ${Math.round(((i + 1) / a.length) * 100)}%`).join(', ');
+    return `<button type="button" class="skin" data-look="${id}" aria-pressed="${id === look}">
+       <span class="chip" style="background:linear-gradient(135deg, ${stops})"></span>${info.name}
+     </button>`;
+  }).join('');
   box.addEventListener('click', (e) => {
     const b = e.target.closest('.skin');
     if (!b) return;
-    skin = b.dataset.skin;
-    localStorage.setItem('pk_skin', skin);
-    box.querySelectorAll('.skin').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.skin === skin)));
-    if (net) net.setSkin(skin);
+    look = b.dataset.look;
+    localStorage.setItem('pk_look', look);
+    box.querySelectorAll('.skin').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.look === look)));
+    if (net) net.setLook(look);
   });
 }
 

@@ -73,14 +73,25 @@ export function makeShader(ctx) {
   // fill's vertex function passes none.
   const inkSink = ctx.inkSink || null;
   const uY = [Math.sin(yaw), -Math.cos(yaw)];
+  // 鏡頭的俯仰，接在 yaw 之後、繞畫面自己的水平軸；見 cat.js 的 uPitch。
+  const pitch = ctx.pitch || 0;
+  const uP = [Math.cos(pitch), Math.sin(pitch)];
   const S = place.s;
 
-  const screenOf = (w) => {
-    const rz = -w[0] * uY[1] + (w[2] - centerZ) * uY[0];
-    return [place.cx + rz * S, place.fy - (w[1] - groundY) * S];
+  const depthOf = (w) => {
+    const rx = w[0] * uY[0] + (w[2] - centerZ) * uY[1];
+    return rx * uP[0] + (w[1] - groundY) * uP[1];
   };
-  const projectDir = (d) => [(-d[0] * uY[1] + d[2] * uY[0]) * S, d[1] * S];
-  const depthOf = (w) => w[0] * uY[0] + (w[2] - centerZ) * uY[1];
+  const screenOf = (w) => {
+    const rx = w[0] * uY[0] + (w[2] - centerZ) * uY[1];
+    const rz = -w[0] * uY[1] + (w[2] - centerZ) * uY[0];
+    const up = (w[1] - groundY) * uP[0] - rx * uP[1];
+    return [place.cx + rz * S, place.fy - up * S];
+  };
+  const projectDir = (d) => {
+    const rx = d[0] * uY[0] + d[2] * uY[1];
+    return [(-d[0] * uY[1] + d[2] * uY[0]) * S, (d[1] * uP[0] - rx * uP[1]) * S];
+  };
   const boneMat = (i) => bones.subarray(i * 16, i * 16 + 16);
 
   const frames = parts.map((p) => {
@@ -178,6 +189,8 @@ export function makeShader(ctx) {
 
     const m = boneMat(b);
     const world = xform(m, local);
+    // yaw 轉，pitch 不轉：法線是拿去對光的，而光是那個時辰的光，不是
+    // 黏在鏡頭上的燈。深度軸在下面用 pitch 現算。見 cat.js 的同一段。
     const wn = rot3(m, normal);
     const vN = [wn[0] * uY[0] + wn[2] * uY[1], wn[1], -wn[0] * uY[1] + wn[2] * uY[0]];
 
@@ -185,7 +198,8 @@ export function makeShader(ctx) {
     const part = byBone[b];
     if (part >= 0 && !rides[b] && !face) {
       const l = Math.hypot(...vN) || 1;
-      screen = warpToRect(screen, part, 1 - Math.abs(vN[0] / l));
+      const sil = 1 - Math.abs((vN[0] * uP[0] + vN[1] * uP[1]) / l);
+      screen = warpToRect(screen, part, sil);
     }
     const sink = inkSink ? inkSink[b] : 0;
     return { x: screen[0], y: screen[1], z: depthOf(world) - (face ? FACE_LIFT : 0) + sink, n: vN };
