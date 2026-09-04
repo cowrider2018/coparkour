@@ -1568,7 +1568,7 @@ export class CatLayer {
    * π/2, and ψ is already measured from the camera precisely so that
    * "how far round" means something (see TURN_RATE). The game only ever
    * has a side to give, so it only ever passes ±1 and gets exactly what
-   * it always did; `preview/dog.html` is what wants the half-turns, and
+   * it always did; the catalogue page is what wants the half-turns, and
    * it drives the same turn this way rather than reaching past it.
    *
    * `vy` is the character's vertical velocity in world px/s, screen

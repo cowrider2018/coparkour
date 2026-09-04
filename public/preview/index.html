@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>圖鑑</title>
+<meta name="theme-color" content="#1e1810" />
+<meta name="robots" content="noindex" />
+<!--
+  圖鑑：這個專案畫得出來的每一種動物，全部陳列。
+
+  沒有任何控制項，這是刻意的。它要回答的是「現在總共有哪些、長什麼樣」，
+  而那個答案不該取決於誰把哪個滑桿推到哪裡——每一格都用同一個時辰、同一個
+  朝向、同一個大小、同一組動作，差別只剩物種與毛色本身。
+
+  唯一的互動是「拿起來看」：在一格上按住左右拖曳，那一格會跟著手轉，可以
+  一路轉到背面再轉回來；鬆手就自己盪回原本的角度。它不改變任何陳列的內容，
+  所以上面那件事仍然成立——放開手，每一格又是同一個樣子。
+
+  放在 public/preview/ 而不是 tools/：這頁需要 WebGL2、需要 fetch 得到
+  cat.bin、也需要 import public/src/ 底下那幾支模組，所以它得跟遊戲一起
+  被 Workers Static Assets 送出去。tools/ 是給 node 跑的離線腳本
+  （tools/verify-dog.mjs 就是狗的離線版）。
+
+  這頁完全不碰遊戲：不 import main.js、不連 WebSocket、不寫 localStorage。
+  網址：/preview/
+-->
+<style>
+  :root {
+    --bg: #1e1810;
+    --ink: #f7efdd;
+    --muted: #b5a184;
+    --card: #2b2218;
+    --edge: #4a3b29;
+    --accent: #9bd94e;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.5 system-ui, "Noto Sans TC", sans-serif;
+  }
+  body { padding: 20px clamp(12px, 4vw, 40px) 56px; }
+  header { margin: 0 0 26px; }
+  h1 {
+    font-size: clamp(30px, 6vw, 46px); margin: 0; font-weight: 700;
+    letter-spacing: -.02em; line-height: 1;
+  }
+  p.sub {
+    margin: 8px 0 0; font-size: 16px; color: var(--accent);
+    letter-spacing: .32em; text-indent: .32em;
+  }
+  p.hint { margin: 10px 0 0; font-size: 12px; color: var(--muted); letter-spacing: .04em; }
+
+  .shelf { display: flex; flex-wrap: wrap; gap: 16px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--edge);
+    border-radius: 12px;
+    padding: 10px 10px 6px;
+    flex: 1 1 420px;
+    min-width: 300px;
+  }
+  .card h2 {
+    font-size: 13px; margin: 0 0 8px; font-weight: 600;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  }
+  .card h2 small { color: var(--muted); font-weight: 400; letter-spacing: .06em; }
+  /* 畫布是透明的（CatLayer 每幀清成 rgba(0,0,0,0)），天空畫在它下面這一層，
+     讓三階調的顏色有個對的環境可以看。 */
+  /* touch-action 是必要的：不關掉的話，手機上橫向拖曳會被瀏覽器判成捲頁，
+     pointermove 直接斷在半路。 */
+  .view {
+    position: relative; border-radius: 8px; overflow: hidden;
+    touch-action: none; cursor: grab;
+  }
+  .view.held { cursor: grabbing; }
+  .view canvas { display: block; width: 100%; position: relative; z-index: 1; }
+  .sky { position: absolute; inset: 0; z-index: 0; }
+  .floor { position: absolute; left: 0; right: 0; z-index: 0; border-top: 1px solid rgba(0,0,0,.28); }
+  .names { display: flex; margin: 6px 0 0; }
+  .names span { flex: 1 1 0; text-align: center; font-size: 12px; color: var(--muted); }
+  .err { color: #ef5b3f; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>coparkour</h1>
+  <p class="sub">生物圖鑑</p>
+  <p class="hint">按住任一格拖曳</p>
+</header>
+
+<div class="shelf" id="shelf"></div>
+<p id="msg" class="err" hidden></p>
+
+<script type="module">
+import { parseCat } from '../src/cat/rig.js';
+import { CatLayer } from '../src/cat/cat.js';
+import { lookInfo } from '../src/cat/looks.js';
+import { speciesModels, SPECIES } from '../src/cat/species.js';
+import { skyAt, skyBands, css } from '../src/gfx/daycycle.js';
+import { PHYS, PLAYER_W, PLAYER_H } from '../src/constants.js';
+
+/* ── 陳列的內容 ───────────────────────────────────────────────────
+   這一頁沒有名單。`SPECIES` 是遊戲自己的名冊，`lookInfo` 是遊戲自己的名字
+   與色票，連建模型都是遊戲用的那一支 `speciesModels`——所以「圖鑑上有什麼」
+   跟「遊戲裡有什麼」不可能對不上：它們是同一件事讀了兩次。
+
+   要靠人手動維護才會完整的圖鑑，最後一定不完整。
+
+   一格一個物種，格子裡是牠所有的毛色，而且一格只有一個 CatLayer：毛色本來
+   就只是一塊頂點色，同一個 layer 全都握著，切換是一次 VAO bind。 */
+
+/** 物種名是 look 名的前半：「貓・虎斑」的「貓」。從第一件毛色問出來。 */
+const titleOf = (spec) => lookInfo(`${spec.id}/${spec.skins[0]}`).name.split('・')[0];
+
+/* ── 每一格怎麼畫 ─────────────────────────────────────────────────
+   全部固定，沒有一項是可調的。
+
+   ZOOM 放大的是「相機」而不是角色：boxH 維持遊戲的 40，只把可視範圍縮小。
+   這件事是必要的，不是偷懶——步頻是 speed /(STRIDE_PER_BOXH × boxH)，擺幅
+   卻是 speed / REF_SPEED，兩者對 boxH 的反應不一樣，所以把 boxH 加大來放大
+   角色會順手把步態改成另一種東西。縮相機則什麼都不動：步態、墨線寬、跳躍
+   弧線全都是遊戲裡的那一份，只是看得比較大。 */
+const ZOOM = 1.9;
+const VIEW_H = 320;          // 每格畫布的 CSS 高度
+const FLOOR = 0.80;          // 地面線落在畫布高度的幾成處
+const HOUR = 9;              // 固定的時辰
+const WALK = 150;            // 世界 px/s：這副骨架在 boxH = 40 時的小跑
+
+/* 每兩秒做一次跳躍動作——動作而已，腳不離地。
+
+   格子是給人看一隻動物的，不是給牠跑的：真的騰空 62 px 之後，牠有半秒不在
+   原來的位置上，而在一排格子裡，會動的東西應該是動物本身，不是牠在框裡的
+   位置。所以位移不畫，姿勢照做。
+
+   時間軸仍然是真的一次跳躍算出來的：用遊戲自己的重力和起跳速度收到六成
+   （`PHYS.jumpCut` 說鬆開跳躍鍵會保留 42%，所以小跳是這遊戲真有的動作），
+   得到 0.5 秒的滯空，上升的那半段是 `air`、下降的那半段是 `fall`。vy 也照
+   那條弧線給，所以尾巴知道自己正在往上衝或往下掉——那個甩動本來就是這個
+   動作的一部分，少了它就只剩兩張定格。 */
+const BEAT = 2.0;
+const HOP = 0.60;
+const HOP_V = PHYS.jumpVel * HOP;
+const HOP_AIR = (2 * HOP_V) / PHYS.gravity;
+
+/* ── 拿起來看 ─────────────────────────────────────────────────────
+   ψ 是「從鏡頭量起」的角度，HOME 的 +π/2 就是這頁陳列用的右側面。拖曳時
+   直接把 ψ 釘住（`layer.pin`），不經過遊戲那套轉身——那套有速率上限、有
+   ±π/2 的邊界、還有一顆會先轉過去再收回來的頭，全都是為了「轉到某個方向」
+   服務的，而這裡的方向已經由手決定了。
+
+   ψ 刻意不取模。尾巴的彈簧鏈是拿 ψ 當「身體朝向」在後面拖的，從 π 跳到 −π
+   對它來說是真的跳了一下，尾巴會甩成一條鞭子。連續地累加就沒有這回事，而
+   sin/cos 本來就不在乎轉了幾圈。
+
+   SPIN 是每 px 轉多少弧度：一圈約 400 px，一個格子的寬度大致就是半圈。 */
+const HOME = Math.PI / 2;
+const SPIN = (Math.PI * 2) / 400;
+const SETTLE = 0.18;         // 鬆手後盪回去的時間常數，秒
+
+/* 上下拖是鏡頭的俯仰：往上拖 = 爬到牠上面往下看，往下拖 = 蹲到牠下面
+   往上看。手往哪走，鏡頭就往哪走。
+
+   夾在 ±70° 而不是讓它翻過頭去——過了頂點之後畫面會上下顛倒，那不是
+   「從上面看」，那是把整頁倒過來，而使用者手上並沒有一個能還原它的東西。 */
+const TILT = (Math.PI * 2) / 900;
+const TILT_MAX = 1.22;
+
+const msg = document.getElementById('msg');
+const fail = (e) => {
+  msg.hidden = false;
+  msg.textContent = '畫不出來：' + (e && e.message ? e.message : e);
+};
+
+const cards = [];
+
+function build(cat) {
+  const shelf = document.getElementById('shelf');
+  /* 一次把整個名冊造出來，然後每一格自己挑一個模型畫。同一份幾何不會被造
+     兩次，而且用的就是遊戲載入時走的那一條路。 */
+  const built = new Map(speciesModels(cat).map((m) => [m.id, m.data]));
+  for (const spec of SPECIES) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const coat = (sk) => lookInfo(`${spec.id}/${sk}`).name.split('・').pop();
+    card.innerHTML = `<h2><span>${titleOf(spec)}</span></h2>`
+      + '<div class="view"><div class="sky"></div><div class="floor"></div></div>'
+      + `<p class="names">${spec.skins.map((sk) => `<span>${coat(sk)}</span>`).join('')}</p>`;
+    const view = card.querySelector('.view');
+    const canvas = document.createElement('canvas');
+    view.appendChild(canvas);
+    shelf.appendChild(card);
+
+    try {
+      const layer = new CatLayer(canvas, built.get(spec.id), { boxW: PLAYER_W, boxH: PLAYER_H });
+      const c = {
+        spec, canvas, layer, view,
+        sky: card.querySelector('.sky'),
+        floor: card.querySelector('.floor'),
+        /* yaw 為 null 表示這一格沒被碰過，讓 CatLayer 自己管朝向。一旦
+           拿起來看過，它就一直是這一格說了算，直到盪回原位才交還。 */
+        yaw: null, pitch: 0, grab: null,
+      };
+      hold(c);
+      cards.push(c);
+    } catch (e) { fail(e); }
+  }
+}
+
+/* ── 拿起來看的手勢 ─────────────────────────────────────────────
+   指標捕捉（setPointerCapture）不是可有可無的：沒有它，手一離開格子邊界
+   就收不到 pointermove，轉到一半會卡住，而且 pointerup 也可能落在別處，
+   格子會永遠以為自己還被按著。 */
+
+function hold(c) {
+  const v = c.view;
+  v.addEventListener('pointerdown', (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    v.setPointerCapture(e.pointerId);
+    v.classList.add('held');
+    c.grab = {
+      id: e.pointerId, x: e.clientX, y: e.clientY,
+      yaw: c.yaw == null ? HOME : c.yaw, pitch: c.pitch,
+    };
+    e.preventDefault();
+  });
+  v.addEventListener('pointermove', (e) => {
+    if (!c.grab || e.pointerId !== c.grab.id) return;
+    c.yaw = c.grab.yaw + (e.clientX - c.grab.x) * SPIN;
+    const tilt = c.grab.pitch - (e.clientY - c.grab.y) * TILT;
+    c.pitch = Math.max(-TILT_MAX, Math.min(TILT_MAX, tilt));
+  });
+  const drop = (e) => {
+    if (!c.grab || e.pointerId !== c.grab.id) return;
+    c.grab = null;
+    v.classList.remove('held');
+  };
+  v.addEventListener('pointerup', drop);
+  v.addEventListener('pointercancel', drop);
+}
+
+/** 鬆手後往原始角度盪回去，並在到家的那一刻把朝向還給 CatLayer。 */
+function settle(c, dt) {
+  if (c.grab || c.yaw == null) return;
+  /* 回最近的那一個 HOME，不是回 HOME 本身：轉了三圈之後，短的那條路是
+     往回一點點，不是把三圈倒著轉完。 */
+  const home = HOME + Math.round((c.yaw - HOME) / (Math.PI * 2)) * Math.PI * 2;
+  const k = 1 - Math.exp(-dt / SETTLE);
+  c.yaw += (home - c.yaw) * k;
+  c.pitch += (0 - c.pitch) * k;
+  // 兩件事都到家了才交還，不然會在最後一幀跳一下。
+  if (Math.abs(home - c.yaw) < 0.002 && Math.abs(c.pitch) < 0.002) {
+    c.yaw = null;
+    c.pitch = 0;
+  }
+}
+
+/* ── 一幀 ─────────────────────────────────────────────────────── */
+
+let last = performance.now();
+let clock = 0;
+
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  clock += dt;
+
+  /* 全部一起跳。九隻各跳各的會變成閃爍，一起跳是一個節拍。 */
+  const t = clock % BEAT;
+  let vy = 0, state = 'run';
+  if (t < HOP_AIR) {
+    // 世界 y 往下長，所以上升是負的 vy。位移不用，只用它的正負與大小。
+    vy = -HOP_V + PHYS.gravity * t;
+    state = vy < 0 ? 'air' : 'fall';
+  }
+
+  const sky = skyAt(HOUR);
+  const bands = skyBands(sky);
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+
+  for (const c of cards) {
+    settle(c, dt);
+    const w = c.view.clientWidth || 400;
+    c.canvas.style.height = VIEW_H + 'px';
+    c.layer.resize(w, VIEW_H, dpr);
+    c.sky.style.background =
+      `linear-gradient(${css(bands.top)}, ${css(bands.hor)} 62%, ${css(bands.bot)})`;
+
+    const floorPx = Math.round(VIEW_H * FLOOR);
+    c.floor.style.top = floorPx + 'px';
+    /* 地面線是一條水平線，而俯仰之後腳下那個平面就不再是水平的了。與其
+       畫一條說謊的線，不如讓它隨著鏡頭抬起而淡掉。 */
+    c.floor.style.opacity = String(Math.max(0, 1 - Math.abs(c.pitch) / 0.45));
+
+    // 相機就是這格畫布，縮小 ZOOM 倍：CSS px ÷ ZOOM = 世界 px。
+    const vw = w / ZOOM, vh = VIEW_H / ZOOM;
+    const feet = floorPx / ZOOM;
+    const n = c.spec.skins.length;
+
+    c.layer.begin({ x: 0, y: 0 }, { w: vw, h: vh }, sky);
+    c.spec.skins.forEach((skin, i) => {
+      const id = `${c.spec.id}:${skin}`;
+      c.layer.pin(id, c.yaw, c.pitch);
+      const cx = (vw * (i + 0.5)) / n;
+      c.layer.cat(id, cx - PLAYER_W / 2, feet - PLAYER_H,
+        1, state, WALK, dt, skin, 1, vy);
+    });
+    c.layer.end();
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ── 起動 ─────────────────────────────────────────────────────── */
+
+try {
+  const res = await fetch('../assets/cat.bin');
+  if (!res.ok) throw new Error(`cat.bin: HTTP ${res.status}`);
+  build(parseCat(await res.arrayBuffer()));
+  requestAnimationFrame(frame);
+} catch (e) {
+  fail(e);
+}
+</script>
+</body>
+</html>
