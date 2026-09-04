@@ -74,14 +74,34 @@ const SWATCH = {
   cow: ['#34302f', '#f6f6f4'],
 };
 
-/** `look` → what to call it and what to paint its chip. */
+/** @param {string} model @returns {string} what to call that animal. */
+export const modelName = (model) => MODEL_NAME[model] || model;
+/** @param {string} skin @returns {string} what to call that colourway. */
+export const skinName = (skin) => SKIN_NAME[skin] || skin;
+
+/** `look` → what to call it and what to paint its chip.
+ *  The two halves come out separately as well as joined, because callers
+ *  want them apart: the catalogue heads a card with the animal and
+ *  labels each coat under it. It used to split the joined string back
+ *  apart on the ・, which worked, but only by accident. */
 export function lookInfo(look) {
   const slash = look.indexOf('/');
   const model = look.slice(0, slash), skin = look.slice(slash + 1);
   return {
     model,
     skin,
-    name: `${MODEL_NAME[model] || model}・${SKIN_NAME[skin] || skin}`,
+    modelName: modelName(model),
+    skinName: skinName(skin),
+    name: `${modelName(model)}・${skinName(skin)}`,
     swatch: SWATCH[skin] || ['#8a8a8a'],
   };
+}
+
+/** The chip's paint, as one CSS gradient: two stops split down the
+ *  middle, three cut into equal thirds. */
+export function swatchCss(swatch) {
+  const stops = swatch.length === 2
+    ? `${swatch[0]} 50%, ${swatch[1]} 50%`
+    : swatch.map((c, i, a) => `${c} ${Math.round((i / a.length) * 100)}% ${Math.round(((i + 1) / a.length) * 100)}%`).join(', ');
+  return `linear-gradient(135deg, ${stops})`;
 }
