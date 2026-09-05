@@ -274,11 +274,19 @@ export function writePPM(path, rgb, W, H) {
   writeFileSync(path, Buffer.concat([head, body]));
 }
 
+/** 這個頂點算不算「臉」：跟 cat.js 那一行 `face` 同一條規則，導出來是因為
+    驗證器要能問同一個問題，而不是自己再寫一遍。 */
+export const isFace = (vi, unlitStart, patch) =>
+  vi >= unlitStart || (!!patch && vi >= patch.start && vi < patch.end);
+
 /**
  * 把一整個 group 的三角形餵給光柵器。`data` 是 parseCat 的產物或 dog.js 造出
  * 來的同形物件；`vs` 是 makeShader 回傳的頂點函式。
+ *
+ * `patch` 是皮膚上那塊自己上了色的臉（貓的鼻子）的頂點區間：跟 `unlit` 一樣
+ * 不彎折、一樣往鏡頭提。沒有那塊臉的動物就不傳。見 cat.js 的 uPatchStart。
  */
-export function emitGroup(tris, data, col, grp, vs, ink, unlitStart) {
+export function emitGroup(tris, data, col, grp, vs, ink, unlitStart, patch = null) {
   for (let i = grp.start; i < grp.start + grp.count; i += 3) {
     const v = [0, 1, 2].map((k) => {
       const vi = data.index[i + k];
@@ -287,7 +295,7 @@ export function emitGroup(tris, data, col, grp, vs, ink, unlitStart) {
         [data.position[vi * 3], data.position[vi * 3 + 1], data.position[vi * 3 + 2]],
         [data.normal[vi * 4] / 32767, data.normal[vi * 4 + 1] / 32767, data.normal[vi * 4 + 2] / 32767],
         data.normal[vi * 4 + 3] / 32767, packed & 31, packed >> 5,
-        !ink && vi >= unlitStart);
+        !ink && isFace(vi, unlitStart, patch));
     });
     const v0 = data.index[i];
     tris.push({

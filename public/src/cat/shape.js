@@ -126,26 +126,55 @@ export const SHAPE_PARTS = [
    rectangle and the skin drops away from ears that did not.
 
    The face is left alone too, but it cannot be listed here, because
-   the nose is on the `head` bone itself and no bone tells it apart
-   from the head's own skin. What does tell it apart is the GROUP: the
-   eyes, the nose and all six whiskers are the whole of `unlit`, and
-   the shader already knows which vertices those are — it has to, to
-   shade them flat. So the rule in cat.js is "unlit does not bend", and
-   between that and this table the entire face and both ears come
-   through untouched.
+   every part of it is on the `head` bone itself and no bone tells it
+   apart from the head's own skin. What tells most of it apart is the
+   GROUP: the eyes, the mouth and all six whiskers are the whole of
+   `unlit`, and the shader already knows which vertices those are — it
+   has to, to shade them flat. So the rule in cat.js is "unlit does not
+   bend", and between that and this table those three and both ears
+   come through untouched.
 
-   Both halves of that were arrived at the hard way. Bending the face
-   with the head smears it: the muzzle sits near the head's front, so
-   the bend's pull is strong there, and the eyes slide toward the cheek
-   while the nose stretches into an oval and the whiskers cross. Riding
-   the eyes but bending the nose is worse still — the face comes apart,
-   because the two halves are being moved by different rules. Leaving
-   all of it exactly where the mesh put it is the only version where
-   the face stays a face, and it is safe because the rounded rectangle
-   CONTAINS the ellipse the bend measures against: the nose sits at
-   t ≈ 0.89 of the head's radius and the eyes nearer still, so none of
-   it was ever near the boundary the skin gets pulled to. */
+   The NOSE is the one piece of the face that rule does not reach, and
+   it is why SHAPE_PATCH below exists: the nose is not a separate
+   object and it is not unlit. It is a raised, differently-painted
+   patch of the skull's own skin — lit, because a lump the size of a
+   nose has a top and an underside and wants shading like everything
+   else. So it arrives at the shader as ordinary head skin and is bent
+   with it.
+
+   Bending the face smears it: the eyes slide toward the cheek and the
+   whiskers cross. The nose does something worse, because the pull is
+   gated on an edge-on normal and a nose is a BUMP — a lump whose
+   little walls turn away from the camera everywhere along their rim,
+   at a t the radius gate has been fully open at since 0.70. Turned
+   30° off the camera, its rim reads as silhouette and is dragged out
+   onto the head's rectangle: the nose came out 2.2× its own width,
+   with the worst vertices moved further than the whole nose is wide.
+   That is one long beak sweeping out of the face and back into it,
+   once every quarter turn, and it is what SHAPE_PATCH is for.
+
+   Riding the eyes but bending the nose is worse still — the face
+   comes apart, because the two halves are being moved by different
+   rules. Leaving all of it exactly where the mesh put it is the only
+   version where the face stays a face. */
 export const SHAPE_RIDE = { earL: 'head', earR: 'head' };
+
+/* ── the painted patch ────────────────────────────────────────────
+   Which bent bone carries a piece of face painted onto its skin. The
+   cat's head carries its nose that way; an animal whose nose is built
+   as its own geometry says `null` and needs none of this (see dog.js,
+   which puts one in `unlit` where the bend already cannot reach it).
+
+   It is a BONE and not a vertex range, because a vertex range is a
+   property of one bake of one asset and would be a pair of magic
+   numbers here. What the patch is measured by instead is the paint:
+   a patch is skin the animal wears in a colour it wears nowhere else,
+   and that is true of a nose whatever the bake numbers it. The
+   measuring is in measurePatch, and it throws rather than shrug if
+   what it finds is not one clean run — a range test in a shader that
+   quietly covers the wrong vertices is not something anyone would go
+   looking for. */
+export const SHAPE_PATCH = 'head';
 
 /* ── the tail ─────────────────────────────────────────────────────
    The tail needs none of the above. Measured off the file it is a tube
@@ -223,8 +252,12 @@ export const SIL_RADIUS = [0.40, 0.70];
  * @param {import('./rig.js').Rig} rig
  * @param {Array}  parts the part table; defaults to the cat's
  * @param {object} ride  bone → host part; defaults to the cat's
+ * @param {?string} patch the bone carrying a painted face patch, or
+ *   null for an animal with none; defaults to the cat's
  */
-export function measureShapes(data, rig, parts = SHAPE_PARTS, ride = SHAPE_RIDE) {
+export function measureShapes(
+  data, rig, parts = SHAPE_PARTS, ride = SHAPE_RIDE, patch = SHAPE_PATCH,
+) {
   const { header, position, index, colors } = data;
   const nv = header.vertexCount;
   const group = (n) => header.groups.find((g) => g.name === n);
@@ -301,7 +334,72 @@ export function measureShapes(data, rig, parts = SHAPE_PARTS, ride = SHAPE_RIDE)
     rides[b] = 1;
   }
 
-  return { parts: shaped, tail, byBone, rides };
+  return { parts: shaped, tail, byBone, rides, patch: measurePatch(data, rig, patch) };
+}
+
+/**
+ * The face patch, as the half-open vertex range the shader tests
+ * against — the same shape of answer, and for the same reason, as the
+ * `unlit` boundary cat.js measures off the file.
+ *
+ * A patch is skin painted a colour the animal wears NOWHERE else. That
+ * is what a nose is on this asset: 219 of the head's own vertices in a
+ * colour no other bone and no other group carries, in all three of the
+ * cat's colourways (each has its own nose colour, and each paints the
+ * same vertices with it — the geometry is shared and only the palette
+ * repeats). So the patch is found once, off `skins[0]`, and holds for
+ * every colourway.
+ *
+ * Both halves of the rule are needed. Without "nowhere else" the
+ * head's own base and belly tones qualify, and the whole skull stops
+ * bending; without "on this bone" a dog's muzzle qualifies, and a
+ * muzzle is a part that MUST bend — which is why the bone is named by
+ * the model rather than searched for.
+ *
+ * @param {object} data
+ * @param {import('./rig.js').Rig} rig
+ * @param {?string} name  the bone, or null for an animal with no patch
+ * @returns {?{start: number, end: number}}
+ */
+function measurePatch(data, rig, name) {
+  if (!name) return null;
+  const { header, index, colors } = data;
+  const lit = header.groups.find((g) => g.name === 'lit');
+  if (!lit) return null;
+  const bone = rig.bone(name);
+  const col = colors.get(header.skins[0]);
+  const paint = (v) => (col[v * 4] << 16) | (col[v * 4 + 1] << 8) | col[v * 4 + 2];
+  const mine = (v) => (col[v * 4 + 3] & 31) === bone;
+
+  /* Every colour worn anywhere but here — the rest of the coat, the
+     ink, the eyes. What is left on this bone after these are struck
+     out is the patch. */
+  const elsewhere = new Set();
+  for (let v = 0; v < header.vertexCount; v++) if (!mine(v)) elsewhere.add(paint(v));
+
+  let start = Infinity, end = -1;
+  const seen = new Uint8Array(header.vertexCount);
+  for (let i = lit.start; i < lit.start + lit.count; i++) {
+    const v = index[i];
+    if (seen[v]) continue;
+    seen[v] = 1;
+    if (!mine(v) || elsewhere.has(paint(v))) continue;
+    if (v < start) start = v;
+    if (v > end) end = v;
+  }
+  if (end < 0) throw new Error(`cat shape: bone "${name}" carries no painted patch`);
+
+  /* The shader can only be handed a RANGE, so the range had better
+     hold the patch and nothing else. A bake that split the patch in
+     two, or laid another part's vertices through the middle of it,
+     would still produce a start and an end here — and would quietly
+     stop bending whatever fell between them. */
+  for (let v = start; v <= end; v++) {
+    if (!mine(v) || elsewhere.has(paint(v))) {
+      throw new Error(`cat shape: the patch on "${name}" is not one run of vertices`);
+    }
+  }
+  return { start, end: end + 1 };
 }
 
 /**

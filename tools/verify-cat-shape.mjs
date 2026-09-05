@@ -9,6 +9,7 @@
 //   · 三階調用的是真法線，所以各部位的明暗分佈跟原本一致
 //   · 頂點色沒有被抹平——虎斑的紋、三花的塊、尾巴的尾端色都還在
 //   · 耳朵、眼睛、鬍鬚是「被載著走」而不是被彎折，形狀保持原樣
+//   · 鼻子也是——它是頭皮上一塊上了色的隆起，不在 unlit 裡，最容易被漏掉
 //   · 尾巴末端是「平尾端 + 圓角」而不是半球
 //   · 墨線是往外一圈固定寬度的矩形，不是被拉歪的外殼
 //
@@ -23,7 +24,7 @@ import { parseCat, Rig } from '../public/src/cat/rig.js';
 import { Driver, Sway, applyPose } from '../public/src/cat/pose.js';
 import { measureShapes } from '../public/src/cat/shape.js';
 import {
-  makeShader, tones, raster, writePPM, emitGroup, rrRadius,
+  makeShader, tones, raster, writePPM, emitGroup, isFace, rrRadius,
   colOf, dot2, xform, INK_PX, SWAY_TAIL,
 } from './lib/soft-raster.mjs';
 
@@ -75,9 +76,9 @@ function frame(name, { yaw, speed, steps, bend }) {
   const vsFill = mk(0, 0), vsInk = mk(grow, inkPx);
 
   const tris = [];
-  emitGroup(tris, data, col, gLit, vsFill, false, unlitStart);
-  emitGroup(tris, data, col, gUnlit, vsFill, false, unlitStart);
-  emitGroup(tris, data, col, gOut, vsInk, true, unlitStart);
+  emitGroup(tris, data, col, gLit, vsFill, false, unlitStart, shape.patch);
+  emitGroup(tris, data, col, gUnlit, vsFill, false, unlitStart, shape.patch);
+  emitGroup(tris, data, col, gOut, vsInk, true, unlitStart, shape.patch);
 
   mkdirSync(OUT, { recursive: true });
   writePPM(join(OUT, name + '.ppm'), raster(tris, light, T, W, H), W, H);
@@ -194,6 +195,77 @@ for (const [n, a] of acc) {
     + '   偏離 ±' + (dev * 100).toFixed(1).padStart(4) + '% = ' + px.toFixed(2)
     + ' px（半寬 ' + rMean.toFixed(1) + ' px）');
 }
+
+/* ── 鼻子 ───────────────────────────────────────────────────────────
+   臉不彎折，而臉不只是 `unlit` 那一組：貓的鼻子是頭皮上一塊自己上了色的
+   隆起，屬於 lit，跟頭皮共用同一根骨頭、同一組、同一種法線。除了 shape.js
+   量出來的那個頂點區間，沒有任何東西認得它。
+
+   而彎折的「輪廓拉」看的是法線有沒有側向鏡頭，鼻子又恰好是一個隆起：它
+   四周的小壁往哪個方向都轉得開，於是轉身到 30° 左右時整圈都被當成輪廓，
+   一路拉到頭的圓角矩形邊上。修之前它會被畫成自己寬度的 2.2 倍，最遠的
+   頂點移動得比整個鼻子還寬——轉一圈就長出一根喙再縮回去。
+
+   驗的是「鼻子就是網格給的那個大小」：彎折開著畫出來的鼻子，跟整個彎折
+   關掉的那一隻，每一個頂點都要落在同一點上。這裡自己按顏色找鼻子（虎斑
+   的鼻子色，從 cat.bin 讀出來的），而不是直接拿 shape.js 的區間：不然
+   這只是把那條規則再寫一次，區間本身量錯了也驗不出來。 */
+const NOSE_RGB = [162, 112, 92];   // 虎斑（SKIN）的鼻子
+
+const noseVerts = (() => {
+  const out = [];
+  const seen = new Uint8Array(data.header.vertexCount);
+  for (let i = gLit.start; i < gLit.start + gLit.count; i++) {
+    const v = data.index[i];
+    if (seen[v]) continue;
+    seen[v] = 1;
+    if (col[v * 4] === NOSE_RGB[0] && col[v * 4 + 1] === NOSE_RGB[1]
+        && col[v * 4 + 2] === NOSE_RGB[2]) out.push(v);
+  }
+  if (!out.length) throw new Error('cat.bin 裡找不到鼻子色 ' + NOSE_RGB);
+  return out;
+})();
+
+/** 這一個 yaw 下，鼻子被彎折拉走了多遠。 */
+function noseError(yaw, speed, steps) {
+  const drv = new Driver(), sway = new Sway();
+  for (let i = 0; i < steps; i++) { const p = drv.step(1 / 60, speed, 0); sway.step(1 / 60, drv.time, 0, 0, p); }
+  rig.reset(); applyPose(rig, drv.pose);
+  const bones = rig.update();
+  const place = { cx: W / 2, fy: H - 34, s: 56 };
+  const base = {
+    bones, sway, yaw, place, groundY: -1.563, centerZ: CENTER_Z,
+    parts: shape.parts, tail: shape.tail, rides: shape.rides, grow: 0, inkOut: 0,
+  };
+  const bent = makeShader({ ...base, byBone: shape.byBone });
+  const plain = makeShader({ ...base, byBone: new Int8Array(rig.count).fill(-1) });
+  let px = 0;
+  for (const v of noseVerts) {
+    const packed = col[v * 4 + 3];
+    const args = [
+      [data.position[v * 3], data.position[v * 3 + 1], data.position[v * 3 + 2]],
+      [data.normal[v * 4] / 32767, data.normal[v * 4 + 1] / 32767, data.normal[v * 4 + 2] / 32767],
+      data.normal[v * 4 + 3] / 32767, packed & 31, packed >> 5,
+    ];
+    const a = bent(...args, isFace(v, unlitStart, shape.patch));
+    const b = plain(...args, false);
+    px = Math.max(px, Math.hypot(a.x - b.x, a.y - b.y));
+  }
+  return px;
+}
+
+let nose = 0;
+for (let deg = 0; deg < 360; deg += 5) {
+  for (const [sp, st] of [[0, 120], [1, 143]]) {
+    nose = Math.max(nose, noseError((deg * Math.PI) / 180, sp, st));
+  }
+}
+// 這裡畫在 s = 56，遠大於遊戲的 11.02；換算回去才是玩家看到的偏移。
+const nosePx = nose * TO_GAME_PX;
+const noseOk = nosePx < 0.1;
+console.log('\n' + (noseOk ? '✓' : '✗') + ' 鼻子被彎折拉走 ' + nosePx.toFixed(2)
+  + ' px（門檻 0.1 px；臉不彎折，所以這裡應該是 0）');
+
 /* 門檻取一條墨線寬（INK_PX = 1.25 px）。輪廓偏離只要小於畫它的那條線，
    就不可能被看出不是圓角矩形。
 
@@ -203,7 +275,7 @@ for (const [n, a] of acc) {
    身體與頭的斑紋跟著被壓扁——而保住斑紋正是這整套改寫的理由。前掌在遊戲
    裡半寬 3 px、位在貓的最下緣、跑動時每秒擺數次，用它換掉虎斑的紋路是
    不划算的。 */
-const ok = worst < 1.25;
-console.log('\n' + (ok ? '✓' : '✗') + ' 最差偏離 ' + worst.toFixed(2) + ' px（門檻 1.25 px = 一條墨線寬）');
+const ok = worst < 1.25 && noseOk;
+console.log((worst < 1.25 ? '✓' : '✗') + ' 最差偏離 ' + worst.toFixed(2) + ' px（門檻 1.25 px = 一條墨線寬）');
 console.log('圖：' + OUT + '（無前綴 = 彎折後，ref- = 同姿勢的原網格）');
 process.exit(ok ? 0 : 1);

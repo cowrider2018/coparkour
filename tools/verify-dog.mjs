@@ -90,7 +90,8 @@ const cat = parseCat(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteL
 function dogOf(ear) {
   const data = buildDog(cat, { ear });
   const rig = new Rig(data.header);
-  const shape = measureShapes(data, rig, data.model.parts, data.model.ride);
+  const shape = measureShapes(
+    data, rig, data.model.parts, data.model.ride, data.model.patch);
   const g = (n) => data.header.groups.find((x) => x.name === n);
   const gUnlit = g('unlit');
   let unlitStart = Infinity;

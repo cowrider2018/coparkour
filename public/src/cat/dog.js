@@ -1026,6 +1026,12 @@ export function buildDog(cat, opts = {}) {
     skins: DOG_SKINS,
     parts: DOG_PARTS,
     ride: SHAPE_RIDE,
+    /* No painted patch: this dog's nose is geometry of its own, in
+       `unlit`, which the bend does not reach. The cat's patch is still
+       on the head — it cannot leave — but it is painted the coat's own
+       base colour, so bending it moves nothing anybody can see. See
+       NOSE, and SHAPE_PATCH in shape.js. */
+    patch: null,
     restHeight: box.max[1] - box.min[1],
     heightInBoxH: DOG_HEIGHT_IN_BOXH,
     centerZ: (box.max[2] + box.min[2]) / 2,

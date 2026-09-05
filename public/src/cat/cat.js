@@ -108,7 +108,8 @@ import { PHYS, PLAYER_W, PLAYER_H } from '../constants.js';
 import { parseCat, Rig } from './rig.js';
 import { Driver, Sway, applyPose, TAIL_AXIS, TAIL_LIFT } from './pose.js';
 import {
-  measureShapes, SHAPE_GLSL, TAIL_CAP_GLSL, SHAPE_PARTS, SHAPE_RIDE, FACE_LIFT,
+  measureShapes, SHAPE_GLSL, TAIL_CAP_GLSL, SHAPE_PARTS, SHAPE_RIDE, SHAPE_PATCH,
+  FACE_LIFT,
 } from './shape.js';
 import { CAT_SKINS } from './looks.js';
 
@@ -149,6 +150,7 @@ export const CAT_MODEL = {
   skins: CAT_SKINS,
   parts: SHAPE_PARTS,
   ride: SHAPE_RIDE,
+  patch: SHAPE_PATCH,
   restHeight: MODEL_REST_HEIGHT,
   heightInBoxH: CAT_HEIGHT_IN_BOXH,
   centerZ: CENTER_Z,
@@ -507,6 +509,14 @@ uniform float uGroundY;
 uniform float uGrow;
 /** First vertex of the 'unlit' range, read off the file at load. */
 uniform int uUnlitStart;
+/** The lit face patch — the cat's nose — as a half-open vertex range,
+    measured off the file at load. Empty (0, 0) for an animal that has
+    no such patch. The rest of the face is the 'unlit' group and needs
+    no range of its own; this is the piece of it that is shaded like
+    skin because it IS skin, and is left out of the bend regardless.
+    See shape.js's SHAPE_PATCH. */
+uniform int uPatchStart;
+uniform int uPatchEnd;
 /** The tail's tube radius, for the tip. See TAIL_CAP_GLSL. */
 uniform float uTailRadius;
 uniform int uTailBone;
@@ -721,9 +731,18 @@ void main() {
      A carried bone — an ear, an eye, a whisker — is translated by
      whatever the bend does to its own origin, so it keeps its shape
      and its place on the face. See SHAPE_RIDE. */
-  /* The face — eyes, nose, whiskers, the whole unlit group — is left
-     where the mesh put it, along with the ears. See SHAPE_RIDE. */
-  bool face = uInkMode < 0.5 && vUnlit > 0.5;
+  /* The face — eyes, mouth, whiskers, the whole unlit group, plus the
+     nose, which is lit skin and arrives as its own vertex range — is
+     left where the mesh put it, along with the ears. See SHAPE_RIDE.
+
+     The nose is in here for the lift as much as for the bend. Skin
+     pulled out to the rectangle slides ACROSS the face without
+     changing its depth, and a nose sitting at its own honest depth
+     loses to a cheek that arrived on top of it. Every other feature of
+     the face is already lifted clear of that; the nose was the one
+     left in it. */
+  bool face = uInkMode < 0.5
+    && (vUnlit > 0.5 || (gl_VertexID >= uPatchStart && gl_VertexID < uPatchEnd));
 
   int part = uBonePart[b];
   if (part >= 0 && uBoneRide[b] == 0 && !face) {
@@ -1242,8 +1261,8 @@ class Model {
    */
   _measureShape() {
     if (this._style !== 'shape') { this._shape = null; return; }
-    const { parts, tail, byBone, rides } =
-      measureShapes(this._data, this._rig, this._model.parts, this._model.ride);
+    const { parts, tail, byBone, rides, patch } = measureShapes(
+      this._data, this._rig, this._model.parts, this._model.ride, this._model.patch);
     const n = parts.length;
     const pa = new Float32Array(n * 4), pb = new Float32Array(n * 4);
     const pn = new Float32Array(n);
@@ -1254,6 +1273,10 @@ class Model {
     });
     this._shape = {
       parts: n, tail, pa, pb, pn,
+      /* An empty range for an animal with no patch, so the shader's
+         test is the same test either way and there is no second path
+         through it to get wrong. */
+      patch: patch || { start: 0, end: 0 },
       bonePart: new Int32Array(byBone),
       boneRide: new Int32Array(rides),
     };
@@ -1268,6 +1291,7 @@ class Model {
       place: U('uPlace'), xform: U('uXform'), groundY: U('uGroundY'),
       yaw: U('uYaw'), pitch: U('uPitch'),
       grow: U('uGrow'), unlitStart: U('uUnlitStart'),
+      patchStart: U('uPatchStart'), patchEnd: U('uPatchEnd'),
       part: U('uPart[0]'), partB: U('uPartB[0]'), partNorm: U('uPartNorm[0]'),
       bonePart: U('uBonePart[0]'), boneRide: U('uBoneRide[0]'),
       tailRadius: U('uTailRadius'), tailBone: U('uTailBone'), inkOut: U('uInkOut'),
@@ -1736,6 +1760,8 @@ export class CatLayer {
         gl.uniform1i(u.tailBone, sh.tail.bone);
         gl.uniform1f(u.tailRadius, sh.tail.radius);
         gl.uniform1f(u.faceLift, FACE_LIFT);
+        gl.uniform1i(u.patchStart, sh.patch.start);
+        gl.uniform1i(u.patchEnd, sh.patch.end);
       gl.uniform1fv(u.inkSink, m._inkSink);
       }
       gl.uniform3fv(u.keyLit, t.keyLit);
