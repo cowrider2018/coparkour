@@ -107,57 +107,29 @@
 import { PHYS, PLAYER_W, PLAYER_H } from '../constants.js';
 import { parseCat, Rig } from './rig.js';
 import { Driver, Sway, applyPose, TAIL_AXIS, TAIL_LIFT } from './pose.js';
-import {
-  measureShapes, SHAPE_GLSL, TAIL_CAP_GLSL, SHAPE_PARTS, SHAPE_RIDE, SHAPE_PATCH,
-  FACE_LIFT,
-} from './shape.js';
+import { measureShapes, SHAPE_GLSL, TAIL_CAP_GLSL, FACE_LIFT } from './shape.js';
 import { CAT_SKINS } from './looks.js';
+import { CAT_MODEL } from './model.js';
 
 /* Re-exported because every caller that draws a cat used to get the
    list from here. The list itself lives in looks.js now — see there for
    why it has to be at the bottom of the dependency graph. */
 export { CAT_SKINS };
+/* Re-exported for the same reason: this is where a caller drawing an
+   animal has always asked what the cat is. */
+export { CAT_MODEL };
 
 /* ── how big the cat is, and where its feet are ─────────────────── */
-
-/** Rest pose feet-to-ear-tip. `bounds.max[1] - bounds.min[1]`. */
-const MODEL_REST_HEIGHT = 3.9922;
-/** …drawn at this many collision-box heights. See the header. */
-const CAT_HEIGHT_IN_BOXH = 1.10;
-
-/** Horizontal centre of the model, in world Z. The rest pose spans
-    −1.93 (tail) … +1.85 (whiskers), so this is its middle, and it is
-    this point that is put on the box's centre line. */
-const CENTER_Z = -0.04;
 
 /** Half-depth of the orthographic box, along the camera's own axis
     (model +X). The model spans about −1.35…+1.55, so this leaves room
     for the outline shell and for a pose that reaches. */
 const DEPTH_HALF = 4.0;
 
-/* ── what the layer needs to know about the animal it is drawing ──
-   Everything above is a property of the CAT, and the cat is no longer
-   the only thing this file draws: `dog.js` builds a second animal on
-   the same rig, the same shader and the same bend, and it has its own
-   colourways, its own rectangle for a muzzle the cat has no bone for,
-   and its own middle — a muzzle sticking half a unit further forward
-   moves the point that should sit on the box's centre line.
-
-   So the four numbers that vary are gathered here, and a parsed asset
-   may carry a `model` of its own; `CatLayer` falls back to this one,
-   which is exactly what it used to hardcode. */
-export const CAT_MODEL = {
-  skins: CAT_SKINS,
-  parts: SHAPE_PARTS,
-  ride: SHAPE_RIDE,
-  patch: SHAPE_PATCH,
-  restHeight: MODEL_REST_HEIGHT,
-  heightInBoxH: CAT_HEIGHT_IN_BOXH,
-  centerZ: CENTER_Z,
-  /** bone → how far to sink its ink. The cat's whole outline is one
-      grown shell of one mesh, so it has nothing to merge. */
-  inkSink: {},
-};
+/* The rest of what the layer needs to know about an animal — how tall
+   the cat is, where its middle is, which bones get a rectangle — is in
+   `model.js`, where a builder can read it without dragging this file
+   in. See there. */
 
 /* ── stride ───────────────────────────────────────────────────────
    The feet are asked to keep pace with the ground, so the stride RATE
