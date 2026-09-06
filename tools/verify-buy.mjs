@@ -1,6 +1,7 @@
 // 端對端：真的開一個瀏覽器，把整條購買動線跑一遍——
-//   走到 NPC 旁邊 → 點兩下買下重生點 → 死掉從那裡重生 → 牠定居在那塊板子上，
-// 外加兩件用單元測試看不到的事：跑動中點擊不會被吃掉，以及兩個分頁看到同一隻 NPC 在同一個地方。
+//   走到 NPC 旁邊 → 點兩下設下重生點 → 死掉從那裡重生 → 牠定居在那塊板子上，
+// 外加三件用單元測試看不到的事：跑動中點擊不會被吃掉、兩個分頁看到同一隻 NPC 在同一個地方，
+// 以及第二個人買得了同一個重生點（兩邊都看得到兩個主人，座標一模一樣）。
 //
 // 這一支不進 CI（要有瀏覽器跟伺服器），是改動購買流程時自己跑的。用法：
 //   npx wrangler dev
@@ -188,14 +189,14 @@ await talkClick();
 await sleep(400);
 const bought = await evalJs(`(() => {
   const P = __parkour, n = P.npcs.list()[0];
-  const o = n.owner;
+  const o = n.claim;
   return { owner: o ? o.name : null, x: o ? o.x : 0, y: o ? o.y : 0, says: n.says, wallet: P.wallet };
 })()`);
 check('第二下：成交，主人是「' + bought.owner + '」餘額 ' + bought.wallet, !!bought.owner);
 
 // 重生點該是那塊板子的中心與頂面
 const spot = await evalJs(`(() => {
-  const P = __parkour, n = P.npcs.list()[0], o = n.owner;
+  const P = __parkour, n = P.npcs.list()[0], o = n.claim;
   const pl = P.npcs.platformAt(o.x, o.y);
   return pl ? { ok: Math.abs(pl.x + pl.w / 2 - o.x) < 1 && Math.abs(pl.y - o.y) < 1, w: Math.round(pl.w) } : null;
 })()`);
@@ -207,7 +208,7 @@ await sleep(400);
 await evalJs(`__parkour.restart()`);
 await sleep(400);
 const reborn = await evalJs(`(() => {
-  const P = __parkour, o = P.npcs.list().find((q) => q.owner)?.owner;
+  const P = __parkour, o = P.npcs.list().find((q) => q.claim)?.claim;
   return { px: Math.round(P.player.x), spawn: o ? Math.round(o.x) : null, dist: P.player.dist };
 })()`);
 check(`從重生點出生（x=${reborn.px} 重生點=${reborn.spawn} 里程=${reborn.dist}m）`,
@@ -238,7 +239,8 @@ if (other) {
 
   await ev2(`localStorage.clear(); location.href = ${JSON.stringify(URL0)};`);
   const loaded = await until2(`!!(window.__parkour && document.getElementById('startBtn'))`);
-  await ev2(`document.getElementById('startBtn').click()`);
+  // 第二個瀏覽器換一個名字：買家是用名字認的，同名就是同一個人，那就驗不到共用了
+  await ev2(`document.getElementById('nameInput').value = '第二位'; document.getElementById('startBtn').click()`);
   const started = await until2(`!!(window.__parkour.player && window.__parkour.running)`);
   // 連上線之後伺服器才會發 seed，那一刻整個關卡會被重建、玩家也會被重置——
   // 在那之前傳送過去等於白傳
@@ -275,8 +277,58 @@ if (other) {
   check(`兩邊的 NPC 在同一個地方 A=${JSON.stringify(A)} B=${JSON.stringify(B)}`, !!same);
 
   // 買下來的那一隻，另一邊也要看得到主人
-  const owner2 = await ev2(`(() => { const n = __parkour.npcs.list()[0]; return n && n.owner ? n.owner.name : null; })()`);
+  const owner2 = await ev2(`(() => { const n = __parkour.npcs.list()[0]; return n && n.claim ? n.claim.name : null; })()`);
   check(`另一邊也看得到牠的主人：${owner2}`, !!owner2);
+
+  // ── 第二個人買同一個重生點 ──────────────────────────────
+  // 一個重生點大家可以一起用：另一個瀏覽器、另一個名字，點的是同一隻貓。
+  // 兩邊都要看到兩個主人，而且兩人的重生座標必須是同一個點（板子由第一筆決定）。
+  const send2 = (method, params) => new Promise((res) => {
+    const n = ++id2;
+    wait2.set(n, res);
+    w2.send(JSON.stringify({ id: n, method, params }));
+  });
+  const talk2 = async () => {
+    await until2(`(() => { const t = __parkour.npcs.worldTime(); return t - Math.floor(t / 6) * 6 > 2.6; })()`);
+    await ev2(`(() => {
+      const P = __parkour, n = P.npcs.list()[0];
+      if (!n) return false;
+      if (P.player.dead || !P.running) P.restart();
+      const pl = n.target.p;
+      P.player.x = Math.max(pl.x + 2, Math.min(pl.x + pl.w - 28, n.cx - 34));
+      P.player.y = pl.y - 44;
+      P.player.vx = 0; P.player.vy = 0;
+      return true;
+    })()`);
+    await sleep(260);
+    const pt = await ev2(`(() => {
+      const P = __parkour, n = P.npcs.list()[0];
+      const c = document.getElementById('ui').getBoundingClientRect();
+      const z = P.cam.zoom;
+      return { x: Math.round((n.cx - Math.round(P.cam.x)) * z + c.left), y: Math.round((n.cy - Math.round(P.cam.y)) * z + c.top) };
+    })()`);
+    for (const type of ['mousePressed', 'mouseReleased']) {
+      await send2('Input.dispatchMouseEvent', { type, x: pt.x, y: pt.y, button: 'left', clickCount: 1, pointerType: 'mouse' });
+    }
+  };
+  await ev2(`__parkour.giveCoins(80)`);
+  await talk2();     // 第一下：邀請
+  await sleep(300);
+  await talk2();     // 第二下：成交
+  await sleep(700);
+  const shared = `(() => {
+    const P = __parkour, n = P.npcs.list()[0];
+    const l = P.npcs.ownersOf(n.i) || [];
+    return l.map((o) => o.name + '@' + Math.round(o.x)).join(' ');
+  })()`;
+  const sa = await evalJs(shared);
+  const sb = await ev2(shared);
+  const two = (sa || '').split(' ').filter(Boolean);
+  check(`兩個人共用同一個重生點 A=「${sa}」B=「${sb}」`,
+    two.length === 2 && two[0].split('@')[1] === two[1].split('@')[1] && sa === sb);
+  // 貓的名牌不會因為誰買了牠而改掉——牠始終是那隻旅貓
+  const stillCat = await evalJs(`(() => { const n = __parkour.npcs.list()[0]; return n.name; })()`);
+  check(`牠還是叫「${stillCat}」`, /^旅貓 /.test(stillCat || ''));
   w2.close();
 } else {
   console.log(`· 沒有第二個瀏覽器（127.0.0.1:${PORT2}），跳過同步檢查`);
@@ -287,16 +339,16 @@ if (other) {
 await evalJs(`(async () => {
   const P = __parkour;
   for (let i = 0; i < 60; i++) {
-    const n = P.npcs.list().find((q) => q.owner);
-    if (n && Math.floor(P.npcs.worldTime() / 6) > P.npcs.slotOf(n.owner) + 1) return true;
+    const n = P.npcs.list().find((q) => q.claim);
+    if (n && Math.floor(P.npcs.worldTime() / 6) > P.npcs.slotOf(n.claim) + 1) return true;
     await new Promise((r) => setTimeout(r, 250));
   }
   return false;
 })()`);
 const settled = await evalJs(`(() => {
-  const P = __parkour, n = P.npcs.list().find((q) => q.owner);
+  const P = __parkour, n = P.npcs.list().find((q) => q.claim);
   if (!n) return null;
-  const home = P.npcs.platformAt(n.owner.x, n.owner.y);
+  const home = P.npcs.platformAt(n.claim.x, n.claim.y);
   return {
     onHome: !!home && n.target.p === home,
     grounded: n.p.grounded,
@@ -307,8 +359,8 @@ check(`定居在買下的那塊板子上（板寬 ${settled && settled.w}）`, !
 
 // 再看兩個時槽，牠不該離開那塊板子，也不該跳起來
 const stayed = await evalJs(`(async () => {
-  const P = __parkour, n = P.npcs.list().find((q) => q.owner);
-  const home = P.npcs.platformAt(n.owner.x, n.owner.y);
+  const P = __parkour, n = P.npcs.list().find((q) => q.claim);
+  const home = P.npcs.platformAt(n.claim.x, n.claim.y);
   let jumped = false, left = false;
   for (let i = 0; i < 140; i++) {
     await new Promise((r) => setTimeout(r, 100));

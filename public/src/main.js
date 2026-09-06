@@ -218,14 +218,14 @@ function connect(name) {
         if (!npcs) return;
         npcs.setOwner(m);
         const n = npcs.list().find((q) => q.i === m.i);
-        if (n) n.say(m.name === myName ? '成交！這裡是你的重生點了' : m.name + ' 買下了這裡');
+        if (n) n.say(m.name === myName ? '成交！這裡是你的重生點了' : m.name + ' 在這裡設了重生點');
       },
       wallet: (m) => { wallet = m.v || 0; },
       buyfail: (m) => {
         const n = npcs && npcs.list().find((q) => q.i === m.i);
         if (!n) return;
         n.invite = 0;
-        n.say(m.why === 'taken' ? '這隻已經有主人了' : `還差 ${Math.max(0, (m.need || 0) - (m.have || 0))} 枚金幣`);
+        n.say(m.why === 'taken' ? '你已經在這裡設過重生點了' : `還差 ${Math.max(0, (m.need || 0) - (m.have || 0))} 枚金幣`);
       },
       join: (m) => { ghosts.upsert(m.id, m.name, m.look); renderBoard(); },
       leave: (m) => { ghosts.remove(m.id); if (cats) cats.forget(m.id); renderBoard(); },
@@ -450,7 +450,7 @@ function saveLocalRoom() {
   if (SERVER && net && net.connected) return;
   try {
     localStorage.setItem(localKey(), JSON.stringify({
-      wallet, owners: npcs ? [...npcs.owners.values()] : [],
+      wallet, owners: npcs ? npcs.ownerList() : [],
     }));
   } catch { /* 存不下就算了 */ }
 }
@@ -488,9 +488,10 @@ addEventListener('pointerdown', (e) => {
 
 // 兩段式：第一次點跳出邀請，第二次點成交。
 function tapNpc(n) {
-  const own = n.owner;
-  if (own) {
-    n.say(own.name === myName ? '這裡是你的重生點' : own.name + ' 的重生點');
+  const owners = n.owners;
+  // 有主人不代表買不了——一個重生點大家可以一起用。只有自己買過才沒得再買。
+  if (owners && owners.some((o) => o.name === myName)) {
+    n.say('這裡是你的重生點');
     return;
   }
   const price = priceFor(npcs.ownedBy(myName));
@@ -501,17 +502,22 @@ function tapNpc(n) {
     buyNpc(n, price);
   } else {
     n.invite = 4;
-    n.say(`在這裡設重生點？${price} 枚金幣 — 再點一次成交`, 4);
+    n.say(owners
+      ? `這裡也算你一個？${price} 枚金幣 — 再點一次成交`
+      : `在這裡設重生點？${price} 枚金幣 — 再點一次成交`, 4);
   }
 }
 
 function buyNpc(n, price) {
   // 買的是「牠現在站的那塊板子」：重生點 X 是板子中心、Y 是頂面。
-  const plat = npcs.platformAt(n.cx, n.p.y + PLAYER_H) || n.target.p;
-  const x = Math.round(plat.x + plat.w / 2);
-  const y = Math.round(plat.y);
+  // 已經有人買過的話那塊板子早就定下來了（牠也定居在上面），一律沿用同一個點——
+  // 同一支旗子底下的人，重生的位置到一個像素都一樣。伺服器那邊也是這樣裁定的。
+  const claim = n.claim;
+  const plat = claim ? null : (npcs.platformAt(n.cx, n.p.y + PLAYER_H) || n.target.p);
+  const x = claim ? claim.x : Math.round(plat.x + plat.w / 2);
+  const y = claim ? claim.y : Math.round(plat.y);
   if (net && net.connected) {
-    net.send({ t: 'buy', i: n.i, x, y });       // 成不成由伺服器裁定（先到先得）
+    net.send({ t: 'buy', i: n.i, x, y });       // 成不成由伺服器裁定（自己買過的不再賣一次）
     n.say('……');
   } else {
     wallet -= price;

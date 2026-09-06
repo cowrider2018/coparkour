@@ -208,13 +208,13 @@ export class Renderer {
       this.label(g.x, g.y, g.name, s.hasCats ? 1 : 0.58);
     }
 
-    // NPC：名牌之外還有對話泡（購買邀請），買下來的那一隻頭上插一支旗
+    // NPC：名牌之外還有對話泡（購買邀請）。買下來的重生點是插在板子上的一支旗，
+    // 主人寫在旗子上頭——貓還是那隻旅貓，牠的名牌不會因為誰買了牠而改掉。
     for (const n of s.npcs || []) {
-      const own = n.owner;
-      const mine = own && own.name === s.myName;
-      if (mine) this.flag(own.x, own.y, time);
+      const owners = n.owners;
+      if (owners) this.flag(n.claim.x, n.claim.y, time, owners, s.myName);
       if (!s.hasCats) this.block(n.x, n.y, n.p.facing, ALB.npc, 1, 0, sky);
-      this.label(n.x, n.y, own ? (mine ? '★ 你的重生點' : own.name + ' 的重生點') : n.name, 1);
+      this.label(n.x, n.y, n.name, 1);
       if (n.saysT > 0 && n.says) this.bubble(n.x, n.y, n.says);
     }
     if (!player.dead && !s.hasCats) {
@@ -619,10 +619,14 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** 自己的重生點：一支會飄的小旗，插在那塊板子的中央。 */
-  flag(x, y, time) {
+  /**
+   * 重生點：一支會飄的小旗，插在那塊板子的中央，主人的名字標在旗桿頂上。
+   * 一個點可以有好幾個主人（大家一起用），所以名牌是一串；自己在裡面就是金旗。
+   */
+  flag(x, y, time, owners, myName) {
     const ctx = this.ctx;
     const h = 34;
+    const mine = owners.some((o) => o.name === myName);
     ctx.save();
     ctx.strokeStyle = 'rgba(20,14,8,0.85)';
     ctx.lineWidth = 3;
@@ -631,7 +635,7 @@ export class Renderer {
     ctx.lineTo(x, y - h);
     ctx.stroke();
     const wave = Math.sin(time * 3) * 2.5;
-    ctx.fillStyle = '#ffd36e';
+    ctx.fillStyle = mine ? '#ffd36e' : '#cfd8e6';
     ctx.beginPath();
     ctx.moveTo(x, y - h);
     ctx.quadraticCurveTo(x + 12, y - h + 4 + wave, x + 22, y - h + 2);
@@ -640,7 +644,43 @@ export class Renderer {
     ctx.closePath();
     ctx.fill();
     ctx.restore();
+    this.flagTag(x, y - h - 7, ownerTag(owners, myName), mine);
   }
+
+  /** 旗桿頂上的名牌：誰在這裡設了重生點。尖角朝下，指著旗桿。 */
+  flagTag(cx, bottom, text, mine) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.font = '600 11px system-ui, -apple-system, "Noto Sans TC", sans-serif';
+    ctx.textAlign = 'center';
+    const w = ctx.measureText(text).width + 14;
+    const hh = 19, top = bottom - hh;
+    ctx.fillStyle = mine ? 'rgba(255,211,110,0.95)' : 'rgba(255,247,228,0.92)';
+    roundRect(ctx, cx - w / 2, top, w, hh, 8);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx - 4, bottom);
+    ctx.lineTo(cx + 4, bottom);
+    ctx.lineTo(cx, bottom + 5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#3a2a12';
+    ctx.fillText(text, cx, top + 13);
+    ctx.textAlign = 'left';
+    ctx.restore();
+  }
+}
+
+/**
+ * 旗子上那一行字：誰的重生點。自己排最前面（★ 你），一次最多列三個名字，
+ * 再多就收成「＋N」——旗子是插在板子上的一個小東西，它不該長成一張名單。
+ */
+function ownerTag(owners, myName) {
+  const names = [];
+  if (owners.some((o) => o.name === myName)) names.push('★ 你');
+  for (const o of owners) if (o.name !== myName) names.push(o.name);
+  const shown = names.slice(0, 3).join('、');
+  return names.length > 3 ? `${shown} ＋${names.length - 3}` : shown;
 }
 
 /** 玩家狀態 → 貓的姿勢。 */

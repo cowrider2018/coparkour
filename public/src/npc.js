@@ -526,7 +526,10 @@ class Npc {
     this.misses = 0;  // 其中幾段在移動窗口結束時還沒站上目標
   }
 
-  get owner() { return this.pool.owners.get(this.i) || null; }
+  /** 買下這裡的人，照成交順序（一個重生點可以有很多個主人）。沒人買就是 null。 */
+  get owners() { return this.pool.ownersOf(this.i); }
+  /** 第一筆成交：牠定居在哪塊板子、從哪一槽開始定居，都由這一筆決定。 */
+  get claim() { return this.pool.claimOf(this.i); }
   get x() { return this.p.x; }
   get y() { return this.p.y; }
   /** 貓的中心點，給點擊判定與對話泡用 */
@@ -538,7 +541,7 @@ class Npc {
   // 買下來之後：只在那塊板子上左右踱步，兩端各待機一輪，再也不跳。
   // 端點由伺服器發的重生點座標反查，所以就算跨過鏈的錨點也還是同一塊板子。
   patrolSpot(k) {
-    const own = this.owner;
+    const own = this.claim;
     const p = this.pool.platformAt(own.x, own.y);
     if (!p) return null;
     const m = Math.min(60, p.w / 2);
@@ -548,7 +551,7 @@ class Npc {
   }
 
   spotAt(k) {
-    const own = this.owner;
+    const own = this.claim;
     if (!own) return this.chain.at(k);
     const s = this.pool.slotOf(own);
     // 定居之後只看那塊板子。找不到板子（地形還沒長到那裡）就先不出場，
@@ -559,7 +562,7 @@ class Npc {
 
   /** 這一槽還需不需要動用鏈？定居之後的踱步只看伺服器發的那塊板子，不需要。 */
   needsChain(k) {
-    const own = this.owner;
+    const own = this.claim;
     return !own || k <= this.pool.slotOf(own) + 1;
   }
 
@@ -678,7 +681,7 @@ export class NpcPool {
     this.level = level;
     this.map = new Map();   // 編號 → Npc（模擬中的）
     this.chains = new Map(); // 編號 → 無規則鏈（給鄰居規則參考）
-    this.owners = new Map(); // 編號 → {name, slot, x, y, mine}
+    this.owners = new Map(); // 編號 → [{i, name, at, x, y}, …]，照成交順序
     this.cache = new SpotCache(level); // 落腳點 → 候選清單。重播兩千個時槽全靠它
     this.fuel = 0;          // 這一幀還能幫鏈推進幾個時槽（見 Chain.advance）
     this.steps = 0;         // 累計推進了幾個時槽。tools/verify-perf.mjs 用它確認沒有繞過預算的路
@@ -709,7 +712,36 @@ export class NpcPool {
 
   setOwners(list) {
     this.owners.clear();
-    for (const o of list || []) this.owners.set(o.i, o);
+    for (const o of list || []) this.addOwner(o);
+  }
+
+  /**
+   * 記下一筆成交。同一隻可以有很多個主人——大家共用同一個重生點，
+   * 那塊板子由第一筆決定，後來的人買的是「一起用」而不是另設一個。
+   * 同一個人買第二次不算（伺服器也擋，這裡是單機那一份）。
+   * @returns {boolean} 這是不是這隻的第一筆
+   */
+  addOwner(o) {
+    const list = this.owners.get(o.i);
+    if (!list) { this.owners.set(o.i, [o]); return true; }
+    if (!list.some((q) => q.name === o.name)) list.push(o);
+    return false;
+  }
+
+  /** 第 i 隻的主人清單（照成交順序）。沒人買就是 null。 */
+  ownersOf(i) { return this.owners.get(i) || null; }
+
+  /** 第 i 隻的第一筆成交：定居的地點與時間看它。 */
+  claimOf(i) {
+    const list = this.owners.get(i);
+    return list ? list[0] : null;
+  }
+
+  /** 攤平成一串，給單機存檔用（存回來再由 setOwners 分組）。 */
+  ownerList() {
+    const out = [];
+    for (const list of this.owners.values()) out.push(...list);
+    return out;
   }
 
   /** 成交的那一刻是第幾槽。伺服器存的是時間（ms），槽號在這裡換算。 */
@@ -719,7 +751,7 @@ export class NpcPool {
   }
 
   setOwner(o) {
-    this.owners.set(o.i, o);
+    if (!this.addOwner(o)) return;   // 第二個主人不會改變牠的行為，牠早就定居了
     const n = this.map.get(o.i);
     if (n) n.slot = -1; // 下一槽重新取目標，直接切進踱步模式
   }
@@ -727,15 +759,19 @@ export class NpcPool {
   /** 我（name）在這間房買了幾隻 */
   ownedBy(name) {
     let n = 0;
-    for (const o of this.owners.values()) if (o.name === name) n++;
+    for (const list of this.owners.values()) {
+      if (list.some((o) => o.name === name)) n++;
+    }
     return n;
   }
 
   mySpawn(name) {
     let best = null;
-    for (const o of this.owners.values()) {
-      if (o.name !== name) continue;
-      if (!best || o.x > best.x) best = o;   // 買過好幾個就用最遠的那個
+    for (const list of this.owners.values()) {
+      for (const o of list) {
+        if (o.name !== name) continue;
+        if (!best || o.x > best.x) best = o;   // 買過好幾個就用最遠的那個
+      }
     }
     return best ? { x: best.x, y: best.y } : null;
   }

@@ -5,7 +5,8 @@
 //   1. 同步   — 從第 0 秒就在的人，跟中途才進房的人，算出來的位置必須完全相同
 //   2. 不走丟 — 待機的時候一定站在地形上，不會掉出世界，也不會一直卡在原地
 //   3. 走得到 — 每一段躍遷都要在 2 秒的移動窗口內站上目標（失敗率要夠低）
-//   4. 定居   — 買下來的 NPC 只在原本那塊板子上走動，而且再也不跳
+//   4. 定居   — 買下來的 NPC 只在原本那塊板子上走動，而且再也不跳；
+//              同一個點再賣給第二個人也不會動搖這件事（大家共用同一個重生點）
 //   5. 柱頂   — 站在地板上的矮牆，NPC 要跳得上去（那是 planPost 那套彈道的用武之地）
 import { Level } from '../public/src/level.js';
 import { NpcPool, NPC, SPACING } from '../public/src/npc.js';
@@ -89,6 +90,37 @@ for (let s = 0; s < SEEDS; s++) {
   }
   if (jumped) fail(`seed ${seed} #${n0.i} 買下來之後還在跳`);
   if (leftPlat) fail(`seed ${seed} #${n0.i} 買下來之後離開了那塊板子`);
+
+  // 同一個重生點可以再賣給別人。定居的地點與時刻由第一筆決定，第二筆只是多一個名字——
+  // 若第二筆會改動它們，那隻貓會在所有人眼前跳一次位置。
+  const slot2 = Math.floor(ot / NPC.slot);
+  owned.setOwner({ i: n0.i, name: '第二位', slot: slot2, x: plat.x + plat.w / 2, y: plat.y });
+  const names = (owned.ownersOf(n0.i) || []).map((o) => o.name).join(',');
+  if (names !== '買家,第二位') fail(`seed ${seed} #${n0.i} 主人清單是「${names}」`);
+  if (owned.claimOf(n0.i).slot !== slot) fail(`seed ${seed} #${n0.i} 第二個買主改掉了定居的時刻`);
+  for (const who of ['買家', '第二位']) {
+    if (owned.ownedBy(who) !== 1) fail(`seed ${seed} ${who} 名下的重生點不是 1 個`);
+    const sp = owned.mySpawn(who);
+    if (!sp || Math.abs(sp.x - (plat.x + plat.w / 2)) > 1 || Math.abs(sp.y - plat.y) > 1) {
+      fail(`seed ${seed} ${who} 的重生點不是那塊板子的中央`);
+    }
+  }
+  // 同一個人再買一次不算數（伺服器會擋，這是單機那一份的規則）
+  owned.setOwner({ i: n0.i, name: '買家', slot: slot2, x: plat.x, y: plat.y });
+  if ((owned.ownersOf(n0.i) || []).length !== 2) fail(`seed ${seed} #${n0.i} 同一個人買了兩次`);
+
+  const until = ot + 30;
+  let jumped2 = false, leftPlat2 = false;
+  while (ot < until) {
+    ot += STEP;
+    owned.update(focus, STEP, ot);
+    const n = owned.list().find((q) => q.i === n0.i);
+    if (!n || !n.ready) continue;
+    if (n.p.vy < -1) jumped2 = true;
+    if (n.cx < plat.x - 2 || n.cx > plat.x + plat.w + 2) leftPlat2 = true;
+  }
+  if (jumped2) fail(`seed ${seed} #${n0.i} 多了一個主人之後又跳了`);
+  if (leftPlat2) fail(`seed ${seed} #${n0.i} 多了一個主人之後離開了那塊板子`);
 }
 
 // ── 5. 柱頂 ──

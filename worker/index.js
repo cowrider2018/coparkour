@@ -157,17 +157,19 @@ export class GameRoom {
         break;
       }
 
-      // 買一個重生點。先到先得，價格由伺服器這一份表決定。
-      // x/y 是那塊板子的中心與頂面，存下來之後所有人都用它，NPC 就在那塊板子上定居。
+      // 買一個重生點。同一隻可以賣給很多人（大家共用同一個點），但同一個人只賣一次。
+      // x/y 是那塊板子的中心與頂面：第一筆成交決定它，後來的人一律沿用，
+      // 所以同一支旗子底下的人重生在同一個像素上，NPC 也只認那一塊板子。
       case 'buy': {
         const i = num(m.i);
         if (i < 0) break;
         const owners = (await this.ctx.storage.get('owners')) || [];
-        if (owners.some((o) => o.i === i)) {
+        if (owners.some((o) => o.i === i && o.name === a.name)) {
           try { ws.send(JSON.stringify({ t: 'buyfail', i, why: 'taken' })); } catch { /* ignore */ }
           break;
         }
         const wallet = (await this.ctx.storage.get('wallet')) || {};
+        // 價格看的是自己買過幾個（同一個點不會重複出現在這張表上，上面擋掉了）
         const mine = owners.filter((o) => o.name === a.name).length;
         const price = PRICES[Math.min(mine, PRICES.length - 1)];
         const have = wallet[a.name] || 0;
@@ -176,7 +178,12 @@ export class GameRoom {
           break;
         }
         wallet[a.name] = have - price;
-        const own = { i, name: a.name, at: Date.now(), x: num(m.x), y: num(m.y) };
+        const first = owners.find((o) => o.i === i);
+        const own = {
+          i, name: a.name, at: Date.now(),
+          x: first ? first.x : num(m.x),
+          y: first ? first.y : num(m.y),
+        };
         owners.push(own);
         await this.ctx.storage.put('owners', owners);
         await this.ctx.storage.put('wallet', wallet);
