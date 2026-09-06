@@ -941,6 +941,22 @@ const STATES = ['run', 'idle', 'air', 'fall', 'wall', 'dead'];
    play here is under about 1.2 rad and none of them cross a wrap — a
    cat does not spin. */
 
+/** Take a bone down to nothing: its triangles become degenerate and
+    cover no pixels, which is how this file has always hidden the far
+    eye. Cheaper than a second draw range, and it blends. */
+function shrink(rig, b) {
+  rig.scale[b * 3] = 0;
+  rig.scale[b * 3 + 1] = 0;
+  rig.scale[b * 3 + 2] = 0;
+}
+
+/** …and back to the size the rest pose gave it. */
+function grow(rig, b) {
+  rig.scale[b * 3] = rig.rest.scale[b * 3];
+  rig.scale[b * 3 + 1] = rig.rest.scale[b * 3 + 1];
+  rig.scale[b * 3 + 2] = rig.rest.scale[b * 3 + 2];
+}
+
 function packChannels(rig, out) {
   const n = rig.count * 3;
   out.set(rig.rotation, 0);
@@ -1100,6 +1116,26 @@ class Model {
       if (this._rig.rest.position[i * 3] >= 0) this._eyePlusX = i;
       else this._eyeMinusX = i;
     }
+
+    /* ── the wardrobe ──
+       A model built by `wear.js` carries its costumes' geometry all the
+       time and says which bones each one is made of. Resolved to
+       indices once here, because the alternative is a name lookup per
+       costume per character per frame.
+
+       `_wearAll` is every costume's bones at once, and it is what makes
+       "wearing nothing" the default: a dressed model arrives with all
+       of them at full size — it has to, or the bend has no size to
+       measure a costume's rectangle against — so what the layer does
+       every frame is scale down the ones that are not being worn. */
+    const wardrobe = model.wear;
+    this._wear = wardrobe
+      ? new Map(Object.entries(wardrobe)
+        .map(([id, ns]) => [id, Int32Array.from(ns, (n) => this._rig.bone(n))]))
+      : null;
+    this._wearAll = this._wear
+      ? Int32Array.from(new Set([...this._wear.values()].flatMap((b) => [...b])))
+      : null;
 
     this._buildBuffers();
     this._locateUniforms();
@@ -1448,6 +1484,8 @@ export class CatLayer {
     this._cats = new Map();
     /** id → a heading pinned by the caller. See `pin`. */
     this._pins = new Map();
+    /** id → the costume that character is wearing. See `wear`. */
+    this._wears = new Map();
     /** Cats queued this frame, drawn in `end()`. */
     this._queue = [];
     this._frameOK = false;
@@ -1594,7 +1632,7 @@ export class CatLayer {
          there. A caller that flips it every frame gets a cat rocking a
          few degrees in place — it never commits to either side — which
          is the honest picture of that input rather than a strobe. */
-      this._poseCat(c, st, speed, dt, dir, vy || 0, this._pins.get(id));
+      this._poseCat(c, st, speed, dt, dir, vy || 0, this._pins.get(id), this._wears.get(id));
 
       const a = alpha == null ? 1 : Math.min(1, Math.max(0, alpha));
       if (!(a > 0)) return;
@@ -1891,9 +1929,41 @@ export class CatLayer {
     } catch (e) { /* never take the frame down */ }
   }
 
+  /**
+   * Put a costume on a character, or `null` to take it off.
+   *
+   * Orthogonal to the LOOK, and deliberately: a look says which animal
+   * and which coat, which is what the game stores, sends and validates,
+   * and a costume is worn ON one. Keeping them apart is what lets the
+   * whole wardrobe exist without `looks.js` — and therefore without the
+   * server — hearing about it.
+   *
+   * Per character rather than per model, because the bones are per
+   * character: two cats standing side by side in different hats cost
+   * nothing extra, since what differs between them is a handful of the
+   * bone matrices that were being uploaded anyway.
+   *
+   * Silently does nothing on a model with no wardrobe, and on a costume
+   * this model has never heard of the character simply wears nothing —
+   * the same reasoning as `_look`'s fallback.
+   *
+   * @param {string} id
+   * @param {?string} wear  a costume id from `wear.js`, or null
+   */
+  wear(id, wear) {
+    try {
+      if (!wear) this._wears.delete(id);
+      else this._wears.set(id, wear);
+    } catch (e) { /* never take the frame down */ }
+  }
+
   /** Drop per-cat state for a character that left. */
   forget(id) {
-    try { this._cats.delete(id); this._pins.delete(id); } catch (e) { /* nothing to do */ }
+    try {
+      this._cats.delete(id);
+      this._pins.delete(id);
+      this._wears.delete(id);
+    } catch (e) { /* nothing to do */ }
   }
 
   /* ── per-character animation ──────────────────────────────────── */
@@ -2116,7 +2186,7 @@ export class CatLayer {
    * still one, so a cat that has been running for a while is running at
    * exactly the amplitude the Driver says.
    */
-  _poseCat(c, state, speed, dt, facing, vy, pin) {
+  _poseCat(c, state, speed, dt, facing, vy, pin, wear) {
     const rig = c.m._rig;
     const d = Math.min(0.1, Math.max(0, dt || 0));
     const sp = Math.abs(speed) || 0;
@@ -2164,6 +2234,16 @@ export class CatLayer {
       authored.fn(rig, rig._cache);
       rig.position[rig._cache.root * 3 + 1] += c.m._groundAdjust[state];
     }
+    /* What the character is wearing. Every costume's bones go to
+       nothing and the worn one's come back up, so "wearing nothing" is
+       the default and a model nobody has spoken to wears nothing. */
+    const wardrobe = c.m._wear;
+    if (wardrobe) {
+      for (const b of c.m._wearAll) shrink(rig, b);
+      const worn = wardrobe.get(wear);
+      if (worn) for (const b of worn) grow(rig, b);
+    }
+
     /* Last, and multiplied rather than assigned, so it composes with
        both `applyPose` and the authored poses instead of overruling
        them: `dead` shuts the eyes by squashing them, and the eye that

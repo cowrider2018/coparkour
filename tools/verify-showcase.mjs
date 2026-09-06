@@ -83,6 +83,9 @@ const drawn = [];
 const pinned = [];
 const realCat = show.layer.cat.bind(show.layer);
 const realPin = show.layer.pin.bind(show.layer);
+const realWear = show.layer.wear.bind(show.layer);
+const dressed = [];
+show.layer.wear = (id, w) => { dressed.push({ id, wear: w }); return realWear(id, w); };
 show.layer.cat = (id, x, y, facing, state, speed, dt, look, alpha, vy) => {
   drawn.push({ id, x, y, state, look, vy });
   return realCat(id, x, y, facing, state, speed, dt, look, alpha, vy);
@@ -95,6 +98,7 @@ show.layer.pin = (id, yaw, pitch) => {
 const step = (dt, clock) => {
   drawn.length = 0;
   pinned.length = 0;
+  dressed.length = 0;
   show.draw(dt, beat(clock));
 };
 const REST = BEAT * 0.9;   // 節拍的後段：站著跑，不在跳
@@ -298,6 +302,20 @@ console.log(`一格 ${W}×${H} px：相機 ${vw.toFixed(1)}×${vh.toFixed(1)} �
 console.log('框縮小時動物佔的比例：'
   + fracs.map((f) => `${f.px}px → ${f.bodyPx.toFixed(1)}px (${(f.frac * 100).toFixed(1)}%)`).join('，'));
 console.log(`節拍 ${BEAT} 秒：` + states.map((s) => s[0]).join(''));
+/* ── 服裝：這一格穿什麼，每一幀都要交代 ─────────────────────────────
+   一次而不是換的時候一次。這一格隨時可能換人，而換人會讓 CatLayer 把
+   那個角色的狀態整個丟掉重建；只在換衣服的時候說一次，換完人就光著。 */
+
+show.wear = 'bucket';
+step(1 / 60, REST);
+ok(dressed.length === show.looks.length,
+  `一格站 ${show.looks.length} 隻，卻只交代了 ${dressed.length} 件衣服`);
+ok(dressed.every((d) => d.wear === 'bucket'), '穿的不是說好的那一件');
+ok(dressed.every((d, i) => d.id === show.looks[i]), '衣服穿到別隻身上了');
+show.wear = null;
+step(1 / 60, REST);
+ok(dressed.every((d) => d.wear === null), '脫下來之後還在交代那一件');
+
 if (fails.length) {
   console.error(`\n✗ ${fails.length} 項不對：`);
   for (const f of fails) console.error('  · ' + f);

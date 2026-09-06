@@ -12,6 +12,7 @@
 //   · 每支 program 都拿到自己的 uniform（換 program 之後沒有沿用上一支的）
 //   · 同一個角色換了動物，它的通道緩衝會跟著換一副骨架重建
 //   · 深度切片仍然照「呼叫順序」而不是排序後的順序
+//   · 穿衣服：說了穿哪一件，就只有那一件的骨頭有大小，其餘全部縮成零
 //
 // 用法：node tools/verify-layer.mjs
 
@@ -20,6 +21,7 @@ import { fakeGL, fakeCanvas } from './lib/fake-gl.mjs';
 import { parseCat } from '../public/src/cat/rig.js';
 import { CatLayer, CAT_SKINS } from '../public/src/cat/cat.js';
 import { buildDog, DOG_EARS, DOG_SKINS } from '../public/src/cat/dog.js';
+import { dress, WEARS } from '../public/src/cat/wear.js';
 
 /* ── 起一層，裡面三種動物 ───────────────────────────────────────── */
 
@@ -140,6 +142,56 @@ layer.end();
 const pq = layer._queue.find((i) => i.c === layer._cats.get('p'));
 const qq = layer._queue.find((i) => i.c === layer._cats.get('q'));
 ok(pq.near > qq.near, '先呼叫的那隻沒有被放到比較遠的深度切片');
+
+/* ── 5. 穿衣服 ──────────────────────────────────────────────────
+   衣櫃是建進模型裡的，所以「穿」不是一次上傳，是幾根骨頭的縮放——沒穿的
+   那幾件縮成零，三角形退化成沒有面積。這裡把骨頭矩陣讀回來確認。 */
+
+const dressedLayer = new CatLayer(fakeCanvas(fakeGL()), [
+  { id: 'cat', data: dress(cat) },
+], {});
+const dm = dressedLayer._models.get('cat');
+const drig = dm._rig;
+/** 這根骨頭的世界矩陣有沒有大小（縮成零的話三個基底軸都是零長）。 */
+const sized = (id, bone) => {
+  const M = dressedLayer._cats.get(id).bones;
+  const o = drig.bone(bone) * 16;
+  return Math.hypot(M[o], M[o + 1], M[o + 2]) > 1e-6;
+};
+const drawDressed = (wear) => {
+  dressedLayer.wear('w', wear);
+  dressedLayer.begin({ x: 0, y: 0 }, { w: 800, h: 400 }, sky);
+  dressedLayer.cat('w', 40, 200, 1, 'idle', 0, 1 / 60, `cat/${CAT_SKINS[0]}`, 1, 0);
+  dressedLayer.end();
+};
+
+ok(dm._wear && dm._wear.size === WEARS.length,
+  `模型身上有 ${dm._wear ? dm._wear.size : 0} 件衣服，應該是 ${WEARS.length}`);
+
+drawDressed(null);
+ok(![...dm._wearAll].some((b) => sized('w', drig.names[b])),
+  '沒說要穿，卻有衣服的骨頭是有大小的——一件都沒穿才是預設');
+
+/* 每一件輪流穿一次：穿著的那一件的骨頭有大小，其餘每一件的都沒有。
+   照名冊自己列的來驗，不寫死骨頭名字。 */
+for (const wearId of dm._wear.keys()) {
+  drawDressed(wearId);
+  for (const [other, bones] of dm._wear) {
+    for (const b of bones) {
+      ok(sized('w', drig.names[b]) === (other === wearId),
+        `穿著 ${wearId}，${drig.names[b]} 的大小不對`);
+    }
+  }
+}
+
+drawDressed('nosuchhat');
+ok(![...dm._wearAll].some((b) => sized('w', drig.names[b])),
+  '沒聽過的服裝應該是什麼都不穿，而不是穿上全部');
+
+// 沒有衣櫃的模型：說什麼都不該炸。
+layer.wear('a', 'bucket');
+draw([['a', `cat/${CAT_SKINS[0]}`]]);
+ok(layer.stats.cats === 1, '對沒有衣櫃的模型說穿衣服，把那一幀弄壞了');
 
 /* ── 5. 只給一份資產時，行為跟以前一樣 ──────────────────────────── */
 

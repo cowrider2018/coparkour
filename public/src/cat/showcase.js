@@ -116,12 +116,22 @@ export class Showcase {
   /**
    * @param {HTMLElement} view  要填滿的框
    * @param {(canvas: HTMLCanvasElement) => object} makeLayer
-   * @param {object} [opts]  `{ looks, scenery, fill }`
+   * @param {object} [opts]  `{ looks, wear, scenery, fill }`
    */
   constructor(view, makeLayer, opts = {}) {
     this.view = view;
     /** 這一格站著誰：一排扁平的 look，等距排開。隨時可以換。 */
     this.looks = opts.looks || [];
+    /* 這一格穿什麼——`wear.js` 的服裝 id，或 null。整格一件，因為框的
+       意思就是「這一隻現在長什麼樣」，而不是一個舞台。
+
+       跟 look 分開放，而且是每幀交代一次而不是換的時候交代一次：這一格
+       隨時可能換人（選單那一格就是），而換人會讓 CatLayer 把那個角色的
+       狀態整個丟掉重建——包括身上穿的。每幀說一次就沒有這個問題。
+
+       模型身上沒有衣櫃的時候（遊戲載的就是），CatLayer.wear 什麼都不做，
+       所以選單那一格不必知道自己沒有衣服可穿。 */
+    this.wear = opts.wear || null;
     /** 動物佔框高的幾成。見 FILL。 */
     this.fill = opts.fill || FILL;
 
@@ -258,6 +268,7 @@ export class Showcase {
     this.layer.begin({ x: 0, y: 0 }, { w: vw, h: vh }, SKY);
     this.looks.forEach((look, i) => {
       this.layer.pin(look, this.yaw, this.pitch);
+      this.layer.wear(look, this.wear);
       const cx = (vw * (i + 0.5)) / n;
       this.layer.cat(look, cx - PLAYER_W / 2, feet - PLAYER_H,
         1, pose.state, WALK, dt, look, 1, pose.vy);
