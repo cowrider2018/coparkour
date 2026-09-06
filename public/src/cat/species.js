@@ -15,12 +15,13 @@
    ── adding an animal ─────────────────────────────────────────────
    Add its id to `MODELS` in looks.js, its colourways to `MODEL_SKINS`
    there, and one line here saying how to build it out of the cat. That
-   is the whole of it: the menu builds itself from `LOOKS`, the
-   catalogue page builds itself from `SPECIES`, and the server accepts
-   the new ids because it reads the same list.
+   is the whole of it: the menu and the catalogue page both build
+   themselves from `lookGrid()`, and the server accepts the new ids
+   because it reads the same list.
    ------------------------------------------------------------------ */
 
 import { buildDog } from './dog.js';
+import { dress } from './wear.js';
 import { DOG_EARS, MODELS, MODEL_SKINS } from './looks.js';
 
 /**
@@ -30,14 +31,24 @@ import { DOG_EARS, MODELS, MODEL_SKINS } from './looks.js';
  * case with an `if` around it — its recipe is "keep what arrived",
  * which is what makes the list read as a list.
  *
+ * `opts.wear` asks for the same animals with a wardrobe built into
+ * them: the costume ids from `wear.js`, or all of them. It is opt-in
+ * and the game does not ask, so what the game loads is byte for byte
+ * what it loaded before — a dressed model carries about 30% more
+ * geometry and six more bones, and none of it is any use to a player
+ * who cannot choose a hat yet. The catalogue page is what asks.
+ *
  * @param {object} cat  the object `parseCat` returned
+ * @param {object} [opts]  `{ wear }` — costume ids to build in
  * @returns {{id: string, data: object}[]}
  */
-export function speciesModels(cat) {
-  return [
+export function speciesModels(cat, opts = {}) {
+  const bare = [
     { id: 'cat', data: cat },
     ...DOG_EARS.map((ear) => ({ id: `dog-${ear}`, data: buildDog(cat, { ear }) })),
   ];
+  if (!opts.wear) return bare;
+  return bare.map(({ id, data }) => ({ id, data: dress(data, { wears: opts.wear }) }));
 }
 
 /**
