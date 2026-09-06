@@ -152,9 +152,14 @@ public/
       shape.js       把每個部位彎成圓角矩形的那段（量測 + GLSL）
       looks.js       全部造型的名字（"cat/tabby"）。沒有 import，伺服器也讀它
       species.js     名冊：每種動物怎麼從 cat.bin 造出來
+      model.js       CatLayer 要知道的「這是哪種動物」，以及貓自己的那一份
+      build.js       造新動物的工具箱：生成幾何、墨線殼、三個 group 的重排
       dog.js         同一份 cat.bin 重組成狗：鼻樑、短尾、寬耳、三種毛色
+      wear.js        衣櫃：漁夫帽。頭都是同一個矩形，所以裁一次就三種動物都戴得上
+      showcase.js    一隻動物站在一個框裡（開始選單那一格與圖鑑共用）
       rig.js  pose.js  骨架與姿勢（來自 frontend-sandbox）
   preview/index.html  生物圖鑑（/preview/，不屬於遊戲，內容全自動）
+                      版面同開始選單：展示 + 物種 + 服裝，選一個看一個
 worker/index.js   路由 + GameRoom Durable Object
 tools/
   verify-level.mjs  地形一定跳得過去 + bot 試跑
@@ -163,8 +168,11 @@ tools/
   verify-buy.mjs    購買動線的端對端（要瀏覽器，不進 CI）
   verify-cat-shape.mjs  圓角矩形貓：輪廓、三階調、頂點色、墨線
   verify-dog.mjs    狗：兩種耳朵各畫四個角度、三種毛色，外加索引結構的檢查
+  verify-wear.mjs   服裝：九種組合各畫四個角度，並重算一次「戴不戴得上」
   verify-layer.mjs  一層畫多種動物：假 gl 記帳，驗 program 綁定與 uniform
-  lib/soft-raster.mjs   上面兩支共用的軟體光柵器（頂點著色器的 JS 版）
+  verify-showcase.mjs  展示框：兩個使用者拿到的是不是同一件事
+  lib/soft-raster.mjs   上面幾支共用的軟體光柵器（頂點著色器的 JS 版）
+  lib/png.mjs           把它畫出來的東西寫成 PNG
 wrangler.toml
 ```
 

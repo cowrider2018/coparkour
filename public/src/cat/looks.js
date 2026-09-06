@@ -27,10 +27,10 @@
    animal: add its id here, its name to `MODEL_NAME`, and its recipe to
    `species.js`.
 
-   Nothing else needs telling. The server reads this file, the catalogue
-   page builds itself from `SPECIES`, and the menu's grid counts its own
-   rows and columns off `lookGrid()` — including animals whose coat
-   counts differ from everyone else's.
+   Nothing else needs telling. The server reads this file, and both the
+   menu and the catalogue page count their own rows and columns off
+   `lookGrid()` — including animals whose coat counts differ from
+   everyone else's.
 
    The one step that is not automatic and will not break anything if you
    skip it is the name and the swatch: an unregistered coat falls back to

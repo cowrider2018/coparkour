@@ -7,22 +7,32 @@
 <meta name="theme-color" content="#1e1810" />
 <meta name="robots" content="noindex" />
 <!--
-  圖鑑：這個專案畫得出來的每一種動物，全部陳列。
+  圖鑑：這個專案畫得出來的每一種動物，配上每一件服裝。
 
-  沒有任何控制項，這是刻意的。它要回答的是「現在總共有哪些、長什麼樣」，
-  而那個答案不該取決於誰把哪個滑桿推到哪裡——每一格都用同一個時辰、同一個
-  朝向、同一個大小、同一組動作，差別只剩物種與毛色本身。
+  版面刻意跟遊戲的開始選單一樣：一格展示、一張物種表、一排服裝。因為它們
+  問的是同一個問題——「等一下跑出去的會是什麼樣子」——而那個問題只有一種
+  好的回答方式，就是把那一隻現在的樣子放在旁邊，改一個就跟著變一個。
 
-  唯一的互動是「拿起來看」：在一格上按住左右拖曳，那一格會跟著手轉，可以
-  一路轉到背面再轉回來；鬆手就自己盪回原本的角度。它不改變任何陳列的內容，
-  所以上面那件事仍然成立——放開手，每一格又是同一個樣子。
+  這頁以前是一整面陳列櫃，九格並排、每格一種動物站著牠所有的毛色。那個
+  版面回答的是「總共有哪些」，而服裝一進來，答案就從九格變成二十七格：
+  三十六隻動物同時在畫面上小跑，每一隻都太小、而且沒有一隻是你在挑的
+  那一隻。選一個看一個是唯一還撐得住的形狀。
+
+  一次只站一隻，也讓它便宜得多：一層 GL、一個模型集，而不是九個。
+
+  沒有滑桿、沒有時辰、沒有大小。同一個時辰、同一個朝向、同一個大小、
+  同一組動作——差別只剩你選的那兩件事。唯一的互動是「拿起來看」：在框上
+  按住左右拖曳可以把牠轉過來，上下拖曳可以爬到牠上面或蹲到牠下面；鬆手
+  就自己盪回原本的角度。
 
   放在 public/preview/ 而不是 tools/：這頁需要 WebGL2、需要 fetch 得到
   cat.bin、也需要 import public/src/ 底下那幾支模組，所以它得跟遊戲一起
   被 Workers Static Assets 送出去。tools/ 是給 node 跑的離線腳本
-  （tools/verify-dog.mjs 就是狗的離線版）。
+  （tools/verify-wear.mjs 就是這一頁的離線版，九種組合一次畫完）。
 
   這頁完全不碰遊戲：不 import main.js、不連 WebSocket、不寫 localStorage。
+  服裝也還沒進遊戲——它不是 look 的一部分，伺服器不認得它，選在這裡的
+  帽子跑出去是不會戴著的。
   網址：/preview/
 -->
 <style>
@@ -31,8 +41,13 @@
     --ink: #f7efdd;
     --muted: #b5a184;
     --card: #2b2218;
+    --field: #241c14;
     --edge: #4a3b29;
+    --line-strong: #6b563c;
     --accent: #9bd94e;
+    --accent2: #e8862f;
+    --accent2-shade: #a85c17;
+    --on-ink: #1e1810;
   }
   * { box-sizing: border-box; }
   html, body {
@@ -42,7 +57,8 @@
     font: 14px/1.5 system-ui, "Noto Sans TC", sans-serif;
   }
   body { padding: 20px clamp(12px, 4vw, 40px) 56px; }
-  header { margin: 0 0 26px; }
+
+  header { margin: 0 0 22px; }
   h1 {
     font-size: clamp(30px, 6vw, 46px); margin: 0; font-weight: 700;
     letter-spacing: -.02em; line-height: 1;
@@ -51,29 +67,95 @@
     margin: 8px 0 0; font-size: 16px; color: var(--accent);
     letter-spacing: .32em; text-indent: .32em;
   }
-  p.hint { margin: 10px 0 0; font-size: 12px; color: var(--muted); letter-spacing: .04em; }
 
-  .shelf { display: flex; flex-wrap: wrap; gap: 16px; }
+  /* 開始選單的卡片：左邊那一隻本人，右邊是選的東西。窄到一定程度就
+     疊成一欄，展示框留在上面。 */
   .card {
     background: var(--card);
     border: 1px solid var(--edge);
-    border-radius: 12px;
-    padding: 10px 10px 6px;
-    flex: 1 1 420px;
-    min-width: 300px;
+    border-radius: 14px;
+    padding: 16px;
+    max-width: 860px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
   }
-  .card h2 {
-    font-size: 13px; margin: 0 0 8px; font-weight: 600;
-    display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  @media (max-width: 640px) {
+    .card { grid-template-columns: minmax(0, 1fr); }
   }
-  .card h2 small { color: var(--muted); font-weight: 400; letter-spacing: .06em; }
-  /* 天空、地面線與畫布的疊層由 showcase.js 自己摆；這裡只管框長什麼樣。 */
-  /* 框有多高是這裡說了算：showcase.js 只量它。 */
-  .view { height: 320px; border-radius: 8px; overflow: hidden; cursor: grab; }
+
+  /* 天空、地面線與畫布的疊層由 showcase.js 自己擺；這裡只管框長什麼樣，
+     以及它有多大——showcase.js 只量它。 */
+  .view {
+    aspect-ratio: 1;
+    align-self: start;
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: grab;
+  }
   .view.held { cursor: grabbing; }
-  .names { display: flex; margin: 6px 0 0; }
-  .names span { flex: 1 1 0; text-align: center; font-size: 12px; color: var(--muted); }
+
+  .caption {
+    margin: 10px 0 0; font-size: 15px; font-weight: 600; text-align: center;
+  }
+  .caption small { display: block; font-weight: 400; font-size: 12px; color: var(--muted); }
+
+  .picks { display: flex; flex-direction: column; gap: 6px; }
+  h2 {
+    font-size: 11px; font-weight: 600; margin: 6px 0 2px;
+    color: var(--muted); letter-spacing: .18em;
+  }
+
+  /* 物種：一行一種動物、一列一件毛色。行列數不寫死——lookGrid() 數出來
+     寫進 --cols / --rows，每一格的位置也是那裡指定的，所以參差的名單只是
+     某一行右邊少幾格，不會整個錯開。跟開始選單同一支函式。 */
+  .looks {
+    display: grid;
+    grid-template-columns: repeat(var(--cols, 3), 1fr);
+    grid-template-rows: repeat(var(--rows, 3), auto);
+    gap: 8px;
+  }
+  /* 服裝：一排，「不穿」也是一顆，因為不穿是一個選擇而不是沒有選。 */
+  .wears { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+
+  .pick {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 5px;
+    font: inherit; font-size: 12px; line-height: 1.2;
+    padding: 7px 2px;
+    border-radius: 11px;
+    border: 1px solid var(--edge);
+    background: var(--field);
+    color: var(--muted);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .pick:hover { border-color: var(--line-strong); color: var(--ink); }
+  .pick[aria-pressed="true"] {
+    border-color: transparent;
+    background: var(--accent2);
+    color: var(--on-ink);
+    font-weight: 600;
+    box-shadow: 0 3px 0 var(--accent2-shade);
+    transform: translateY(-1px);
+  }
+  .chip {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    border: 1px solid #241c12;
+    flex: none;
+  }
+  /* 「不穿」沒有顏色可以畫，所以那顆球是空的——一個圈，不是一塊色。 */
+  .chip.none { background: none; border-style: dashed; border-color: var(--line-strong); }
+
+  p.hint { margin: 10px 0 0; font-size: 11px; color: var(--muted); letter-spacing: .04em; }
   .err { color: #ef5b3f; }
+
+  @media (max-width: 430px) {
+    .looks, .wears { gap: 6px; }
+    .pick { font-size: 10px; gap: 3px; padding: 5px 1px; }
+    .chip { width: 12px; height: 12px; }
+  }
 </style>
 </head>
 <body>
@@ -81,32 +163,39 @@
 <header>
   <h1>coparkour</h1>
   <p class="sub">生物圖鑑</p>
-  <p class="hint">按住任一格拖曳</p>
 </header>
 
-<div class="shelf" id="shelf"></div>
+<div class="card">
+  <div>
+    <div id="view" class="view"></div>
+    <p id="caption" class="caption"></p>
+  </div>
+  <div class="picks">
+    <h2>物種</h2>
+    <div id="lookPicker" class="looks" role="group" aria-label="選擇物種與毛色"></div>
+    <h2>服裝</h2>
+    <div id="wearPicker" class="wears" role="group" aria-label="選擇服裝"></div>
+    <p class="hint">按住框左右拖曳可以把牠轉過來，上下拖曳可以換視角；鬆手就盪回去。</p>
+  </div>
+</div>
+
 <p id="msg" class="err" hidden></p>
 
 <script type="module">
 import { parseCat } from '../src/cat/rig.js';
 import { CatLayer } from '../src/cat/cat.js';
-import { modelName, skinName } from '../src/cat/looks.js';
-import { speciesModels, SPECIES } from '../src/cat/species.js';
+import { lookGrid, lookInfo, swatchCss, DEFAULT_LOOK } from '../src/cat/looks.js';
+import { speciesModels } from '../src/cat/species.js';
+import { WEARS, wearName, wearSwatch } from '../src/cat/wear.js';
 import { Showcase, beat } from '../src/cat/showcase.js';
 import { PLAYER_W, PLAYER_H } from '../src/constants.js';
 
-/* ── 陳列的內容 ────────────────────────────────────
-   這一頁沒有名單。`SPECIES` 是遊戲自己的名冊，`modelName`、`skinName` 是遊戲自己的名字，
-   連建模型都是遊戲用的那一支 `speciesModels`——所以「圖鑑上有什麼」
-   跟「遊戲裡有什麼」不可能對不上：它們是同一件事讀了兩次。
+/* ── 這一頁沒有名單 ────────────────────────────────────
+   `lookGrid` 是遊戲自己攤開的那張表，`WEARS` 是衣櫃自己的名冊，連建模型
+   都是遊戲用的那一支 `speciesModels`——所以「圖鑑上有什麼」跟「程式裡有
+   什麼」不可能對不上：它們是同一件事讀了兩次。
 
-   要靠人手動維護才會完整的圖鑑，最後一定不完整。
-
-   一格一個物種，格子裡是牙所有的毛色，而且一格只有一個 CatLayer：毛色本來
-   就只是一塊頂點色，同一個 layer 全都握著，切換是一次 VAO bind。
-
-   格子裡的一切——天空、地面、步態、節拍、拿起來看——在 showcase.js，因為
-   開始選單左邊那一格用的是同一支。 */
+   要靠人手動維護才會完整的圖鑑，最後一定不完整。 */
 
 const msg = document.getElementById('msg');
 const fail = (e) => {
@@ -114,34 +203,66 @@ const fail = (e) => {
   msg.textContent = '畫不出來：' + (e && e.message ? e.message : e);
 };
 
-const boxes = [];
+let look = DEFAULT_LOOK;
+let wear = null;
+let show = null;
 
-function build(cat) {
-  const shelf = document.getElementById('shelf');
-  /* 一次把整個名冊造出來，然後每一格自己挑一個模型畫。同一份幾何不會被造
-     兩次，而且用的就是遊戲載入時走的那一條路。 */
-  const built = new Map(speciesModels(cat).map((m) => [m.id, m.data]));
-  for (const spec of SPECIES) {
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.innerHTML = `<h2><span>${modelName(spec.id)}</span></h2>`
-      + '<div class="view"></div>'
-      + `<p class="names">${spec.skins.map((sk) => `<span>${skinName(sk)}</span>`).join('')}</p>`;
-    shelf.appendChild(card);
+/* ── 兩張選擇表 ──────────────────────────────────────
+   同一顆按鈕的兩種用法，所以是同一個 class 和同一支 paint：一顆球加一行
+   字，選中的那顆亮起來。差別只在球上畫什麼，跟按下去改的是哪一個變數。 */
 
-    try {
-      /* 一格只裝得下這一種動物，但仍然是一份具名的名冊，這樣 look
-         才真的被解開，而不是靠「認不出來就畫預設那隻」嗦過去。 */
-      const roster = [{ id: spec.id, data: built.get(spec.id) }];
-      boxes.push(new Showcase(
-        card.querySelector('.view'),
-        (canvas) => new CatLayer(canvas, roster,
-          { boxW: PLAYER_W, boxH: PLAYER_H, desynchronized: false }),
-        { looks: spec.skins.map((sk) => `${spec.id}/${sk}`) },
-      ));
-    } catch (e) { fail(e); }
+const caption = document.getElementById('caption');
+const lookBox = document.getElementById('lookPicker');
+const wearBox = document.getElementById('wearPicker');
+
+function paint() {
+  if (show) {
+    show.looks = [look];
+    show.wear = wear;
   }
+
+  const info = lookInfo(look);
+  caption.innerHTML = `${info.modelName}・${info.skinName}`
+    + `<small>${wear ? wearName(wear) : '沒有穿服裝'}</small>`;
+
+  const grid = lookGrid();
+  lookBox.style.setProperty('--cols', grid.cols);
+  lookBox.style.setProperty('--rows', grid.rows);
+  lookBox.innerHTML = grid.cells.map(({ look: id, row, col }) => {
+    const it = lookInfo(id);
+    return `<button type="button" class="pick" data-look="${id}"
+       style="grid-row:${row};grid-column:${col}"
+       aria-pressed="${id === look}" aria-label="${it.name}" title="${it.name}">
+       <span class="chip" style="background:${swatchCss(it.swatch)}"></span>${it.modelName}
+     </button>`;
+  }).join('');
+
+  /* 「不穿」排在第一顆，而且是一顆真的按鈕：脫掉跟穿上是同一種動作。 */
+  wearBox.style.gridTemplateColumns = `repeat(${WEARS.length + 1}, 1fr)`;
+  wearBox.innerHTML = [null, ...WEARS].map((id) => {
+    const name = id ? wearName(id) : '不穿';
+    const chip = id
+      ? `<span class="chip" style="background:${swatchCss(wearSwatch(id))}"></span>`
+      : '<span class="chip none"></span>';
+    return `<button type="button" class="pick" data-wear="${id || ''}"
+       aria-pressed="${id === wear}" aria-label="${name}" title="${name}">${chip}${name}</button>`;
+  }).join('');
 }
+
+lookBox.addEventListener('click', (e) => {
+  const b = e.target.closest('.pick');
+  if (!b || b.dataset.look === look) return;
+  look = b.dataset.look;
+  paint();
+});
+wearBox.addEventListener('click', (e) => {
+  const b = e.target.closest('.pick');
+  if (!b) return;
+  const next = b.dataset.wear || null;
+  if (next === wear) return;
+  wear = next;
+  paint();
+});
 
 /* ── 一幀 ────────────────────────────────────────── */
 
@@ -152,18 +273,30 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   clock += dt;
-  /* 全部一起跳。九隻各跳各的會變成閃爍，一起跳是一個節拍。 */
-  const pose = beat(clock);
-  for (const b of boxes) b.draw(dt, pose);
+  show.draw(dt, beat(clock));
   requestAnimationFrame(frame);
 }
 
 /* ── 起動 ───────────────────────────────────────── */
 
+paint();
 try {
   const res = await fetch('../assets/cat.bin');
   if (!res.ok) throw new Error(`cat.bin: HTTP ${res.status}`);
-  build(parseCat(await res.arrayBuffer()));
+  /* 衣櫃是要出來的：`speciesModels` 平常不建它，因為遊戲用不到。這一頁
+     是唯一開口要的地方，所以三種動物身上都帶著三件衣服的幾何，而
+     `Showcase` 每幀告訴那一層現在穿的是哪一件。 */
+  const roster = speciesModels(parseCat(await res.arrayBuffer()), { wear: WEARS });
+  show = new Showcase(
+    document.getElementById('view'),
+    /* desynchronized 關掉：這一格不在回答手指，換不到延遲，卻會在部分
+       行動 GPU 上把透明的畫布變成不透明的黑底。見 cat.js 那邊的註解。 */
+    (canvas) => new CatLayer(canvas, roster,
+      { boxW: PLAYER_W, boxH: PLAYER_H, desynchronized: false }),
+    /* 一格只站一隻，所以 fill 比舊版那個一格站三隻的陳列櫃大。它是一個
+       比例，所以框跟著版面縮，動物也跟著縮，不會溢出去。 */
+    { looks: [look], wear, fill: 0.34 },
+  );
   requestAnimationFrame(frame);
 } catch (e) {
   fail(e);
