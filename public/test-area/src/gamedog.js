@@ -19,56 +19,57 @@
      動作   `pose.js` 的 Driver（步態、呼吸、尾巴的擺）與 Sway（尾巴那條
             17 節的彈簧）。步頻跟著實際速度走，跟遊戲一樣。
      配色   cat.bin 自己的頂點色，三種毛色共用同一份幾何。
-     圓角   `shape.js` 的部位表與它量出來的矩形。遊戲在螢幕空間把每個
-            部位的輪廓壓成圓角矩形；這裡改成在載入時把那個形狀烘進頂點，
-            見下面「圓角方形」那一段。
+     圓角   `shape.js` 的部位表、它量出來的矩形，以及整個二次變形。
+            這一段是每幀在頂點著色器裡做的，見下面「圓角方形」那一段。
 
    沒搬的是「那個渲染器是什麼」，而那是刻意的：
 
-     · 螢幕空間那個作法本身（shape.js 的 warpToRect），以及它第二段
-       「法線側視才拉」的視角門檻。理由見下面那一段。
-     · 尾巴尖的方頭（TAIL_CAP_GLSL）。它要 rrRadius，是彎折那一套的一部分，
-       而它只影響尾巴末端那兩三個像素。
-     · gl.depthRange 分段遮擋、遠側那隻眼睛的收合、正交側視相機。前兩個
-       是為了「一排貓在 2D 畫面上疊起來」，這裡只有一隻而且有真的深度緩衝；
-       第三個正是這一頁不要的東西。
+     · 正交側視相機本身。變形跟過來了，那台相機沒有——這一頁的二維平面
+       是透視投影之後的螢幕座標。
+     · 尾巴尖的方頭（TAIL_CAP_GLSL）。rrRadius 這裡已經有了（變形要用），
+       所以它是可以補上的；沒補是因為它只影響尾巴末端那兩三個像素，而
+       尾巴本身不是一個「部位」——shape.js 說得很清楚，一根管子不需要
+       矩形。
+     · gl.depthRange 分段遮擋，與遠側那隻眼睛的收合。兩個都是為了「一排
+       貓在 2D 畫面上疊起來」：這裡只有一隻，而且有真的深度緩衝；而正面
+       看得到兩隻眼睛的時候，收掉一隻會變成獨眼。
      · 三階調著色器本身。改用 three 的 MeshToonMaterial 加同一張 3 階
        梯度圖（palette.js 的 ramp），所以狗和石頭是被同一盞燈、同一組
        色階照的——那才是「同一個作品」的意思。
 
-   ── 圓角方形：為什麼是烘進幾何，而不是照抄螢幕空間那一版 ─────────
-   那個造型是這隻動物的招牌，所以它必須跟過來；跟過來的方式換了。
+   ── 圓角方形：每幀的二次變形 ─────────────────────────────────────
+   那個造型是這隻動物的招牌，所以它整個跟過來了：`shape.js` 的
+   `measureShapes` 量出每個部位的中心、三個半徑、圓角比例與 norm，
+   那一組數字就是遊戲那支著色器吃的 uniform，一個都沒有換；而變形本身
+   （SHAPE_GLSL 的 `warpToRect`）也照搬，包含它那兩段：
 
-   遊戲的作法是在螢幕上做：拿骨頭 +Y 投影到螢幕當「上」，三個半徑用
-   平方和求支撐得到一個橢圓，再把每個頂點按同方向、同比例送到圓角矩形
-   的邊界上。那個矩形只在那台正交側視相機下有定義——這一頁的相機是自由
-   的，同一個部位從別的角度看，「螢幕上的矩形」是另一個矩形，於是繞著
-   看的時候形狀會跟著鏡頭變。那讀起來是抖動，不是造型。
+     第一段  把部位的包圍橢圓映射到圓角矩形。落在橢圓上的落在矩形上，
+             裡面的按同比例跟著走。
+     第二段  只作用在「法線側視 + 已經靠外」的頂點上，把輪廓精確拉到
+             矩形邊上。兩個條件都要：只看法線會抓到部位中間的一道摺並
+             把它拖到邊上，只看半徑就是第一段留下的坑坑巴巴。
 
-   所以這裡把同一件事搬到骨頭的局部空間，並且在載入時做一次：
+   換掉的只有「那個二維平面是什麼」：遊戲是正交側視的螢幕像素，這裡是
+   透視投影之後、以 y 正規化的螢幕座標（ndc.x × aspect, ndc.y）。那個
+   空間是等向的，所以圓角矩形在畫面上是圓角矩形而不是被拉扁的。深度不
+   動，跟遊戲一樣——這一段只搬動頂點落在畫面上的哪裡。
 
-     · 部位表與矩形都是 shape.js 的。`measureShapes` 回傳的 `half` 已經
-       把 `scale` 與 `norm`（部位實際填滿它自己包圍盒的比例）折進去了，
-       所以頭的 0.86、每個部位的圓角比例、耳朵與臉不彎的規則，全部是
-       遊戲那一份，不是這裡重新猜的。頭的 0.86 尤其不能少：圓角矩形的
-       頂是一條線而不是一個點，少了它那條線會升起來吃掉耳朵。
-     · 每個頂點量它在「部位的橢球」上的比例 u，再放到「圓角盒」邊界的
-       同一個比例上。落在橢球上的落在盒上，裡面的跟著走——這就是遊戲
-       那第一段。超出去的（u > 1）夾在盒上，所以盒是邊界而不是目標，
-       那是遊戲那句 `min(mix(t, target, w), target)` 的意思。
-     · 法線不動。這是整個作法的重點：出來的是圓角矩形的輪廓，照真實
-       曲面著色。所以三階調的色階分佈還是那隻狗的（頭 52/14/34、
-       前掌 28/40/32），不是每個部位都一樣。
-     · `outline` 群組烘到「大一圈」的盒上（半徑加 INK_OUT）。少了這一步
-       墨線會被壓進填色裡而消失——遊戲那邊是用 uInkOut 做同一件事。
-     · 沒有搬過來的是第二段那個視角門檻（法線側視 + 已經靠外才拉到底）。
-       它需要視線方向，而視線方向在自由相機下每幀都不一樣，那正是上面
-       說的抖動。少了它，輪廓不會「精確」是矩形而是「非常接近」矩形，
-       而那個差在遊戲裡是 40 px 高的貓身上的 2 px。
+   ── 為什麼不是在載入時烘進幾何 ───────────────────────────────────
+   試過，而且留在 `test-area-roundbox-bake` 那個 branch 上：把每個部位
+   在骨頭的局部空間映射到一個 3D 圓角盒，一次算完、每幀零成本、繞著看
+   不會變形。但畫出來跟這個造型有明顯落差，原因是幾何上的：
 
-   代價講清楚：深度那一軸（模型 X）也被壓成方的。遊戲沒有約束它，因為
-   側視相機永遠看不到它；這一頁看得到，而看得到的時候「三個軸都是圓角
-   盒」比「兩軸方、一軸圓」一致。
+     · 3D 圓角盒的輪廓只有從三個軸的方向看才是圓角矩形。從斜的方向看，
+       三個軸的圓角一起出現在輪廓上，讀起來是一團圓的東西——而遊戲相機
+       在這一頁永遠是斜的。
+     · 那一段「法線側視才拉到底」的第二段是視角相關的，烘的時候沒有視角
+       可用，所以只能整體按比例推，內部曲面也一起被壓掉。
+     · 烘完的形狀是固定的，於是「輪廓精確是矩形」這件事在任何角度都
+       不成立，只是「接近」。
+
+   代價是這一版每幀每頂點多算一個部位框（三次矩陣乘法、幾十個乘加）與
+   一次圓角矩形求交。25,723 個頂點、兩趟（皮毛與墨線），在任何 2015 年
+   之後的 GPU 上都量不出來。
 
    ── 為什麼不是照抄那支著色器 ─────────────────────────────────────
    照抄要連正交投影、uPlace/uXform 的像素座標系、彎折與 depthRange 一起
@@ -86,6 +87,7 @@ import { buildDog } from '../../src/cat/dog.js';
 import { dress } from '../../src/cat/wear.js';
 import { Driver, Sway, applyPose, TAIL_AXIS, TAIL_LIFT } from '../../src/cat/pose.js';
 import { DOG_SKINS } from '../../src/cat/looks.js';
+import { measureShapes, SIL_NORMAL, SIL_RADIUS } from '../../src/cat/shape.js';
 import { ramp, INK } from './palette.js';
 
 /** 毛色。名字給選單用，值就是 cat.bin 裡的那幾套（src/cat/dog.js）。 */
@@ -106,10 +108,14 @@ const NODES = TAIL_AXIS.length;          // 17
    所以直接給一個模型單位的值。0.022 × 這隻狗的縮放 ≈ 5 mm。 */
 const INK_GROW = 0.022;
 
-/* 烘圓角盒的時候，`outline` 群組的目標盒要比填色的大這麼多（模型單位）。
-   跟 INK_GROW 同一個值：一個是沿法線推的那一點，一個是輪廓上那一圈，
-   兩者疊起來就是墨線的寬度。 */
-const INK_OUT = INK_GROW;
+/* 墨線在畫面上有多寬（像素）。遊戲是 INK_PX = 1.25 px，理由是那邊的貓
+   只有 45 px 高；這一頁的狗離鏡頭近的時候有兩三百 px，所以粗一點才看得
+   出是一條線而不是一圈鋸齒。
+
+   單位是像素而不是世界長度，這一點跟遊戲一樣，而且在 3D 裡也是對的：
+   卡通描邊的寬度是「畫面上的一條線」，不是「模型上的一層皮」——遠處的
+   狗如果連線都跟著縮小，那個造型在遠處就消失了。 */
+const INK_PX = 2.0;
 
 /* 一個步幅跨多遠（公尺）。遊戲那邊是 2.67 個碰撞箱高，換算到這一頁的
    尺度會得到一隻慢動作的狗：遊戲裡的狗每秒跑 9.6 個身高，這裡只有 3 個
@@ -134,7 +140,7 @@ const axisGLSL = () => TAIL_AXIS
   .map((a) => `vec3(${a.map((v) => v.toFixed(4)).join(', ')})`)
   .join(',\n  ');
 
-const DECL = (boneN) => `
+const DECL = (boneN, partN) => `
 uniform mat4 uBones[${boneN}];
 uniform vec4 uSwayQ[${NODES}];
 uniform vec3 uSwayBend[${NODES}];
@@ -192,6 +198,120 @@ vec3 cpSkinNrm() {
   if (aSway > 0.5) n = cpSwayNormal(n, aOuter);
   return normalize(mat3(uBones[int(aBone + 0.5)]) * n);
 }
+
+/* ── 二次變形：把每個部位的輪廓壓成圓角矩形 ──────────────────────
+   這一段是 src/cat/shape.js 的 SHAPE_GLSL，搬到透視相機上。搬過來的是
+   整個構造，包含那兩段：
+
+     第一段  把部位的包圍橢圓映射到圓角矩形。落在橢圓上的落在矩形上，
+             裡面的按同比例跟著走。
+     第二段  只作用在「法線側視 + 已經靠外」的頂點上，把輪廓精確拉到
+             矩形邊上。兩個條件都要：只看法線會抓到部位中間的一道摺並
+             把它拖到邊上，只看半徑就是第一段留下的那個坑坑巴巴。
+
+   換掉的只有「那個二維平面是什麼」：遊戲是正交側視的螢幕像素，這裡是
+   透視投影後、以 y 正規化的螢幕座標（ndc.x × aspect, ndc.y）。那個空間
+   是等向的，所以圓角矩形在畫面上是圓角矩形而不是被拉長的。深度不動——
+   跟遊戲一樣，這一段只搬動頂點落在畫面上的哪裡。
+
+   部位的框每幀由骨頭矩陣現算：中心投影一次，三個半徑軸各投影一次，
+   兩個半長是三者在框的兩個方向上的支撐、用平方和合成。平方和而不是
+   相加，因為相加是「盒」的支撐，而盒在對角線上最寬——頭的 X 與 Z 半徑
+   只差 3%，用相加它會在轉身途中胖 40%。
+
+   透視的代價講清楚：一個部位的三個半徑是在「部位中心那個深度」上換算
+   成畫面大小的，所以同一個部位裡比中心近的頂點會被算得略小、遠的略大。
+   頭在三公尺外的深度差是 ±5%，看不出來；貼到鏡頭前面就會看出來，而那
+   個距離下這頁的相機本來就不會停。 */
+#define CP_PARTS ${partN}
+uniform vec4 uPart[CP_PARTS];       // 中心 xyz，w = 掛在哪根骨頭
+uniform vec4 uPartB[CP_PARTS];      // 三個半徑，w = 圓角佔短邊的比例
+uniform float uPartNorm[CP_PARTS];  // 真實輪廓比橢圓多伸出去多少
+uniform int uBonePart[${boneN}];    // 每根骨頭：被哪個部位彎，−1 = 不彎
+uniform int uBoneRide[${boneN}];    // 1 = 被那個部位帶著走，不被它彎
+uniform float uInkOut;              // 這一趟要落在矩形外多遠（螢幕單位）
+uniform float uBend;                // 0/1，B 鍵
+
+/** 圓角矩形的中心到邊界有多遠，沿單位方向。精確解，不是近似：矩形是
+    半徑 (h − r) 的盒被半徑 r 的圓掃過，射線要嘛從平邊出去（答案就是 h
+    除以方向自己的分量），要嘛從圓角出去（一個二次式）。 */
+float cpRR(vec2 d, vec2 h, float r) {
+  vec2 a = abs(d);
+  vec2 e = max(h - r, vec2(0.0));
+  if (h.x * a.y <= e.y * a.x) return h.x / max(a.x, 1e-6);
+  if (h.y * a.x <= e.x * a.y) return h.y / max(a.y, 1e-6);
+  float K = a.x * e.x + a.y * e.y;
+  return K + sqrt(max(0.0, K * K - (dot(e, e) - r * r)));
+}
+
+float cpAspect() {
+  return projectionMatrix[1][1] / max(projectionMatrix[0][0], 1e-6);
+}
+/** 一個視空間的方向，換成「在中心那個深度上」的畫面長度。 */
+vec2 cpProjDir(vec3 dirView, float wc, float asp) {
+  vec4 q = projectionMatrix * vec4(dirView, 0.0);
+  return vec2(q.x / wc * asp, q.y / wc);
+}
+
+/** 部位在畫面上的框：中心 c、橫向 uHat、縱向 vHat，以及兩個半長。 */
+void cpPartFrame(int id, out vec2 c, out vec2 uHat, out vec2 vHat, out float lu, out float lv) {
+  vec4 P = uPart[id], B = uPartB[id];
+  mat4 mv = viewMatrix * modelMatrix * uBones[int(P.w + 0.5)];
+  vec4 cc = projectionMatrix * (mv * vec4(P.xyz, 1.0));
+  float wc = max(cc.w, 1e-4);
+  float asp = cpAspect();
+  c = vec2(cc.x / wc * asp, cc.y / wc);
+
+  vec2 ex = cpProjDir(mv[0].xyz * B.x, wc, asp);
+  vec2 ey = cpProjDir(mv[1].xyz * B.y, wc, asp);
+  vec2 ez = cpProjDir(mv[2].xyz * B.z, wc, asp);
+
+  /* 縱向取骨頭自己的 +Y 投影：那是部位的「上」——沿著一條腿、順著身體。
+     所以沒有轉動的骨頭在整個轉身過程中框都不會歪，只有真的轉了的骨頭
+     才會跟著傾。 */
+  float ly = length(ey);
+  vHat = ly > 1e-5 ? ey / ly : vec2(0.0, 1.0);
+  uHat = vec2(vHat.y, -vHat.x);
+  lu = length(vec3(dot(ex, uHat), dot(ey, uHat), dot(ez, uHat)));
+  lv = length(vec3(dot(ex, vHat), dot(ey, vHat), dot(ez, vHat)));
+}
+
+/**
+ * 把一個 clip space 的點放到圓角矩形要它去的地方。
+ *
+ * sil 是這個頂點的法線有多側對鏡頭：0 是正對，1 是正好在輪廓上。
+ */
+vec4 cpWarp(vec4 clip, int id, float sil) {
+  vec2 c, uHat, vHat; float lu, lv;
+  cpPartFrame(id, c, uHat, vHat, lu, lv);
+  if (lu < 1e-5 || lv < 1e-5) return clip;
+
+  float wv = max(clip.w, 1e-4);
+  float asp = cpAspect();
+  vec2 off = vec2(clip.x / wv * asp, clip.y / wv) - c;
+  vec2 p = vec2(dot(off, uHat), dot(off, vHat));
+  float len = length(p);
+  if (len < 1e-6) return clip;
+
+  // 這個頂點落在包圍盒隱含的那個橢圓上的哪裡。
+  float t = length(vec2(p.x / lu, p.y / lv)) / max(uPartNorm[id], 1e-6);
+  vec2 dir = p / len;
+
+  float r = min(min(lu, lv) * uPartB[id].w, min(lu, lv));
+  float R = cpRR(dir, vec2(lu, lv), r);
+
+  /* 墨線是「拉到稍微大一點的矩形」而不是「把殼加厚」，這樣線的寬度到處
+     都剛好是 uInkOut——連角上也是，而沿模型法線長出來的殼從來做不到
+     這件事（它在角上會比在邊上寬）。 */
+  float target = 1.0 + uInkOut / max(R, 1e-6);
+  float w = smoothstep(${SIL_NORMAL[0].toFixed(2)}, ${SIL_NORMAL[1].toFixed(2)}, sil)
+          * smoothstep(${SIL_RADIUS[0].toFixed(2)}, ${SIL_RADIUS[1].toFixed(2)}, t);
+  // 拉起沒到邊的，壓下超出去的：矩形因此是邊界而不是目標。
+  float tt = min(mix(t, target, w), target);
+  vec2 np = dir * tt * R;
+  vec2 ns = c + np.x * uHat + np.y * vHat;
+  return vec4(ns.x / asp * wv, ns.y * wv, clip.z, clip.w);
+}
 `;
 
 const BEGIN_NORMAL = `
@@ -201,22 +321,53 @@ const BEGIN_VERTEX = `
   vec3 transformed = cpSkinPos();
 `;
 
+/* 二次變形接在 three 算完 gl_Position 之後。這個位置是刻意的：變形要的
+   是「這個頂點落在畫面上的哪裡」，那個答案在 project_vertex 之前還不
+   存在，而在它之後 mvPosition 與 gl_Position 都在手上。
+
+   `sil` 需要視空間的法線與視線。法線這裡自己算（basic 材質沒有 vNormal，
+   而墨線與臉都是 basic），視線就是 mvPosition——透視相機下每個頂點的
+   視線方向都不一樣，這正是遊戲那個正交版本沒有的東西。 */
+const WARP = `
+#include <project_vertex>
+  {
+    int cpB = int(aBone + 0.5);
+    int cpP = uBonePart[cpB];
+    if (uBend > 0.5 && cpP >= 0 && uBoneRide[cpB] == 0) {
+      vec3 cpNV = normalize(normalMatrix * cpSkinNrm());
+      float cpSil = 1.0 - abs(dot(cpNV, normalize(mvPosition.xyz)));
+      gl_Position = cpWarp(gl_Position, cpP, cpSil);
+    }
+  }
+`;
+
 /**
  * 把骨架接到一顆 three 材質上。
  *
  * 材質仍然是 three 的（光、霧、色彩管理、三階調的梯度圖全部照 three 的
  * 那一套走），只有「頂點在哪裡」被換掉。
  */
-function rig3(material, uniforms, boneN, grow) {
+function rig3(material, uniforms, opts) {
+  const { boneN, partN, grow, warp } = opts;
   material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms, { uGrow: { value: grow } });
+    Object.assign(shader.uniforms, uniforms, {
+      uGrow: { value: grow },
+      uInkOut: opts.inkOut,
+    });
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>\n${DECL(boneN)}`)
+      .replace('#include <common>', `#include <common>\n${DECL(boneN, partN)}`)
       .replace('#include <beginnormal_vertex>', BEGIN_NORMAL)
       .replace('#include <begin_vertex>', BEGIN_VERTEX);
+    /* 臉不做二次變形——眼睛、鼻子、嘴巴被拉出去就是一張糊掉的臉，這是
+       shape.js 的結論（「把整張臉留在網格放它的地方，是唯一一種臉還是
+       臉的版本」）。所以臉那顆材質根本不插這一段。 */
+    if (warp) {
+      shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', WARP);
+    }
   };
-  // 同一顆材質的不同 grow 要各自編譯一份，不然 three 會把它們當同一支程式。
-  material.customProgramCacheKey = () => `cpdog${boneN}:${grow}`;
+  /* 不同 grow、有沒有變形的材質要各自編譯一份，不然 three 會共用同一支
+     編好的程式，而它們的頂點著色器其實不一樣。 */
+  material.customProgramCacheKey = () => `cpdog${boneN}:${partN}:${grow}:${warp ? 1 : 0}`;
   return material;
 }
 
@@ -264,110 +415,16 @@ export class GameDog {
     const wardrobe = this.model.wear || {};
     this._hatBones = (wardrobe.bucket || []).map((n) => this.rig.bone(n));
 
-    /* 兩份頂點：原封不動的那一份，與烘成圓角盒的那一份。留著原始的那份
-       是為了 B 鍵——同一隻狗、同一個姿勢，一鍵切換有沒有圓角，是唯一能
-       判斷「圓角調得對不對」的方式，而那個判斷只能在瀏覽器裡用眼睛做。 */
-    this.rawPosition = Float32Array.from(data.position);
-    this.position = Float32Array.from(data.position);
-    this.bakeStats = this._bakeRoundBox();
+    /* 部位的矩形。measureShapes 是 shape.js 的，回傳的就是遊戲那支
+       著色器吃的那一組 uniform：每個部位的中心、三個半徑、圓角比例、
+       norm，以及「每根骨頭被哪個部位彎、還是被它帶著走」兩張表。
+
+       它內部會 reset 並 update 骨架去量，所以一定要在姿勢開始跑之前
+       叫——這裡是建構子，後面 _buildMesh 會再擺一次待機姿勢。 */
+    this.shape = measureShapes(data, this.rig, this.model.parts, this.model.ride, this.model.patch);
     this._bend = true;
     this._buildGeometry();
     this._buildMesh(opts);
-  }
-
-  /* ── 圓角方形，烘進頂點 ────────────────────────────────────────
-     檔頭那一段講了為什麼是烘的。這裡是怎麼烘的。
-
-     頂點本來就住在自己那根骨頭的局部空間裡（著色器是 bone × position，
-     沒有蒙皮權重），而包圍盒也是在那個空間量的，所以這件事不需要任何
-     座標轉換——量完就地改。
-
-     ── 為什麼不用 shape.js 的 measureShapes ──────────────────────
-     部位表（哪幾根骨頭、圓角多少、頭的 0.86、耳朵騎在頭上）用的是它的，
-     那是那個造型的品味所在，重新猜一遍毫無意義。但矩形的「大小」這裡
-     自己量，因為 measureShapes 回傳的 half 已經折進了 `norm`——那是
-     「真實輪廓相對於平方和支撐橢圓能伸多遠」，量的是螢幕上那個二維構造
-     （0.93 給頭）。搬到三維會答錯方向：橢球比支撐橢圓小，於是 half 再乘
-     0.93 之後，大量頂點落在橢球外面，全部被夾到盒面上——實測 18,128 個
-     被移動的頂點裡有 13,081 個是被夾的，出來是一隻縮了一圈、外殼硬掉的
-     狗。用原始包圍盒就沒有這個問題，而且尺寸自己會對：軸向上橢球半徑
-     等於盒半徑，所以映射在三個軸上是恆等式，只有斜向被推出去。 */
-  _bakeRoundBox() {
-    const d = this.data;
-    const col = d.colors.get(this.skins[0]);
-    const range = groupVertexRanges(d);
-    const boxes = boneBoxes(d, col, range.outline);
-
-    /* 部位表 → 每根骨頭一份 {half, radius}。`ride` 的那幾根（耳朵）記成
-       「不准彎」而不是「沒有矩形」：兩者在這裡的行為一樣，但寫成前者才
-       說得出為什麼——耳朵是三角形，圓掉它就不是那隻動物了。 */
-    const byBone = new Map();
-    const rides = new Set();
-    for (const p of this.model.parts) {
-      const b = this.rig.bone(p.bone);
-      const box = boxes.get(b);
-      if (!box) continue;                // 這根骨頭在 outline 群組裡沒有幾何
-      const sc = typeof p.scale === 'number' ? [p.scale, p.scale, p.scale] : p.scale;
-      byBone.set(b, {
-        center: [0, 1, 2].map((k) => (box.max[k] + box.min[k]) / 2),
-        half: [0, 1, 2].map((k) => Math.max(1e-4, ((box.max[k] - box.min[k]) / 2) * sc[k])),
-        radius: p.radius,
-      });
-    }
-    for (const child of Object.keys(this.model.ride || {})) {
-      try { rides.add(this.rig.bone(child)); } catch { /* 這副骨架沒有這根 */ }
-    }
-
-    const P = this.position;
-    let moved = 0, clamped = 0;
-    for (let v = 0; v < d.header.vertexCount; v++) {
-      const b = col[v * 4 + 3] & 31;
-      const part = byBone.get(b);
-      if (!part || rides.has(b)) continue;
-      if (v >= range.unlit[0] && v < range.unlit[1]) continue;   // 臉不彎
-      const ink = (v >= range.outline[0] && v < range.outline[1]) ? INK_OUT : 0;
-
-      const h = part.half;
-      const cx = part.center[0], cy = part.center[1], cz = part.center[2];
-      /* 先把空間按三個半徑正規化，圓角在「單位立方」上做，做完再縮回去。
-
-         這一步不是為了漂亮，是為了帽簷。圓角比例在 shape.js 的定義是
-         「較短半邊的幾分之幾」，那句話在螢幕上的二維矩形裡沒有問題；
-         三維直接取三軸的最小值就會答錯：帽簷的半徑是 (1.95, 0.19, 1.95)，
-         最小的是厚度 0.19，於是圓角只有 0.095——一片幾乎是直角的方板。
-         正規化之後圓角是「每個軸各佔自己半徑的同一個比例」，帽簷因此在
-         平面上圓成一個盤、在厚度上圓成一個軟邊，正是它該有的樣子。
-         而在三軸差不多長的部位（頭、身體）上，兩種算法幾乎一樣。 */
-      const nx = (P[v * 3] - cx) / h[0];
-      const ny = (P[v * 3 + 1] - cy) / h[1];
-      const nz = (P[v * 3 + 2] - cz) / h[2];
-      const u = Math.hypot(nx, ny, nz);
-      if (u < 1e-6) continue;
-      const dx = nx / u, dy = ny / u, dz = nz / u;
-
-      /* 正規化之後，部位的橢球就是單位球（每個方向半徑都是 1），所以
-         u 本身就是「這個頂點在橢球上的比例」。圓角立方的邊界半徑照方向
-         算一次，映射就是把 u 乘上去。 */
-      const rBox = roundUnitCube(dx, dy, dz, part.radius);
-      // 盒是邊界不是目標：伸出橢球外面的頂點夾在盒上。
-      const want = Math.min(u * rBox, rBox);
-      if (Math.abs(want - u) > 1e-5) moved++;
-      if (u * rBox > rBox) clamped++;
-      let wx = cx + dx * want * h[0];
-      let wy = cy + dy * want * h[1];
-      let wz = cz + dz * want * h[2];
-      /* 墨線那一圈：外殼再沿「世界方向」往外推 INK_OUT。在正規化空間裡
-         加的話，薄的那一軸會被放大成一大塊，所以這一步要在縮回去之後做。 */
-      if (ink) {
-        const ex = dx * h[0], ey = dy * h[1], ez = dz * h[2];
-        const el = Math.hypot(ex, ey, ez) || 1;
-        wx += (ex / el) * ink; wy += (ey / el) * ink; wz += (ez / el) * ink;
-      }
-      P[v * 3] = wx;
-      P[v * 3 + 1] = wy;
-      P[v * 3 + 2] = wz;
-    }
-    return { parts: byBone.size, rides: rides.size, moved, clamped, total: d.header.vertexCount };
   }
 
   /* ── 幾何 ─────────────────────────────────────────────────────
@@ -379,7 +436,7 @@ export class GameDog {
     const nv = d.header.vertexCount;
     const g = new THREE.BufferGeometry();
 
-    g.setAttribute('position', new THREE.Float32BufferAttribute(this.position, 3));
+    g.setAttribute('position', new THREE.Float32BufferAttribute(d.position.slice(), 3));
 
     // 法線是 snorm16 ×4：xyz 是法線，w 是 outerness（尾巴上的位置）。
     const nrm = new Float32Array(nv * 3);
@@ -421,28 +478,62 @@ export class GameDog {
 
   _buildMesh(opts) {
     const boneN = this.rig.count;
+    const S = this.shape;
+    const partN = S.parts.length;
+
+    /* 部位表攤平成 uniform。一個部位三顆：中心＋骨號、三個半徑＋圓角、
+       norm。骨頭兩張表：被哪個部位彎、是不是被帶著走。 */
+    const part = new Float32Array(partN * 4);
+    const partB = new Float32Array(partN * 4);
+    const partNorm = new Float32Array(partN);
+    S.parts.forEach((p, i) => {
+      part[i * 4] = p.center[0];
+      part[i * 4 + 1] = p.center[1];
+      part[i * 4 + 2] = p.center[2];
+      part[i * 4 + 3] = p.bone;
+      partB[i * 4] = p.half[0];
+      partB[i * 4 + 1] = p.half[1];
+      partB[i * 4 + 2] = p.half[2];
+      partB[i * 4 + 3] = p.radius;
+      partNorm[i] = p.norm;
+    });
+
+    this._inkOut = { value: 0 };            // 墨線那一趟才不是 0，見 setInkPx
+    this._bendU = { value: 1 };
     this._uniforms = {
       uBones: { value: this.rig.matrices },
       uSwayQ: { value: this.sway.qs },
       uSwayBend: { value: this.sway.bend },
+      uPart: { value: part },
+      uPartB: { value: partB },
+      uPartNorm: { value: partNorm },
+      uBonePart: { value: Int32Array.from(S.byBone) },
+      uBoneRide: { value: Int32Array.from(S.rides) },
+      uBend: this._bendU,
     };
+    const zero = { value: 0 };
 
     /* 皮毛：three 的三階調材質，梯度圖是 palette.js 那一張——石頭用的
        同一張。狗和牆因此是同一盞燈照的，那是這一頁最要緊的一致性。 */
     const fur = rig3(new THREE.MeshToonMaterial({
       vertexColors: true, gradientMap: ramp(),
-    }), this._uniforms, boneN, 0);
+    }), this._uniforms, { boneN, partN, grow: 0, warp: true, inkOut: zero });
     /* 臉：cat.bin 的 `unlit` 群組——眼睛、鼻子、嘴。它在遊戲裡就是不吃
        光的，所以這裡是 Basic 而不是 Toon。 */
     const face = rig3(new THREE.MeshBasicMaterial({
       vertexColors: true,
-    }), this._uniforms, boneN, 0);
+      /* 臉不變形，而它周圍的臉皮會被拉出去——所以臉要贏得了深度測試，
+         不然眼睛會被自己的臉頰蓋掉。遊戲是把整個 unlit 群組往鏡頭方向
+         拉 FACE_LIFT；這裡有真的深度緩衝，polygonOffset 就是為這件事
+         存在的工具，而且不必動到頂點。 */
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    }), this._uniforms, { boneN, partN, grow: 0, warp: false, inkOut: zero });
     /* 墨線：翻面外殼。cat.bin 的 `outline` 群組佔 44% 的三角形，就是為
        這個存在的——正面剔除之後剩下背面，被身體擋住，只在輪廓外露出一圈。
        three 這邊 side: BackSide 就是「剔除正面」。 */
     const ink = rig3(new THREE.MeshBasicMaterial({
       color: INK, side: THREE.BackSide,
-    }), this._uniforms, boneN, INK_GROW);
+    }), this._uniforms, { boneN, partN, grow: INK_GROW, warp: true, inkOut: this._inkOut });
 
     this.mesh = new THREE.Mesh(this.geometry, [fur, face, ink]);
     // 骨頭在著色器裡才動，three 算不出正確的邊界球，所以別讓它裁掉。
@@ -473,8 +564,7 @@ export class GameDog {
     const min = [1e30, 1e30, 1e30], max = [-1e30, -1e30, -1e30];
     for (let v = 0; v < d.header.vertexCount; v++) {
       const o = (anySkin[v * 4 + 3] & 31) * 16;
-      const P = this.position;
-      const x = P[v * 3], y = P[v * 3 + 1], z = P[v * 3 + 2];
+      const x = d.position[v * 3], y = d.position[v * 3 + 1], z = d.position[v * 3 + 2];
       const w = [
         M[o] * x + M[o + 4] * y + M[o + 8] * z + M[o + 12],
         M[o + 1] * x + M[o + 5] * y + M[o + 9] * z + M[o + 13],
@@ -511,21 +601,30 @@ export class GameDog {
   }
 
   /**
-   * 圓角方形開或關。關掉就是 cat.bin 原本的曲面網格（等於遊戲
-   * `CatLayer` 的 `mesh` 樣式），開著是烘過的圓角盒。
+   * 二次變形開或關。關掉就是 cat.bin 原本的曲面網格（等於遊戲
+   * `CatLayer` 的 `mesh` 樣式），開著是圓角矩形的輪廓。
    *
-   * 換的是同一個 attribute 的內容，不是重建幾何——所以切換不會有一幀
-   * 空白，也不會重新配置 GPU 記憶體。
+   * 切的是一顆 uniform，所以是同一幀立即生效、沒有任何重建——這一鍵
+   * 存在是為了用眼睛比對，而比對只有在同一個姿勢、同一個角度下才算。
    */
   setBend(on) {
-    if (!!on === this._bend) return;
     this._bend = !!on;
-    const attr = this.geometry.attributes.position;
-    attr.array.set(this._bend ? this.position : this.rawPosition);
-    attr.needsUpdate = true;
+    this._bendU.value = this._bend ? 1 : 0;
   }
 
   get bendOn() { return this._bend; }
+
+  /**
+   * 墨線在畫面上多寬。
+   *
+   * 要知道視窗多高才算得出來：變形是在「y 正規化的螢幕座標」裡做的，
+   * 那個空間的 y 從 −1 到 +1 橫跨整個畫面高，所以一個像素是 2/height。
+   * main.js 在每次 resize 時叫一次。
+   */
+  setInkPx(px, viewportHeight) {
+    this._inkPx = px;
+    this._inkOut.value = (2 * px) / Math.max(1, viewportHeight);
+  }
 
   /** 戴不戴帽子。脫帽＝把帽子那幾根骨頭縮到零。 */
   setHat(on) { this._hat = !!on; }
@@ -615,69 +714,4 @@ function authored(rig, state) {
   };
   if (state === 'air') set(-0.85, 0.62, 0.26, -0.22, -0.14, TAIL_LIFT - 0.30);
   else set(-0.34, -0.30, 0.34, 0.14, 0.02, TAIL_LIFT + 0.42);
-}
-
-/* ── 圓角立方的邊界 ─────────────────────────────────────────────
-   半徑 1 的立方，角上圓掉 r（r = 0.5 是一顆球，r = 0 是一個方塊）。
-   從中心沿方向 d 射出去，邊界在 sdf(t·d) = 0 的地方；sdf 沿著射線單調
-   遞增，所以二分法就夠，而且是精確的——這是載入時做一次的事，不必為它
-   找封閉解。呼叫的人已經把空間正規化過，所以這裡沒有半徑，只有比例。 */
-function roundUnitCube(dx, dy, dz, radiusFrac) {
-  const r = Math.min(0.999, Math.max(0, radiusFrac));
-  const b = 1 - r;
-  const sd = (t) => {
-    const qx = Math.abs(dx * t) - b;
-    const qy = Math.abs(dy * t) - b;
-    const qz = Math.abs(dz * t) - b;
-    const mx = Math.max(qx, 0), my = Math.max(qy, 0), mz = Math.max(qz, 0);
-    return Math.hypot(mx, my, mz) + Math.min(Math.max(qx, qy, qz), 0) - r;
-  };
-  let lo = 0, hi = 2;
-  for (let i = 0; i < 24; i++) {
-    const mid = (lo + hi) / 2;
-    if (sd(mid) < 0) lo = mid; else hi = mid;
-  }
-  return (lo + hi) / 2;
-}
-
-/* 三個群組各自的頂點範圍。build.js 的 flatten 是照 lit、unlit、outline
-   的順序鋪的，所以每一群的頂點是一段連續的區間——但那是「保證」而不是
-   「假設」，所以這裡照索引量一遍，量完順手檢查它們真的不重疊。 */
-function groupVertexRanges(data) {
-  const out = {};
-  for (const g of data.header.groups) {
-    let lo = Infinity, hi = -1;
-    for (let i = g.start; i < g.start + g.count; i++) {
-      const v = data.index[i];
-      if (v < lo) lo = v;
-      if (v > hi) hi = v;
-    }
-    out[g.name] = [lo, hi + 1];
-  }
-  const order = ['lit', 'unlit', 'outline'];
-  for (let i = 1; i < order.length; i++) {
-    const a = out[order[i - 1]], b = out[order[i]];
-    if (!a || !b || a[1] > b[0]) {
-      throw new Error(`gamedog: ${order[i - 1]} 與 ${order[i]} 的頂點範圍重疊了`);
-    }
-  }
-  return out;
-}
-
-/* 每根骨頭在某個群組裡的包圍盒，量在骨頭自己的局部空間。
-   用 `outline` 群組量，跟 shape.js 一樣：外殼是整個部位的最外圈，
-   所以它的盒就是這個部位「有多大」。 */
-function boneBoxes(data, col, vertexRange) {
-  const boxes = new Map();
-  for (let v = vertexRange[0]; v < vertexRange[1]; v++) {
-    const b = col[v * 4 + 3] & 31;
-    let a = boxes.get(b);
-    if (!a) { a = { min: [1e30, 1e30, 1e30], max: [-1e30, -1e30, -1e30] }; boxes.set(b, a); }
-    for (let k = 0; k < 3; k++) {
-      const p = data.position[v * 3 + k];
-      if (p < a.min[k]) a.min[k] = p;
-      if (p > a.max[k]) a.max[k] = p;
-    }
-  }
-  return boxes;
 }

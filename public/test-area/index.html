@@ -16,9 +16,11 @@
 
   但狗不是重畫的，是遊戲那隻本人：assets/cat.bin 經過遊戲自己的
   src/cat/dog.js（立耳）、src/cat/wear.js（漁夫帽）與 yellow 毛色，
-  23 根骨頭的剛體骨架與 src/cat/pose.js 的對角步、彈簧尾巴照原樣跑。
-  沒跟過來的只有那支渲染器裡「屬於 2D 的東西」——螢幕空間的圓角矩形
-  彎折、正交側視相機、depthRange 分段遮擋。見 src/gamedog.js 的說明。
+  23 根骨頭的剛體骨架與 src/cat/pose.js 的對角步、彈簧尾巴照原樣跑，
+  連 src/cat/shape.js 的圓角方形都跟過來了——那是每幀在頂點著色器裡
+  做的二次變形，部位的矩形由它自己的 measureShapes 量。B 鍵可以關掉它
+  跟原始的曲面網格對照。沒跟過來的是那台正交側視相機與 depthRange 的
+  分段遮擋，理由見 src/gamedog.js 的說明。
 
   這頁能做的事只有兩件，刻意的：
     · 移動——走、跑、跳、上下樓梯。沒有計分、沒有敵人、沒有連線。

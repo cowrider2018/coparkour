@@ -10,7 +10,8 @@
      天空      1
      火焰      每盆 1（十幾盆）
      狗        3（皮毛、臉、翻面的墨線外殼）——遊戲那隻本人，
-               25,723 個頂點、69,300 個三角形，一份幾何三個 draw range
+               25,723 個頂點、69,300 個三角形，一份幾何三個 draw range。
+               圓角方形是每幀在頂點著色器裡做的二次變形，見 gamedog.js
    靜態的東西之所以是兩個 draw，是因為它們真的不會動；會動的東西才各自
    一份。這個分界就是 blocks.js 為什麼不把火焰砌進緩衝區的原因。
 
@@ -137,7 +138,7 @@ addEventListener('keydown', (e) => {
   if (k === 'v') setInspect(!inspect);
   if (k === 'b') {
     dog.setBend(!dog.bendOn);
-    hud.flash(dog.bendOn ? '圓角方形：開' : '圓角方形：關（原始曲面網格）');
+    hud.flash(dog.bendOn ? '圓角方形：開（二次變形）' : '圓角方形：關（原始曲面網格）');
   }
   if (k === 'r') goto(player.block);
   if (k >= '1' && k <= '4') goto(BLOCKS[+k - 1].id);
@@ -280,7 +281,7 @@ document.getElementById('btn-hat').onclick = () => { dog.setHat(!dog.hatOn); hud
 document.getElementById('btn-look').onclick = () => setInspect(!inspect);
 document.getElementById('btn-bend').onclick = () => {
   dog.setBend(!dog.bendOn);
-  hud.flash(dog.bendOn ? '圓角方形：開' : '圓角方形：關（原始曲面網格）');
+  hud.flash(dog.bendOn ? '圓角方形：開（二次變形）' : '圓角方形：關（原始曲面網格）');
 };
 
 /* ── 主迴圈 ──────────────────────────────────────────────────── */
@@ -408,6 +409,10 @@ function resize() {
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+  /* 墨線的寬度是「畫面上幾個像素」，所以它得知道畫面多高。二次變形是
+     在 y 正規化的螢幕座標裡做的（見 gamedog.js），那個空間橫跨畫面高
+     是 2，所以一個像素是 2/height。 */
+  dog.setInkPx(2.0, h * renderer.getPixelRatio());
 }
 addEventListener('resize', resize);
 resize();

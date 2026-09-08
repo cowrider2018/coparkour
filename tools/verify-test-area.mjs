@@ -10,10 +10,12 @@
                      src/walk.js 那一份物理，不是另寫一份。城牆平台這一
                      項尤其重要：它要爬兩折樓梯穿過一道牆的缺口，而那條
                      路上任何一個看不見的盒子都會讓狗卡住。
-     3. 圓角方形烘對了  該動的動、不該動的沒動、尺寸沒變、輪廓真的變方。
-                     這一項是眼睛最不可靠的地方：形狀「差一點」跟「對」
-                     在截圖上很像，但「耳朵被圓掉」或「整隻縮了 7%」是
-                     量得出來的。
+     3. 二次變形接上了  部位表量到了、uniform 攤平的順序沒錯、變形那一段
+                     真的插進了皮毛與墨線的著色器而沒有插進臉、耳朵被
+                     標成「不彎」、墨線的寬度換算對。node 沒有 WebGL 可以
+                     編譯，但這些全都查得出來，而它們就是這一段會壞的
+                     地方——字串比對失敗不會報錯，只會靜靜地畫出一隻沒有
+                     圓角的狗。
      4. 那隻狗是遊戲那隻  cat.bin 讀得動、buildDog 與 dress 套得上、
                      23+ 根骨頭每幀算得出有限的矩陣、三種毛色換得動、
                      腳踩在 y = 0 上。這一頁不重畫那隻狗，所以要驗的是
@@ -292,119 +294,72 @@ head('狗（遊戲那隻本人）');
   ok(dog.mesh.material[0].customProgramCacheKey() !== dog.mesh.material[2].customProgramCacheKey(),
     '不同 grow 的材質不會共用同一支編好的程式');
 
-  /* ── 圓角方形 ─────────────────────────────────────────────────
-     烘焙有四件事要成立，而每一件都對應一個真的會發生的錯誤：
-
-       動了      有頂點被移動，不然這整段就是沒接上（而畫面上會是那隻
-                 原本的曲面狗，很像、但不是那個造型）。
-       沒動錯    耳朵（ride）與臉（unlit 群組）一個位元組都不准變。
-       沒縮      每個部位在三個軸上的最大伸展不准變——軸向上橢球半徑
-                 等於盒半徑，所以映射在軸上是恆等式。這一項就是當初
-                 誤用 measureShapes 的 `norm` 時整隻狗縮一圈的那個 bug。
-       變方了    斜向必須被推出去：頭在 (1,1,1) 方向上的伸展要明顯超過
-                 原本的橢球，不然它還是圓的。 */
+  /* ── 二次變形 ─────────────────────────────────────────────────
+     這一段沒有 GPU 可以驗「畫出來對不對」，所以驗的是「接上了沒有」。
+     每一項都對應一個真的會發生、而且不會報錯的故障。 */
   {
-    const raw = dog.rawPosition, baked = dog.position;
-    ok(dog.bakeStats.moved > 5000, '圓角把大量頂點移動了',
-      `${dog.bakeStats.moved.toLocaleString()} / ${dog.bakeStats.total.toLocaleString()} 個`);
-    ok(dog.bakeStats.parts >= 9, '部位表全部量到了（身體、頭、六條腿、吻…）',
-      `${dog.bakeStats.parts} 個部位、${dog.bakeStats.rides} 根騎乘骨`);
+    const S = dog.shape;
+    ok(S.parts.length >= 9, '部位表量到了（身體、頭、六條腿、吻，加帽子兩片）',
+      `${S.parts.length} 個部位`);
+    ok(S.parts.every((p) => p.half.every((h) => h > 0)), '每個部位的三個半徑都是正的');
 
-    const col = dog.data.colors.get('yellow');
-    const ranges = {};
-    for (const g of dog.data.header.groups) {
-      let lo = Infinity, hi = -1;
-      for (let i = g.start; i < g.start + g.count; i++) {
-        const v = dog.data.index[i];
-        if (v < lo) lo = v;
-        if (v > hi) hi = v;
-      }
-      ranges[g.name] = [lo, hi + 1];
-    }
-
-    const bone = (v) => col[v * 4 + 3] & 31;
+    // 耳朵：有部位（被頭帶著），但標成不彎。圓掉的耳朵就不是那隻狗了。
     const earL = dog.rig.bone('earL'), earR = dog.rig.bone('earR');
-    let earMoved = 0, faceMoved = 0;
-    for (let v = 0; v < dog.data.header.vertexCount; v++) {
-      const moved = Math.abs(raw[v * 3] - baked[v * 3]) > 1e-9
-        || Math.abs(raw[v * 3 + 1] - baked[v * 3 + 1]) > 1e-9
-        || Math.abs(raw[v * 3 + 2] - baked[v * 3 + 2]) > 1e-9;
-      if (!moved) continue;
-      if (bone(v) === earL || bone(v) === earR) earMoved++;
-      if (v >= ranges.unlit[0] && v < ranges.unlit[1]) faceMoved++;
-    }
-    ok(earMoved === 0, '兩隻立耳一個頂點都沒動（三角形圓掉就不是那隻狗了）', `${earMoved}`);
-    ok(faceMoved === 0, '臉（unlit 群組：眼、鼻、嘴）一個頂點都沒動', `${faceMoved}`);
+    ok(S.rides[earL] === 1 && S.rides[earR] === 1, '兩隻立耳被標成「不彎，只跟著頭走」');
+    ok(S.byBone[earL] >= 0, '耳朵知道自己掛在哪個部位上');
+    // 尾巴：沒有矩形。shape.js 說一根管子不需要。
+    ok(S.byBone[dog.rig.bone('tail')] === -1, '尾巴沒有矩形（它是一根管子）');
 
-    /* 每個部位、每個軸的最大伸展，烘之前與烘之後。只看 lit 群組——
-       outline 群組會多出墨線那一圈，本來就該變。 */
-    const spanOf = (P, want) => {
-      const out = new Map();
-      for (let v = ranges.lit[0]; v < ranges.lit[1]; v++) {
-        const b = bone(v);
-        if (want && !want.has(b)) continue;
-        let a = out.get(b);
-        if (!a) { a = [0, 0, 0]; out.set(b, a); }
-        for (let k = 0; k < 3; k++) a[k] = Math.max(a[k], Math.abs(P[v * 3 + k]));
-      }
-      return out;
-    };
-    const partBones = new Set(dog.model.parts.map((p) => dog.rig.bone(p.bone)).filter((b) => b !== earL && b !== earR));
-    const before = spanOf(raw, partBones), after = spanOf(baked, partBones);
-    /* 縮與胖分開看，因為它們是兩件事。
-
-       縮是 bug：軸向上橢球半徑等於盒半徑，映射在軸上是恆等式，所以任何
-       部位在任何軸上變短都表示尺寸的基準抓錯了（誤用 measureShapes 的
-       `norm` 就是這樣，整隻縮 7%）。
-
-       胖是那個造型本身：最遠的那個頂點通常不是正好落在軸上，而稍微偏離
-       軸的方向在圓角盒上的邊界大於 1，所以它會被往外推。小部位（腳掌
-       半徑 0.15）偏一點就佔比例的一大塊，實測最多 6%——那是圓角，不是
-       錯誤。真正該擋的是「胖到不成比例」。 */
-    /* 唯一「該縮」的是部位表自己說要縮的那個軸：頭的 scale 是
-       [1, 0.86, 1]，因為圓角矩形的頂是一條線而不是一個點，不壓低它就會
-       升起來吃掉耳朵。所以容許的縮量就是表上寫的那個數，其他軸是 2%。 */
-    const scaleOf = new Map();
-    for (const p of dog.model.parts) {
-      const sc = typeof p.scale === 'number' ? [p.scale, p.scale, p.scale] : p.scale;
-      scaleOf.set(dog.rig.bone(p.bone), sc);
-    }
-    let shrink = 0, shrinkName = '', grow = 0, growName = '';
-    for (const [b, a] of after) {
-      const bf = before.get(b);
-      const sc = scaleOf.get(b) || [1, 1, 1];
+    /* uniform 攤平的順序。這裡錯的話不會有任何錯誤訊息，只會有一隻
+       部位對錯了矩形的狗——頭拿到腿的框、腿拿到帽子的框。 */
+    const U = dog._uniforms;
+    ok(U.uPart.value.length === S.parts.length * 4, 'uPart 的長度對得上部位數');
+    let boneOk = true, halfOk = true;
+    S.parts.forEach((p, i) => {
+      if (U.uPart.value[i * 4 + 3] !== p.bone) boneOk = false;
       for (let k = 0; k < 3; k++) {
-        if (bf[k] < 0.05) continue;                 // 太薄的軸，比例會放大雜訊
-        const d = (a[k] - bf[k]) / bf[k];
-        const allow = 1 - sc[k];                    // 表上允許的縮量
-        if (-d - allow > shrink) { shrink = -d - allow; shrinkName = `${dog.rig.names[b]}.${'xyz'[k]}`; }
-        if (d > grow) { grow = d; growName = `${dog.rig.names[b]}.${'xyz'[k]}`; }
+        if (Math.abs(U.uPartB.value[i * 4 + k] - p.half[k]) > 1e-6) halfOk = false;
+      }
+      if (Math.abs(U.uPartB.value[i * 4 + 3] - p.radius) > 1e-6) halfOk = false;
+    });
+    ok(boneOk, '每個部位的 uniform 記著正確的骨號');
+    ok(halfOk, '三個半徑與圓角比例都照 measureShapes 攤平了');
+    ok(U.uBonePart.value.length === dog.rig.count && U.uBoneRide.value.length === dog.rig.count,
+      '兩張骨頭表的長度是骨頭數', `${dog.rig.count}`);
+
+    // 墨線的寬度：像素 → y 正規化螢幕單位。一個像素是 2/height。
+    dog.setInkPx(2, 900);
+    ok(Math.abs(dog._inkOut.value - 2 * 2 / 900) < 1e-9, '墨線寬度從像素換算成螢幕單位',
+      `2 px / 900 px 高 → ${dog._inkOut.value.toFixed(5)}`);
+
+    // B 鍵：切的是 uniform，所以是同一幀生效。
+    dog.setBend(false);
+    ok(dog._bendU.value === 0 && dog.bendOn === false, 'B 鍵關得掉變形');
+    dog.setBend(true);
+    ok(dog._bendU.value === 1 && dog.bendOn === true, '也開得回來');
+
+    /* 變形那一段插進了誰的著色器。臉不能插——眼睛、鼻子、嘴巴被拉出去
+       就是一張糊掉的臉，而那正是 shape.js 用一整段注解說明的結論。 */
+    for (const [i, name, wantWarp] of [[0, '皮毛', true], [1, '臉', false], [2, '墨線', true]]) {
+      const src = i === 0 ? THREE.ShaderLib.toon : THREE.ShaderLib.basic;
+      const shader = { uniforms: {}, vertexShader: src.vertexShader, fragmentShader: src.fragmentShader };
+      dog.mesh.material[i].onBeforeCompile(shader, null);
+      const calls = (shader.vertexShader.match(/gl_Position = cpWarp\(/g) || []).length;
+      ok(calls === (wantWarp ? 1 : 0), `${name}：${wantWarp ? '有' : '沒有'}做二次變形`, `${calls} 處`);
+      if (wantWarp) {
+        ok(shader.vertexShader.includes('uniform vec4 uPart['), `${name}：部位的 uniform 宣告在`);
+        ok(shader.vertexShader.includes('float cpRR('), `${name}：圓角矩形的求交式在`);
+        ok(!!shader.uniforms.uPart && !!shader.uniforms.uBonePart && !!shader.uniforms.uBend,
+          `${name}：部位表掛上了`);
       }
     }
-    ok(shrink < 0.02, '沒有任何部位縮得比部位表要求的更多',
-      `最多超縮 ${(shrink * 100).toFixed(1)}%${shrinkName ? ` 在 ${shrinkName}` : ''}`);
-    ok(grow < 0.12, '也沒有胖到不成比例',
-      `最多胖 ${(grow * 100).toFixed(1)}% 在 ${growName}`);
-
-    // 斜向：頭在 (1,1,1) 方向上必須被推出去，那就是「變方」。
-    const head = dog.rig.bone('head');
-    const diag = (P) => {
-      let m = 0;
-      for (let v = ranges.lit[0]; v < ranges.lit[1]; v++) {
-        if (bone(v) !== head) continue;
-        const d = (P[v * 3] + P[v * 3 + 1] + P[v * 3 + 2]) / Math.sqrt(3);
-        if (d > m) m = d;
-      }
-      return m;
-    };
-    const grew = diag(baked) / diag(raw);
-    ok(grew > 1.03, '頭在斜向被推出去了（圓角矩形的角）', `${((grew - 1) * 100).toFixed(1)}% 更遠`);
-
-    // B 鍵：切回原始網格，再切回來。
-    dog.setBend(false);
-    ok(dog.geometry.attributes.position.array[7] === raw[7], 'B 鍵切得回原始曲面網格');
-    dog.setBend(true);
-    ok(dog.geometry.attributes.position.array[7] === baked[7], '再按一次切回圓角');
+    // 墨線那一趟要落在矩形外面，皮毛那一趟不能。
+    const inkShader = { uniforms: {}, vertexShader: THREE.ShaderLib.basic.vertexShader, fragmentShader: '' };
+    dog.mesh.material[2].onBeforeCompile(inkShader, null);
+    const furShader = { uniforms: {}, vertexShader: THREE.ShaderLib.toon.vertexShader, fragmentShader: '' };
+    dog.mesh.material[0].onBeforeCompile(furShader, null);
+    ok(inkShader.uniforms.uInkOut.value > 0 && furShader.uniforms.uInkOut.value === 0,
+      '墨線落在矩形外一圈，皮毛落在矩形上');
   }
 
   // 尾巴真的在動：彈簧的四元數不能整場都是單位四元數。
