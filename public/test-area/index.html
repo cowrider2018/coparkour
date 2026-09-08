@@ -2,156 +2,316 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>試玩場：城堡遺跡</title>
 <meta name="theme-color" content="#1e1810" />
 <meta name="robots" content="noindex" />
 <!--
-  試玩場：四個城堡遺跡關卡區塊，一隻戴帽子的黃立耳狗，走上去看看。
+  試玩場：四個城堡遺跡關卡區塊，遊戲的那幾隻動物，走上去看看。
 
-  這一頁是獨立的計畫，不是遊戲的一部分：關卡是它自己的一套幾何與材質，
-  用 three.js（vendor/ 底下那一份，跟著 Workers Static Assets 一起送出去，
-  不打 CDN）。三階調著色的做法抄自 src/cat/cat.js，墨線的顏色是同一個
-  43,35,32。
+  ── 版面就是遊戲的手把模式 ──────────────────────────────────────
+  橫向時兩側各一根直欄：上半段是面板（左邊選生物、右邊選地形），下半段是
+  操作元件（左搖桿、右跳躍），中間那一整片永遠留給遊戲。直向時改成上下
+  兩條橫帶。底板、髮絲線、面板卡片、幾何值全部照搬 styles.css 與 pad.js
+  ——rail / barT / barB / ctrl 由 src/pad.js 算、main.js 寫進 CSS 變數，
+  所以 DOM 的面板跟畫布上的搖桿永遠對齊在同一條列裡。
 
-  但狗不是重畫的，是遊戲那隻本人：assets/cat.bin 經過遊戲自己的
-  src/cat/dog.js（立耳）、src/cat/wear.js（漁夫帽）與 yellow 毛色，
+  ── 這一頁是獨立的計畫，不是遊戲的一部分 ────────────────────────
+  關卡是它自己的一套幾何與材質，用 three.js（vendor/ 底下那一份，跟著
+  Workers Static Assets 一起送出去，不打 CDN）。三階調著色的做法抄自
+  src/cat/cat.js，墨線的顏色是同一個 43,35,32。
+
+  但動物不是重畫的，是遊戲那幾隻本人：assets/cat.bin 經過遊戲自己的
+  src/cat/species.js（貓、立耳犬、垂耳犬）與 src/cat/wear.js（漁夫帽），
   23 根骨頭的剛體骨架與 src/cat/pose.js 的對角步、彈簧尾巴照原樣跑，
-  連 src/cat/shape.js 的圓角方形都跟過來了——那是每幀在頂點著色器裡
-  做的二次變形，部位的矩形由它自己的 measureShapes 量。B 鍵可以關掉它
-  跟原始的曲面網格對照。沒跟過來的是那台正交側視相機與 depthRange 的
-  分段遮擋，理由見 src/gamedog.js 的說明。
+  連 src/cat/shape.js 的圓角方形都跟過來了——那是每幀在頂點著色器裡做的
+  二次變形，部位的矩形由它自己的 measureShapes 量。沒跟過來的是那台正交
+  側視相機與 depthRange 的分段遮擋，理由見 src/critter.js。
 
-  這頁能做的事只有兩件，刻意的：
-    · 移動——走、跑、跳、上下樓梯。沒有計分、沒有敵人、沒有連線。
-    · 觀賞——把相機收到狗身上，換毛色、脫帽戴帽，繞著看。
+  操作元件也是遊戲那一套：src/pad.js 是 public/src/pad.js 的搬移，
+  水的配方（blobPath／fillLiquid／waveAt／tint）與彈簧常數都是原文，
+  唯一的差別是軌道從膠囊變成圓的——這一頁是 3D，要八個方向。
 
-  形狀語言是 Dota／黑魂那一路的厚重石造：倒角石塊、尖拱、分段收分的
-  扶壁、垛口、兜帽雕像。顏色則整套是本專案的卡通調色盤，所以它看起來
-  不是那些遊戲，是這個遊戲蓋的城堡。
+  想細看動物就把鏡頭拉近再繞著轉：中間那片畫面拖曳＝轉視角、滾輪或
+  雙指＝縮放。沒有另外的觀賞模式。
 
-  為什麼放在 public/test-area/ 而不是 tools/：它需要 WebGL2 和一份
-  three.js，所以得跟前端一起被送出去。網址：/test-area/
+  網址：/test-area/
 -->
 <style>
   :root {
+    /* 安全區：JS 也要讀這幾個值來擺手把，所以先接成自訂屬性 */
+    --sa-t: env(safe-area-inset-top, 0px);
+    --sa-r: env(safe-area-inset-right, 0px);
+    --sa-b: env(safe-area-inset-bottom, 0px);
+    --sa-l: env(safe-area-inset-left, 0px);
+
+    /* 操作列幾何：pad.js 算好、main.js 寫進來，DOM 和畫布共用同一份 */
+    --rail: 0px;
+    --barT: 0px;
+    --barB: 0px;
+    --ctrl: 0px;
+
+    --ease-out: cubic-bezier(.16, 1, .3, 1);
+
     --bg: #1e1810;
     --ink: #f7efdd;
     --muted: #b5a184;
-    --card: rgba(43, 34, 24, 0.86);
-    --edge: #4a3b29;
-    --line-strong: #6b563c;
     --accent: #9bd94e;
-    --accent2: #e8862f;
-    --on-ink: #1e1810;
+    --accent2: #f2c14e;
+    --panel: rgba(38, 29, 19, 0.74);
+    --line: rgba(226, 196, 142, 0.20);
+    --line-strong: #7d684c;
+    --card: #2b2218;
+    --btn: #3a2f21;
+    --field: #191309;
   }
   * { box-sizing: border-box; }
   html, body {
     margin: 0; height: 100%; overflow: hidden;
     background: var(--bg); color: var(--ink);
-    font: 13px/1.5 system-ui, "Noto Sans TC", sans-serif;
+    font: 12px/1.45 system-ui, "Noto Sans TC", sans-serif;
     -webkit-user-select: none; user-select: none;
     -webkit-tap-highlight-color: transparent;
   }
-  #view { position: fixed; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; }
+  canvas { position: fixed; inset: 0; display: block; width: 100%; height: 100%; }
+  /* GL 在最底，操作層疊在它上面但不吃事件（指標由 main.js 路由，
+     因為同一次拖曳要嘛是搖桿要嘛是鏡頭），面板在最上面。 */
+  #view { z-index: 0; touch-action: none; }
+  #pad { z-index: 2; pointer-events: none; }
 
-  /* HUD 一律靠邊、半透明、不吃滑鼠事件——中間那片畫面是要拖的。 */
-  .hud { position: fixed; z-index: 2; pointer-events: none; }
+  /* ── 操作列 ──────────────────────────────────────────────
+     底板是一整塊單色，內緣用一條同色髮絲線切。邊界是硬的：操作列就是
+     一塊色塊，中間那片才是遊戲。底下襯模糊，不然地形的亮邊會從色塊底下
+     透上來把儀器攪亂。這一段是 styles.css 的原文。 */
+  .rail {
+    position: fixed;
+    z-index: 1;
+    pointer-events: none;
+  }
+  .rail::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(24, 18, 11, .86);
+    backdrop-filter: blur(10px) saturate(.82);
+    -webkit-backdrop-filter: blur(10px) saturate(.82);
+  }
+  .rail::after {
+    content: "";
+    position: absolute;
+    background: rgba(226, 196, 142, .22);
+  }
+
+  body.pad-land .rail { top: 0; bottom: 0; }
+  body.pad-land .rail::after { top: 7%; bottom: 7%; width: 1px; }
+  body.pad-land #railA { left: 0; width: calc(var(--rail) + var(--sa-l)); }
+  body.pad-land #railB { right: 0; width: calc(var(--rail) + var(--sa-r)); }
+  body.pad-land #railA::after { right: 0; }
+  body.pad-land #railB::after { left: 0; }
+
+  body.pad-port .rail { left: 0; right: 0; }
+  body.pad-port .rail::after { left: 7%; right: 7%; height: 1px; }
+  body.pad-port #railA { top: 0; height: calc(var(--barT) + var(--sa-t)); }
+  body.pad-port #railB { bottom: 0; height: calc(var(--barB) + var(--sa-b)); }
+  body.pad-port #railA::after { bottom: 0; }
+  body.pad-port #railB::after { top: 0; }
+
+  /* ── 面板：收在操作列的上半段 ───────────────────────────── */
   .panel {
-    background: var(--card);
-    border: 1px solid var(--edge);
-    border-radius: 10px;
-    padding: 10px 12px;
-    backdrop-filter: blur(3px);
+    position: fixed;
+    z-index: 3;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 7px;
+    backdrop-filter: blur(10px);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    overflow: hidden;
+  }
+  .panel h2 {
+    margin: 0;
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.16em; color: var(--muted);
+    display: flex; flex-wrap: wrap; gap: 0 5px; align-items: baseline;
+  }
+  /* 窄欄的色票沒有字，所以「現在選的是哪一件」寫在標題這一行。 */
+  .panel h2 #look-name {
+    letter-spacing: 0.02em; color: var(--ink); font-weight: 400;
   }
 
-  #where { top: 12px; left: 12px; max-width: min(48vw, 320px); }
-  #where strong { display: block; font-size: 16px; letter-spacing: 0.04em; }
-  #where span { color: var(--muted); font-size: 12px; }
-
-  #stats {
-    top: 12px; right: 12px;
-    color: var(--muted); font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-    text-align: right;
+  body.pad-land .panel {
+    top: calc(var(--sa-t) + 8px);
+    width: calc(var(--rail) - 16px);
+    max-height: calc(var(--ctrl) - var(--sa-t) - 16px);
   }
+  /* 標題、帽子、地形的提示都固定；會捲的只有表格與統計。 */
+  .panel h2, #hat-row, #terrain, #terrain-hint, #keys, #stats { flex: 0 0 auto; }
+  #looks { flex: 1 1 auto; }
+  body.pad-land #creatures { left: calc(var(--sa-l) + 8px); }
+  body.pad-land #terrains { right: calc(var(--sa-r) + 8px); }
 
-  #keys { bottom: 12px; left: 12px; color: var(--muted); }
-  #keys b {
-    display: inline-block; min-width: 1.4em; text-align: center;
-    color: var(--ink); background: #3a2e20; border: 1px solid var(--line-strong);
-    border-radius: 4px; padding: 0 4px; margin-right: 4px; font-size: 11px;
+  /* 直向：兩塊面板並排擠進上帶 */
+  body.pad-port .panel {
+    top: calc(var(--sa-t) + 6px);
+    max-height: calc(var(--barT) + var(--sa-t) - 12px);
+    width: 46vw;
   }
-  #keys div + div { margin-top: 3px; }
+  body.pad-port #creatures { left: calc(var(--sa-l) + 6px); }
+  body.pad-port #terrains { right: calc(var(--sa-r) + 6px); }
 
-  #bar {
-    bottom: 12px; right: 12px; pointer-events: auto;
-    display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end;
-    max-width: min(60vw, 460px);
+  /* ── 生物那張表 ─────────────────────────────────────────
+     欄寬是算出來的（96–190），所以這張表分三級穿衣服，級數由
+     src/hud.js 的 railTier() 寫在 body[data-rail] 上。
+
+     格子一律是「一個色點」，寬度用 minmax(0, 1fr) 讓它跟著欄寬縮——
+     色票本來就是毛色的身分（遊戲的圖鑑也是這樣認的），名字交給標題
+     那一行與選中時的那一閃。
+
+     表格自己可以捲：矮螢幕（橫放的小手機只有 320 高，--ctrl 會壓到
+     140 上下）不該把面板撐破，也不該把帽子那一行推出去看不見。 */
+  #looks {
+    display: grid;
+    gap: 3px;
+    align-items: center;
+    overflow-y: auto;
+    touch-action: pan-y;
+    min-height: 0;
   }
-  #bar button {
-    pointer-events: auto;
+  #looks .rowname {
+    font-size: 10px; color: var(--muted);
+    padding-right: 3px; text-align: right; white-space: nowrap;
+    line-height: 1;
+  }
+  #looks .rowname b { font-weight: 400; }
+  #looks .rowname .short { display: none; }
+  /* 最窄的那一級：動物名只留一個字（貓／立／垂） */
+  body[data-rail="narrow"] #looks .rowname .full { display: none; }
+  body[data-rail="narrow"] #looks .rowname .short { display: inline; }
+
+  button {
     font: inherit; color: var(--ink);
-    background: var(--card); border: 1px solid var(--edge);
-    border-radius: 8px; padding: 7px 10px; cursor: pointer;
+    background: var(--btn); border: 1px solid var(--line);
+    border-radius: 7px; padding: 4px 6px;
+    cursor: pointer; white-space: nowrap;
   }
-  #bar button:hover { border-color: var(--accent); }
-  #bar button b { color: var(--accent); margin-right: 3px; }
-  #coats { display: flex; gap: 6px; }
-  #coats button::before {
-    content: ""; display: inline-block; width: 10px; height: 10px;
-    border-radius: 50%; background: var(--sw, #888);
-    border: 1px solid #00000055; margin-right: 5px; vertical-align: -1px;
+  button:hover { border-color: var(--line-strong); }
+  button.on { border-color: var(--accent); color: var(--accent); background: #33301c; }
+  button b { color: var(--accent2); font-weight: 600; margin-right: 3px; }
+
+  .chip {
+    display: flex; align-items: center; justify-content: center;
+    gap: 4px; font-size: 10px;
+    padding: 0; min-width: 0;
+    aspect-ratio: 1 / 1;
+    border-radius: 6px;
   }
-  #coats button.on { border-color: var(--accent); color: var(--accent); }
-  .group { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .chip i {
+    width: 10px; height: 10px; border-radius: 50%;
+    border: 1px solid #00000066; flex: 0 0 auto;
+  }
+  /* 名字只有最寬的那一級放得下，其他級只留色點——名字擠進 20 px 的格子
+     只會折行，而折行會把整張表撐成三倍高。 */
+  .chip span { display: none; }
+  body[data-rail="wide"] .chip {
+    aspect-ratio: auto;
+    justify-content: flex-start;
+    padding: 3px 4px;
+  }
+  /* 橫向不放毛色的名字，連最寬的那一級也不放：190 的欄扣掉邊與動物名
+     只剩 40 px 給三格，一格 13 px——名字放進去就是折行，而折行會把整張
+     表撐成三倍高。名字交給標題那一行。
+     直向不一樣：面板橫躺在上帶裡，有半個畫面寬，那裡放得下。 */
+  body.pad-port .chip {
+    aspect-ratio: auto;
+    justify-content: flex-start;
+    padding: 3px 4px;
+  }
+  body.pad-port .chip span { display: inline; }
+  .wide { width: 100%; text-align: left; font-size: 11px; }
+
+  #terrain { display: flex; flex-direction: column; gap: 3px; }
+  #terrain-hint { font-size: 10px; color: var(--muted); line-height: 1.35; }
+  #stats {
+    padding-top: 4px;
+    border-top: 1px solid var(--line);
+    font: 9px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--muted); word-break: break-all;
+  }
+  #keys { font-size: 9px; color: var(--muted); opacity: 0.8; line-height: 1.5; }
+  #keys kbd {
+    color: var(--ink); background: var(--field);
+    border: 1px solid var(--line); border-radius: 3px;
+    padding: 0 3px; margin-right: 1px; font: inherit;
+  }
 
   #toast {
-    left: 50%; top: 18%; transform: translateX(-50%);
-    opacity: 0; transition: opacity 0.25s;
-    font-size: 15px; letter-spacing: 0.06em;
+    position: fixed; z-index: 4; left: 50%; top: 10%;
+    transform: translateX(-50%);
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 6px 12px;
+    font-size: 13px; letter-spacing: 0.05em;
+    opacity: 0; transition: opacity 0.25s var(--ease-out); pointer-events: none;
+    backdrop-filter: blur(10px);
   }
   #toast.on { opacity: 1; }
 
-  body.inspecting #keys { opacity: 0.35; }
-
   #boot {
     position: fixed; inset: 0; z-index: 9;
-    display: grid; place-items: center; gap: 8px;
+    display: grid; place-items: center;
     background: var(--bg); color: var(--muted); text-align: center;
   }
-  #boot b { color: var(--ink); font-size: 15px; }
+  #boot b { color: var(--ink); font-size: 14px; }
 
-  @media (max-width: 640px) {
-    #keys { display: none; }
-    #stats { font-size: 10px; }
-  }
+  /* 字級跟著級數走。這幾條只管字，格子的形狀由上面 data-rail 那幾條
+     管——兩件事分開，才不會出現「這一級的字小了、但格子還是大的」。 */
+  body[data-rail="mid"] .panel,
+  body[data-rail="narrow"] .panel { padding: 5px; border-radius: 10px; gap: 4px; }
+  body[data-rail="mid"] .panel h2,
+  body[data-rail="narrow"] .panel h2 { font-size: 9px; letter-spacing: 0.1em; }
+  body[data-rail="mid"] #looks .rowname,
+  body[data-rail="narrow"] #looks .rowname { font-size: 9px; }
+  body[data-rail="mid"] .chip i,
+  body[data-rail="narrow"] .chip i { width: 9px; height: 9px; }
+  body[data-rail="narrow"] .chip i { width: 8px; height: 8px; }
+  body[data-rail="mid"] .wide,
+  body[data-rail="narrow"] .wide { font-size: 10px; padding: 3px 5px; }
+  body[data-rail="mid"] #terrain-hint,
+  body[data-rail="narrow"] #terrain-hint { font-size: 9px; }
+  body[data-rail="mid"] #stats,
+  body[data-rail="narrow"] #stats { font-size: 8px; }
+  /* 鍵盤提示是給桌機看的，而窄欄基本上就是手機——那裡沒有鍵盤 */
+  body[data-rail="narrow"] #keys { display: none; }
 </style>
 </head>
-<body>
+<body class="pad-land">
 <canvas id="view"></canvas>
+<div class="rail" id="railA"></div>
+<div class="rail" id="railB"></div>
+<canvas id="pad"></canvas>
 
-<div id="boot"><div><b>正在砌城堡…</b><br />四個區塊約三十萬個三角形，外加 cat.bin 那隻狗</div></div>
+<div id="boot"><div><b>正在砌城堡…</b><br />四個區塊約三十萬個三角形，外加 cat.bin 那三隻動物</div></div>
 
-<div class="hud panel" id="where"></div>
-<div class="hud" id="stats"></div>
+<section class="panel" id="creatures">
+  <h2>生物<span id="look-name"></span></h2>
+  <div id="looks"></div>
+  <div id="hat-row"></div>
+</section>
 
-<div class="hud" id="keys">
-  <div><b>W</b><b>A</b><b>S</b><b>D</b> 移動 ・ <b>⇧</b> 衝刺 ・ <b>空白</b> 跳</div>
-  <div><b>拖曳</b> 轉鏡頭 ・ <b>滾輪</b> 遠近 ・ <b>V</b> 觀賞模式</div>
-  <div><b>1</b>–<b>4</b> 換區塊 ・ <b>R</b> 回出生點 ・ <b>H</b> 帽子 ・ <b>C</b> 毛色 ・ <b>B</b> 圓角方形</div>
-</div>
-
-<div class="hud" id="bar">
-  <div class="group" id="blocks"></div>
-  <div class="group">
-    <div id="coats"></div>
-    <button id="btn-hat"><b>H</b>帽子</button>
-    <button id="btn-bend"><b>B</b>圓角</button>
-    <button id="btn-look"><b>V</b>觀賞</button>
+<section class="panel" id="terrains">
+  <h2>地形</h2>
+  <div id="terrain"></div>
+  <div id="terrain-hint"></div>
+  <div id="keys">
+    <kbd>WASD</kbd>移動 <kbd>⇧</kbd>衝刺 <kbd>空白</kbd>跳<br />
+    <kbd>拖曳</kbd>轉視角 <kbd>滾輪</kbd>縮放 <kbd>1</kbd>–<kbd>4</kbd>地形<br />
+    <kbd>R</kbd>回出生點 <kbd>H</kbd>帽子 <kbd>C</kbd>毛色 <kbd>X</kbd>換動物
   </div>
-</div>
+  <div id="stats"></div>
+</section>
 
-<div class="hud panel" id="toast"></div>
+<div id="toast"></div>
 
 <script type="module" src="./src/main.js"></script>
 </body>

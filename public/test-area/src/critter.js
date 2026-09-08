@@ -1,10 +1,14 @@
-/* ── test-area/src/gamedog.js ────────────────────────────────────────
-   遊戲那隻狗，本人，跑在 three.js 裡。
+/* ── test-area/src/critter.js ────────────────────────────────────────
+   遊戲的那幾隻動物，本人，跑在 three.js 裡。
 
-   這一頁一開始是自己捏了一隻造型接近的狗；換掉了。現在載入的是遊戲的
-   `public/assets/cat.bin`，經過遊戲自己的 `buildDog`（立耳）、`dress`
-   （漁夫帽）與 `yellow` 毛色——22,405 個頂點、23 根骨頭的剛體階層、
+   `public/assets/cat.bin` 一份檔，經過遊戲自己的 `species.js`：貓、
+   立耳犬、垂耳犬三種模型，每一種三種毛色，全部戴得上 `wear.js` 的漁夫帽
+   ——就是選單上那張 3×3 的表。22,405 個頂點、23 根骨頭的剛體階層、
    `pose.js` 的對角步與彈簧尾巴，一個位元組都沒有重畫。
+
+   一種模型一個 `Critter`（自己的骨架、自己的姿勢驅動、自己的部位矩形），
+   三個一起住在一個 `Zoo` 裡。切換是換哪一個 mesh 可見——不是重建，因為
+   三隻都要能立刻切回來，而它們合起來也只有幾 MB。
 
    ── 搬過來的是什麼、沒搬的是什麼 ─────────────────────────────────
    搬的是「這隻動物是什麼」：
@@ -55,9 +59,9 @@
    動，跟遊戲一樣——這一段只搬動頂點落在畫面上的哪裡。
 
    ── 為什麼不是在載入時烘進幾何 ───────────────────────────────────
-   試過，而且留在 `test-area-roundbox-bake` 那個 branch 上：把每個部位
-   在骨頭的局部空間映射到一個 3D 圓角盒，一次算完、每幀零成本、繞著看
-   不會變形。但畫出來跟這個造型有明顯落差，原因是幾何上的：
+   試過：把每個部位在骨頭的局部空間映射到一個 3D 圓角盒，一次算完、
+   每幀零成本、繞著看不會變形。但畫出來跟這個造型有明顯落差，原因是
+   幾何上的：
 
      · 3D 圓角盒的輪廓只有從三個軸的方向看才是圓角矩形。從斜的方向看，
        三個軸的圓角一起出現在輪廓上，讀起來是一團圓的東西——而遊戲相機
@@ -83,19 +87,11 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { parseCat, Rig } from '../../src/cat/rig.js';
-import { buildDog } from '../../src/cat/dog.js';
-import { dress } from '../../src/cat/wear.js';
+import { speciesModels } from '../../src/cat/species.js';
 import { Driver, Sway, applyPose, TAIL_AXIS, TAIL_LIFT } from '../../src/cat/pose.js';
-import { DOG_SKINS } from '../../src/cat/looks.js';
+import { MODELS, MODEL_SKINS } from '../../src/cat/looks.js';
 import { measureShapes, SIL_NORMAL, SIL_RADIUS } from '../../src/cat/shape.js';
 import { ramp, INK } from './palette.js';
-
-/** 毛色。名字給選單用，值就是 cat.bin 裡的那幾套（src/cat/dog.js）。 */
-export const COATS = {
-  yellow: { name: '黃' },
-  grey: { name: '灰' },
-  cow: { name: '牛' },
-};
 
 /* 顏色 alpha 位元組的編碼，跟 src/cat/cat.js 一樣：低五位是骨號，
    高三位是彈簧群組。 */
@@ -372,31 +368,109 @@ function rig3(material, uniforms, opts) {
 }
 
 /**
- * 載入那隻狗。
+ * 載入整個動物園。
+ *
+ * `species.js` 的 `speciesModels` 是遊戲自己的名冊：它拿一份 cat.bin
+ * 生出貓與兩種狗，`opts.wear` 再讓每一種都把服裝的幾何帶著。這一頁用
+ * 的就是那一份，所以「有哪些動物」這件事在遊戲和這裡永遠一致——遊戲加
+ * 第四種動物的那一天，這一頁的 3×3 自己會變成 4×3。
  *
  * @param {object} opts
  *   buffer  cat.bin 的 ArrayBuffer。給了就不 fetch（離線驗證用）。
  *   url     去哪裡拿 cat.bin，預設 /assets/cat.bin
- *   ear     'prick'（立耳，預設）或 'drop'
- *   skin    毛色，預設 'yellow'
- *   height  這隻狗在這個世界裡多高（公尺，含帽子），預設 1.0
+ *   look    一開始選哪一隻，如 'dog-prick/yellow'
+ *   height  動物在這個世界裡多高（公尺，含帽子），預設 1.0
  */
-export async function loadGameDog(opts = {}) {
+export async function loadZoo(opts = {}) {
   const buffer = opts.buffer
     || await fetch(opts.url || '/assets/cat.bin').then((r) => {
       if (!r.ok) throw new Error(`cat.bin: ${r.status}`);
       return r.arrayBuffer();
     });
   const cat = parseCat(buffer);
-  const data = dress(buildDog(cat, { ear: opts.ear || 'prick' }), { wears: ['bucket'] });
-  return new GameDog(data, opts);
+  const roster = speciesModels(cat, { wear: ['bucket'] });
+  return new Zoo(roster, opts);
 }
 
-export class GameDog {
-  constructor(data, opts = {}) {
+/**
+ * 三隻動物與「現在是哪一隻」。
+ *
+ * 對外的介面跟一隻動物一樣（`update`／`setFacing`／`setHat`…），因為
+ * main.js 不該知道有幾隻——它只有一個角色在跑。
+ */
+export class Zoo {
+  constructor(roster, opts = {}) {
+    this.root = new THREE.Group();
+    this.critters = new Map();
+    for (const { id, data } of roster) {
+      const c = new Critter(data, id, opts);
+      c.root.visible = false;
+      this.root.add(c.root);
+      this.critters.set(id, c);
+    }
+    /** 名冊的順序就是 looks.js 的順序，選單照它排。 */
+    this.models = MODELS.filter((m) => this.critters.has(m));
+    this.look = null;
+    this.setLook(opts.look || `${this.models[0]}/${this.critters.get(this.models[0]).skins[0]}`);
+  }
+
+  /** 現在在跑的那一隻。 */
+  get active() { return this.critters.get(this.modelId); }
+
+  /**
+   * 換一隻動物、或換同一隻的毛色。`look` 是 looks.js 的那個字串
+   * （'dog-prick/yellow'），跟伺服器認得的是同一個格式。
+   *
+   * 換模型的時候朝向要接過去：不接的話換一隻動物會順手把牠轉回正面，
+   * 而玩家只是在選毛色。
+   */
+  setLook(look) {
+    const slash = look.indexOf('/');
+    const model = look.slice(0, slash), skin = look.slice(slash + 1);
+    const c = this.critters.get(model);
+    if (!c || !c.skins.includes(skin)) return false;
+    if (this.modelId && this.modelId !== model) {
+      const prev = this.active;
+      prev.root.visible = false;
+      c.adopt(prev);
+    }
+    this.modelId = model;
+    c.root.visible = true;
+    c.setCoat(skin);
+    c.setHat(this._hat !== false);
+    c.setBend(this._bend !== false);
+    if (this._inkPx) c.setInkPx(this._inkPx[0], this._inkPx[1]);
+    this.look = look;
+    return true;
+  }
+
+  /** 這一頁畫得出來的每一個 look，攤成 looks.js 的那張表。 */
+  looks() {
+    const out = [];
+    this.models.forEach((m, row) => {
+      this.critters.get(m).skins.forEach((s, col) => {
+        out.push({ look: `${m}/${s}`, row: row + 1, col: col + 1 });
+      });
+    });
+    return out;
+  }
+
+  setHat(on) { this._hat = !!on; this.active.setHat(on); }
+  get hatOn() { return this._hat !== false; }
+  setBend(on) { this._bend = !!on; this.active.setBend(on); }
+  get bendOn() { return this._bend !== false; }
+  setInkPx(px, h) { this._inkPx = [px, h]; for (const c of this.critters.values()) c.setInkPx(px, h); }
+  setFacing(yaw) { this.active.setFacing(yaw); }
+  update(dt, st) { this.active.update(dt, st); }
+  get height() { return this.active.height; }
+}
+
+export class Critter {
+  constructor(data, modelId, opts = {}) {
     this.data = data;
+    this.modelId = modelId;
     this.model = data.model;
-    this.skins = DOG_SKINS.filter((s) => data.colors.has(s));
+    this.skins = (MODEL_SKINS[modelId] || data.header.skins).filter((s) => data.colors.has(s));
     this.coatId = this.skins.includes(opts.skin) ? opts.skin : this.skins[0];
 
     /* 骨架與動作。Driver 與 Sway 是遊戲那兩支，連內部的彈簧常數都沒動。 */
@@ -556,7 +630,21 @@ export class GameDog {
     this.root.add(this.mesh);
   }
 
-  /** 現在這個姿勢下，整隻狗的世界座標邊界（模型單位）。 */
+  /**
+   * 接手另一隻的狀態。換動物用：朝向、步態的相位、尾巴的驅動全部接過來，
+   * 所以換一隻不會讓角色原地轉回正面、也不會從靜止重新起步——玩家做的
+   * 事只是換了外觀。
+   */
+  adopt(other) {
+    this._yaw = other._yaw;
+    this._yawGoal = other._yawGoal;
+    this._vySmooth = other._vySmooth;
+    this.root.rotation.y = this._yaw;
+    this.drv.time = other.drv.time;
+    this.sway.seed(this._yaw, 0);
+  }
+
+  /** 現在這個姿勢下，整隻動物的世界座標邊界（模型單位）。 */
   _measure() {
     const d = this.data;
     const M = this.rig.matrices;

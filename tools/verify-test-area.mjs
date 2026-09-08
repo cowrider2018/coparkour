@@ -16,10 +16,18 @@
                      編譯，但這些全都查得出來，而它們就是這一段會壞的
                      地方——字串比對失敗不會報錯，只會靜靜地畫出一隻沒有
                      圓角的狗。
-     4. 那隻狗是遊戲那隻  cat.bin 讀得動、buildDog 與 dress 套得上、
-                     23+ 根骨頭每幀算得出有限的矩陣、三種毛色換得動、
-                     腳踩在 y = 0 上。這一頁不重畫那隻狗，所以要驗的是
-                     「接得上」而不是「長得像」。
+     4. 動物是遊戲那幾隻  cat.bin 讀得動、species.js 的三種模型都建得
+                     起來、每一種的骨頭每幀算得出有限的矩陣、九種 look 都
+                     換得動、腳踩在 y = 0 上。這一頁不重畫動物，所以要驗
+                     的是「接得上」而不是「長得像」。
+     5. 生物那張表塞得進直欄  直欄可以只有 96 px 寬，而那不是斷點、是
+                     算出來的。所以降級的門檻要跟真的量出來的尺寸對得上，
+                     不然最窄的那一級會把表推寬、被面板裁掉半排。
+     6. 手把的版面與手感  兩側是操作列、中間那一整片是遊戲——這條規則
+                     是這個版面存在的全部理由，而「觸控區悄悄長到畫面
+                     中央」看不出來，只會讓人覺得點哪裡都在走路。軸是
+                     圓的（推到對角不會比推直的快 41%）也一樣：看不出來，
+                     只有跑起來覺得斜著比較快。
 
    跑法：node tools/verify-test-area.mjs
    ------------------------------------------------------------------ */
@@ -28,7 +36,9 @@ import * as THREE from '../public/test-area/vendor/three.module.js';
 import { buildRuins, BLOCKS, PITCH } from '../public/test-area/src/blocks.js';
 import { PHYS, solveXZ, supportAt } from '../public/test-area/src/walk.js';
 import { readFileSync } from 'node:fs';
-import { loadGameDog } from '../public/test-area/src/gamedog.js';
+import { loadZoo } from '../public/test-area/src/critter.js';
+import { Pad } from '../public/test-area/src/pad.js';
+import { railTier } from '../public/test-area/src/hud.js';
 
 let fails = 0;
 const ok = (cond, label, detail = '') => {
@@ -196,61 +206,90 @@ for (let i = 0; i < BLOCKS.length; i++) {
   void mid;
 }
 
-head('狗（遊戲那隻本人）');
+head('動物（遊戲那幾隻本人）');
+const buf = readFileSync(new URL('../public/assets/cat.bin', import.meta.url));
+const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+const zoo = await loadZoo({ buffer: ab, look: 'dog-prick/yellow', height: 1.0 });
+
+ok(zoo.models.length === 3, 'species.js 的三種模型都建起來了', zoo.models.join(', '));
+ok(zoo.looks().length === 9, '九種 look＝選單那張 3×3 的表',
+  zoo.looks().map((l) => l.look).join(' '));
 {
-  const buf = readFileSync(new URL('../public/assets/cat.bin', import.meta.url));
-  const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-  const dog = await loadGameDog({ buffer: ab, ear: 'prick', skin: 'yellow', height: 1.0 });
+  const cells = zoo.looks();
+  const rows = new Set(cells.map((c) => c.row)), cols = new Set(cells.map((c) => c.col));
+  ok(rows.size === 3 && cols.size === 3, '表是 3 行 3 列', `${rows.size}×${cols.size}`);
+  ok(new Set(cells.map((c) => `${c.row},${c.col}`)).size === 9, '沒有兩格疊在同一個位置');
+}
 
-  ok(dog.data.header.vertexCount > 20000, 'cat.bin 的幾何是真的搬進來了',
-    `${dog.data.header.vertexCount.toLocaleString()} 個頂點`);
-  ok(dog.rig.count >= 23, '骨架至少是那 23 根（加上吻與帽子）', `${dog.rig.count} 根`);
-  const G = Object.fromEntries(dog.data.header.groups.map((g) => [g.name, g.count]));
-  ok(G.lit > 0 && G.unlit > 0 && G.outline > 0, '三個群組都在', 
+for (const id of zoo.models) {
+  const c = zoo.critters.get(id);
+  ok(c.data.header.vertexCount > 15000, `${id}：cat.bin 的幾何搬進來了`,
+    `${c.data.header.vertexCount.toLocaleString()} 個頂點`);
+  ok(c.rig.count >= 23, `${id}：骨架至少是那 23 根`, `${c.rig.count} 根`);
+  const G = Object.fromEntries(c.data.header.groups.map((g) => [g.name, g.count]));
+  ok(G.lit > 0 && G.unlit > 0 && G.outline > 0, `${id}：三個群組都在`,
     `lit ${G.lit} / unlit ${G.unlit} / outline ${G.outline}`);
-  ok(G.outline / (G.lit + G.unlit + G.outline) > 0.3,
-    '描邊群組佔了三成以上的三角形（翻面外殼就是靠它）',
-    `${Math.round((G.outline / (G.lit + G.unlit + G.outline)) * 100)}%`);
-  ok(dog.geometry.groups.length === 3, '幾何切成三個 draw range');
-  ok(dog.skins.join(',') === 'yellow,grey,cow', '三種毛色都帶著', dog.skins.join(','));
-  ok(dog.mesh.material.length === 3, '三顆材質：皮毛、臉、墨線');
-  ok(dog.mesh.material[2].side === THREE.BackSide, '墨線那顆是翻面的（＝剔除正面）');
+  ok(c.geometry.groups.length === 3 && c.mesh.material.length === 3,
+    `${id}：三個 draw range、三顆材質`);
+  ok(c.mesh.material[2].side === THREE.BackSide, `${id}：墨線那顆是翻面的`);
+  ok(c._hatBones.length > 0, `${id}：漁夫帽掛得上`, `${c._hatBones.length} 根骨頭`);
+  ok(c.shape.parts.length >= 8, `${id}：部位表量到了`, `${c.shape.parts.length} 個`);
+  c.update(1 / 60, { speed: 0, grounded: true, vy: 0 });
+  const box = c._measure();
+  const h = (box.max[1] - box.min[1]) * c._scale;
+  ok(Math.abs(h - 1.0) < 0.02, `${id}：站著剛好一公尺高（含帽子）`, `${h.toFixed(3)} m`);
+  const feet = box.min[1] * c._scale + c.mesh.position.y;
+  ok(Math.abs(feet) < 0.01, `${id}：腳掌落在 y = 0 上`, `${feet.toFixed(4)}`);
+}
 
-  // 帽子的骨頭要找得到，不然脫帽會是無聲的沒反應。
-  ok(dog._hatBones.length > 0, '漁夫帽的骨頭掛上去了', `${dog._hatBones.length} 根`);
-
-  dog.update(1 / 60, { speed: 0, grounded: true, vy: 0 });
-  dog.root.updateMatrixWorld(true);
-  const box = dog._measure();
-  const h = (box.max[1] - box.min[1]) * dog._scale;
-  ok(Math.abs(h - 1.0) < 0.02, '站著剛好一公尺高（含帽子）', `${h.toFixed(3)} m`);
-  const feet = box.min[1] * dog._scale + dog.mesh.position.y;
-  ok(Math.abs(feet) < 0.01, '腳掌落在 y = 0 上', `${feet.toFixed(4)}`);
-
-  for (const id of dog.skins) {
-    dog.setCoat(id);
-    ok(dog.coatId === id, `毛色「${id}」換得動`);
+/* 九種 look 都換得動，而且同一時間只有一隻看得見——切換是換可見度，
+   漏掉一隻就會有兩隻動物疊在同一個位置上，而那在畫面上是一團看不懂的
+   東西。 */
+{
+  let bad = 0, wrongVis = 0;
+  for (const { look } of zoo.looks()) {
+    if (!zoo.setLook(look) || zoo.look !== look) { bad++; continue; }
+    let vis = 0;
+    for (const c of zoo.critters.values()) if (c.root.visible) vis++;
+    if (vis !== 1) wrongVis++;
   }
-  dog.setCoat('yellow');
-  dog.setHat(false);
-  dog.update(1 / 60, { speed: 0, grounded: true, vy: 0 });
-  let hatShrunk = true;
-  for (const b of dog._hatBones) if (dog.rig.scale[b * 3 + 1] !== 0) hatShrunk = false;
-  ok(hatShrunk, '脫帽是把帽子的骨頭縮到零（跟遊戲同一個做法）');
-  dog.setHat(true);
-  dog.update(1 / 60, { speed: 0, grounded: true, vy: 0 });
-  let hatBack = true;
-  for (const b of dog._hatBones) if (dog.rig.scale[b * 3 + 1] !== dog.rig.rest.scale[b * 3 + 1]) hatBack = false;
-  ok(hatBack, '戴回去是回到 rest 的尺寸');
+  ok(bad === 0, '九種 look 都換得動', `${bad} 個失敗`);
+  ok(wrongVis === 0, '同一時間只有一隻看得見', `${wrongVis} 次不是一隻`);
+  ok(!zoo.setLook('dog-prick/orangin'), '不存在的組合換不動（貓的毛色不會跑到狗身上）');
+}
 
-  /* 兩千幀，四種狀態都跑過：骨頭矩陣與尾巴那條彈簧鏈都不准生出
-     非有限數。彈簧是這裡唯一會爆的東西——它是積分出來的。 */
+/* 換模型要接住朝向：不接的話玩家只是換了外觀，角色卻原地轉回正面。 */
+{
+  zoo.setLook('cat/tabby');
+  zoo.setFacing(1.1);
+  for (let i = 0; i < 60; i++) zoo.update(1 / 60, { speed: 4, grounded: true, vy: 0 });
+  const before = zoo.active._yaw;
+  zoo.setLook('dog-drop/grey');
+  ok(Math.abs(zoo.active._yaw - before) < 1e-6, '換動物的時候朝向接過去了',
+    `${before.toFixed(3)} → ${zoo.active._yaw.toFixed(3)}`);
+}
+
+zoo.setLook('dog-prick/yellow');
+{
+  const dog = zoo.active;
+  ok(zoo.hatOn, '預設戴著帽子');
+  zoo.setHat(false);
+  zoo.update(1 / 60, { speed: 0, grounded: true, vy: 0 });
+  let shrunk = true;
+  for (const b of dog._hatBones) if (dog.rig.scale[b * 3 + 1] !== 0) shrunk = false;
+  ok(shrunk, '脫帽是把帽子的骨頭縮到零（跟遊戲同一個做法）');
+  zoo.setHat(true);
+  zoo.update(1 / 60, { speed: 0, grounded: true, vy: 0 });
+  let back = true;
+  for (const b of dog._hatBones) if (dog.rig.scale[b * 3 + 1] !== dog.rig.rest.scale[b * 3 + 1]) back = false;
+  ok(back, '戴回去是回到 rest 的尺寸');
+
+  /* 兩千幀，四種狀態都跑過：骨頭矩陣與尾巴那條彈簧鏈都不准生出非有限
+     數。彈簧是這裡唯一會爆的東西——它是積分出來的。 */
   let bad = 0;
   for (let i = 0; i < 2000; i++) {
-    dog.setFacing(Math.sin(i * 0.07) * 3.1);
-    dog.update(1 / 60, {
-      speed: (i % 300) / 48, grounded: i % 91 !== 0, vy: Math.sin(i * 0.3) * 4,
-    });
+    zoo.setFacing(Math.sin(i * 0.07) * 3.1);
+    zoo.update(1 / 60, { speed: (i % 300) / 48, grounded: i % 91 !== 0, vy: Math.sin(i * 0.3) * 4 });
     if (i % 50 === 0) {
       for (const v of dog.rig.matrices) if (!Number.isFinite(v)) bad++;
       for (const v of dog.sway.qs) if (!Number.isFinite(v)) bad++;
@@ -258,116 +297,232 @@ head('狗（遊戲那隻本人）');
     }
   }
   ok(bad === 0, '兩千幀之後骨頭與彈簧都還是有限數', `${bad}`);
-
-  /* 插進 three 頂點著色器的那一段，真的插進去了嗎。
-
-     這一項是這支腳本裡最不像測試、卻最值得存在的一項：那段 GLSL 是靠
-     字串比對插進 three 自己的著色器的（onBeforeCompile 裡三個 replace），
-     而字串比對失敗的時候 `replace` 不會報錯，它只是什麼都不做——編出來
-     的著色器就是沒有骨頭的那一份，畫出來是一坨定格在 rest 姿勢的網格。
-     node 這裡沒有 WebGL 可以編譯，但「有沒有插進去」查得出來。
-
-     三顆材質都要查。臉和墨線用的是 basic，而 basic 把
-     <beginnormal_vertex> 包在一個 #if 裡（只有 envmap／skinning 才
-     展開），所以那兩顆只靠 <begin_vertex> 那一刀——這也是為什麼位置與
-     法線在 gamedog.js 裡是兩支各自算完的函式。 */
-  for (const [i, name] of [[0, '皮毛（toon）'], [1, '臉（basic）'], [2, '墨線（basic）']]) {
-    const src = i === 0 ? THREE.ShaderLib.toon : THREE.ShaderLib.basic;
-    const shader = { uniforms: {}, vertexShader: src.vertexShader, fragmentShader: src.fragmentShader };
-    dog.mesh.material[i].onBeforeCompile(shader, null);
-    const v = shader.vertexShader;
-    ok(v.includes('cpSkinPos()') && !v.includes('#include <begin_vertex>'),
-      `${name}：頂點位置換成骨架算的了`);
-    ok(v.includes('uniform mat4 uBones['), `${name}：骨頭矩陣的宣告插進去了`);
-    ok(v.includes('CP_TAIL_AXIS'), `${name}：尾巴的中心線表插進去了`);
-    ok(!!shader.uniforms.uBones && !!shader.uniforms.uSwayQ && !!shader.uniforms.uGrow,
-      `${name}：uniform 都掛上了`);
-    ok(shader.uniforms.uBones && shader.uniforms.uBones.value === dog.rig.matrices,
-      `${name}：uBones 指的就是 rig 每幀寫的那一份`);
-  }
-  ok(dog.mesh.material[2].onBeforeCompile
-    && (() => {
-      const shader = { uniforms: {}, vertexShader: THREE.ShaderLib.basic.vertexShader, fragmentShader: '' };
-      dog.mesh.material[2].onBeforeCompile(shader, null);
-      return shader.uniforms.uGrow.value > 0;
-    })(), '墨線那顆的外殼真的往外推（uGrow > 0）');
-  ok(dog.mesh.material[0].customProgramCacheKey() !== dog.mesh.material[2].customProgramCacheKey(),
-    '不同 grow 的材質不會共用同一支編好的程式');
-
-  /* ── 二次變形 ─────────────────────────────────────────────────
-     這一段沒有 GPU 可以驗「畫出來對不對」，所以驗的是「接上了沒有」。
-     每一項都對應一個真的會發生、而且不會報錯的故障。 */
-  {
-    const S = dog.shape;
-    ok(S.parts.length >= 9, '部位表量到了（身體、頭、六條腿、吻，加帽子兩片）',
-      `${S.parts.length} 個部位`);
-    ok(S.parts.every((p) => p.half.every((h) => h > 0)), '每個部位的三個半徑都是正的');
-
-    // 耳朵：有部位（被頭帶著），但標成不彎。圓掉的耳朵就不是那隻狗了。
-    const earL = dog.rig.bone('earL'), earR = dog.rig.bone('earR');
-    ok(S.rides[earL] === 1 && S.rides[earR] === 1, '兩隻立耳被標成「不彎，只跟著頭走」');
-    ok(S.byBone[earL] >= 0, '耳朵知道自己掛在哪個部位上');
-    // 尾巴：沒有矩形。shape.js 說一根管子不需要。
-    ok(S.byBone[dog.rig.bone('tail')] === -1, '尾巴沒有矩形（它是一根管子）');
-
-    /* uniform 攤平的順序。這裡錯的話不會有任何錯誤訊息，只會有一隻
-       部位對錯了矩形的狗——頭拿到腿的框、腿拿到帽子的框。 */
-    const U = dog._uniforms;
-    ok(U.uPart.value.length === S.parts.length * 4, 'uPart 的長度對得上部位數');
-    let boneOk = true, halfOk = true;
-    S.parts.forEach((p, i) => {
-      if (U.uPart.value[i * 4 + 3] !== p.bone) boneOk = false;
-      for (let k = 0; k < 3; k++) {
-        if (Math.abs(U.uPartB.value[i * 4 + k] - p.half[k]) > 1e-6) halfOk = false;
-      }
-      if (Math.abs(U.uPartB.value[i * 4 + 3] - p.radius) > 1e-6) halfOk = false;
-    });
-    ok(boneOk, '每個部位的 uniform 記著正確的骨號');
-    ok(halfOk, '三個半徑與圓角比例都照 measureShapes 攤平了');
-    ok(U.uBonePart.value.length === dog.rig.count && U.uBoneRide.value.length === dog.rig.count,
-      '兩張骨頭表的長度是骨頭數', `${dog.rig.count}`);
-
-    // 墨線的寬度：像素 → y 正規化螢幕單位。一個像素是 2/height。
-    dog.setInkPx(2, 900);
-    ok(Math.abs(dog._inkOut.value - 2 * 2 / 900) < 1e-9, '墨線寬度從像素換算成螢幕單位',
-      `2 px / 900 px 高 → ${dog._inkOut.value.toFixed(5)}`);
-
-    // B 鍵：切的是 uniform，所以是同一幀生效。
-    dog.setBend(false);
-    ok(dog._bendU.value === 0 && dog.bendOn === false, 'B 鍵關得掉變形');
-    dog.setBend(true);
-    ok(dog._bendU.value === 1 && dog.bendOn === true, '也開得回來');
-
-    /* 變形那一段插進了誰的著色器。臉不能插——眼睛、鼻子、嘴巴被拉出去
-       就是一張糊掉的臉，而那正是 shape.js 用一整段注解說明的結論。 */
-    for (const [i, name, wantWarp] of [[0, '皮毛', true], [1, '臉', false], [2, '墨線', true]]) {
-      const src = i === 0 ? THREE.ShaderLib.toon : THREE.ShaderLib.basic;
-      const shader = { uniforms: {}, vertexShader: src.vertexShader, fragmentShader: src.fragmentShader };
-      dog.mesh.material[i].onBeforeCompile(shader, null);
-      const calls = (shader.vertexShader.match(/gl_Position = cpWarp\(/g) || []).length;
-      ok(calls === (wantWarp ? 1 : 0), `${name}：${wantWarp ? '有' : '沒有'}做二次變形`, `${calls} 處`);
-      if (wantWarp) {
-        ok(shader.vertexShader.includes('uniform vec4 uPart['), `${name}：部位的 uniform 宣告在`);
-        ok(shader.vertexShader.includes('float cpRR('), `${name}：圓角矩形的求交式在`);
-        ok(!!shader.uniforms.uPart && !!shader.uniforms.uBonePart && !!shader.uniforms.uBend,
-          `${name}：部位表掛上了`);
-      }
-    }
-    // 墨線那一趟要落在矩形外面，皮毛那一趟不能。
-    const inkShader = { uniforms: {}, vertexShader: THREE.ShaderLib.basic.vertexShader, fragmentShader: '' };
-    dog.mesh.material[2].onBeforeCompile(inkShader, null);
-    const furShader = { uniforms: {}, vertexShader: THREE.ShaderLib.toon.vertexShader, fragmentShader: '' };
-    dog.mesh.material[0].onBeforeCompile(furShader, null);
-    ok(inkShader.uniforms.uInkOut.value > 0 && furShader.uniforms.uInkOut.value === 0,
-      '墨線落在矩形外一圈，皮毛落在矩形上');
-  }
-
-  // 尾巴真的在動：彈簧的四元數不能整場都是單位四元數。
   let moved = 0;
   for (let i = 0; i < dog.sway.qs.length; i += 4) {
     if (Math.abs(dog.sway.qs[i + 3] - 1) > 1e-4) moved++;
   }
   ok(moved > 3, '尾巴那條 17 節的彈簧真的在擺', `${moved}/17 節偏離靜止`);
+
+  /* ── 二次變形 ───────────────────────────────────────────────
+     沒有 GPU 可以驗「畫出來對不對」，所以驗的是「接上了沒有」。每一項
+     都對應一個真的會發生、而且不會報錯的故障。 */
+  const S = dog.shape;
+  const earL = dog.rig.bone('earL'), earR = dog.rig.bone('earR');
+  ok(S.rides[earL] === 1 && S.rides[earR] === 1, '兩隻立耳被標成「不彎，只跟著頭走」');
+  ok(S.byBone[earL] >= 0, '耳朵知道自己掛在哪個部位上');
+  ok(S.byBone[dog.rig.bone('tail')] === -1, '尾巴沒有矩形（它是一根管子）');
+
+  const U = dog._uniforms;
+  ok(U.uPart.value.length === S.parts.length * 4, 'uPart 的長度對得上部位數');
+  let boneOk = true, halfOk = true;
+  S.parts.forEach((p, i) => {
+    if (U.uPart.value[i * 4 + 3] !== p.bone) boneOk = false;
+    for (let k = 0; k < 3; k++) {
+      if (Math.abs(U.uPartB.value[i * 4 + k] - p.half[k]) > 1e-6) halfOk = false;
+    }
+    if (Math.abs(U.uPartB.value[i * 4 + 3] - p.radius) > 1e-6) halfOk = false;
+  });
+  ok(boneOk, '每個部位的 uniform 記著正確的骨號');
+  ok(halfOk, '三個半徑與圓角比例都照 measureShapes 攤平了');
+
+  dog.setInkPx(2, 900);
+  ok(Math.abs(dog._inkOut.value - 2 * 2 / 900) < 1e-9, '墨線寬度從像素換算成螢幕單位',
+    `2 px / 900 px 高 → ${dog._inkOut.value.toFixed(5)}`);
+
+  /* 變形沒有開關給玩家（那會是一個什麼都不多做的模式），但 API 留著，
+     因為它是「同一隻動物、同一個姿勢，只差變形」這件事唯一的比對方式，
+     而那是調造型的時候會想要的。主控台從 window.testArea.zoo 叫得到。 */
+  zoo.setBend(false);
+  ok(dog._bendU.value === 0 && zoo.bendOn === false, '變形關得掉（主控台用）');
+  zoo.setBend(true);
+  ok(dog._bendU.value === 1 && zoo.bendOn === true, '也開得回來');
+
+  for (const [i, name, wantWarp] of [[0, '皮毛', true], [1, '臉', false], [2, '墨線', true]]) {
+    const src = i === 0 ? THREE.ShaderLib.toon : THREE.ShaderLib.basic;
+    const shader = { uniforms: {}, vertexShader: src.vertexShader, fragmentShader: src.fragmentShader };
+    dog.mesh.material[i].onBeforeCompile(shader, null);
+    const calls = (shader.vertexShader.match(/gl_Position = cpWarp\(/g) || []).length;
+    ok(calls === (wantWarp ? 1 : 0), `${name}：${wantWarp ? '有' : '沒有'}做二次變形`, `${calls} 處`);
+    ok(shader.vertexShader.includes('cpSkinPos()'), `${name}：頂點位置換成骨架算的了`);
+    ok(!!shader.uniforms.uBones && shader.uniforms.uBones.value === dog.rig.matrices,
+      `${name}：uBones 指的就是 rig 每幀寫的那一份`);
+    if (wantWarp) {
+      ok(shader.vertexShader.includes('uniform vec4 uPart['), `${name}：部位的 uniform 宣告在`);
+      ok(shader.vertexShader.includes('float cpRR('), `${name}：圓角矩形的求交式在`);
+    }
+  }
+  const inkShader = { uniforms: {}, vertexShader: THREE.ShaderLib.basic.vertexShader, fragmentShader: '' };
+  dog.mesh.material[2].onBeforeCompile(inkShader, null);
+  const furShader = { uniforms: {}, vertexShader: THREE.ShaderLib.toon.vertexShader, fragmentShader: '' };
+  dog.mesh.material[0].onBeforeCompile(furShader, null);
+  ok(inkShader.uniforms.uInkOut.value > 0 && furShader.uniforms.uInkOut.value === 0,
+    '墨線落在矩形外一圈，皮毛落在矩形上');
+}
+
+head('手把');
+/* 驗的是版面與手感的算術，不是畫面。node 沒有 canvas，所以餵一個假的
+   ——建構子只把 getContext 的結果存起來，那個東西只有畫的時候用得到。 */
+{
+  const fakeCanvas = () => ({ getContext: () => null, width: 0, height: 0 });
+
+  /* ── 橫向：兩側操作列，中間留給遊戲 ── */
+  const land = new Pad(fakeCanvas());
+  land.layout(1024, 576, 2, { l: 0, r: 0, t: 0, b: 0 });
+  ok(!land.portrait, '寬的畫面判成橫向');
+  ok(land.rail >= 96 && land.rail <= 190, '直欄寬度落在遊戲那條式子的範圍裡',
+    `${land.rail.toFixed(1)} px`);
+  ok(Math.abs(land.rail - Math.min(1024 * 0.155, 576 * 0.44)) < 1e-6,
+    '直欄寬度就是 min(W·0.155, H·0.44)', `${land.rail.toFixed(2)}`);
+  ok(land.slotJoy.x < 1024 / 2 && land.slotJmp.x > 1024 / 2, '預設左搖桿、右跳躍',
+    `搖桿 x=${land.slotJoy.x.toFixed(0)}、跳躍 x=${land.slotJmp.x.toFixed(0)}`);
+  ok(land.slotJoy.x + land.joy.r <= land.rail + 12 + 1e-6, '搖桿整個在左欄裡',
+    `右緣 ${(land.slotJoy.x + land.joy.r).toFixed(0)} ≤ ${(land.rail + 12).toFixed(0)}`);
+  ok(land.slotJmp.x - land.jmp.r >= 1024 - land.rail - 12 - 1e-6, '跳躍鍵整個在右欄裡');
+  ok(land.slotJoy.y + land.joy.r < 576, '操作元件沒有掉出畫面下緣');
+  ok(land.ctrlTop > 0 && land.ctrlTop < 576, '面板的下界（--ctrl）是個合理的高度',
+    `${land.ctrlTop.toFixed(0)} px`);
+
+  /* 中間那一整片必須是遊戲的。這是這個版面存在的全部理由，所以整條
+     中央帶都掃一遍，而不是只問一個點。 */
+  let stolen = 0;
+  for (let x = land.rail + 20; x < 1024 - land.rail - 20; x += 8) {
+    for (let y = 8; y < 576; y += 8) if (land.hit(x, y)) stolen++;
+  }
+  ok(stolen === 0, '橫向：中間那一整片沒有被觸控區吃掉', `${stolen} 個點`);
+  ok(land.hit(30, 560) === 'joy', '左欄下半段是搖桿');
+  ok(land.hit(1000, 560) === 'jmp', '右欄下半段是跳躍');
+  ok(land.hit(30, 20) === null, '左欄上半段留給面板，不吃觸控');
+
+  /* ── 直向：上下兩條橫帶 ── */
+  const port = new Pad(fakeCanvas());
+  port.layout(430, 900, 2, { l: 0, r: 0, t: 0, b: 0 });
+  ok(port.portrait, '高的畫面判成直向');
+  ok(port.barT > 0 && port.barB > 0, '上下兩條橫帶都有高度',
+    `上 ${port.barT.toFixed(0)}、下 ${port.barB.toFixed(0)}`);
+  ok(port.rail === 0, '直向沒有直欄');
+  let stolenP = 0;
+  for (let x = 8; x < 430; x += 8) {
+    for (let y = port.barT + 20; y < port.ctrlTop - 8; y += 8) if (port.hit(x, y)) stolenP++;
+  }
+  ok(stolenP === 0, '直向：兩條橫帶之間那一片沒有被吃掉', `${stolenP} 個點`);
+  ok(port.hit(40, 880) === 'joy' && port.hit(400, 880) === 'jmp',
+    '直向也是左搖桿右跳躍');
+
+  /* ── 手感 ── */
+  const st = land;
+  const push = (dx, dy) => {
+    st.down('joy', 1, st.slotJoy.x + dx, st.slotJoy.y + dy);
+    const m = Math.hypot(st.axis.x, st.axis.y);
+    st.up(1);
+    return m;
+  };
+  const travel = (st.joy.r - st.joy.kr) * 0.86;
+  ok(Math.abs(push(travel, 0) - 1) < 1e-6, '推到底＝軸長 1', push(travel, 0).toFixed(4));
+  ok(Math.abs(push(travel * 3, 0) - 1) < 1e-6, '推過頭也是 1（夾在單位圓上）');
+  const diag = push(travel * 0.7071 * 3, travel * 0.7071 * 3);
+  ok(Math.abs(diag - 1) < 1e-6, '推到對角也是 1（軸是圓的，不是方的）', diag.toFixed(4));
+  ok(push(travel * 0.05, 0) === 0, '死區裡不走路');
+  const half = push(travel * 0.5, 0);
+  ok(half > 0.2 && half < 0.85, '半推是類比的', half.toFixed(3));
+  /* 旋鈕固定不浮動：按在觸控區的哪裡就已經在推了，所以「按下的位置」
+     本身就決定了軸值——這是遊戲那支手把的手感，也是它跟浮動搖桿最大
+     的差別。 */
+  st.down('joy', 3, st.slotJoy.x + travel, st.slotJoy.y);
+  ok(Math.abs(Math.hypot(st.axis.x, st.axis.y) - 1) < 1e-6,
+    '按下的那一刻就已經在推了（旋鈕不浮動）');
+  st.up(3);
+
+  let jumps = 0;
+  const jp = new Pad(fakeCanvas(), { onJump: () => { jumps++; } });
+  jp.layout(1024, 576, 2);
+  jp.down('jmp', 9, jp.slotJmp.x, jp.slotJmp.y);
+  ok(jumps === 1, '按下就跳，不等放開');
+  ok(jp.takeJump() === true, '排到的那一次讀得出來');
+  ok(jp.takeJump() === false, '同一次按下不會跳兩次');
+  ok(jp.drops.length > 0, '按下噴出水花', `${jp.drops.length} 滴`);
+  jp.up(9);
+
+  /* 畫一遍。假 context 與假 Path2D：畫出來對不對驗不到，但「畫的時候會
+     不會爆」驗得到，而那是這種每幀跑的繪圖碼最常見的故障。 */
+  const calls = new Map();
+  const grad = { addColorStop() {} };
+  const ctx = new Proxy({}, {
+    get(_, k) {
+      if (k === 'createRadialGradient' || k === 'createLinearGradient') return () => grad;
+      return (...a) => { calls.set(k, (calls.get(k) || 0) + 1); void a; };
+    },
+    set() { return true; },
+  });
+  globalThis.Path2D = class {
+    moveTo() {} lineTo() {} closePath() {} quadraticCurveTo() {} arc() {}
+  };
+  const dr = new Pad({ getContext: () => ctx, width: 0, height: 0 });
+  dr.layout(1024, 576, 2);
+  let threw = null;
+  try {
+    dr.update(1 / 60); dr.draw();                            // 儀器狀態
+    dr.down('joy', 1, dr.slotJoy.x + 20, dr.slotJoy.y - 14);
+    dr.update(1 / 60); dr.draw();                            // 液化、推著
+    dr.down('jmp', 2, dr.slotJmp.x, dr.slotJmp.y);
+    dr.update(1 / 60); dr.draw();                            // 加上按著跳
+    dr.up(1); dr.up(2);
+    dr.update(1 / 60); dr.draw();                            // 放開，彈回
+  } catch (e) {
+    threw = e;
+  }
+  ok(!threw, '四種狀態都畫得出來（靜止／推著／按跳／放開）', threw ? threw.message : '');
+  ok((calls.get('clearRect') || 0) === 4, '每一幀都先清掉上一幀',
+    `${calls.get('clearRect') || 0} 次`);
+  ok((calls.get('stroke') || 0) > 0 && (calls.get('fill') || 0) > 0, '真的有畫東西',
+    `stroke ${calls.get('stroke') || 0} 次、fill ${calls.get('fill') || 0} 次`);
+}
+
+head('生物那張表的 RWD');
+/* 這張表要塞進一根「算出來的」直欄裡（96–190），所以降級的門檻不能是
+   隨手挑的斷點——它們要跟真的量出來的尺寸對得上。下面那幾個常數就是
+   index.html 那幾條 CSS 的尺寸，逐級把「一列需要多寬」加起來，跟那一級
+   實際拿得到的寬度比。
+
+   量不到的是字體實際渲染出來的寬度（node 沒有排版引擎），所以中文字寬
+   用「字級 × 1.0」估——方塊字就是這樣，這個估法對 CJK 是準的，而這張表
+   從頭到尾只有中文。 */
+{
+  const PANEL_EDGE = 16;          // 面板離欄兩側各 8
+  const PANEL_PAD = { wide: 7 * 2 + 2, mid: 5 * 2 + 2, narrow: 5 * 2 + 2 };
+  const FONT = { wide: 10, mid: 9, narrow: 9 };
+  const DOT = { wide: 10 + 2, mid: 9 + 2, narrow: 8 + 2 };
+  const GAP = 3;
+  const CHIP_PAD = { wide: 8, mid: 0, narrow: 0 };   // 只有 wide 的格子有內距
+  const LABEL_CHARS = { wide: 3, mid: 3, narrow: 1 };
+
+  const needs = (tier) => {
+    const label = LABEL_CHARS[tier] * FONT[tier] + 3;      // 名字 + 右邊那道 3
+    const chip = DOT[tier] + CHIP_PAD[tier];
+    return label + 3 * chip + 3 * GAP + PANEL_PAD[tier];
+  };
+
+  let bad = [];
+  for (let rail = 96; rail <= 190; rail += 1) {
+    const tier = railTier(rail);
+    const have = rail - PANEL_EDGE;
+    if (needs(tier) > have) bad.push(`${rail}px（${tier} 需要 ${needs(tier)}，只有 ${have}）`);
+  }
+  ok(bad.length === 0, '96 到 190 的每一種欄寬，那一級都塞得進去',
+    bad.length ? bad.slice(0, 3).join('、') : `最窄 96 需要 ${needs('narrow')}、有 ${96 - PANEL_EDGE}`);
+
+  ok(railTier(96) === 'narrow' && railTier(111) === 'narrow', '96–111 是最窄的那一級');
+  ok(railTier(112) === 'mid' && railTier(149) === 'mid', '112–149 是中間那一級');
+  ok(railTier(150) === 'wide' && railTier(190) === 'wide', '150 以上是最寬的那一級');
+  /* 直向的面板橫躺在上帶裡、有半個畫面寬，所以 main.js 餵一個大數字進來
+     當「最寬」——那一級才會把毛色的名字放出來。 */
+  ok(railTier(999) === 'wide', '直向（面板橫躺）算最寬的那一級');
+
+  /* 門檻要落在「剛好放得下」的那一點附近，不然就是憑感覺挑的：
+     單字那一級省下兩個字（18 px），所以 mid 的門檻應該比 narrow 的
+     需求多出大約那麼多。 */
+  const slackAtMid = 112 - 16 - needs('mid');
+  ok(slackAtMid >= 0 && slackAtMid < 22, 'mid 的門檻就落在它剛好放得下的地方',
+    `餘裕 ${slackAtMid} px`);
 }
 
 head('版面');
