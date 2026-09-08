@@ -19,7 +19,8 @@
     "verify:dog": "node tools/verify-dog.mjs",
     "verify:wear": "node tools/verify-wear.mjs",
     "verify:layer": "node tools/verify-layer.mjs",
-    "verify:showcase": "node tools/verify-showcase.mjs"
+    "verify:showcase": "node tools/verify-showcase.mjs",
+    "verify:test-area": "node tools/verify-test-area.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>試玩場：城堡遺跡</title>
+<meta name="theme-color" content="#1e1810" />
+<meta name="robots" content="noindex" />
+<!--
+  試玩場：四個城堡遺跡關卡區塊，一隻戴帽子的黃立耳狗，走上去看看。
+
+  這一頁是獨立的計畫，不是遊戲的一部分：關卡是它自己的一套幾何與材質，
+  用 three.js（vendor/ 底下那一份，跟著 Workers Static Assets 一起送出去，
+  不打 CDN）。三階調著色的做法抄自 src/cat/cat.js，墨線的顏色是同一個
+  43,35,32。
+
+  但狗不是重畫的，是遊戲那隻本人：assets/cat.bin 經過遊戲自己的
+  src/cat/dog.js（立耳）、src/cat/wear.js（漁夫帽）與 yellow 毛色，
+  23 根骨頭的剛體骨架與 src/cat/pose.js 的對角步、彈簧尾巴照原樣跑。
+  沒跟過來的只有那支渲染器裡「屬於 2D 的東西」——螢幕空間的圓角矩形
+  彎折、正交側視相機、depthRange 分段遮擋。見 src/gamedog.js 的說明。
+
+  這頁能做的事只有兩件，刻意的：
+    · 移動——走、跑、跳、上下樓梯。沒有計分、沒有敵人、沒有連線。
+    · 觀賞——把相機收到狗身上，換毛色、脫帽戴帽，繞著看。
+
+  形狀語言是 Dota／黑魂那一路的厚重石造：倒角石塊、尖拱、分段收分的
+  扶壁、垛口、兜帽雕像。顏色則整套是本專案的卡通調色盤，所以它看起來
+  不是那些遊戲，是這個遊戲蓋的城堡。
+
+  為什麼放在 public/test-area/ 而不是 tools/：它需要 WebGL2 和一份
+  three.js，所以得跟前端一起被送出去。網址：/test-area/
+-->
+<style>
+  :root {
+    --bg: #1e1810;
+    --ink: #f7efdd;
+    --muted: #b5a184;
+    --card: rgba(43, 34, 24, 0.86);
+    --edge: #4a3b29;
+    --line-strong: #6b563c;
+    --accent: #9bd94e;
+    --accent2: #e8862f;
+    --on-ink: #1e1810;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--ink);
+    font: 13px/1.5 system-ui, "Noto Sans TC", sans-serif;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #view { position: fixed; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; }
+
+  /* HUD 一律靠邊、半透明、不吃滑鼠事件——中間那片畫面是要拖的。 */
+  .hud { position: fixed; z-index: 2; pointer-events: none; }
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--edge);
+    border-radius: 10px;
+    padding: 10px 12px;
+    backdrop-filter: blur(3px);
+  }
+
+  #where { top: 12px; left: 12px; max-width: min(48vw, 320px); }
+  #where strong { display: block; font-size: 16px; letter-spacing: 0.04em; }
+  #where span { color: var(--muted); font-size: 12px; }
+
+  #stats {
+    top: 12px; right: 12px;
+    color: var(--muted); font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    text-align: right;
+  }
+
+  #keys { bottom: 12px; left: 12px; color: var(--muted); }
+  #keys b {
+    display: inline-block; min-width: 1.4em; text-align: center;
+    color: var(--ink); background: #3a2e20; border: 1px solid var(--line-strong);
+    border-radius: 4px; padding: 0 4px; margin-right: 4px; font-size: 11px;
+  }
+  #keys div + div { margin-top: 3px; }
+
+  #bar {
+    bottom: 12px; right: 12px; pointer-events: auto;
+    display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end;
+    max-width: min(60vw, 460px);
+  }
+  #bar button {
+    pointer-events: auto;
+    font: inherit; color: var(--ink);
+    background: var(--card); border: 1px solid var(--edge);
+    border-radius: 8px; padding: 7px 10px; cursor: pointer;
+  }
+  #bar button:hover { border-color: var(--accent); }
+  #bar button b { color: var(--accent); margin-right: 3px; }
+  #coats { display: flex; gap: 6px; }
+  #coats button::before {
+    content: ""; display: inline-block; width: 10px; height: 10px;
+    border-radius: 50%; background: var(--sw, #888);
+    border: 1px solid #00000055; margin-right: 5px; vertical-align: -1px;
+  }
+  #coats button.on { border-color: var(--accent); color: var(--accent); }
+  .group { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+
+  #toast {
+    left: 50%; top: 18%; transform: translateX(-50%);
+    opacity: 0; transition: opacity 0.25s;
+    font-size: 15px; letter-spacing: 0.06em;
+  }
+  #toast.on { opacity: 1; }
+
+  body.inspecting #keys { opacity: 0.35; }
+
+  #boot {
+    position: fixed; inset: 0; z-index: 9;
+    display: grid; place-items: center; gap: 8px;
+    background: var(--bg); color: var(--muted); text-align: center;
+  }
+  #boot b { color: var(--ink); font-size: 15px; }
+
+  @media (max-width: 640px) {
+    #keys { display: none; }
+    #stats { font-size: 10px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div id="boot"><div><b>正在砌城堡…</b><br />四個區塊約三十萬個三角形，外加 cat.bin 那隻狗</div></div>
+
+<div class="hud panel" id="where"></div>
+<div class="hud" id="stats"></div>
+
+<div class="hud" id="keys">
+  <div><b>W</b><b>A</b><b>S</b><b>D</b> 移動 ・ <b>⇧</b> 衝刺 ・ <b>空白</b> 跳</div>
+  <div><b>拖曳</b> 轉鏡頭 ・ <b>滾輪</b> 遠近 ・ <b>V</b> 觀賞模式</div>
+  <div><b>1</b>–<b>4</b> 換區塊 ・ <b>R</b> 回出生點 ・ <b>H</b> 帽子 ・ <b>C</b> 毛色 ・ <b>B</b> 圓角方形</div>
+</div>
+
+<div class="hud" id="bar">
+  <div class="group" id="blocks"></div>
+  <div class="group">
+    <div id="coats"></div>
+    <button id="btn-hat"><b>H</b>帽子</button>
+    <button id="btn-bend"><b>B</b>圓角</button>
+    <button id="btn-look"><b>V</b>觀賞</button>
+  </div>
+</div>
+
+<div class="hud panel" id="toast"></div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
