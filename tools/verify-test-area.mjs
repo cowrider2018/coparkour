@@ -23,7 +23,23 @@
      5. 生物那張表塞得進直欄  直欄可以只有 96 px 寬，而那不是斷點、是
                      算出來的。所以降級的門檻要跟真的量出來的尺寸對得上，
                      不然最窄的那一級會把表推寬、被面板裁掉半排。
-     6. 手把的版面與手感  兩側是操作列、中間那一整片是遊戲——這條規則
+     6. 每塊石頭底下有東西頂著  砌體不准有一塊石頭浮在空中。這一項掃
+                     的是「一堆碎料」和「一棟建築」的差別，而它抓到過
+                     `wall()` 拿絕對 y 去比相對高度——任何抬高的牆整段
+                     消失，於是九個垛口浮在四公尺的空中。掛件（拱的楔石、
+                     旗、鏈、獸像、樹枝）用 `hang` 標記，白名單是旗標
+                     而不是人的記性。
+     7. 牆身之內不透光  牆只有一塊磚厚，磚縫是穿透的，所以牆裡有一片
+                     牆芯。有沒有牆芯從外面看一模一樣——只有站在裡面、
+                     光從另一邊來的時候才看得到一排亮縫。
+     8. 鋪面底下有基座  石板會缺，缺掉的地方看到的必須是填層而不是洞。
+                     露台那一片以前是看穿到三公尺底下的。
+     9. 碰撞盒都有分類  每個盒子都要說自己是地板、障礙、階梯還是牆體，
+                     而每一種有自己的高度規矩。這一項是「視覺凹凸不准傳到
+                     腳底下」唯一的執行者。
+    10. 房間是可玩的  整片房間都是平的、都走得到、沒有被障礙物塞滿。
+                     這是 roguelike 要的那個單位。
+    11. 手把的版面與手感  兩側是操作列、中間那一整片是遊戲——這條規則
                      是這個版面存在的全部理由，而「觸控區悄悄長到畫面
                      中央」看不出來，只會讓人覺得點哪裡都在走路。軸是
                      圓的（推到對角不會比推直的快 41%）也一樣：看不出來，
@@ -34,7 +50,7 @@
 
 import * as THREE from '../public/test-area/vendor/three.module.js';
 import { buildRuins, BLOCKS, PITCH } from '../public/test-area/src/blocks.js';
-import { PHYS, solveXZ, supportAt } from '../public/test-area/src/walk.js';
+import { PHYS, solveXZ, supportAt, BLOCK_TOP, TRIP, MOUNT } from '../public/test-area/src/walk.js';
 import { readFileSync } from 'node:fs';
 import { loadZoo } from '../public/test-area/src/critter.js';
 import { Pad } from '../public/test-area/src/pad.js';
@@ -62,7 +78,7 @@ const CENTERS = {
 
 head('砌四個區塊');
 const t0 = Date.now();
-const R = buildRuins();
+const R = buildRuins({ record: true });
 const ms = Date.now() - t0;
 console.log(`  ${ms} ms ・ ${R.tris.toLocaleString()} 三角形 ・ ${R.inkLines.toLocaleString()} 墨線`
   + ` ・ ${R.colliders.length} 碰撞盒 ・ ${R.flames.length} 盆火`);
@@ -91,6 +107,182 @@ head('緩衝區乾淨');
   for (let i = 0; i < ip.length; i++) if (!Number.isFinite(ip[i])) inan++;
   ok(inan === 0, '墨線沒有 NaN', `${inan}`);
   ok(ip.length % 6 === 0, '墨線是成對的頂點');
+}
+
+head('每塊石頭底下有東西頂著');
+/* 「一堆碎料浮在空中而不是一棟建築」是看得出來的，但看不出來有幾塊、
+   在哪裡——所以掃。每一塊 add 進來的幾何，底下 6 cm 內必須有東西托著；
+   拱的楔石、旗、鏈、獸像、絞盤是掛著的，它們用 `hang` 標記，白名單靠
+   旗標而不是靠人記得。
+
+   這一項抓到過的東西：城牆的女牆一塊磚都沒砌（`wall()` 拿絕對 y 去比
+   相對高度，所以任何 y > 0 的牆整段消失），於是九個垛口浮在 4.26 公尺
+   上；斷塔頂那圈磚寫死在 5.6，而塔身被 ruin 吃得更低。 */
+{
+  const P = R.parts;
+  const CELL = 2, grid = new Map();
+  const key = (i, j) => i * 100003 + j;
+  for (const b of P) {
+    for (let i = Math.floor(b.min[0] / CELL); i <= Math.floor(b.max[0] / CELL); i++) {
+      for (let j = Math.floor(b.min[2] / CELL); j <= Math.floor(b.max[2] / CELL); j++) {
+        const k = key(i, j);
+        let a = grid.get(k); if (!a) grid.set(k, a = []);
+        a.push(b);
+      }
+    }
+  }
+  const T = 0.06;
+  /* 「托著」= 對方跨過我的底面（從下面頂上來，或者我整塊嵌在它裡面），
+     而且水平投影有重疊。不是只認「剛好貼著」：石板是壓進基座裡的、磚是
+     砌歪的、苔是長在石頭頂面上陷進去一點的。
+
+     反過來，浮在牆頂上方的垛口不會被誤判成托著——那時候牆的頂面在垛口
+     的底面**以下**，跨不過去。 */
+  const holds = (a, o) => o !== a
+    && o.min[1] < a.min[1] + 0.02 && o.max[1] > a.min[1] - T
+    && a.min[0] - 0.02 < o.max[0] && a.max[0] + 0.02 > o.min[0]
+    && a.min[2] - 0.02 < o.max[2] && a.max[2] + 0.02 > o.min[2];
+  const vol = (b) => (b.max[0] - b.min[0]) * (b.max[1] - b.min[1]) * (b.max[2] - b.min[2]);
+
+  let floats = [], hangs = 0, onGround = 0;
+  for (const b of P) {
+    if (b.hang) { hangs++; continue; }
+    if (b.min[1] <= 0.05) { onGround++; continue; }
+    let ok2 = false;
+    for (let i = Math.floor((b.min[0] - T) / CELL); i <= Math.floor((b.max[0] + T) / CELL) && !ok2; i++) {
+      for (let j = Math.floor((b.min[2] - T) / CELL); j <= Math.floor((b.max[2] + T) / CELL) && !ok2; j++) {
+        const a = grid.get(key(i, j));
+        if (a) for (const o of a) if (holds(b, o)) { ok2 = true; break; }
+      }
+    }
+    if (!ok2) floats.push(b);
+  }
+  console.log(`  ${P.length} 塊幾何：坐在地上 ${onGround}、掛著的 ${hangs}、`
+    + `其餘 ${P.length - onGround - hangs} 塊要有東西托著`);
+  floats.sort((a, b) => vol(b) - vol(a));
+  const worst = floats.slice(0, 3).map((b) =>
+    `${vol(b).toFixed(2)}m³ @ ${((b.min[0] + b.max[0]) / 2).toFixed(1)},`
+    + `${b.min[1].toFixed(1)},${((b.min[2] + b.max[2]) / 2).toFixed(1)}`).join('  ');
+  ok(floats.length === 0, '沒有一塊石頭浮在空中', floats.length ? `${floats.length} 塊：${worst}` : `${P.length} 塊都站得住`);
+}
+
+head('牆身之內不透光');
+/* 牆只有一塊磚厚，而磚縫 2 cm、砌歪 ±2 cm——所以那些縫是穿透的。牆芯
+   （比外皮薄的一片實心牆，貼在中間）就是為這件事存在的，而「牆芯有沒有
+   漏掉一段」看不出來：從外面看，一道有芯的牆和一道沒有芯的牆一模一樣，
+   只有站在裡面、光從另一邊來的時候才看得到一排亮縫。
+
+   所以驗的是牆芯覆蓋到的高度以下，中線上每一格都是實心的；以及牆頂
+   露出來的那一段單層外皮不超過兩皮。 */
+{
+  const P = R.parts;
+  const CELL = 2, grid = new Map();
+  const key = (i, j) => i * 100003 + j;
+  for (const b of P) {
+    for (let i = Math.floor(b.min[0] / CELL); i <= Math.floor(b.max[0] / CELL); i++) {
+      for (let j = Math.floor(b.min[2] / CELL); j <= Math.floor(b.max[2] / CELL); j++) {
+        const k = key(i, j);
+        let a = grid.get(k); if (!a) grid.set(k, a = []);
+        a.push(b);
+      }
+    }
+  }
+  const solidAt = (x, y, z) => {
+    const a = grid.get(key(Math.floor(x / CELL), Math.floor(z / CELL)));
+    if (!a) return false;
+    for (const b of a) {
+      if (b.min[0] <= x && b.max[0] >= x && b.min[1] <= y && b.max[1] >= y
+        && b.min[2] <= z && b.max[2] >= z) return true;
+    }
+    return false;
+  };
+  let leaks = 0, cells = 0, thinMax = 0;
+  for (const w of R.walls) {
+    const dx = w.to[0] - w.from[0], dz = w.to[1] - w.from[1];
+    const len = Math.hypot(dx, dz);
+    for (let u = 0.02; u <= 0.98; u += Math.min(0.1, 0.1 / Math.max(len, 0.1)) * Math.max(len, 0.1) / len) {
+      const x = w.from[0] + dx * u, z = w.from[1] + dz * u;
+      const core = w.coreAt(u), surf = w.surfaceAt(u);
+      if (surf > w.y0 + w.course * 0.5) thinMax = Math.max(thinMax, (surf - core) / w.course);
+      for (let y = w.y0 + 0.06; y < core - 0.02; y += 0.1) {
+        cells++;
+        if (!solidAt(x, y, z)) leaks++;
+      }
+    }
+  }
+  ok(leaks === 0, '牆芯覆蓋到的高度以下沒有一格是透的', `${leaks}/${cells} 格`);
+  ok(thinMax <= 2.5, '牆頂露出的單層外皮不超過兩皮半', `最多 ${thinMax.toFixed(1)} 皮`);
+}
+
+head('鋪面底下有基座');
+/* 石板是會缺的（那是遺跡），缺掉的地方看到的必須是底下的填層，不是一個
+   洞。露台那一片尤其重要：台體只砌了四周的牆，中間是中空的，所以以前
+   缺掉的那 11 塊石板是看穿到 3.2 公尺底下的真洞。 */
+{
+  const P = R.parts;
+  let miss = 0, n = 0;
+  for (const f of R.floors) {
+    for (let x = -f.w / 2; x <= f.w / 2; x += 0.5) {
+      for (let z = -f.d / 2; z <= f.d / 2; z += 0.5) {
+        if (f.round && Math.hypot(x, z) > f.round - 0.5) continue;
+        const wx = f.x + x, wz = f.z + z, wy = f.y - 0.2;
+        n++;
+        let hit = false;
+        for (const b of P) {
+          if (b.min[0] <= wx && b.max[0] >= wx && b.min[1] <= wy && b.max[1] >= wy
+            && b.min[2] <= wz && b.max[2] >= wz) { hit = true; break; }
+        }
+        if (!hit) miss++;
+      }
+    }
+  }
+  ok(miss === 0, '每一片鋪面底下都是實心的', `${miss}/${n} 格是空的`);
+}
+
+head('碰撞盒都有分類，而且高度合法');
+/* 視覺的凹凸不准傳到腳底下——這條規則要有東西執行它，不然它只是一句話。
+   每個盒子都必須說自己是哪一種，而每一種有自己的高度規矩：
+
+     'block'  頂面至少高過 BLOCK_TOP（1.0）。低於這個的障礙物是「看起來
+              該站得上去、跳上去又只有半公尺」的東西，而房間裡跑起來
+              最不該有的就是那個。
+     'floor'  頂面不准落在會絆腳的那一段（0.08～0.36）。
+     'step'   階梯的一級。只有它可以，因為踩上去是預期的；級高不准超過
+              抬腳的高度，不然那道樓梯要跳。
+*/
+{
+  const bad = { kind: [], block: [], floor: [], step: [] };
+  for (const c of R.colliders) {
+    const top = c.max[1];
+    if (!c.kind) { bad.kind.push(c); continue; }
+    if (c.kind === 'block' && top - c.base < BLOCK_TOP - 1e-6) bad.block.push(c);
+    if ((c.kind === 'floor' || c.kind === 'shell') && top > TRIP[0] && top < TRIP[1] - 1e-9) bad.floor.push(c);
+  }
+  const by = {};
+  for (const c of R.colliders) by[c.kind || '?'] = (by[c.kind || '?'] || 0) + 1;
+  console.log(`  ${R.colliders.length} 個盒子：`
+    + Object.entries(by).map(([k, v]) => `${k} ${v}`).join('、'));
+  ok(bad.kind.length === 0, '每個盒子都說得出自己是哪一種', `${bad.kind.length} 個沒說`);
+  ok(bad.block.length === 0, `障礙物的頂面都高過 ${BLOCK_TOP} m`,
+    bad.block.length ? bad.block.slice(0, 3).map((c) => `${(c.max[1] - c.base).toFixed(2)}m @ ${c.min[0].toFixed(0)},${c.min[2].toFixed(0)}`).join(' / ') : '');
+  ok(bad.floor.length === 0, `沒有頂面落在會絆腳那一段（${TRIP[0]}～${TRIP[1]}）的地板`,
+    bad.floor.length ? `${bad.floor.length} 個` : '');
+  /* 這一條是「平坦」最精準的說法：跳一下踩得上去的東西（頂面在 MOUNT
+     以下）只准是階梯。碎石、台基、倒下的柱頭、扶壁的第一階全部不算——
+     它們要嘛壓進地板變成純視覺，要嘛高過 BLOCK_TOP 變成繞得過去的障礙。 */
+  const climbable = R.colliders.filter((c) => c.max[1] > TRIP[0] && c.max[1] <= MOUNT && c.kind !== 'step');
+  ok(climbable.length === 0, `除了階梯，沒有踩得上去的東西（頂面 ${TRIP[0]}～${MOUNT.toFixed(2)}）`,
+    climbable.length
+      ? climbable.slice(0, 3).map((c) => `${c.kind} 頂面 ${c.max[1].toFixed(2)} @ ${c.min[0].toFixed(0)},${c.min[2].toFixed(0)}`).join(' / ')
+      : `階梯 ${R.colliders.filter((c) => c.kind === 'step' && c.max[1] <= MOUNT).length} 級`);
+  // 階梯：級高不准超過抬腳的高度。
+  const steps = R.colliders.filter((c) => c.kind === 'step').map((c) => c.max[1]).sort((a, b) => a - b);
+  let jump = 0;
+  for (let i = 1; i < steps.length; i++) {
+    const d = steps[i] - steps[i - 1];
+    if (d > PHYS.step + 1e-6 && d < 2) jump++;      // 2 m 以上是「另一道樓梯」
+  }
+  ok(jump === 0, '每一道樓梯的級高都在抬腳的高度以內', jump ? `${jump} 級超過 ${PHYS.step}` : `${steps.length} 級`);
 }
 
 head('每個區塊的中心是空的');
@@ -204,6 +396,72 @@ for (let i = 0; i < BLOCKS.length; i++) {
   ok(res.arrived, `${a.name} → ${b.name} 的走廊是通的`,
     res.arrived ? `${res.t.toFixed(1)} 秒` : `最近只到 ${res.best.toFixed(1)} m`);
   void mid;
+}
+
+head('每個區塊都是一個可玩的房間');
+/* 「中心是空的」只驗了中央那一小片。房間要能拿去當 roguelike 的地形，
+   驗的必須是整片：
+
+     平    房間裡凡是走得到的地方，支撐高度都剛好等於地板的高度。視覺上
+           的凹凸（砌歪的磚、缺塊的石板、壓進地板的碎石）一格都不准傳到
+           腳底下。
+     通    從房間中心用真的物理走得到每一格。障礙物（柱、井、火盆、雕像、
+           大石）把路擋住是可以的，但不能把一塊地圍死。
+     空    走得到的格子要佔多數——一個房間如果一半是障礙物，它不是房間，
+           是一堆石頭。
+
+   `BLOCKS[].room` 就是「可玩的那一片」的定義，樓梯與台座刻意劃在外面。 */
+for (const b of BLOCKS) {
+  const rm = b.room;
+  const [ox, oz] = b.origin;
+  const cx = ox + (rm.cx || 0), cz = oz + (rm.cz || 0);
+  const step = 0.5;
+  const hx = rm.rad || rm.hx, hz = rm.rad || rm.hz;
+  const inside = (x, z) => (rm.rad
+    ? Math.hypot(x - cx, z - cz) <= rm.rad + 1e-9
+    : Math.abs(x - cx) <= rm.hx + 1e-9 && Math.abs(z - cz) <= rm.hz + 1e-9);
+
+  const key = (i, j) => `${i},${j}`;
+  const walk = new Map();          // 走得到的格子
+  let bumps = [], blocked = 0, total = 0;
+  const ni = Math.round(hx / step), nj = Math.round(hz / step);
+  for (let i = -ni; i <= ni; i++) {
+    for (let j = -nj; j <= nj; j++) {
+      const x = cx + i * step, z = cz + j * step;
+      if (!inside(x, z)) continue;
+      total++;
+      const [px, pz] = solveXZ(COLS, x, z, rm.y);
+      if (Math.hypot(px - x, pz - z) > 1e-6) { blocked++; continue; }
+      const sup = supportAt(COLS, x, z, rm.y + 0.1);
+      if (Math.abs(sup - rm.y) > 0.06) { bumps.push([x, z, sup]); continue; }
+      walk.set(key(i, j), [i, j]);
+    }
+  }
+  ok(bumps.length === 0, `${b.name}：整個房間的地面是平的`,
+    bumps.length
+      ? `${bumps.length}/${total} 格不平，例：${bumps.slice(0, 2).map(([x, z, y]) => `${x.toFixed(1)},${z.toFixed(1)} 支撐 ${y.toFixed(2)}`).join('；')}`
+      : `${total} 格（${walk.size} 格走得到、${blocked} 格是障礙物）`);
+
+  // 從房間中心 flood fill。中心本身必須是走得到的。
+  const seed = [0, 0];
+  let reached = 0;
+  if (walk.has(key(0, 0))) {
+    const seen = new Set([key(0, 0)]);
+    const q = [seed];
+    while (q.length) {
+      const [i, j] = q.pop();
+      reached++;
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const k = key(i + di, j + dj);
+        if (!walk.has(k) || seen.has(k)) continue;
+        seen.add(k); q.push(walk.get(k));
+      }
+    }
+  }
+  ok(reached === walk.size, `${b.name}：走得到房間裡的每一格`,
+    `${reached}/${walk.size} 格${reached === walk.size ? '' : '（有一塊地被圍死了）'}`);
+  ok(walk.size / total > 0.6, `${b.name}：障礙物沒有把房間塞滿`,
+    `${(walk.size / total * 100).toFixed(0)}% 走得到`);
 }
 
 head('動物（遊戲那幾隻本人）');

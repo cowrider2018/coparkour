@@ -236,16 +236,44 @@ const _s = new THREE.Vector3();
  * `add` 把一份幾何按變換蓋一份進緩衝區；`finish` 收成一個 mesh、一個
  * LineSegments 和一張碰撞盒清單。原始幾何本身不進場景，可以重複用——
  * 一塊 0.6×0.3×0.4 的磚在一個區塊裡會被擺上幾百次。
+ *
+ * ── 碰撞是分類的，不是布林的 ─────────────────────────────────────
+ * 視覺上的凹凸不准傳到腳底下。所以每一個碰撞盒都必須說自己是哪一種，
+ * 而「哪一種」決定了盒子怎麼算出來：
+ *
+ *   'floor'  可以站的水平面（房間鋪面、露台、牆頂、台座）。盒子就是
+ *            那個東西本身，頂面就是看得到的頂面。
+ *   'block'  繞得過、爬不上的障礙（柱、井、火盆、雕像、大石）。盒子從
+ *            它站著的那個地面（`base`）一路拉到頂——所以底下不會有一條
+ *            縫可以鑽，而頂面必須高過 `BLOCK_TOP`。
+ *   'step'   階梯的一級。只有階梯可以把頂面放在會絆腳的高度上，因為
+ *            它是一個序列，踩上去是預期的。
+ *   'shell'  牆體與台基那種「不是給人站的、但就是實心」的東西。
+ *
+ * 沒有第五種。`solid: true` 這種寫法留著當 'block' 的簡寫，但驗證會
+ * 逐個盒子檢查上面那幾條，所以「隨手登記一個盒子」不再是一個選項。
+ *
+ * ── record ──────────────────────────────────────────────────────
+ * 打開的話，每一塊 `add` 進來的幾何都會留下它的 AABB 與旗標。頁面上
+ * 不需要（那是七千個物件），tools/verify-test-area.mjs 需要——「每塊
+ * 石頭底下有沒有東西頂著」這條規則要有東西可以掃才驗得起來。
  */
 export class Build {
-  /** @param {object} [kit] pieces.js 的 Kit。零件都從 `B.kit` 拿幾何。 */
-  constructor(kit) {
+  /**
+   * @param {object} [kit] pieces.js 的 Kit。零件都從 `B.kit` 拿幾何。
+   * @param {object} [opts] record：記下每塊幾何的 AABB（給驗證用）。
+   */
+  constructor(kit, opts = {}) {
     this.kit = kit;
     this.pos = [];
     this.nrm = [];
     this.col = [];
     this.ink = [];
     this.colliders = [];
+    this.record = !!opts.record;
+    this.parts = [];        // record 打開時：每塊幾何的 AABB
+    this.walls = [];         // 每一道牆的登記（給「牆身不透光」那一項驗）
+    this.floors = [];        // 每一片鋪面的登記（給「鋪面有基座」那一項驗）
     this._c = new THREE.Color();
   }
 
@@ -254,7 +282,11 @@ export class Build {
    * @param {object} o
    *   p 位置 [x,y,z]／r 歐拉角 [x,y,z]／s 縮放（數字或 [x,y,z]）
    *   color 頂點色／ink 是否描邊（預設 true）
-   *   solid 是否算碰撞（預設 false）／grow 碰撞盒往外放這麼多
+   *   solid 碰撞的種類：'floor'／'block'／'step'（true = 'block'）
+   *   base  'block' 站在哪個高度上（預設 0）——盒子從這裡拉到頂
+   *   grow  碰撞盒往外放這麼多
+   *   hang  這塊東西是掛著／靠著的（拱的楔石、旗、鏈、獸像），底下
+   *         本來就不會有支撐。驗證的白名單靠這個旗標，不靠人記得。
    */
   add(g, o = {}) {
     const p = o.p || [0, 0, 0];
@@ -291,26 +323,53 @@ export class Build {
       }
     }
 
+    if (this.record) {
+      this.parts.push({
+        min: [minx, miny, minz], max: [maxx, maxy, maxz],
+        hang: !!o.hang || !!this._hang, solid: o.solid || null,
+      });
+    }
+
     if (o.solid) {
       const gr = o.grow || 0;
+      const kind = o.solid === true ? 'block' : o.solid;
+      /* 'block' 的底不是它自己的底，是它站著的那個地面：一顆離地 30 cm
+         的大石頭如果照 AABB 登記，腳下那 30 cm 就是一條可以鑽進去的縫。 */
+      const bot = kind === 'block' ? (o.base === undefined ? 0 : o.base) : miny - gr;
       this.colliders.push({
-        min: [minx - gr, miny - gr, minz - gr],
+        min: [minx - gr, bot, minz - gr],
         max: [maxx + gr, maxy + gr, maxz + gr],
+        kind, base: bot,
       });
     }
     return this;
   }
 
-  /** 只登記一個碰撞盒，不畫任何東西（看不見的欄杆、地板本身）。 */
-  block(cx, cy, cz, w, h, d) {
+  /**
+   * 這一段之內 `add` 進來的東西全部算「掛著／靠著的」。
+   *
+   * 拱的楔石、旗、鎖鏈、獸像底下本來就不會有支撐，而「每塊石頭底下要有
+   * 東西頂著」那條規則需要一個白名單。用一支開關而不是逐塊標記，是因為
+   * 這幾支零件裡每一塊都是掛著的，逐塊寫十次就是十次可以忘記。
+   */
+  hangs(on) { this._hang = !!on; return this; }
+
+  /**
+   * 只登記一個碰撞盒，不畫任何東西（牆體、台基、地板本身）。
+   *
+   * @param {object} [o] kind：'shell'（預設）／'floor'／'block'／'step'
+   */
+  block(cx, cy, cz, w, h, d, o = {}) {
     this.colliders.push({
       min: [cx - w / 2, cy - h / 2, cz - d / 2],
       max: [cx + w / 2, cy + h / 2, cz + d / 2],
+      kind: o.kind || 'shell',
+      base: o.base === undefined ? cy - h / 2 : o.base,
     });
     return this;
   }
 
-  /** @returns {{geometry, ink, colliders, tris, inkLines}} */
+  /** @returns {{geometry, ink, colliders, parts, walls, floors, tris, inkLines}} */
   finish() {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
@@ -324,6 +383,9 @@ export class Build {
       geometry: g,
       ink,
       colliders: this.colliders,
+      parts: this.parts,
+      walls: this.walls,
+      floors: this.floors,
       tris: this.pos.length / 9,
       inkLines: this.ink.length / 6,
     };

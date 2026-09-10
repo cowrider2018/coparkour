@@ -21,6 +21,25 @@ export const PHYS = {
   radius: 0.30, height: 0.92, step: 0.36,
 };
 
+/* ── 從 PHYS 推出來的三個造形規則 ────────────────────────────────
+   房間要「視覺上凹凸、腳下平坦」，靠的不是小心擺東西，是這三個數字：
+
+     APEX      跳躍頂點 = jump² / 2g = 4.6² / 44 = 0.48。
+     MOUNT     踩得上去的最高頂面 = APEX + step = 0.84。所以頂面 0.84
+               以下的東西，玩家跳一下就站得上去。
+     BLOCK_TOP 障礙物的頂面至少要這麼高（1.0，比 MOUNT 多一點餘裕），
+               不然它是「看起來該站得上去、跳上去又站不穩」的東西。
+     TRIP      會絆腳的那一段：頂面在 0.08 到 step 之間的東西會把身體
+               抬起來、頓一下。純視覺的碎石一律壓進地板、只露 0.08 以下，
+               就是為了避開這一段。
+
+   `walk.js` 自己不用這幾個數（它只吃盒子），但零件與驗證都要用，而它們
+   是從 PHYS 算出來的——放在別的地方就會有兩份物理。 */
+export const APEX = (PHYS.jump * PHYS.jump) / (2 * PHYS.gravity);
+export const MOUNT = APEX + PHYS.step;
+export const BLOCK_TOP = 1.0;
+export const TRIP = [0.08, PHYS.step];
+
 /** 圓柱（用外接方框近似）與一個盒子在水平面上有沒有重疊。 */
 export function overlapXZ(x, z, b, pad) {
   return x + pad > b.min[0] && x - pad < b.max[0] && z + pad > b.min[2] && z - pad < b.max[2];

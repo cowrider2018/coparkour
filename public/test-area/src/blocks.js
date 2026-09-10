@@ -44,6 +44,22 @@ const clearOf = (hx, hz, rad = 0) => (x, z) => (
   (Math.abs(x) > hx || Math.abs(z) > hz) && (!rad || Math.hypot(x, z) > rad)
 );
 
+/* ── 坐在哪一段牆上 ──────────────────────────────────────────────
+   圓塔與環牆是用十幾段直牆圍出來的，而牆頂是起伏的。要把一塊石頭、一個
+   垛口或一隻獸像擺在牆頭上，就得問「這個位置底下是哪一段牆、那一段砌到
+   多高」——問錯（或者不問，直接寫一個 y）就是一塊浮在空中的石頭。 */
+function restsOn(segs, x, z) {
+  let best = 0, bd = Infinity;
+  for (const w of segs) {
+    const dx = w.b[0] - w.a[0], dz = w.b[1] - w.a[1];
+    const L2 = dx * dx + dz * dz;
+    const u = Math.max(0, Math.min(1, ((x - w.a[0]) * dx + (z - w.a[1]) * dz) / L2));
+    const d = Math.hypot(x - (w.a[0] + dx * u), z - (w.a[1] + dz * u));
+    if (d < bd) { bd = d; best = w.topAt(u); }
+  }
+  return best;
+}
+
 /* ── 一、崩塌中庭 ─────────────────────────────────────────────────
    最正統的那一個：一個被兩排拱廊夾住的方形中庭，北面一座門樓。
    斷柱排成一圈但半徑 8.5——圓心那 14×14 完全是空的，那圈柱子的作用是
@@ -69,16 +85,23 @@ function courtyard(B, flames, seed) {
   /* 北面的門樓：兩座墩、一道尖拱、一面鐵閘。拱是走得過去的（12 寬的
      開口只放閘，閘本身有碰撞，所以門是關著的——它是背景，不是路）。
      真正的出入口在東南與西北兩個缺角。 */
-  wall(B, { from: [-13, -13], to: [-2.4, -13], h: 6.4, thick: 1.2, ruin: 0.28, seed: seed + 60 });
-  wall(B, { from: [2.4, -13], to: [13, -13], h: 6.4, thick: 1.2, ruin: 0.3, seed: seed + 61 });
+  const gateW = [
+    wall(B, { from: [-13, -13], to: [-2.4, -13], h: 6.4, thick: 1.2, ruin: 0.28, seed: seed + 60 }),
+    wall(B, { from: [2.4, -13], to: [13, -13], h: 6.4, thick: 1.2, ruin: 0.3, seed: seed + 61 }),
+  ];
   /* 門樓的拱是完整的（ruin 0）。整片廢墟裡至少要有一道拱是完好的，
      不然「尖拱」這個形狀在畫面上從來沒有被說完整——而那正好是這一路
      造型語言最好認的一筆。缺口留給別的拱。 */
   pointedArch(B, { x: 0, z: -13, y: 3.6, span: 5.0, rise: 3.6, yaw: 0, thick: 0.55, depth: 1.3, ruin: 0, seed: seed + 62 });
   portcullis(B, { x: 0, z: -13, y: 0, w: 4.4, h: 3.4, yaw: 0 });
-  merlons(B, { from: [-13, -13], to: [13, -13], y: 6.4, h: 1.0, thick: 1.2, pitch: 1.6, ruin: 0.3, seed: seed + 63 });
+  /* 垛口分兩段，各自坐在自己那一段牆的頂上（`on`）。以前是一整排坐在
+     一個給定的 6.4 上，而牆頂是起伏的——所以牆低下去的地方那幾個垛是
+     浮在空中的。門洞上方沒有垛，那裡是拱。 */
+  merlons(B, { from: [-13, -13], to: [-2.4, -13], on: gateW[0], h: 1.0, thick: 1.2, pitch: 1.6, ruin: 0.3, seed: seed + 63 });
+  merlons(B, { from: [2.4, -13], to: [13, -13], on: gateW[1], h: 1.0, thick: 1.2, pitch: 1.6, ruin: 0.3, seed: seed + 64 });
   for (const side of [-1, 1]) {
-    gargoyle(B, { x: side * 4.2, z: -12.4, y: 6.4, s: 0.9, yaw: Math.PI, seed: seed + 70 + side });
+    const gw = gateW[side < 0 ? 0 : 1];
+    gargoyle(B, { x: side * 4.2, z: -12.4, y: gw.topAtPoint(side * 4.2, -13), s: 0.9, yaw: Math.PI, seed: seed + 70 + side });
     banner(B, { x: side * 2.9, y: 5.6, z: -12.2, yaw: 0, s: 0.95, color: side < 0 ? C.banner : C.bannerAlt });
     knight(B, { x: side * 3.4, z: -9.4, y: 0, s: 1.05, yaw: Math.PI, damage: side < 0 ? 0.5 : 0, seed: seed + 80 + side });
   }
@@ -108,6 +131,8 @@ function courtyard(B, flames, seed) {
     const a = r() * Math.PI * 2, rad = r.range(8.0, 12.5);
     rubble(B, {
       x: Math.cos(a) * rad, z: Math.sin(a) * rad, y: 0, r: r.range(1.6, 3.2), n: 22,
+      // 大石是障礙物，只放在離空地夠遠的那幾叢裡；碎石一律壓進地板。
+      boulders: rad > 9.8 ? 1 : 0,
       keep: clearOf(7.0, 7.0), seed: seed + 140 + i,
     });
   }
@@ -139,8 +164,11 @@ function rampart(B, flames, seed) {
   wall(B, { from: [-hw, hd], to: [hw, hd], h: H, thick: 1.1, ruin: 0.12, seed: seed + 2 });
   wall(B, { from: [-hw, -hd], to: [-hw, hd], h: H, thick: 1.1, ruin: 0.18, seed: seed + 3 });
   wall(B, { from: [hw, -hd], to: [hw, hd], h: H, thick: 1.1, ruin: 0.18, seed: seed + 4 });
-  flagstones(B, { x: 0, z: 0, w: W - 1.6, d: D - 1.6, y: H, seed: seed + 5, ruin: 0.22, cell: 1.6 });
-  B.block(0, H - 1, 0, W, 2, D);       // 露台的地板
+  /* 鋪面的基座往外放到台體的邊（out 0.8 = 那 1.6 的一半）：它要壓在四道
+     牆的牆頂上才有東西頂著，而且缺掉的石板看到的是它——以前那 11 塊
+     缺口是看穿到 3.2 公尺底下的真洞，因為台體中間是中空的。 */
+  flagstones(B, { x: 0, z: 0, w: W - 1.6, d: D - 1.6, y: H, out: 0.8, seed: seed + 5, ruin: 0.22, cell: 1.6 });
+  B.block(0, H - 1, 0, W, 2, D, { kind: 'floor', base: H - 2 });   // 露台的地板
 
   // 外側扶壁。城牆的側面沒有它就只是一片板子。
   for (const t of [-8.5, -4.2, 0, 4.2, 8.5]) {
@@ -154,32 +182,44 @@ function rampart(B, flames, seed) {
   /* 女牆本身只給 0.08 的殘破度。垛口是坐在它的頂上的，而 `wall` 的
      殘破是把頂皮吃掉——牆頂一低下去，那幾個垛就浮在半空中。殘破留給
      垛自己（少掉三成），它們少一個就是少一個，不會浮起來。 */
-  wall(B, { from: [-hw, hd - 0.1], to: [hw, hd - 0.1], h: 1.1, y: H, thick: 0.85, ruin: 0.08, course: 0.36, seed: seed + 30 });
-  merlons(B, { from: [-hw + 0.8, hd - 0.1], to: [hw - 0.8, hd - 0.1], y: H + 1.06, h: 0.95, thick: 0.85, pitch: 1.55, ruin: 0.32, seed: seed + 31 });
-  wall(B, { from: [-hw, -hd + 0.1], to: [GAP_L, -hd + 0.1], h: 0.75, y: H, thick: 0.8, ruin: 0.45, course: 0.36, seed: seed + 32 });
-  wall(B, { from: [GAP_R, -hd + 0.1], to: [hw, -hd + 0.1], h: 0.75, y: H, thick: 0.8, ruin: 0.5, course: 0.36, seed: seed + 33 });
+  /* 女牆從鋪面**裡面**砌起（H − 0.14），不是從鋪面上——鋪面的基座頂在
+     H − 0.10，從 H 起砌的話第一皮磚底下有 10 cm 是空的，而那就是一整排
+     浮在空中的磚（掃出來 40 幾塊）。真的女牆也是砌進樓板裡的。 */
+  const para = wall(B, { from: [-hw, hd - 0.1], to: [hw, hd - 0.1], h: 1.24, y: H - 0.14, thick: 0.85, ruin: 0.08, course: 0.36, seed: seed + 30 });
+  merlons(B, { from: [-hw + 0.8, hd - 0.1], to: [hw - 0.8, hd - 0.1], on: para, h: 0.95, thick: 0.85, pitch: 1.55, ruin: 0.32, seed: seed + 31 });
+  wall(B, { from: [-hw, -hd + 0.1], to: [GAP_L, -hd + 0.1], h: 0.89, y: H - 0.14, thick: 0.8, ruin: 0.45, course: 0.36, seed: seed + 32 });
+  wall(B, { from: [GAP_R, -hd + 0.1], to: [hw, -hd + 0.1], h: 0.89, y: H - 0.14, thick: 0.8, ruin: 0.5, course: 0.36, seed: seed + 33 });
 
   /* 塔基：西端一座斷掉的圓塔。塔身是三圈砌石（用 12 段直牆圍成的圓，
      每段自己算 yaw），頂上一圈缺了大半的垛。 */
   const TX = -hw - 3.4, TZ = 0, TR = 3.5;
   const segs = 12;
+  const tower = [];
   for (let i = 0; i < segs; i++) {
     const a0 = (i / segs) * Math.PI * 2, a1 = ((i + 1) / segs) * Math.PI * 2;
-    wall(B, {
+    tower.push(wall(B, {
       from: [TX + Math.cos(a0) * TR, TZ + Math.sin(a0) * TR],
       to: [TX + Math.cos(a1) * TR, TZ + Math.sin(a1) * TR],
       h: 6.2, thick: 1.0, ruin: 0.42, seed: seed + 40 + i,
-    });
+    }));
   }
+  /* 塔頂那圈翹起的磚。以前 y 是硬編的 5.6——而塔身被 ruin 0.42 吃到更低，
+     所以掃出來 19 塊裡有 7 塊是懸空的。現在問那一段塔身砌到多高。 */
   for (let i = 0; i < 10; i++) {
     const a = (i / 10) * Math.PI * 2;
     if (r() < 0.45) continue;
+    const bx = TX + Math.cos(a) * TR, bz = TZ + Math.sin(a) * TR;
+    const on = restsOn(tower, bx, bz);
+    if (on <= 0.5) continue;
     B.add(B.kit.brick(1.1, 0.9, 0.9, 0.06), {
-      p: [TX + Math.cos(a) * TR, 5.6 + r.range(0, 0.5), TZ + Math.sin(a) * TR],
+      p: [bx, on + 0.42, bz],
       r: [0, -a, 0], color: r() < 0.4 ? C.stoneLit : C.stone,
     });
   }
-  gargoyle(B, { x: TX, z: TZ + TR - 0.4, y: 5.4, s: 1.1, yaw: 0, seed: seed + 60 });
+  {
+    const gx = TX, gz = TZ + TR - 0.4;
+    gargoyle(B, { x: gx, z: gz, y: restsOn(tower, TX, TZ + TR), s: 1.1, yaw: 0, seed: seed + 60 });
+  }
 
   /* 上露台的兩折階梯。兩折都完全在露台的footprint 之外，最後靠一塊
      平台接到牆的缺口上——樓梯只要有一階落在露台鋪面的正下方，那片鋪面
@@ -187,12 +227,14 @@ function rampart(B, flames, seed) {
   const s1 = stair(B, { x: SX, z: -hd - 8.9, y: 0, yaw: 0, steps: 6, rise: 0.27, run: 0.62, w: 3.2, seed: seed + 70 });
   const s2 = stair(B, { x: SX, z: -hd - 5.0, y: s1.top, yaw: 0, steps: 6, rise: 0.27, run: 0.62, w: 3.2, seed: seed + 71 });
   // 接到缺口的那塊平台，頂面跟最後一階同高。
-  B.add(B.kit.brick(3.4, 0.36, 1.5, 0.06), { p: [SX, s2.top - 0.18, -hd - 0.75], color: C.granite, solid: true });
+  B.add(B.kit.brick(3.4, 0.36, 1.5, 0.06), { p: [SX, s2.top - 0.18, -hd - 0.75], color: C.granite, solid: 'step' });
   // 階梯兩側的矮牆，免得從側面掉下去。
   for (const side of [-1, 1]) {
+    /* 從地面砌起，不是從 0.5 起——以前那道牆底下是一段空的，而牆是
+       看得到的：那就是「浮在空中」的另一種樣子。 */
     wall(B, {
       from: [SX + side * 1.75, -hd - 9.1], to: [SX + side * 1.75, -hd - 0.2],
-      h: 1.0, y: 0.5, thick: 0.32, ruin: 0.25, course: 0.3, brick: 0.7, seed: seed + 80 + side,
+      h: 1.5, y: 0, thick: 0.32, ruin: 0.25, course: 0.3, brick: 0.7, seed: seed + 80 + side,
     });
   }
 
@@ -214,7 +256,10 @@ function rampart(B, flames, seed) {
   }
   // 牆外的碎石堆：城牆塌下來的東西要在牆腳。
   for (let i = 0; i < 6; i++) {
-    rubble(B, { x: r.range(-hw, hw), z: hd + r.range(2.2, 5.0), y: 0, r: r.range(1.8, 3.4), n: 24, seed: seed + 100 + i });
+    rubble(B, {
+      x: r.range(-hw, hw), z: hd + r.range(2.2, 5.0), y: 0,
+      r: r.range(1.8, 3.4), n: 24, boulders: i % 2, seed: seed + 100 + i,
+    });
   }
   deadTree(B, { x: -hw - 6.5, z: -8, y: 0, s: 1.3, seed: seed + 110 });
   return { spawn: [SX, 0, -hd - 11.4] };
@@ -270,12 +315,16 @@ function throne(B, flames, seed) {
 
   // 北端的台座、王座、與背後的殘牆。
   const d1 = stair(B, { x: 0, z: 12.4, y: 0, yaw: Math.PI, steps: 3, rise: 0.3, run: 0.7, w: 8, seed: seed + 100 });
-  B.block(0, 0.45, 13.6, 8, 0.9, 2.6);
+  B.block(0, 0.45, 13.6, 8, 0.9, 2.6, { kind: 'floor', base: 0 });
   void d1;
-  B.add(B.kit.brick(9, 0.9, 4.4, 0.09), { p: [0, 0.45, 15.6], color: C.granite, solid: true });
+  // 台座是上去站的（三級階梯接上來），所以是 'floor'；王座的背是障礙。
+  /* 台座的石頭要接上最後一級階梯：碰撞盒從 z=12.3 開始（上面那個
+     B.block），而石頭以前從 13.4 才開始——中間那 1.1 公尺是一片看不見
+     的地板，站得上去、什麼都沒有。 */
+  B.add(B.kit.brick(9, 0.9, 5.4, 0.09), { p: [0, 0.45, 15.1], color: C.granite, solid: 'floor' });
   // 王座：座、背、兩個扶手，全部是倒角石塊。
-  B.add(B.kit.brick(1.9, 0.5, 1.7, 0.08), { p: [0, 1.15, 16.2], color: C.stoneLit, solid: true });
-  B.add(B.kit.brick(1.9, 2.6, 0.5, 0.09), { p: [0, 2.6, 17.0], color: C.stone, solid: true });
+  B.add(B.kit.brick(1.9, 0.5, 1.7, 0.08), { p: [0, 1.15, 16.2], color: C.stoneLit, solid: 'floor' });
+  B.add(B.kit.brick(1.9, 2.6, 0.5, 0.09), { p: [0, 2.6, 17.0], color: C.stone, solid: 'block', base: 0.9 });
   for (const side of [-1, 1]) {
     B.add(B.kit.brick(0.4, 0.7, 1.6, 0.06), { p: [side * 0.95, 1.65, 16.2], color: C.stone });
     B.add(B.kit.cone(0.22, 0.5, 6), { p: [side * 0.8, 4.05, 17.0], color: C.gold, ink: false });
@@ -291,19 +340,23 @@ function throne(B, flames, seed) {
   // 南端：塌掉的正門，兩塊倒下的柱頭當踏腳石。
   wall(B, { from: [-7.6, -14.4], to: [-2.6, -14.4], h: 5.0, thick: 1.1, ruin: 0.6, seed: seed + 150 });
   wall(B, { from: [2.6, -14.4], to: [7.6, -14.4], h: 5.0, thick: 1.1, ruin: 0.6, seed: seed + 151 });
-  /* 倒下的柱頭。刻意擺在柱列外側而不是中殿裡：中殿是這個區塊的空地，
-     而「可以踩的大石頭」只要落在那條線裡，跑起來就會被絆一下。 */
+  /* 倒下的柱頭。以前是躺在地上的（頂面 0.7）——那正好是「跳一下站得
+     上去、站上去只有半公尺」的高度，也就是房間裡跑起來最不該有的東西。
+     現在改成斜靠在側牆上：頂面 1.7，是繞得過去的障礙物，剪影也比躺著
+     的一塊石頭好認。 */
   for (let i = 0; i < 4; i++) {
-    B.add(B.kit.drum(0.62, 0.5, 1.4, 10), {
-      p: [(i % 2 ? 1 : -1) * r.range(6.2, 7.0), 0.35, r.range(-12, 8)],
-      r: [Math.PI / 2, r() * 3, r.range(-0.2, 0.2)],
-      color: C.stoneLit, solid: true,
+    const side = i % 2 ? 1 : -1;
+    B.add(B.kit.drum(0.62, 0.5, 1.7, 10), {
+      p: [side * 6.9, 0.72, r.range(-12, 8)],
+      r: [r.range(-0.15, 0.15), r() * 3, side * 0.95],
+      color: C.stoneLit, solid: 'block', base: 0,
     });
   }
   for (let i = 0; i < 8; i++) {
     rubble(B, {
       x: (i % 2 ? 1 : -1) * r.range(6.0, 9.0), z: r.range(-14, 18), y: 0,
-      r: r.range(1.2, 2.6), n: 16, keep: clearOf(5.3, 9.4), seed: seed + 160 + i,
+      r: r.range(1.2, 2.6), n: 16, boulders: i % 3 === 0 ? 1 : 0,
+      keep: clearOf(5.3, 9.4), seed: seed + 160 + i,
     });
   }
   return { spawn: [0, 0, -11] };
@@ -316,10 +369,13 @@ function throne(B, flames, seed) {
 function cistern(B, flames, seed) {
   const r = rng(seed);
   const R = 13;
-  flagstones(B, { x: 0, z: 0, w: 22, d: 22, y: 0, seed: seed + 1, ruin: 0.4, cell: 1.5 });
+  /* 圓的房間、圓的鋪面。`round` 讓石板照半徑裁、基座換成一塊圓盤——
+     方的基座會在環牆的四個對角戳出去 2.6 公尺。 */
+  flagstones(B, { x: 0, z: 0, w: 24, d: 24, y: 0, round: R - 0.8, seed: seed + 1, ruin: 0.4, cell: 1.5 });
 
   // 環牆：16 段，其中四段換成尖拱的洞口（東西南北四個門）。
   const segs = 16;
+  const ring = [];
   for (let i = 0; i < segs; i++) {
     const a0 = (i / segs) * Math.PI * 2, a1 = ((i + 1) / segs) * Math.PI * 2;
     const mid = (a0 + a1) / 2;
@@ -338,9 +394,10 @@ function cistern(B, flames, seed) {
         yaw: -mid + Math.PI / 2, thick: 0.45, depth: 1.1, ruin: 0.15, seed: seed + 50 + i,
       });
     } else {
-      wall(B, { from, to, h: 6.0, thick: 1.1, ruin: r.range(0.25, 0.6), seed: seed + 10 + i });
+      const w = wall(B, { from, to, h: 6.0, thick: 1.1, ruin: r.range(0.25, 0.6), seed: seed + 10 + i });
+      ring[i] = w;
       if (r() < 0.5) {
-        merlons(B, { from, to, y: 6.0, h: 0.85, thick: 1.1, pitch: 1.5, ruin: 0.4, seed: seed + 70 + i });
+        merlons(B, { from, to, on: w, h: 0.85, thick: 1.1, pitch: 1.5, ruin: 0.4, seed: seed + 70 + i });
       }
     }
     /* 外圈扶壁，隔一段放一根——但門洞那幾段不放。扶壁在牆外 0.6，
@@ -353,9 +410,11 @@ function cistern(B, flames, seed) {
       });
     }
     // 牆頭的獸像，四隻，朝內看。
-    if (i % 4 === 2) {
+    if (i % 4 === 2 && ring[i]) {
+      // 獸像坐在這一段牆頂實際的高度上（這一段的 ruin 是 0.25～0.6 隨機的）
       gargoyle(B, {
-        x: Math.cos(mid) * (R - 0.9), z: Math.sin(mid) * (R - 0.9), y: 5.4, s: 0.95,
+        x: Math.cos(mid) * (R - 0.9), z: Math.sin(mid) * (R - 0.9),
+        y: ring[i].topAtPoint(Math.cos(mid) * R, Math.sin(mid) * R) - 0.1, s: 0.95,
         yaw: -mid - Math.PI / 2, seed: seed + 110 + i,
       });
     }
@@ -377,10 +436,17 @@ function cistern(B, flames, seed) {
     const a = 2.4 + (i / steps) * 2.3;
     const rr = R - 1.5;
     const x = Math.cos(a) * rr, z = Math.sin(a) * rr;
-    const y = 0.3 + i * 0.32;
+    /* 第一級從 0.18 起（頂面 0.33），所以走得上去——以前是 0.3 起、
+       頂面 0.45，比抬腳的 0.36 高，得跳一下才上得去第一級。 */
+    const y = 0.18 + i * 0.32;
+    // 每一級底下的填石。以前每一級都是一塊懸空的板貼在牆上，十四級
+    // 疊起來就是一道浮在空中的樓梯。
+    B.add(B.kit.brick(1.9, 0.32, 1.15, 0.04), {
+      p: [x, y - 0.31, z], r: [0, -a + Math.PI / 2, 0], color: C.stoneDeep, ink: false,
+    });
     B.add(B.kit.brick(2.0, 0.3, 1.3, 0.05), {
       p: [x, y, z], r: [0, -a + Math.PI / 2, 0],
-      color: i % 2 ? C.granite : C.graniteDark, solid: true,
+      color: i % 2 ? C.granite : C.graniteDark, solid: 'step',
     });
     if (i === steps - 1) {
       for (let k = 0; k < 4; k++) {
@@ -395,9 +461,12 @@ function cistern(B, flames, seed) {
   // 從殘存的穹稜垂下來的鎖鏈，以及牆邊的火盆與根。
   for (let i = 0; i < 4; i++) {
     const a = (i / 4) * Math.PI * 2 + 0.8;
+    // 鏈子掛在牆頭上，不是掛在一個寫死的 5.6——牆頭比它低的地方，鏈子
+    // 的上端會浮在牆外面的空氣裡。
+    const anchor = Math.max(2.9, restsOn(ring.filter(Boolean), Math.cos(a) * R, Math.sin(a) * R) - 0.3);
     chain(B, {
-      from: [Math.cos(a) * (R - 1.2), 5.6, Math.sin(a) * (R - 1.2)],
-      to: [Math.cos(a) * (R - 3.0), 2.4, Math.sin(a) * (R - 3.0)],
+      from: [Math.cos(a) * (R - 1.2), anchor, Math.sin(a) * (R - 1.2)],
+      to: [Math.cos(a) * (R - 3.0), anchor - 3.2, Math.sin(a) * (R - 3.0)],
       n: 12, sag: 0.9,
     });
     brazier(B, { x: Math.cos(a) * 10.4, z: Math.sin(a) * 10.4, y: 0, s: 1, seed: seed + 150 + i }, flames);
@@ -410,6 +479,7 @@ function cistern(B, flames, seed) {
     const a = r() * Math.PI * 2, rad = r.range(8.5, 12.5);
     rubble(B, {
       x: Math.cos(a) * rad, z: Math.sin(a) * rad, y: 0, r: r.range(1.4, 2.8), n: 20,
+      boulders: rad > 10.5 ? 1 : 0,
       keep: clearOf(7.0, 7.0, 7.4), seed: seed + 170 + i,
     });
   }
@@ -478,11 +548,39 @@ function grounds(B, seed) {
    每一個區塊：一個 id、一個名字、一個世界座標、一支砌它的函式。
    `origin` 是那個區塊自己的原點在世界裡的位置——區塊內部一律用自己的
    局部座標寫，砌完再整個平移過去，所以四個區塊的程式碼互相看不到彼此。 */
+/* `room` 是這個區塊「可玩的那一片」：房間自己的局部座標、地板的高度、
+   以及方的（hx/hz，可加 cx/cz 偏心）或圓的（rad）範圍。
+
+   它的定義很嚴格：**這一片之內，凡是走得到的地方，支撐高度都必須剛好
+   等於 `y`**。所以樓梯、台座、貼牆的殘階一律劃在 room 之外——它們是
+   房間之間的垂直交通，不是房間的地板。房間裡准有的只有兩種東西：平的
+   地板，以及繞得過去、爬不上去的障礙物（柱、井、火盆、雕像、大石）。
+
+   這是 roguelike 要的那個單位：一個房間拼進地圖之後，「跑不跑得動」
+   不必靠玩，`tools/verify-test-area.mjs` 用真的物理走一遍就知道。 */
 export const BLOCKS = [
-  { id: 'courtyard', name: '崩塌中庭', hint: '兩側拱廊、一圈斷柱、門樓與鐵閘', origin: [0, 0], build: courtyard, seed: 0x1a2b },
-  { id: 'rampart', name: '城牆平台', hint: '抬高的露台、女牆垛口、斷塔', origin: [PITCH, 0], build: rampart, seed: 0x3c4d },
-  { id: 'throne', name: '王座廳', hint: '兩列柱、斜插的穹稜、台座與王座', origin: [0, PITCH], build: throne, seed: 0x5e6f },
-  { id: 'cistern', name: '圓塔水窖', hint: '環形拱廊、貼牆殘階、垂鏈', origin: [PITCH, PITCH], build: cistern, seed: 0x7a8b },
+  {
+    id: 'courtyard', name: '崩塌中庭', hint: '兩側拱廊、一圈斷柱、門樓與鐵閘',
+    origin: [0, 0], build: courtyard, seed: 0x1a2b,
+    room: { y: 0, hx: 12.4, hz: 12.4 },
+  },
+  {
+    id: 'rampart', name: '城牆平台', hint: '抬高的露台、女牆垛口、斷塔',
+    origin: [PITCH, 0], build: rampart, seed: 0x3c4d,
+    room: { y: 3.2, hx: 9.8, hz: 6.2 },
+  },
+  {
+    id: 'throne', name: '王座廳', hint: '兩列柱、斜插的穹稜、台座與王座',
+    origin: [0, PITCH], build: throne, seed: 0x5e6f,
+    room: { y: 0, cz: -1.5, hx: 6.9, hz: 12.0 },
+  },
+  {
+    id: 'cistern', name: '圓塔水窖', hint: '環形拱廊、貼牆殘階、垂鏈',
+    origin: [PITCH, PITCH], build: cistern, seed: 0x7a8b,
+    // 9.9 而不是 10.5：貼牆那道殘階的第一級（頂面 0.33）伸進來到 10.35，
+    // 而樓梯是房間之間的垂直交通，不算房間的地板。
+    room: { y: 0, rad: 9.9 },
+  },
 ];
 
 /**
@@ -494,11 +592,12 @@ export const BLOCKS = [
  *
  * @returns {{geometry, ink, colliders, flames, spawns, tris, inkLines}}
  */
-export function buildRuins() {
-  const B = new Build(new Kit());
+export function buildRuins(opts = {}) {
+  const B = new Build(new Kit(), opts);
   const flames = [];
   const spawns = {};
   _colCursor = _inkCursor = _flameCursor = 0;   // 同一個行程裡砌第二遍也要對
+  _partCursor = _wallCursor = _floorCursor = 0;
 
   for (const b of BLOCKS) {
     const [ox, oz] = b.origin;
@@ -521,6 +620,7 @@ export function buildRuins() {
    索引開始的那一段；碰撞盒與火焰則是「還沒有被搬過的」那些，用一個游標
    記著——比重算一次整個區塊便宜，也不必讓每個零件都去接一個 offset。 */
 let _colCursor = 0, _inkCursor = 0, _flameCursor = 0;
+let _partCursor = 0, _wallCursor = 0, _floorCursor = 0;
 function shift(B, fromPos, ox, oz, flames) {
   for (let i = fromPos; i < B.pos.length; i += 3) { B.pos[i] += ox; B.pos[i + 2] += oz; }
   for (let i = _inkCursor; i < B.ink.length; i += 3) { B.ink[i] += ox; B.ink[i + 2] += oz; }
@@ -532,4 +632,20 @@ function shift(B, fromPos, ox, oz, flames) {
   _colCursor = B.colliders.length;
   for (let i = _flameCursor; i < flames.length; i++) { flames[i].x += ox; flames[i].z += oz; }
   _flameCursor = flames.length;
+  /* 驗證用的那三份登記也要跟著搬——它們記的是世界座標，而區塊是用自己
+     的局部座標砌的。漏搬不會有人看出來，只會讓驗證去掃一片空地。 */
+  for (let i = _partCursor; i < B.parts.length; i++) {
+    const q = B.parts[i];
+    q.min[0] += ox; q.max[0] += ox; q.min[2] += oz; q.max[2] += oz;
+  }
+  _partCursor = B.parts.length;
+  for (let i = _wallCursor; i < B.walls.length; i++) {
+    const w = B.walls[i];
+    w.from[0] += ox; w.from[1] += oz; w.to[0] += ox; w.to[1] += oz;
+  }
+  _wallCursor = B.walls.length;
+  for (let i = _floorCursor; i < B.floors.length; i++) {
+    B.floors[i].x += ox; B.floors[i].z += oz;
+  }
+  _floorCursor = B.floors.length;
 }
