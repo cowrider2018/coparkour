@@ -383,7 +383,12 @@ function frame(now) {
   const realSpeed = Math.hypot(player.vx, player.vz);
   zoo.root.position.set(player.x, player.y, player.z);
   if (realSpeed > 0.35) zoo.setFacing(Math.atan2(player.vx, player.vz));
-  zoo.update(dt, { speed: realSpeed, grounded: player.grounded, vy: player.vy });
+  /* 鏡頭在哪個方位，給「頭稍微轉向觀眾」與「遠側那隻眼睛收合」用——
+     兩件事都是遊戲自己的做法，見 critter.js 的 REST_AIM 與 _eyeFade。 */
+  const viewYaw = Math.atan2(camera.position.x - player.x, camera.position.z - player.z);
+  zoo.update(dt, {
+    speed: realSpeed, grounded: player.grounded, vy: player.vy, viewYaw,
+  });
 
   // 火焰
   for (const f of flames) {

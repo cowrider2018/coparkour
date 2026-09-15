@@ -291,7 +291,7 @@ const TURN_LEAN_REF = 3.2;
    looks like an animal running one way while staring at the player.
    It is applied toward ψ = 0 — toward the camera — from whichever
    profile the cat is holding. */
-const REST_AIM = 0.22;
+export const REST_AIM = 0.22;
 
 /* ── the ink ──────────────────────────────────────────────────────
    The outline group is drawn in one flat colour rather than in its own
@@ -357,14 +357,14 @@ const INK_GROW_MAX = 0.16;
    flat MULTIPLIERS on that — computed here, on the CPU, as the ratio
    the tone map actually produces at a representative albedo. Even
    steps, and the colour shift survives. */
-const BAND_KEY = [1.0, 0.24, 0.035];   // ndl per band
-const BAND_AMB = [1.0, 1.0, 1.06];     // ambient gain per band
-const SHADE_KEY_GAIN = 2.4;            // daycycle.shade()'s own numbers
-const SHADE_AMB_GAIN = 1.5;
+export const BAND_KEY = [1.0, 0.24, 0.035];   // ndl per band
+export const BAND_AMB = [1.0, 1.0, 1.06];     // ambient gain per band
+export const SHADE_KEY_GAIN = 2.4;            // daycycle.shade()'s own numbers
+export const SHADE_AMB_GAIN = 1.5;
 /** The albedo the band ratios are measured at. Mid-grey: the ratio a
     tone map produces depends on the value it is fed, and this is the
     middle of the cat's own range (its coat runs about 0.2…0.9 linear). */
-const TONE_REF_ALBEDO = 0.55;
+export const TONE_REF_ALBEDO = 0.55;
 /** Ratios are held inside these bands however the sky moves. At
     midnight the ambient dominates and the physically-correct ratios all
     crowd toward 1, which would leave the cat a flat dark blob; at noon
@@ -373,14 +373,14 @@ const TONE_REF_ALBEDO = 0.55;
     LUMINANCE of each ratio is clamped and all three channels are scaled
     by the same factor — which keeps the hue shift and only moves the
     step size. */
-const MID_RANGE = [0.50, 0.72];
-const SHADOW_RANGE = [0.24, 0.42];
+export const MID_RANGE = [0.50, 0.72];
+export const SHADOW_RANGE = [0.24, 0.42];
 
 /** Where the two band boundaries sit, in dot(normal, light). The first
     is just below the terminator so the whole away-facing side is one
     flat shadow; the second is high enough that the lit band is a
     definite shape on the animal rather than most of it. */
-const BAND_EDGE = [-0.06, 0.42];
+export const BAND_EDGE = [-0.06, 0.42];
 /** How wide a boundary is allowed to be, as a multiple of the
     screen-space derivative of the diffuse term. Enough to stop the
     terminator crawling and aliasing, and no more — this is the number
