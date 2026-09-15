@@ -94,14 +94,20 @@ export function clampArena(a, x, z, margin) {
  * 放在這裡而不是 main.js，是因為它問的是同一個問題：「這個東西可以到
  * 哪裡」。牆在哪由 `arenaGap` 定義，鏡頭與身體因此不會各自認得一道牆。
  *
+ * 擋住鏡頭的東西跟擋住身體的是同一批：場地的黑牆、天花板、地板，**以及
+ * 那張碰撞盒清單**（牆、柱、王座、大石）。少了後者的話鏡頭會穿進石牆裡，
+ * 畫面從牆的內部往外看——而那在畫面上不是「相機穿牆」，只是「突然看到
+ * 一片奇怪的東西」。
+ *
  * @param {object} a      場地
+ * @param {object[]} cols 碰撞盒清單（可以給空陣列：那就只擋黑牆）
  * @param {number[]} pivot 樞紐 [x,y,z]
  * @param {number[]} dir   單位方向 [x,y,z]（樞紐指向鏡頭）
  * @param {number} want   想要多長
  * @param {number} margin 離牆面留多少（鏡頭的近裁面不能穿出去）
  * @param {number} floorY 鏡頭不低於這個高度
  */
-export function boomLimit(a, pivot, dir, want, margin = 0.35, floorY = 0.45) {
+export function boomLimit(a, cols, pivot, dir, want, margin = 0.35, floorY = 0.45) {
   let t = want;
   if (dir[1] > 1e-6) t = Math.min(t, (a.lid - margin - pivot[1]) / dir[1]);
   if (dir[1] < -1e-6) t = Math.min(t, (floorY - pivot[1]) / dir[1]);
@@ -123,6 +129,32 @@ export function boomLimit(a, pivot, dir, want, margin = 0.35, floorY = 0.45) {
     if (dir[2] > 1e-6) t = Math.min(t, (a.z1 - margin - pivot[2]) / dir[2]);
     if (dir[2] < -1e-6) t = Math.min(t, (a.z0 + margin - pivot[2]) / dir[2]);
   }
+  /* 砌體。射線打在**盒子本身**上，命中距離再扣掉 margin——不是把盒子
+     放大再打。兩種做法在正面撞牆的時候一樣，差別在擦邊：貼著一面牆走
+     （離牆 20 公分、鏡頭方向平行於牆）的時候，放大過的盒子會被判成「已經
+     撞上」，吊臂當場收到零，鏡頭縮進角色的頭裡——而畫面上牆明明在旁邊。
+
+     樞紐已經在盒子裡面的時候跳過那個盒子：那時候吊臂沒有答案，硬給一個
+     只會讓鏡頭黏在角色身上。所有 spring arm 都要處理這個退化情況。 */
+  for (const b of cols) {
+    if (b.kind === 'bound') continue;
+    let lo = 0, hi = t + margin, inside = true;
+    for (let k = 0; k < 3; k++) {
+      if (pivot[k] < b.min[k] || pivot[k] > b.max[k]) inside = false;
+      if (Math.abs(dir[k]) < 1e-9) {
+        if (pivot[k] < b.min[k] || pivot[k] > b.max[k]) { lo = Infinity; break; }
+        continue;
+      }
+      let ta = (b.min[k] - pivot[k]) / dir[k], tb = (b.max[k] - pivot[k]) / dir[k];
+      if (ta > tb) { const sw = ta; ta = tb; tb = sw; }
+      if (ta > lo) lo = ta;
+      if (tb < hi) hi = tb;
+      if (lo > hi) { lo = Infinity; break; }
+    }
+    if (inside || !Number.isFinite(lo)) continue;
+    if (lo - margin < t) t = Math.max(0, lo - margin);
+  }
+
   return Math.max(0, t);
 }
 

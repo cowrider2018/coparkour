@@ -54,6 +54,7 @@ import {
   PHYS, solveXZ, supportAt, arenaGap, boomLimit, BLOCK_TOP, TRIP, MOUNT,
 } from '../public/test-area/src/walk.js';
 import { VEIL, buildVeil, outline } from '../public/test-area/src/veil.js';
+import { CAM, makeCam, updateCam } from '../public/test-area/src/camera.js';
 import { readFileSync } from 'node:fs';
 import { loadZoo } from '../public/test-area/src/critter.js';
 import { Pad } from '../public/test-area/src/pad.js';
@@ -597,11 +598,13 @@ head('鏡頭的吊臂');
    就是從外面看黑牆的背面，畫面整片黑，而那是一個沒有人會回報成「相機
    出界」的災難：看起來就只是「畫面黑掉了」。
 
-   掃法：場地裡每隔兩公尺一個樞紐、每 15° 一個方位、五個俯仰角，全部
-   伸到底，然後問那個點在不在牆裡面、有沒有穿出天花板或陷進地板。 */
+   掃法：場地裡每隔兩公尺一個樞紐（站得住的才算）、每 15° 一個方位、五個
+   俯仰角，全部伸到底，然後問那個點在不在場地裡、有沒有穿出天花板、陷進
+   地板，或者**跑進砌體裡面**——最後這一項是把吊臂接上碰撞盒清單之後才
+   驗得到的，而它在畫面上不是「相機穿牆」，只是「突然看到一片奇怪的東西」。 */
 {
   const MARGIN = 0.35, FLOOR = 0.45;
-  let checked = 0, outWall = 0, outLid = 0, outFloor = 0, worst = 0;
+  let checked = 0, outWall = 0, outLid = 0, outFloor = 0, inStone = 0, worst = 0;
   for (const a of R.arenas) {
     const x0 = a.shape === 'circle' ? a.x - a.r : a.x0;
     const x1 = a.shape === 'circle' ? a.x + a.r : a.x1;
@@ -610,12 +613,21 @@ head('鏡頭的吊臂');
     for (let px = x0; px <= x1; px += 2) {
       for (let pz = z0; pz <= z1; pz += 2) {
         if (arenaGap(a, px, pz) < 0.3) continue;      // 樞紐本來就該在裡面
+        // 站不住的地方不算（樞紐在砌體裡面的話，吊臂本來就沒有答案）
+        const [sx2, sz2] = solveXZ(COLS, px, pz, 0);
+        if (Math.hypot(sx2 - px, sz2 - pz) > 1e-6) continue;
+        /* 樞紐放在站得住的那個面上方一公尺，而且頭頂兩公尺內不能有東西。
+           後面這一條是在濾掉「人到不了的封閉空腔」——露台的台體中間是
+           中空的（四周砌牆、上面鋪面），格點會撒進去，而那裡的鏡頭當然
+           在鋪面裡面。物理看不出那裡到不了，抬頭看得出來。 */
+        const pivY = supportAt(COLS, px, pz, 0.1) + 1.0;
+        if (boomLimit(a, COLS, [px, pivY, pz], [0, 1, 0], 30) < 2.0) continue;
         for (let yaw = 0; yaw < Math.PI * 2; yaw += Math.PI / 12) {
           for (const pitch of [-0.35, 0, 0.4, 0.8, 1.15]) {
             const cp = Math.cos(pitch), sp = Math.sin(pitch);
             const dir = [-Math.sin(yaw) * cp, sp, -Math.cos(yaw) * cp];
-            const pivot = [px, 1.0, pz];
-            const t = boomLimit(a, pivot, dir, 16);
+            const pivot = [px, pivY, pz];
+            const t = boomLimit(a, COLS, pivot, dir, 16);
             const cx = pivot[0] + dir[0] * t, cy = pivot[1] + dir[1] * t, cz = pivot[2] + dir[2] * t;
             checked++;
             /* 容差 1 mm：交點是解二次式算出來的，浮點誤差在 1e-9 的
@@ -624,6 +636,14 @@ head('鏡頭的吊臂');
             if (g < MARGIN - 1e-3) { outWall++; worst = Math.max(worst, MARGIN - g); }
             if (cy > a.lid - MARGIN + 1e-3) outLid++;
             if (cy < FLOOR - 1e-3) outFloor++;
+            /* 跑進砌體裡面。盒子往內縮 0.25（吊臂留的餘裕是 0.35），
+               所以「剛好停在牆面前」不會被算成穿進去。 */
+            for (const b of COLS) {
+              if (b.kind === 'bound') continue;
+              if (cx > b.min[0] + 0.25 && cx < b.max[0] - 0.25
+                && cy > b.min[1] + 0.25 && cy < b.max[1] - 0.25
+                && cz > b.min[2] + 0.25 && cz < b.max[2] - 0.25) { inStone++; break; }
+            }
           }
         }
       }
@@ -633,6 +653,7 @@ head('鏡頭的吊臂');
   ok(outWall === 0, '鏡頭不會穿出黑牆', outWall ? `${outWall} 個，最深 ${worst.toFixed(2)} m` : '');
   ok(outLid === 0, '鏡頭不會穿出天花板', `${outLid}`);
   ok(outFloor === 0, '鏡頭不會陷進地板', `${outFloor}`);
+  ok(inStone === 0, '鏡頭不會縮進砌體裡面', `${inStone}`);
 
   /* 收短，不是滑開：吊臂只會變短，方向不變。所以在同一個樞紐與方位上，
      鏡頭一定落在那條線上——這一項是拿算出來的點回推方向來驗的。 */
@@ -643,7 +664,7 @@ head('鏡頭的吊臂');
     for (let yaw = 0; yaw < Math.PI * 2; yaw += 0.21) {
       const cp = Math.cos(0.3), sp = Math.sin(0.3);
       const dir = [-Math.sin(yaw) * cp, sp, -Math.cos(yaw) * cp];
-      const t = boomLimit(a, [px, 1.0, pz], dir, 16);
+      const t = boomLimit(a, COLS, [px, 1.0, pz], dir, 16);
       const v = [dir[0] * t, dir[1] * t, dir[2] * t];
       const len = Math.hypot(v[0], v[1], v[2]) || 1;
       const dot = (v[0] * dir[0] + v[1] * dir[1] + v[2] * dir[2]) / len;
@@ -651,6 +672,52 @@ head('鏡頭的吊臂');
     }
   }
   ok(offLine === 0, '鏡頭只沿著吊臂收短，不往旁邊滑', `${offLine} 個偏離`);
+}
+
+/* ── 被牆逼到最近的時候，角色會不會離開畫面中心 ──────────────────────
+   這是整個鏡頭最容易做錯、而且**只有動起來才看得到**的一條：貼著牆走的
+   時候，如果樞紐還黏在人身上，鏡頭就會黏著牆滑，人永遠在正中央，畫面
+   有一半是牆。要的是相反的——鏡頭停住，人走出中心，換到看得見前面。
+
+   場地是這裡臨時造的一個空圓，不是四個區塊裡的任何一個：驗的是**規則**，
+   而規則不該綁在某一座遺跡的擺設上。走到哪裡算「離牆夠遠」也是從 CAM 的
+   門檻推回來的，所以之後調那幾個數字，這一項不會因此變成紅的。 */
+{
+  const a = { id: 'test', shape: 'circle', x: 0, z: 0, r: 22, lid: 16 };
+  const cam = makeCam(0, 20);
+  cam.yaw = Math.PI;                       // 吊臂朝 +z，也就是朝牆
+  const player = { x: 0, y: 0, z: 20 };
+  const dt = 1 / 60;
+  const deg = (r2) => (r2 * 180) / Math.PI;
+  let maxOff = 0, pinnedFrames = 0, minBoom = 99;
+  for (let i = 0; i < 120; i++) {           // 兩秒：沿著牆走
+    player.x += PHYS.walk * dt;
+    const rig = updateCam(cam, dt, player, a, []);
+    maxOff = Math.max(maxOff, rig.offAngle);
+    minBoom = Math.min(minBoom, rig.boom);
+    if (rig.pinned) pinnedFrames++;
+  }
+  ok(pinnedFrames > 100, '貼著牆走的時候樞紐被釘住', `${pinnedFrames}/120 幀`);
+  ok(minBoom < cam.curDist - 0.5, '吊臂真的被牆收短了', `最短 ${minBoom.toFixed(2)} m`);
+  ok(deg(maxOff) > 10, '角色確實離開了畫面中心', `最多偏 ${deg(maxOff).toFixed(1)}°`);
+  ok(deg(maxOff) < deg(Math.atan(CAM.deadTan)) + 2, '但沒有走出 dead zone',
+    `${deg(maxOff).toFixed(1)}° ≤ ${deg(Math.atan(CAM.deadTan)).toFixed(0)}°+2`);
+
+  /* 走回場地中央。要走到「牆不再限制吊臂」為止，而那個距離是門檻算出來
+     的：鬆開需要空間大於 hold × holdOut，再加一公尺餘裕。 */
+  const needRoom = CAM.hold * CAM.holdOut + 1;
+  let off2 = 1, pinned2 = true, steps = 0;
+  while (steps < 600 && (pinned2 || Math.hypot(player.x, player.z) > a.r - needRoom)) {
+    const d = Math.hypot(player.x, player.z) || 1;
+    player.x -= (player.x / d) * PHYS.walk * dt;
+    player.z -= (player.z / d) * PHYS.walk * dt;
+    const rig = updateCam(cam, dt, player, a, []);
+    off2 = rig.offAngle; pinned2 = rig.pinned;
+    steps++;
+  }
+  ok(!pinned2, '走開之後樞紐鬆得開',
+    `走了 ${(steps / 60).toFixed(1)} 秒、離牆 ${(a.r - Math.hypot(player.x, player.z)).toFixed(1)} m`);
+  ok(deg(off2) < 2, '角色回到畫面中心', `偏 ${deg(off2).toFixed(2)}°`);
 }
 
 head('動物（遊戲那幾隻本人）');

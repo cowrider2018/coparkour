@@ -41,7 +41,8 @@ import { loadZoo } from './critter.js';
 import { Pad } from './pad.js';
 import { Hud } from './hud.js';
 import { facet } from './geom.js';
-import { PHYS, solveXZ, supportAt, arenaGap, boomLimit } from './walk.js';
+import { PHYS, solveXZ, supportAt, arenaGap } from './walk.js';
+import { CAM, makeCam, snapCam, updateCam } from './camera.js';
 import { buildVeil } from './veil.js';
 import { lookInfo } from '../../src/cat/looks.js';
 
@@ -155,31 +156,13 @@ const player = {
 /* 碰撞的規則在 walk.js——那一支 tools/verify-test-area.mjs 也在用，
    於是「中心夠空曠」這條設計規則可以離線踩過一遍來驗，而不是靠看。 */
 
-/* ── 相機的狀態 ──────────────────────────────────────────────────
-   吊臂（spring arm）。鏡頭永遠掛在「從樞紐沿著視角方向伸出去」的那一條
-   線上，撞到黑牆、天花板或地板就**沿著那條線收短**，不是往旁邊滑開——
-   滑開的話鏡頭會離開那條線，視線跟著甩，而玩家沒有下任何指令。伸多長
-   由 `walk.js` 的 boomLimit 算，跟身體問的是同一道牆。
+/* ── 相機 ────────────────────────────────────────────────────────
+   規則在 camera.js（吊臂、dead zone、釘住樞紐），那一支 node 跑得動，
+   所以「被牆逼到最近的時候角色會不會離開畫面中心」是驗得出來的，不是
+   靠看。這裡只有玩家的輸入寫進 yaw／pitch／dist。 */
+const cam = makeCam(0, 0);
+const CAM_NEAR = CAM.near, CAM_FAR = CAM.far;
 
-   dist 是縮放的目標、curDist 是它現在的位置；boom 是「這一幀真的伸多長」
-   （被牆頂住的時候比 curDist 短）。收短快、放長慢：貼著牆走的時候牆一下
-   遠一下近，兩邊同速的話鏡頭會前後抽動。
-
-   ── 收到最短還是不夠的時候 ──────────────────────────────────────
-   轉開角度是最糟的做法，它會跟玩家的輸入打架。改成讓**樞紐停在原地**：
-   鏡頭不再跟著人往牆裡擠，人因此離開畫面中心，換到的是「看得到前面」
-   而不是「看得到一面牆」。偏移有上限，而且上限是用**角度**給的（畫面
-   上的比例固定，不隨距離變）——業界叫它 dead zone。超過就把樞紐拖著走，
-   不然沿著牆走會把人留在畫面外。 */
-const cam = {
-  yaw: Math.PI, pitch: 0.30, dist: 7.0, curDist: 7.0,
-  boom: 7.0, px: 0, pz: 0, pinned: false,
-};
-const CAM_NEAR = 1.2, CAM_FAR = 16;
-/** 吊臂收到這麼短還是不夠，就換成讓人離開畫面中心。 */
-const CAM_MIN = 0.85;
-/** dead zone：人最多可以離開視線軸這個角度（18°）。 */
-const DEAD_TAN = Math.tan(0.32);
 /** 正在轉視角的那幾根手指。兩根以上就是縮放。 */
 const drag = new Map();
 
@@ -191,8 +174,7 @@ function goto(id) {
   player.vx = player.vy = player.vz = 0;
   player.block = id;
   cam.yaw = Math.PI;
-  // 樞紐直接跟過去：不接的話換場地的那一下，鏡頭會從六十公尺外飛過來。
-  cam.px = player.x; cam.pz = player.z; cam.pinned = false;
+  snapCam(cam, player.x, player.z);
   hud.flash(BLOCKS.find((b) => b.id === id).name);
   hud.paint({ block: id });
 }
@@ -415,49 +397,12 @@ function frame(now) {
     f.outer.position.y = (w - 1) * 0.2;
   }
 
-  /* ── 相機 ──────────────────────────────────────────────────────
-     眼高跟著距離收：拉近看動物的時候鏡頭要降下來平視牠，不然近距離
-     只會看到一顆帽子頂。 */
-  cam.curDist += (cam.dist - cam.curDist) * Math.min(1, dt * 6);
-  const near = 1 - Math.min(1, (cam.boom - CAM_NEAR) / 3.5);
-  const eyeH = 0.95 - 0.42 * near;
-  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
-  const bx = -Math.sin(cam.yaw) * cp, by = sp, bz = -Math.cos(cam.yaw) * cp;
-
-  /* 樞紐。沒被牆頂住的時候黏在人身上；頂住了就留在原地，人因此離開畫面
-     中心——直到超過 dead zone，那時候才被拖著走。 */
-  if (!cam.pinned) {
-    const k = Math.min(1, dt * 14);
-    cam.px += (player.x - cam.px) * k;
-    cam.pz += (player.z - cam.pz) * k;
-  }
+  // 相機。規則在 camera.js，這裡只把算出來的兩個點交給 three。
   {
-    const leash = Math.max(0.12, cam.boom * DEAD_TAN);
-    const lx = player.x - cam.px, lz = player.z - cam.pz;
-    const ld = Math.hypot(lx, lz);
-    if (ld > leash) {
-      const f = 1 - leash / ld;
-      cam.px += lx * f; cam.pz += lz * f;
-    }
+    const rig = updateCam(cam, dt, player, arenaAt(cam.px, cam.pz), COLS);
+    camera.position.set(rig.pos[0], rig.pos[1], rig.pos[2]);
+    camera.lookAt(rig.look[0], rig.look[1], rig.look[2]);
   }
-
-  const pivotY = player.y + eyeH;
-  const arena = arenaAt(cam.px, cam.pz);
-  const room = boomLimit(arena, [cam.px, pivotY, cam.pz], [bx, by, bz], cam.curDist);
-  /* 遲滯：釘住之後要等吊臂空間回到 1.35 倍才鬆開。門檻只有一個的話，
-     站在牆邊左右微調的那一下會在「釘住／不釘住」之間跳，而樞紐一跳
-     畫面就抖。 */
-  cam.pinned = room < CAM_MIN * (cam.pinned ? 1.35 : 1);
-  const want = Math.min(cam.curDist, room);
-  // 收短快（dt·26）、放長慢（dt·5）：牆一下遠一下近的時候不會前後抽動。
-  cam.boom += (want - cam.boom) * Math.min(1, dt * (want < cam.boom ? 26 : 5));
-
-  camera.position.set(
-    cam.px + bx * cam.boom,
-    pivotY + by * cam.boom,
-    cam.pz + bz * cam.boom,
-  );
-  camera.lookAt(cam.px, player.y + eyeH * (0.75 + 0.25 * near), cam.pz);
 
   renderer.render(scene, camera);
   pad.draw();
