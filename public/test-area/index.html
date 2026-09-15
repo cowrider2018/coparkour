@@ -18,8 +18,9 @@
 
   ── 這一頁是獨立的計畫，不是遊戲的一部分 ────────────────────────
   關卡是它自己的一套幾何與材質，用 three.js（vendor/ 底下那一份，跟著
-  Workers Static Assets 一起送出去，不打 CDN）。三階調著色的做法抄自
-  src/cat/cat.js，墨線的顏色是同一個 43,35,32。
+  Workers Static Assets 一起送出去，不打 CDN）。分階著色的做法抄自
+  src/cat/cat.js——石頭分五階（斜面多，三階會把倒角與柱稜壓成一塊平色），
+  狗仍然是牠自己的三階。墨線只描輪廓，顏色是同一個 43,35,32。
 
   但動物不是重畫的，是遊戲那幾隻本人：assets/cat.bin 經過遊戲自己的
   src/cat/species.js（貓、立耳犬、垂耳犬）與 src/cat/wear.js（漁夫帽），

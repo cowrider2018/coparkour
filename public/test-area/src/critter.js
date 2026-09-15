@@ -37,9 +37,9 @@
      · gl.depthRange 分段遮擋，與遠側那隻眼睛的收合。兩個都是為了「一排
        貓在 2D 畫面上疊起來」：這裡只有一隻，而且有真的深度緩衝；而正面
        看得到兩隻眼睛的時候，收掉一隻會變成獨眼。
-     · 三階調著色器本身。改用 three 的 MeshToonMaterial 加同一張 3 階
-       梯度圖（palette.js 的 ramp），所以狗和石頭是被同一盞燈、同一組
-       色階照的——那才是「同一個作品」的意思。
+     · 三階調著色器本身。搬過來的是它的算式（見下面「毛色」那一段），
+       不是它那支檔案；狗和石頭因此是被同一個方向的光打的，只是石頭
+       分五階而狗分三階（理由在 palette.js 的「為什麼是五階」）。
 
    ── 圓角方形：每幀的二次變形 ─────────────────────────────────────
    那個造型是這隻動物的招牌，所以它整個跟過來了：`shape.js` 的
@@ -104,11 +104,11 @@ import {
   TONE_REF_ALBEDO, MID_RANGE, SHADOW_RANGE, BAND_EDGE, REST_AIM,
 } from '../../src/cat/cat.js';
 import { skyAt, acesTone } from '../../src/gfx/daycycle.js';
-import { INK } from './palette.js';
+import { INK, KEY_POS } from './palette.js';
 
 /* ── 毛色：照遊戲那支著色器算，不照 three 的燈 ───────────────────
-   這一頁本來讓狗跟石頭吃同一盞燈（three 的 MeshToonMaterial 加
-   palette.js 的梯度圖）。那在「同一個作品」的意義上是對的，但量出來的
+   這一頁本來讓狗跟石頭吃同一盞 three 的燈。那在「同一個作品」的意義上
+   是對的，但量出來的
    結果是毛色跟 2D 差很多：亮調只有遊戲的 0.2～0.6 倍，深色毛最慘。
 
    差在哪：遊戲是 `aces(albedo × keyLit)`，keyLit ≈ 2.55，也就是先大幅
@@ -120,7 +120,8 @@ import { INK } from './palette.js';
    曝光，全部是那支檔案自己的常數（現在從那邊 import，不是抄一份）。天色
    固定取正午——這一頁沒有日夜循環。
 
-   石頭、苔、旗子完全不動，仍然是 three 的燈。 */
+   石頭、苔、旗子走的是 palette.js 的五階調——同一個光的方向，不同的
+   色階與曝光。 */
 
 const SKY = skyAt(12);
 
@@ -159,11 +160,12 @@ const INK_TONED = new THREE.Color(INK).multiplyScalar(TONES.inkGain);
 /**
  * 主光的方向（世界空間，指向光源）。
  *
- * 用的是 palette.js 那盞 key 的位置，所以狗的三階調是被場景裡那盞燈
- * 打的——換掉的只有「色調是什麼顏色」，不是「光從哪裡來」。石頭與狗
- * 因此還是同一個方向的光，只是狗的色階照遊戲的來。
+ * 用的是 palette.js 的 KEY_POS，也就是石頭那五階調讀的同一個方向——
+ * 換掉的只有「色調是什麼顏色」，不是「光從哪裡來」。所以狗與石頭是被
+ * 同一盞燈打的，只是狗的色階照遊戲的來（三階、ACES），石頭照場景的
+ * 來（五階、線性）。
  */
-const LIGHT_DIR = { value: new THREE.Vector3(-9, 14, 7).normalize() };
+const LIGHT_DIR = { value: new THREE.Vector3(...KEY_POS).normalize() };
 
 /* 顏色 alpha 位元組的編碼，跟 src/cat/cat.js 一樣：低五位是骨號，
    高三位是彈簧群組。 */

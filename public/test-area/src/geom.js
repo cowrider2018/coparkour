@@ -12,10 +12,14 @@
    法線是平的（頂點不共用，computeVertexNormals 出來就是面法線）——這是
    刻意的，圓滑的法線會把倒角糊成一條漸層，那正好是要避免的東西。
 
-   ── 為什麼墨線是 EdgesGeometry 而不是翻面外殼 ────────────────────
+   ── 為什麼墨線是線而不是翻面外殼 ────────────────────────────────
    見 palette.js 的 inkLine 注解：平法線的外殼會在每道倒角上裂開。
    線是照著「原始那一塊」算的並且快取起來，然後跟著變換搬進合併後的
    緩衝區——所以一塊石頭的墨線只算一次，擺一百次是一百次矩陣乘法。
+
+   每條線同時帶著它兩側的面法線（aN0／aN1）。那兩個數字是「這條邊現在
+   是不是輪廓」唯一需要的東西，所以整批線可以一次送出去，由著色器逐條
+   決定露不露——內部的轉折因此一條都不會被畫出來。
 
    ── 為什麼要合併 ────────────────────────────────────────────────
    一個區塊有上千塊石頭。一塊一個 mesh 是上千個 draw call，而它們的顏色
@@ -173,8 +177,8 @@ export function smooth(g) {
 /**
  * 一片會垂的布。
  *
- * 旗子不能是一片平面：平面在三階調下整片同一階，沒有布的訊息。這裡把
- * 它沿 x 折出兩個波、沿 y 往下越垂越鬆，於是同一片布上同時出現三個色階，
+ * 旗子不能是一片平面：平面在分階著色下整片同一階，沒有布的訊息。這裡把
+ * 它沿 x 折出兩個波、沿 y 往下越垂越鬆，於是同一片布上同時出現好幾個色階，
  * 而且左右兩側各有一道亮邊。兩面都要看得見，所以背面另外複製一份反繞向的。
  */
 export function cloth(w, h, wave = 0.16, segX = 10, segY = 6) {
@@ -209,19 +213,78 @@ export function twoSided(g) {
   return n;
 }
 
-/* ── 合併器 ────────────────────────────────────────────────────── */
+/* ── 邊 ──────────────────────────────────────────────────────────
+   一份幾何的「可能是輪廓的邊」，連同每條邊兩側的面法線。
+
+   候選的門檻仍然是 24°（倒角面與大面之間是 45°，柱身相鄰兩片 10 段是
+   36°，低面數球體最疏的一圈也有 25°，所以該留的稜一條都不少）；比這
+   更平的兩個面之間就算真的落在輪廓上，也只是一條藏在自己的高光裡的
+   髮絲，留著只是替每個四邊形多記一條對角線。
+
+   three 的 EdgesGeometry 做的是同一件事，但它只吐位置——面法線在它算完
+   之後就丟了，而那正是輪廓判定要的東西，所以這裡自己算一次。
+   ------------------------------------------------------------------ */
+
+/** 位置雜湊的精度，跟 three 的 EdgesGeometry 同一個（1e-4）。 */
+const EPRE = 1e4;
+/** 24° 的 cos。兩個面的法線內積大於它 = 太平，不當候選。 */
+const CREASE = Math.cos((24 * Math.PI) / 180);
 
 const EDGE_CACHE = new WeakMap();
-const edgesOf = (g) => {
-  let e = EDGE_CACHE.get(g);
-  if (!e) {
-    // 24°：倒角面與大面之間是 45°，所以倒角的兩條邊都留得住；
-    // 柱身相鄰兩片（10 段 = 36°）也留得住，那是柱子的稜。
-    e = new THREE.EdgesGeometry(g, 24).attributes.position.array;
-    EDGE_CACHE.set(g, e);
+
+/**
+ * @param {THREE.BufferGeometry} g 非索引、平法線的幾何（facet 出來的那種）
+ * @returns {{pos: Float32Array, n0: Float32Array, n1: Float32Array}}
+ *   每條邊兩個頂點；n0／n1 逐頂點重複一次，所以三份的長度一樣。
+ */
+function edgesOf(g) {
+  const hit = EDGE_CACHE.get(g);
+  if (hit) return hit;
+
+  const P = g.attributes.position.array;
+  const key = (i) => `${Math.round(P[i] * EPRE)},${Math.round(P[i + 1] * EPRE)},`
+    + `${Math.round(P[i + 2] * EPRE)}`;
+  const E = new Map();
+
+  for (let t = 0; t < P.length; t += 9) {
+    /* 面法線從繞向算，不是讀法線屬性——smooth() 出來的幾何法線是平滑過
+       的，那個法線回答不了「這個三角形朝哪邊」。 */
+    const ux = P[t + 3] - P[t], uy = P[t + 4] - P[t + 1], uz = P[t + 5] - P[t + 2];
+    const vx = P[t + 6] - P[t], vy = P[t + 7] - P[t + 1], vz = P[t + 8] - P[t + 2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const L = Math.hypot(nx, ny, nz);
+    if (L < 1e-12) continue;                      // 退化的三角形沒有朝向
+    nx /= L; ny /= L; nz /= L;
+    for (let k = 0; k < 3; k++) {
+      const i = t + k * 3, j = t + ((k + 1) % 3) * 3;
+      const ki = key(i), kj = key(j);
+      const id = ki < kj ? `${ki}|${kj}` : `${kj}|${ki}`;
+      const rec = E.get(id);
+      if (!rec) E.set(id, { i, j, n0: [nx, ny, nz], n1: null });
+      else if (!rec.n1) rec.n1 = [nx, ny, nz];    // 第三個以上的面不理會
+    }
   }
-  return e;
-};
+
+  const pos = [], n0 = [], n1 = [];
+  for (const e of E.values()) {
+    /* 只有一個面的邊（布的下擺、任何開口）永遠是輪廓——把另一側記成
+       反向的同一個法線，內積必然異號，著色器那一條判定就不必分支。 */
+    const b = e.n1 || [-e.n0[0], -e.n0[1], -e.n0[2]];
+    if (e.n1 && e.n0[0] * b[0] + e.n0[1] * b[1] + e.n0[2] * b[2] > CREASE) continue;
+    pos.push(P[e.i], P[e.i + 1], P[e.i + 2], P[e.j], P[e.j + 1], P[e.j + 2]);
+    n0.push(...e.n0, ...e.n0);
+    n1.push(...b, ...b);
+  }
+  const out = {
+    pos: new Float32Array(pos),
+    n0: new Float32Array(n0),
+    n1: new Float32Array(n1),
+  };
+  EDGE_CACHE.set(g, out);
+  return out;
+}
+
+/* ── 合併器 ────────────────────────────────────────────────────── */
 
 const _m = new THREE.Matrix4();
 const _nm = new THREE.Matrix3();
@@ -269,6 +332,11 @@ export class Build {
     this.nrm = [];
     this.col = [];
     this.ink = [];
+    /* 墨線每個頂點的兩個面法線。量化成 int8（±1/127 ≈ 0.45°，而這兩個
+       數字只拿去比正負號），所以一條線的附帶資料是 6 個位元組而不是
+       24 個——整個區塊的墨線多了五成記憶體，不是多了三倍。 */
+    this.inkA = [];
+    this.inkB = [];
     this.colliders = [];
     this.record = !!opts.record;
     this.parts = [];        // record 打開時：每塊幾何的 AABB
@@ -318,9 +386,15 @@ export class Build {
 
     if (o.ink !== false) {
       const E = edgesOf(g);
-      for (let i = 0; i < E.length; i += 3) {
-        _v.set(E[i], E[i + 1], E[i + 2]).applyMatrix4(_m);
+      for (let i = 0; i < E.pos.length; i += 3) {
+        _v.set(E.pos[i], E.pos[i + 1], E.pos[i + 2]).applyMatrix4(_m);
         this.ink.push(_v.x, _v.y, _v.z);
+        /* 法線走 normalMatrix，跟這塊幾何自己的法線同一條路——不然一塊
+           被非等比縮放的石頭，它的輪廓會判在錯的地方。 */
+        _v.set(E.n0[i], E.n0[i + 1], E.n0[i + 2]).applyMatrix3(_nm).normalize();
+        this.inkA.push(_v.x * 127, _v.y * 127, _v.z * 127);
+        _v.set(E.n1[i], E.n1[i + 1], E.n1[i + 2]).applyMatrix3(_nm).normalize();
+        this.inkB.push(_v.x * 127, _v.y * 127, _v.z * 127);
       }
     }
 
@@ -411,6 +485,8 @@ export class Build {
     g.computeBoundingSphere();
     const ink = new THREE.BufferGeometry();
     ink.setAttribute('position', new THREE.Float32BufferAttribute(this.ink, 3));
+    ink.setAttribute('aN0', new THREE.Int8BufferAttribute(new Int8Array(this.inkA), 3, true));
+    ink.setAttribute('aN1', new THREE.Int8BufferAttribute(new Int8Array(this.inkB), 3, true));
     ink.computeBoundingSphere();
     return {
       geometry: g,

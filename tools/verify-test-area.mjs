@@ -39,7 +39,12 @@
                      腳底下」唯一的執行者。
     10. 房間是可玩的  整片房間都是平的、都走得到、沒有被障礙物塞滿。
                      這是 roguelike 要的那個單位。
-    11. 手把的版面與手感  兩側是操作列、中間那一整片是遊戲——這條規則
+    11. 地形的墨線與五階調  兩件事都活在著色器裡，node 沒有 WebGL 編不
+                     了——但它們要的**資料**就在緩衝區裡，而字串有沒有
+                     插進去也查得出來，那正是會壞的兩個地方：面法線沒
+                     烘進去，畫面上是墨線整批消失；字串沒配到，畫面上是
+                     每一道轉折又全都描上了。兩種都不會報錯。
+    12. 手把的版面與手感  兩側是操作列、中間那一整片是遊戲——這條規則
                      是這個版面存在的全部理由，而「觸控區悄悄長到畫面
                      中央」看不出來，只會讓人覺得點哪裡都在走路。軸是
                      圓的（推到對角不會比推直的快 41%）也一樣：看不出來，
@@ -54,6 +59,7 @@ import {
   PHYS, solveXZ, supportAt, arenaGap, boomLimit, BLOCK_TOP, TRIP, MOUNT,
 } from '../public/test-area/src/walk.js';
 import { VEIL, buildVeil, outline } from '../public/test-area/src/veil.js';
+import { toonVC, inkLine, BAND_EDGE, BAND_KEY } from '../public/test-area/src/palette.js';
 import { CAM, makeCam, updateCam } from '../public/test-area/src/camera.js';
 import { readFileSync } from 'node:fs';
 import { loadZoo } from '../public/test-area/src/critter.js';
@@ -111,6 +117,86 @@ head('緩衝區乾淨');
   for (let i = 0; i < ip.length; i++) if (!Number.isFinite(ip[i])) inan++;
   ok(inan === 0, '墨線沒有 NaN', `${inan}`);
   ok(ip.length % 6 === 0, '墨線是成對的頂點');
+}
+
+head('墨線只描輪廓');
+/* 輪廓判定是「這條邊兩側的面，一個朝鏡頭一個背對」。判定本身在著色器
+   裡，這裡驗的是它吃的那兩個法線：數量對得上、是單位長（int8 量化之後
+   仍然要是）、而且一條線的兩個頂點帶的是同一組——半路換人的話，線會
+   在中間斷掉。 */
+{
+  const n0 = R.ink.attributes.aN0, n1 = R.ink.attributes.aN1;
+  const P = R.ink.attributes.position;
+  ok(!!n0 && !!n1, '每個墨線頂點都帶著兩側的面法線');
+  ok(n0.normalized && n1.normalized && n0.count === P.count && n1.count === P.count,
+    '面法線的數量與頂點對得上，而且是正規化的 int8', `${n0.count}`);
+  const CREASE = Math.cos((24 * Math.PI) / 180);
+  let badLen = 0, tooFlat = 0, split = 0;
+  const v = (at, i) => [at.getX(i), at.getY(i), at.getZ(i)];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  for (let i = 0; i < n0.count; i++) {
+    const a = v(n0, i), b = v(n1, i);
+    if (Math.abs(Math.hypot(...a) - 1) > 0.02 || Math.abs(Math.hypot(...b) - 1) > 0.02) badLen++;
+    /* 兩面夾角小於 24° 的邊不該進來——那是同一片平面上的對角線，永遠
+       不會是輪廓，留著只是替每個四邊形多畫一條。 */
+    if (dot(a, b) > CREASE + 0.02) tooFlat++;
+    /* 比的是量化前後都不會動的那三個位元組本身，不是內積——量化後的
+       單位向量自己跟自己的內積也只有 0.99 上下。 */
+    if (i % 2 === 1) {
+      for (let k = 0; k < 3; k++) {
+        if (n0.array[i * 3 + k] !== n0.array[(i - 1) * 3 + k]
+          || n1.array[i * 3 + k] !== n1.array[(i - 1) * 3 + k]) { split++; break; }
+      }
+    }
+  }
+  ok(badLen === 0, '量化之後的面法線還是單位長', `${badLen} / ${n0.count}`);
+  ok(tooFlat === 0, '沒有太平的邊混進來（那些是四邊形的對角線）', `${tooFlat}`);
+  ok(split === 0, '一條線的兩端帶的是同一組法線', `${split}`);
+}
+
+head('五階調與輪廓判定接上了');
+/* node 編不了 GLSL，但這兩段是用字串替換接上 three 的著色器的，而字串
+   沒配到不會報錯——只會靜靜地畫出一片平光的地形，或是把每一道轉折又
+   全部描上。所以接得上沒有，這裡查。 */
+{
+  const sh = () => ({
+    uniforms: {},
+    vertexShader: THREE.ShaderLib.basic.vertexShader,
+    fragmentShader: THREE.ShaderLib.basic.fragmentShader,
+  });
+
+  const band = sh();
+  toonVC().onBeforeCompile(band, null);
+  ok(!!band.uniforms.uBand && band.uniforms.uBand.value.length === 15,
+    '五階的顏色攤平成 vec3[5]', `${band.uniforms.uBand ? band.uniforms.uBand.value.length : 0} 個數字`);
+  ok(BAND_EDGE.length === 4 && BAND_KEY.length === 5, '五階四界');
+  ok(BAND_EDGE.every((e, i) => i === 0 || e < BAND_EDGE[i - 1]), '邊界由亮到暗遞減');
+  ok(BAND_EDGE[3] < 0, '最後一道界落在明暗交界線下面（背光側是一塊平的）',
+    `${BAND_EDGE[3]}`);
+  const mixes = (band.fragmentShader.match(/cpTone = mix\(/g) || []).length;
+  ok(mixes === BAND_EDGE.length, '每一道界都插進片段著色器了', `${mixes} 道`);
+  ok(band.fragmentShader.includes('fwidth(cpD)'), '交界的寬度是螢幕空間導數算的');
+  ok(band.vertexShader.includes('vBandN = mat3(modelMatrix) * normal;'),
+    '世界空間的法線送得到片段著色器');
+  ok(!band.fragmentShader.includes('gradientMap'), '沒有留下梯度圖那條舊路');
+
+  /* 五階要讀得出五階：亮度嚴格遞減，而且最暗的那一階不是死黑——它是
+     一整片背光的牆，掉到零就沒有東西可看了。 */
+  const T = band.uniforms.uBand.value;
+  const lum = (i) => 0.2126 * T[i * 3] + 0.7152 * T[i * 3 + 1] + 0.0722 * T[i * 3 + 2];
+  let mono = true;
+  for (let i = 1; i < 5; i++) if (!(lum(i) < lum(i - 1) * 0.95)) mono = false;
+  ok(mono, '五階的亮度一階比一階暗，而且階差看得出來',
+    [0, 1, 2, 3, 4].map((i) => lum(i).toFixed(3)).join(' > '));
+  ok(lum(4) / lum(0) > 0.25, '最暗那一階不是死黑', `${(lum(4) / lum(0)).toFixed(2)} × 最亮`);
+
+  const ink = sh();
+  inkLine().onBeforeCompile(ink, null);
+  ok(ink.vertexShader.includes('attribute vec3 aN0;') && ink.vertexShader.includes('attribute vec3 aN1;'),
+    '墨線讀得到兩側的面法線');
+  ok(ink.vertexShader.includes('cameraPosition'), '視線是從表面指向鏡頭算的（透視）');
+  ok(/vSil\.x \* vSil\.y > 0\.0\) discard/.test(ink.fragmentShader),
+    '兩側同號的邊（內部轉折）會被丟掉');
 }
 
 head('每塊石頭底下有東西頂著');

@@ -35,7 +35,7 @@
    ------------------------------------------------------------------ */
 
 import * as THREE from '../vendor/three.module.js';
-import { C, toonVC, toon, glow, inkLine, lights, ramp } from './palette.js';
+import { C, toonVC, toon, glow, inkLine } from './palette.js';
 import { buildRuins, BLOCKS } from './blocks.js';
 import { loadZoo } from './critter.js';
 import { Pad } from './pad.js';
@@ -64,8 +64,12 @@ const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 420);
    之後要做天井房（不封頂）的話，那顆球在 git 裡（`git log -S sky`）。
    ------------------------------------------------------------------ */
 
-const { key, amb } = lights();
-scene.add(key, amb);
+/* ── 沒有燈 ──────────────────────────────────────────────────────
+   場景裡一顆 three 的燈都沒有：石頭的五階調與狗的三階調都是材質自己
+   算的（palette.js 的 banded、critter.js 的 FUR_FRAG），兩邊讀的是同一
+   個方向 palette.js 的 KEY_POS。加一盞 three 的燈在這裡不會亮任何東西，
+   只會讓人以為光是它給的。
+   ------------------------------------------------------------------ */
 
 /* 地面。石板鋪面比它高 0.06，所以不會打架。 */
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(520, 520), toon(0x6a5844));
@@ -462,8 +466,6 @@ function resize() {
 addEventListener('resize', resize);
 resize();
 
-// 讓 ramp 這張 3 階梯度圖在第一幀之前就上傳，免得第一幀是平光的。
-ramp();
 document.getElementById('boot').remove();
 goto('courtyard');
 requestAnimationFrame(frame);
