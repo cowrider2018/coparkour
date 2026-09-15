@@ -41,41 +41,27 @@ import { loadZoo } from './critter.js';
 import { Pad } from './pad.js';
 import { Hud } from './hud.js';
 import { facet } from './geom.js';
-import { PHYS, solveXZ, supportAt, arenaGap, clampArena } from './walk.js';
+import { PHYS, solveXZ, supportAt, arenaGap, boomLimit } from './walk.js';
 import { buildVeil } from './veil.js';
 import { lookInfo } from '../../src/cat/looks.js';
 
 const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-renderer.setClearColor(C.fog);
+renderer.setClearColor(0x000000);
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0xa28a6d, 42, 165);
 
 const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 420);
 
-/* ── 天空 ────────────────────────────────────────────────────────
-   一顆從裡面看的球，顏色靠頂點色由上往下漸層——不用著色器，也不用貼圖。
-   下緣的顏色就是霧的顏色，所以遠處的廢墟是「淡進天空裡」而不是「淡進
-   一片色塊裡」，那是這種遠景唯一要緊的事。 */
-function sky() {
-  const g = new THREE.SphereGeometry(320, 24, 16);
-  const pos = g.attributes.position;
-  const col = [];
-  const top = new THREE.Color(0x2f3a54), hor = new THREE.Color(0xc9a173), low = new THREE.Color(0x5a4a3c);
-  const c = new THREE.Color();
-  for (let i = 0; i < pos.count; i++) {
-    const t = pos.getY(i) / 320;
-    if (t >= 0) c.copy(hor).lerp(top, Math.pow(t, 0.55));
-    else c.copy(hor).lerp(low, Math.min(1, -t * 2.2));
-    col.push(c.r, c.g, c.b);
-  }
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  const m = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false });
-  return new THREE.Mesh(g, m);
-}
-scene.add(sky());
+/* ── 沒有天空 ────────────────────────────────────────────────────
+   四個場地都被黑牆封了頂（見 veil.js），所以天空一片都看不到——這一頁
+   以前有一顆從裡面看的漸層球，現在拿掉了：畫一個永遠看不到的東西不如
+   不畫。清除色是黑的，所以萬一哪裡有縫，露出來的也是同一個黑。
+
+   之後要做天井房（不封頂）的話，那顆球在 git 裡（`git log -S sky`）。
+   ------------------------------------------------------------------ */
 
 const { key, amb } = lights();
 scene.add(key, amb);
@@ -170,11 +156,30 @@ const player = {
    於是「中心夠空曠」這條設計規則可以離線踩過一遍來驗，而不是靠看。 */
 
 /* ── 相機的狀態 ──────────────────────────────────────────────────
-   dist 是彈簧的目標、curDist 是它現在的位置，所以縮放是滑進去的而不是
-   跳過去的。最近 1.2 公尺——那個距離下動物佔半個畫面高，臉上的每一塊
-   都看得清楚，這就是「觀賞」。 */
-const cam = { yaw: Math.PI, pitch: 0.30, dist: 7.0, curDist: 7.0 };
+   吊臂（spring arm）。鏡頭永遠掛在「從樞紐沿著視角方向伸出去」的那一條
+   線上，撞到黑牆、天花板或地板就**沿著那條線收短**，不是往旁邊滑開——
+   滑開的話鏡頭會離開那條線，視線跟著甩，而玩家沒有下任何指令。伸多長
+   由 `walk.js` 的 boomLimit 算，跟身體問的是同一道牆。
+
+   dist 是縮放的目標、curDist 是它現在的位置；boom 是「這一幀真的伸多長」
+   （被牆頂住的時候比 curDist 短）。收短快、放長慢：貼著牆走的時候牆一下
+   遠一下近，兩邊同速的話鏡頭會前後抽動。
+
+   ── 收到最短還是不夠的時候 ──────────────────────────────────────
+   轉開角度是最糟的做法，它會跟玩家的輸入打架。改成讓**樞紐停在原地**：
+   鏡頭不再跟著人往牆裡擠，人因此離開畫面中心，換到的是「看得到前面」
+   而不是「看得到一面牆」。偏移有上限，而且上限是用**角度**給的（畫面
+   上的比例固定，不隨距離變）——業界叫它 dead zone。超過就把樞紐拖著走，
+   不然沿著牆走會把人留在畫面外。 */
+const cam = {
+  yaw: Math.PI, pitch: 0.30, dist: 7.0, curDist: 7.0,
+  boom: 7.0, px: 0, pz: 0, pinned: false,
+};
 const CAM_NEAR = 1.2, CAM_FAR = 16;
+/** 吊臂收到這麼短還是不夠，就換成讓人離開畫面中心。 */
+const CAM_MIN = 0.85;
+/** dead zone：人最多可以離開視線軸這個角度（18°）。 */
+const DEAD_TAN = Math.tan(0.32);
 /** 正在轉視角的那幾根手指。兩根以上就是縮放。 */
 const drag = new Map();
 
@@ -186,6 +191,8 @@ function goto(id) {
   player.vx = player.vy = player.vz = 0;
   player.block = id;
   cam.yaw = Math.PI;
+  // 樞紐直接跟過去：不接的話換場地的那一下，鏡頭會從六十公尺外飛過來。
+  cam.px = player.x; cam.pz = player.z; cam.pinned = false;
   hud.flash(BLOCKS.find((b) => b.id === id).name);
   hud.paint({ block: id });
 }
@@ -301,7 +308,6 @@ addEventListener('blur', () => keys.clear());
 
 /* ── 主迴圈 ──────────────────────────────────────────────────── */
 const critterTris = zoo.active.data.header.groups.reduce((n, g) => n + g.count, 0) / 3;
-const _cv = new THREE.Vector3();
 let last = performance.now();
 let fpsAcc = 0, fpsN = 0, fpsShown = 0, hudAcc = 0;
 
@@ -409,28 +415,49 @@ function frame(now) {
     f.outer.position.y = (w - 1) * 0.2;
   }
 
-  /* 相機。眼高跟著距離收：拉近看動物的時候鏡頭要降下來平視牠，
-     不然近距離只會看到一顆帽子頂。 */
+  /* ── 相機 ──────────────────────────────────────────────────────
+     眼高跟著距離收：拉近看動物的時候鏡頭要降下來平視牠，不然近距離
+     只會看到一顆帽子頂。 */
   cam.curDist += (cam.dist - cam.curDist) * Math.min(1, dt * 6);
-  const near = 1 - Math.min(1, (cam.curDist - CAM_NEAR) / 3.5);
+  const near = 1 - Math.min(1, (cam.boom - CAM_NEAR) / 3.5);
   const eyeH = 0.95 - 0.42 * near;
   const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
-  _cv.set(
-    player.x - Math.sin(cam.yaw) * cp * cam.curDist,
-    player.y + eyeH + sp * cam.curDist,
-    player.z - Math.cos(cam.yaw) * cp * cam.curDist,
-  );
-  /* 相機不出黑牆：出去了就是從外面看牆的背面，畫面整片黑。夾在半徑內
-     0.35 處，所以鏡頭是沿著牆滑，而不是被牆頂出去。 */
-  {
-    const a = arenaAt(player.x, player.z);
-    const [cx, cz] = clampArena(a, _cv.x, _cv.z, 0.35);
-    _cv.x = cx; _cv.z = cz;
+  const bx = -Math.sin(cam.yaw) * cp, by = sp, bz = -Math.cos(cam.yaw) * cp;
+
+  /* 樞紐。沒被牆頂住的時候黏在人身上；頂住了就留在原地，人因此離開畫面
+     中心——直到超過 dead zone，那時候才被拖著走。 */
+  if (!cam.pinned) {
+    const k = Math.min(1, dt * 14);
+    cam.px += (player.x - cam.px) * k;
+    cam.pz += (player.z - cam.pz) * k;
   }
-  // 相機不鑽到地底下。只擋地面：拿支撐面來擋的話，站在牆邊時相機會被
-  // 牆頂頂上去，而那看起來像鏡頭自己跳了一下。
-  camera.position.set(_cv.x, Math.max(_cv.y, 0.45), _cv.z);
-  camera.lookAt(player.x, player.y + eyeH * (0.75 + 0.25 * near), player.z);
+  {
+    const leash = Math.max(0.12, cam.boom * DEAD_TAN);
+    const lx = player.x - cam.px, lz = player.z - cam.pz;
+    const ld = Math.hypot(lx, lz);
+    if (ld > leash) {
+      const f = 1 - leash / ld;
+      cam.px += lx * f; cam.pz += lz * f;
+    }
+  }
+
+  const pivotY = player.y + eyeH;
+  const arena = arenaAt(cam.px, cam.pz);
+  const room = boomLimit(arena, [cam.px, pivotY, cam.pz], [bx, by, bz], cam.curDist);
+  /* 遲滯：釘住之後要等吊臂空間回到 1.35 倍才鬆開。門檻只有一個的話，
+     站在牆邊左右微調的那一下會在「釘住／不釘住」之間跳，而樞紐一跳
+     畫面就抖。 */
+  cam.pinned = room < CAM_MIN * (cam.pinned ? 1.35 : 1);
+  const want = Math.min(cam.curDist, room);
+  // 收短快（dt·26）、放長慢（dt·5）：牆一下遠一下近的時候不會前後抽動。
+  cam.boom += (want - cam.boom) * Math.min(1, dt * (want < cam.boom ? 26 : 5));
+
+  camera.position.set(
+    cam.px + bx * cam.boom,
+    pivotY + by * cam.boom,
+    cam.pz + bz * cam.boom,
+  );
+  camera.lookAt(cam.px, player.y + eyeH * (0.75 + 0.25 * near), cam.pz);
 
   renderer.render(scene, camera);
   pad.draw();

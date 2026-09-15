@@ -50,7 +50,9 @@
 
 import * as THREE from '../public/test-area/vendor/three.module.js';
 import { buildRuins, BLOCKS, PITCH } from '../public/test-area/src/blocks.js';
-import { PHYS, solveXZ, supportAt, arenaGap, BLOCK_TOP, TRIP, MOUNT } from '../public/test-area/src/walk.js';
+import {
+  PHYS, solveXZ, supportAt, arenaGap, boomLimit, BLOCK_TOP, TRIP, MOUNT,
+} from '../public/test-area/src/walk.js';
 import { VEIL, buildVeil, outline } from '../public/test-area/src/veil.js';
 import { readFileSync } from 'node:fs';
 import { loadZoo } from '../public/test-area/src/critter.js';
@@ -512,7 +514,7 @@ head('黑牆與黑霧的幾何');
   ok(nanCount === 0, '沒有 NaN，透明度都在 [0,1]', `${nanCount}`);
 
   /* 法線：垂直的牆面要朝內（指向場地裡面），地上那圈要朝上。 */
-  let inward = 0, up = 0, outward = 0, down = 0;
+  let inward = 0, up = 0, outward = 0, down = 0, lidBad = 0;
   for (let i = 0; i < V.pos.length; i += 9) {
     const ax = V.pos[i], ay = V.pos[i + 1], az = V.pos[i + 2];
     const bx = V.pos[i + 3], by = V.pos[i + 4], bz = V.pos[i + 5];
@@ -521,7 +523,19 @@ head('黑牆與黑霧的幾何');
     const wx = cx2 - ax, wy = cy - ay, wz = cz2 - az;
     const nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
     const mx = (ax + bx + cx2) / 3, mz = (az + bz + cz2) / 3;
-    if (Math.abs(ny) > Math.abs(nx) + Math.abs(nz)) { (ny > 0 ? up++ : down++); continue; }
+    if (Math.abs(ny) > Math.abs(nx) + Math.abs(nz)) {
+      /* 水平的三角形只有兩種：牆腳那圈漸層（貼在地上、朝上），以及頂
+         （在 lid 的高度、朝下——站在下面才看得到）。 */
+      const y = (ay + by + cy) / 3;
+      if (ny < 0) {
+        down++;
+        if (!R.arenas.some((q) => Math.abs(q.lid - y) < 1e-6)) lidBad++;
+      } else {
+        up++;
+        if (Math.abs(y - VEIL.skirtY) > 1e-6) lidBad++;
+      }
+      continue;
+    }
     // 朝內 = 法線與「從場地中心指向這個三角形」的方向相反
     const a = R.arenas.reduce((p, q) => (arenaGap(q, mx, mz) > arenaGap(p, mx, mz) ? q : p));
     const ox = a.shape === 'circle' ? a.x : (a.x0 + a.x1) / 2;
@@ -529,7 +543,8 @@ head('黑牆與黑霧的幾何');
     ((mx - ox) * nx + (mz - oz) * nz < 0 ? inward++ : outward++);
   }
   ok(outward === 0, '牆面的法線都朝內（單面材質才看得到）', `朝內 ${inward}、朝外 ${outward}`);
-  ok(down === 0, '牆腳那圈的法線都朝上', `朝上 ${up}、朝下 ${down}`);
+  ok(up > 0 && down > 0, '牆腳那圈朝上、頂朝下', `朝上 ${up}、朝下 ${down}`);
+  ok(lidBad === 0, '水平的面只落在牆腳與頂這兩個高度上', `${lidBad} 片不在`);
 
   /* 外框就是碰撞用的那個邊界：段數 56 的圓，弓高只有 1 公分。 */
   let far = 0;
@@ -548,8 +563,8 @@ head('黑牆與黑霧的幾何');
   }
   ok(far < 0.02, '畫出來的牆面貼合碰撞的邊界', `最多差 ${(far * 100).toFixed(1)} cm`);
 
-  /* 高度：實心的部分要蓋過砌體（不然隔壁那幾座從牆頭上看得到），但不能
-     高到把天空吃掉——所以頂端一定要淡到全透明。 */
+  /* 頂的高度：要蓋過最高的砌體（不然頂會從屋頂穿過去），但也不必太高
+     ——這幾座的牆才六七公尺，頂拉到二十公尺只是讓房間變成一口井。 */
   for (const a of R.arenas) {
     const name = BLOCKS.find((b) => b.id === a.id).name;
     let hi = 0;
@@ -557,10 +572,85 @@ head('黑牆與黑霧的幾何');
       if (arenaGap(a, (q.min[0] + q.max[0]) / 2, (q.min[2] + q.max[2]) / 2) < 0) continue;
       if (q.max[1] > hi) hi = q.max[1];
     }
-    ok(a.veil[0] > 3 && a.veil[0] < hi + 1.5, `${name}：黑牆的實心高度跟砌體差不多`,
-      `牆 ${a.veil[0]} m／砌體最高 ${hi.toFixed(1)} m`);
-    ok(a.veil[1] > a.veil[0], `${name}：頂端淡到全透明`, `${a.veil[0]} → ${a.veil[1]} m`);
+    ok(a.lid > hi + 1.0, `${name}：頂沒有切到砌體`, `頂 ${a.lid} m／砌體最高 ${hi.toFixed(1)} m`);
+    ok(a.lid < hi + 10, `${name}：頂沒有高到變成一口井`, `高出砌體 ${(a.lid - hi).toFixed(1)} m`);
   }
+
+  /* 封閉：牆從牆腳一路到頂，中間不准有斷層——有的話會從縫裡看到外面的
+     地面與隔壁那幾座，而那正是封頂要解決的事。 */
+  let gap = 0;
+  for (const a of R.arenas) {
+    let lo = Infinity, hi2 = -Infinity;
+    for (let i = 0; i < V.pos.length; i += 3) {
+      const x = V.pos[i], y = V.pos[i + 1], z = V.pos[i + 2];
+      if (Math.abs(arenaGap(a, x, z)) > 0.05) continue;    // 只看貼在這道牆上的
+      if (y < lo) lo = y; if (y > hi2) hi2 = y;
+    }
+    if (lo > VEIL.base + 1e-6 || hi2 < a.lid - 1e-6) gap++;
+  }
+  ok(gap === 0, '每一道牆都從牆腳一路實心到頂', `${gap} 道有斷層`);
+}
+
+head('鏡頭的吊臂');
+/* 第三人稱的鏡頭掛在一條從角色伸出去的線上，撞到黑牆、天花板或地板就
+   沿著那條線收短。這一項驗的是「收短之後鏡頭真的還在房間裡」——出去了
+   就是從外面看黑牆的背面，畫面整片黑，而那是一個沒有人會回報成「相機
+   出界」的災難：看起來就只是「畫面黑掉了」。
+
+   掃法：場地裡每隔兩公尺一個樞紐、每 15° 一個方位、五個俯仰角，全部
+   伸到底，然後問那個點在不在牆裡面、有沒有穿出天花板或陷進地板。 */
+{
+  const MARGIN = 0.35, FLOOR = 0.45;
+  let checked = 0, outWall = 0, outLid = 0, outFloor = 0, worst = 0;
+  for (const a of R.arenas) {
+    const x0 = a.shape === 'circle' ? a.x - a.r : a.x0;
+    const x1 = a.shape === 'circle' ? a.x + a.r : a.x1;
+    const z0 = a.shape === 'circle' ? a.z - a.r : a.z0;
+    const z1 = a.shape === 'circle' ? a.z + a.r : a.z1;
+    for (let px = x0; px <= x1; px += 2) {
+      for (let pz = z0; pz <= z1; pz += 2) {
+        if (arenaGap(a, px, pz) < 0.3) continue;      // 樞紐本來就該在裡面
+        for (let yaw = 0; yaw < Math.PI * 2; yaw += Math.PI / 12) {
+          for (const pitch of [-0.35, 0, 0.4, 0.8, 1.15]) {
+            const cp = Math.cos(pitch), sp = Math.sin(pitch);
+            const dir = [-Math.sin(yaw) * cp, sp, -Math.cos(yaw) * cp];
+            const pivot = [px, 1.0, pz];
+            const t = boomLimit(a, pivot, dir, 16);
+            const cx = pivot[0] + dir[0] * t, cy = pivot[1] + dir[1] * t, cz = pivot[2] + dir[2] * t;
+            checked++;
+            /* 容差 1 mm：交點是解二次式算出來的，浮點誤差在 1e-9 的
+               量級，而 1 公釐在畫面上不存在。 */
+            const g = arenaGap(a, cx, cz);
+            if (g < MARGIN - 1e-3) { outWall++; worst = Math.max(worst, MARGIN - g); }
+            if (cy > a.lid - MARGIN + 1e-3) outLid++;
+            if (cy < FLOOR - 1e-3) outFloor++;
+          }
+        }
+      }
+    }
+  }
+  console.log(`  掃了 ${checked.toLocaleString()} 個鏡頭位置`);
+  ok(outWall === 0, '鏡頭不會穿出黑牆', outWall ? `${outWall} 個，最深 ${worst.toFixed(2)} m` : '');
+  ok(outLid === 0, '鏡頭不會穿出天花板', `${outLid}`);
+  ok(outFloor === 0, '鏡頭不會陷進地板', `${outFloor}`);
+
+  /* 收短，不是滑開：吊臂只會變短，方向不變。所以在同一個樞紐與方位上，
+     鏡頭一定落在那條線上——這一項是拿算出來的點回推方向來驗的。 */
+  let offLine = 0;
+  for (const a of R.arenas) {
+    const px = a.shape === 'circle' ? a.x : (a.x0 + a.x1) / 2;
+    const pz = a.shape === 'circle' ? a.z : (a.z0 + a.z1) / 2;
+    for (let yaw = 0; yaw < Math.PI * 2; yaw += 0.21) {
+      const cp = Math.cos(0.3), sp = Math.sin(0.3);
+      const dir = [-Math.sin(yaw) * cp, sp, -Math.cos(yaw) * cp];
+      const t = boomLimit(a, [px, 1.0, pz], dir, 16);
+      const v = [dir[0] * t, dir[1] * t, dir[2] * t];
+      const len = Math.hypot(v[0], v[1], v[2]) || 1;
+      const dot = (v[0] * dir[0] + v[1] * dir[1] + v[2] * dir[2]) / len;
+      if (dot < 1 - 1e-9) offLine++;
+    }
+  }
+  ok(offLine === 0, '鏡頭只沿著吊臂收短，不往旁邊滑', `${offLine} 個偏離`);
 }
 
 head('動物（遊戲那幾隻本人）');

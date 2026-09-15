@@ -83,6 +83,49 @@ export function clampArena(a, x, z, margin) {
   ];
 }
 
+/**
+ * 吊臂能伸多長：從 `pivot` 沿著 `dir` 走，撞到黑牆、天花板或地板為止。
+ *
+ * 第三人稱的鏡頭掛在一條從角色伸出去的線上（吊臂）。撞到東西的時候要沿著
+ * 那條線收短，而不是往旁邊滑開——滑開的話鏡頭會離開那條線，視線跟著甩，
+ * 而玩家並沒有下任何指令。這是 Unreal 的 SpringArm 與 Unity 的 Cinemachine
+ * 都在做的同一件事。
+ *
+ * 放在這裡而不是 main.js，是因為它問的是同一個問題：「這個東西可以到
+ * 哪裡」。牆在哪由 `arenaGap` 定義，鏡頭與身體因此不會各自認得一道牆。
+ *
+ * @param {object} a      場地
+ * @param {number[]} pivot 樞紐 [x,y,z]
+ * @param {number[]} dir   單位方向 [x,y,z]（樞紐指向鏡頭）
+ * @param {number} want   想要多長
+ * @param {number} margin 離牆面留多少（鏡頭的近裁面不能穿出去）
+ * @param {number} floorY 鏡頭不低於這個高度
+ */
+export function boomLimit(a, pivot, dir, want, margin = 0.35, floorY = 0.45) {
+  let t = want;
+  if (dir[1] > 1e-6) t = Math.min(t, (a.lid - margin - pivot[1]) / dir[1]);
+  if (dir[1] < -1e-6) t = Math.min(t, (floorY - pivot[1]) / dir[1]);
+  if (a.shape === 'circle') {
+    /* 射線與圓的交點。A 是水平分量的長度平方——鏡頭正上方或正下方看的
+       時候它是 0，那時候只有天花板與地板管得著。 */
+    const px = pivot[0] - a.x, pz = pivot[2] - a.z;
+    const R = a.r - margin;
+    const A = dir[0] * dir[0] + dir[2] * dir[2];
+    if (A > 1e-9) {
+      const B = 2 * (px * dir[0] + pz * dir[2]);
+      const C = px * px + pz * pz - R * R;
+      const disc = B * B - 4 * A * C;
+      t = disc > 0 ? Math.min(t, (-B + Math.sqrt(disc)) / (2 * A)) : 0;
+    }
+  } else {
+    if (dir[0] > 1e-6) t = Math.min(t, (a.x1 - margin - pivot[0]) / dir[0]);
+    if (dir[0] < -1e-6) t = Math.min(t, (a.x0 + margin - pivot[0]) / dir[0]);
+    if (dir[2] > 1e-6) t = Math.min(t, (a.z1 - margin - pivot[2]) / dir[2]);
+    if (dir[2] < -1e-6) t = Math.min(t, (a.z0 + margin - pivot[2]) / dir[2]);
+  }
+  return Math.max(0, t);
+}
+
 /** 圓柱（用外接方框近似）與一個盒子在水平面上有沒有重疊。 */
 export function overlapXZ(x, z, b, pad) {
   return x + pad > b.min[0] && x - pad < b.max[0] && z + pad > b.min[2] && z - pad < b.max[2];

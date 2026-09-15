@@ -547,8 +547,10 @@ function outskirts(B, seed) {
    ——那一座遺跡的重點有一半在牆外面（塔基、扶壁、牆腳塌下來的石頭），
    圍在牆邊就只剩一個天井。`ring` 是外圈撒碎石的內界，只有它有。
 
-   `veil` 是黑牆的高度 [實心到多高, 淡到全透明的高度]，見 veil.js。它比
-   砌體高一點就夠——再高就把天空吃掉，而遺跡的剪影是打在天空上的。
+   `lid` 是黑牆封頂的高度（見 veil.js）：牆從牆腳實心到那裡，然後蓋起來。
+   封起來之後看得到的只有房裡的結構——連天空都沒有，而那正是「人在房間
+   裡面」這件事的全部。高度要蓋過最高的砌體，不然頂會把屋頂切掉；也不必
+   太高，這幾座的牆才六七公尺，頂拉到二十公尺只是讓房間變成一口井。
 
    `room` 是這個區塊「可玩的那一片」：房間自己的局部座標、地板的高度、
    以及方的（hx/hz，可加 cx/cz 偏心）或圓的（rad）範圍。
@@ -566,7 +568,7 @@ export const BLOCKS = [
     origin: [0, 0], build: courtyard, seed: 0x1a2b,
     room: { y: 0, hx: 12.4, hz: 12.4 },
     // 牆面：南牆 13.5、門樓 13.6、兩側拱廊 13.5。砌體最高 7.4。
-    arena: { shape: 'rect', x0: -13.8, x1: 13.8, z0: -13.8, z1: 13.8, veil: [5.4, 8.4], hug: true },
+    arena: { shape: 'rect', x0: -13.8, x1: 13.8, z0: -13.8, z1: 13.8, lid: 12.0, hug: true },
   },
   {
     id: 'rampart', name: '城牆平台', hint: '抬高的露台、女牆垛口、斷塔',
@@ -574,14 +576,14 @@ export const BLOCKS = [
     room: { y: 3.2, hx: 9.8, hz: 6.2 },
     // 圓形黑牆，半徑 22——露台的牆在 7.5～11，斷塔伸到 18.5、樓梯到 16.4，
     // 所以牆外那一圈（塔、階、扶壁、牆腳的碎石）整個留在場地裡。
-    arena: { shape: 'circle', x: 0, z: 0, r: 22, ring: 13, veil: [6.5, 11.5], hug: false },
+    arena: { shape: 'circle', x: 0, z: 0, r: 22, ring: 13, lid: 16.0, hug: false },
   },
   {
     id: 'throne', name: '王座廳', hint: '兩列柱、斜插的穹稜、台座與王座',
     origin: [0, PITCH], build: throne, seed: 0x5e6f,
     room: { y: 0, cz: -1.5, hx: 6.9, hz: 12.0 },
     // 牆面：兩側 8.05、南端 14.95、北端（王座背後那道）18.95。
-    arena: { shape: 'rect', x0: -8.3, x1: 8.3, z0: -15.2, z1: 19.2, veil: [5.6, 8.8], hug: true },
+    arena: { shape: 'rect', x0: -8.3, x1: 8.3, z0: -15.2, z1: 19.2, lid: 14.0, hug: true },
   },
   {
     id: 'cistern', name: '圓塔水窖', hint: '環形拱廊、貼牆殘階、垂鏈',
@@ -590,7 +592,7 @@ export const BLOCKS = [
     // 而樓梯是房間之間的垂直交通，不算房間的地板。
     room: { y: 0, rad: 9.9 },
     // 環牆的外皮在 13.55。
-    arena: { shape: 'circle', x: 0, z: 0, r: 13.9, veil: [5.4, 8.4], hug: true },
+    arena: { shape: 'circle', x: 0, z: 0, r: 13.9, lid: 12.0, hug: true },
   },
 ];
 
@@ -622,9 +624,9 @@ export function buildRuins(opts = {}) {
     spawns[b.id] = [meta.spawn[0] + ox, meta.spawn[1], meta.spawn[2] + oz];
     const A = b.arena;
     arenas.push(A.shape === 'circle'
-      ? { id: b.id, shape: 'circle', x: A.x + ox, z: A.z + oz, r: A.r, veil: A.veil, hug: A.hug }
+      ? { id: b.id, shape: 'circle', x: A.x + ox, z: A.z + oz, r: A.r, lid: A.lid, hug: A.hug }
       : {
-        id: b.id, shape: 'rect', veil: A.veil, hug: A.hug,
+        id: b.id, shape: 'rect', lid: A.lid, hug: A.hug,
         x0: A.x0 + ox, x1: A.x1 + ox, z0: A.z0 + oz, z1: A.z1 + oz,
       });
   }
