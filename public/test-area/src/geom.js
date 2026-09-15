@@ -296,6 +296,7 @@ export class Build {
     _m.compose(_v.set(p[0], p[1], p[2]), _q, _s.set(s[0], s[1], s[2]));
     _nm.getNormalMatrix(_m);
 
+    const start = this.pos.length;
     const src = g.attributes.position.array;
     const sn = g.attributes.normal.array;
     this._c.set(o.color === undefined ? 0xffffff : o.color);
@@ -324,7 +325,12 @@ export class Build {
     }
 
     if (this.record) {
+      /* `i0` 是這一塊在頂點緩衝區裡的起點。記它是因為 AABB 不夠用：
+         「這塊石頭有沒有被黑牆削到」要量真正的頂點——一塊直徑 25 公尺的
+         圓形鋪面，它的 AABB 的角比它本身遠 40%，照 AABB 量每一片鋪面
+         都會被判成戳到牆外面。 */
       this.parts.push({
+        i0: start,
         min: [minx, miny, minz], max: [maxx, maxy, maxz],
         hang: !!o.hang || !!this._hang, solid: o.solid || null,
       });
@@ -366,6 +372,33 @@ export class Build {
       kind: o.kind || 'shell',
       base: o.base === undefined ? cy - h / 2 : o.base,
     });
+    return this;
+  }
+
+  /**
+   * 一道圓形的邊界（黑牆）。
+   *
+   * 它跟盒子進同一張清單、由同一支 `solveXZ` 解，因為「擋住」這件事只該
+   * 有一套邏輯——障礙物與場地邊界的差別只在**它被什麼外觀包裹**：一根
+   * 柱子外面包的是砌體，這一道外面包的是黑牆與黑霧。
+
+   * 形狀（方或圓）由 `a.shape` 決定，判斷邊界在哪的那一支是
+   * `walk.js` 的 arenaGap——阻擋、夾碎石、畫黑牆三邊問的是同一支。
+   *
+   * 圓的邊界不切成一圈盒子，理由是「視覺要貼合移動上限」：碰撞盒是軸
+   * 對齊的，一圈斜著的盒子在對角會往內鼓出二三十公分，於是移動的邊界
+   * 會沿著圓周晃動，而畫面上的牆是正圓——那正好是要消掉的那種不一致。
+   * 圓在這裡是一個數字，畫面那邊用 96 段去逼近它（誤差 1.2 公分）。
+   *
+   * @param {object} a   世界座標的場地（blocks.js 的 `arenas` 那一筆）
+   * @param {number} top 擋到多高。跳躍頂點只有 0.48，所以這個數字只是
+   *   為了讓通用的檢查看得到一個合理的盒子範圍。
+   */
+  bound(a, top = 30) {
+    const box = a.shape === 'circle'
+      ? { min: [a.x - a.r, -2, a.z - a.r], max: [a.x + a.r, top, a.z + a.r] }
+      : { min: [a.x0, -2, a.z0], max: [a.x1, top, a.z1] };
+    this.colliders.push({ kind: 'bound', ...a, ...box, base: -2 });
     return this;
   }
 

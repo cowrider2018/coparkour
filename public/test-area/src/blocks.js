@@ -25,6 +25,7 @@
 
 import { Build, rng } from './geom.js';
 import { C } from './palette.js';
+import { arenaGap } from './walk.js';
 import {
   Kit, flagstones, wall, merlons, column, pointedArch, arcade, buttress, stair,
   knight, gargoyle, rubble, brazier, banner, chain, portcullis, deadTree, well,
@@ -43,6 +44,12 @@ export const PITCH = 62;
 const clearOf = (hx, hz, rad = 0) => (x, z) => (
   (Math.abs(x) > hx || Math.abs(z) > hz) && (!rad || Math.hypot(x, z) > rad)
 );
+
+/* ── 場地邊界的守門員 ─────────────────────────────────────────────
+   撒出去的東西逐顆問「還在黑牆裡面嗎」。一叢碎石的半徑到 3.4，所以叢心
+   在牆內不代表每一顆都在——而一顆被黑牆削掉一半的石頭，牆上那層薄霧
+   淡不掉那個切面（切面就在牆腳，霧最濃的地方是它後面）。 */
+const inArena = (A, pad = 0.4) => (x, z) => arenaGap(A, x, z) > pad;
 
 /* ── 坐在哪一段牆上 ──────────────────────────────────────────────
    圓塔與環牆是用十幾段直牆圍出來的，而牆頂是起伏的。要把一塊石頭、一個
@@ -64,8 +71,9 @@ function restsOn(segs, x, z) {
    最正統的那一個：一個被兩排拱廊夾住的方形中庭，北面一座門樓。
    斷柱排成一圈但半徑 8.5——圓心那 14×14 完全是空的，那圈柱子的作用是
    把空地「框」出來，而不是站在裡面。 */
-function courtyard(B, flames, seed) {
+function courtyard(B, flames, seed, A) {
   const r = rng(seed);
+  const keepIn = inArena(A);
   flagstones(B, { x: 0, z: 0, w: 26, d: 26, y: 0, seed: seed + 1, ruin: 0.34 });
 
   // 東西兩側的拱廊。長軸沿 z，所以 yaw 是 ±90°。
@@ -76,11 +84,10 @@ function courtyard(B, flames, seed) {
     });
   }
 
-  // 南面一道塌了一半的圍牆，牆後兩根扶壁。
+  /* 南面一道塌了一半的圍牆。牆後本來有三根扶壁，拿掉了：黑牆現在貼在
+     牆面上，扶壁整根在牆外——從裡面看不到（牆擋著），從外面到不了
+     （那已經是黑牆外面）。畫一個永遠看不到的東西不如不畫。 */
   wall(B, { from: [-13, 13], to: [13, 13], h: 4.6, thick: 1.0, ruin: 0.55, seed: seed + 40 });
-  for (const t of [-8, 0, 8]) {
-    buttress(B, { x: t, z: 13.6, yaw: 0, h: 3.2, w: 1.3, out: 1.6, steps: 3, seed: seed + 50 + t });
-  }
 
   /* 北面的門樓：兩座墩、一道尖拱、一面鐵閘。拱是走得過去的（12 寬的
      開口只放閘，閘本身有碰撞，所以門是關著的——它是背景，不是路）。
@@ -133,7 +140,7 @@ function courtyard(B, flames, seed) {
       x: Math.cos(a) * rad, z: Math.sin(a) * rad, y: 0, r: r.range(1.6, 3.2), n: 22,
       // 大石是障礙物，只放在離空地夠遠的那幾叢裡；碎石一律壓進地板。
       boulders: rad > 9.8 ? 1 : 0,
-      keep: clearOf(7.0, 7.0), seed: seed + 140 + i,
+      keep: (x, z) => clearOf(7.0, 7.0)(x, z) && keepIn(x, z), seed: seed + 140 + i,
     });
   }
   for (let i = 0; i < 16; i++) {
@@ -147,8 +154,9 @@ function courtyard(B, flames, seed) {
    抬高 3.2 的一段城牆。這個區塊的重點是「站在上面往外看」，所以露台
    本身鋪得很乾淨，所有東西都在女牆上或女牆外。上得去的路是兩折階梯，
    不需要跳。 */
-function rampart(B, flames, seed) {
+function rampart(B, flames, seed, A) {
   const r = rng(seed);
+  const keepIn = inArena(A);
   const H = 3.2;                       // 露台面的高度
   const W = 22, D = 15;                // 露台尺寸
   const SX = 4.2;                      // 樓梯的中心線
@@ -258,7 +266,7 @@ function rampart(B, flames, seed) {
   for (let i = 0; i < 6; i++) {
     rubble(B, {
       x: r.range(-hw, hw), z: hd + r.range(2.2, 5.0), y: 0,
-      r: r.range(1.8, 3.4), n: 24, boulders: i % 2, seed: seed + 100 + i,
+      r: r.range(1.8, 3.4), n: 24, boulders: i % 2, keep: keepIn, seed: seed + 100 + i,
     });
   }
   deadTree(B, { x: -hw - 6.5, z: -8, y: 0, s: 1.3, seed: seed + 110 });
@@ -269,8 +277,9 @@ function rampart(B, flames, seed) {
    一條中軸線：門在南、台座與王座在北，兩列柱夾出中殿。屋頂沒了，只剩
    幾段斜插在地上的穹稜——那幾段是這個區塊唯一在講「這裡曾經是室內」的
    東西，所以它們刻意插在柱列外側，不擋中殿。 */
-function throne(B, flames, seed) {
+function throne(B, flames, seed, A) {
   const r = rng(seed);
+  const keepIn = inArena(A);
   flagstones(B, { x: 0, z: 1, w: 15, d: 30, y: 0, seed: seed + 1, ruin: 0.26, cell: 1.5 });
 
   // 兩列柱。柱距 4.2，離中軸 5.6——中殿淨寬 11.2，夠空。
@@ -297,10 +306,6 @@ function throne(B, flames, seed) {
         x, z: z1 + 1.1, y: 3.0, span: 2.0, rise: 1.9, yaw: Math.PI / 2,
         thick: 0.38, depth: 0.9, ruin: 0.3, seed: seed + 60 + i * 2 + side,
       });
-    }
-    // 牆外的扶壁。
-    for (let i = 0; i < 3; i++) {
-      buttress(B, { x, z: -8 + i * 7, yaw: side > 0 ? -Math.PI / 2 : Math.PI / 2, h: 4.2, w: 1.3, out: 1.8, steps: 3, seed: seed + 80 + i });
     }
     /* 斷掉的穹稜：半個尖拱，從側牆頭起拱、往中殿彎過去、在半空斷掉。
        跨距用整個中殿（15.2）、起拱線在牆頭（5.0）——所以它們是「這裡
@@ -353,10 +358,12 @@ function throne(B, flames, seed) {
     });
   }
   for (let i = 0; i < 8; i++) {
+    /* 碎石收進側廊（柱列與側牆之間），不再撒到 9 公尺——黑牆貼在側牆
+       上，9 公尺那一圈已經在牆外面了。 */
     rubble(B, {
-      x: (i % 2 ? 1 : -1) * r.range(6.0, 9.0), z: r.range(-14, 18), y: 0,
+      x: (i % 2 ? 1 : -1) * r.range(5.8, 7.4), z: r.range(-14, 18), y: 0,
       r: r.range(1.2, 2.6), n: 16, boulders: i % 3 === 0 ? 1 : 0,
-      keep: clearOf(5.3, 9.4), seed: seed + 160 + i,
+      keep: (x, z) => clearOf(5.3, 9.4)(x, z) && keepIn(x, z), seed: seed + 160 + i,
     });
   }
   return { spawn: [0, 0, -11] };
@@ -366,8 +373,9 @@ function throne(B, flames, seed) {
    一個圓的區塊，因為前三個都是方的。環形拱廊把整圈框起來，中央是一片
    直徑 14 的圓形鋪面；牆上剩一段貼著內壁往上爬的殘階（走得上去，但上面
    是斷的——那是刻意的，這一頁只做移動與觀賞，斷階是給人看的）。 */
-function cistern(B, flames, seed) {
+function cistern(B, flames, seed, A) {
   const r = rng(seed);
+  const keepIn = inArena(A);
   const R = 13;
   /* 圓的房間、圓的鋪面。`round` 讓石板照半徑裁、基座換成一塊圓盤——
      方的基座會在環牆的四個對角戳出去 2.6 公尺。 */
@@ -399,15 +407,6 @@ function cistern(B, flames, seed) {
       if (r() < 0.5) {
         merlons(B, { from, to, on: w, h: 0.85, thick: 1.1, pitch: 1.5, ruin: 0.4, seed: seed + 70 + i });
       }
-    }
-    /* 外圈扶壁，隔一段放一根——但門洞那幾段不放。扶壁在牆外 0.6，
-       正好會擋在門口前面：門洞是開的，路卻是不通的，而這種東西在畫面上
-       完全看不出來（從裡面看，扶壁在牆的另一邊）。 */
-    if (i % 2 === 0 && i % 4 !== 0) {
-      buttress(B, {
-        x: Math.cos(mid) * (R + 0.6), z: Math.sin(mid) * (R + 0.6),
-        yaw: -mid + Math.PI / 2, h: 3.6, w: 1.3, out: 1.7, steps: 3, seed: seed + 90 + i,
-      });
     }
     // 牆頭的獸像，四隻，朝內看。
     if (i % 4 === 2 && ring[i]) {
@@ -480,7 +479,7 @@ function cistern(B, flames, seed) {
     rubble(B, {
       x: Math.cos(a) * rad, z: Math.sin(a) * rad, y: 0, r: r.range(1.4, 2.8), n: 20,
       boulders: rad > 10.5 ? 1 : 0,
-      keep: clearOf(7.0, 7.0, 7.4), seed: seed + 170 + i,
+      keep: (x, z) => clearOf(7.0, 7.0, 7.4)(x, z) && keepIn(x, z), seed: seed + 170 + i,
     });
   }
   for (let i = 0; i < 18; i++) {
@@ -490,57 +489,44 @@ function cistern(B, flames, seed) {
   return { spawn: [0, 0, -6] };
 }
 
-/* ── 中間那片地 ──────────────────────────────────────────────────
-   四個區塊之間的空地。它不是裝飾：沒有它，四個區塊是四張圖；有了它，
-   它們是同一片廢墟裡的四個角落，而狗可以走過去。撒的東西刻意稀疏，
-   一眼就看得出「那邊才是關卡」。 */
-function grounds(B, seed) {
-  const r = rng(seed);
-  const half = PITCH / 2;
+/* ── 黑牆裡、建築外的那一圈 ──────────────────────────────────────
+   每個場地的外圈。這裡以前是「四個區塊之間的空地」加四條走廊，那是為了
+   「四個區塊是同一片廢墟的四個角落」而存在的。現在每個場地被一道黑牆
+   圍起來（見 `arena`），走廊沒有了，於是這一圈的工作換成一件事：
+   **讓地面一直鋪到黑霧裡**，不要在黑牆腳下留一圈乾淨的空地。
 
-  /* 四條走廊：相鄰兩個區塊的原點連起來的那四段。走廊上不撒任何有碰撞的
-     東西——不是因為那樣不好看，是因為「走得過去」比「有東西看」重要，
-     而一段孤立的殘牆剛好躺在兩個區塊中間的話，走過去的人只會覺得這張
-     地圖是斷的。tools/verify-test-area.mjs 會沿著這四條線走一遍。 */
-  const O = BLOCKS.map((b) => b.origin);
-  const LANES = [[O[0], O[1]], [O[0], O[2]], [O[1], O[3]], [O[2], O[3]]];
-  const onLane = (x, z, pad) => LANES.some(([a, b]) => {
-    const dx = b[0] - a[0], dz = b[1] - a[1];
-    const L2 = dx * dx + dz * dz;
-    const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / L2));
-    return Math.hypot(x - (a[0] + dx * t), z - (a[1] + dz * t)) < pad;
-  });
-  for (let i = 0; i < 60; i++) {
-    const x = r.range(-half - 20, half + 20), z = r.range(-half - 20, half + 20);
-    // 別撒進區塊裡：四個區塊各佔一個 ±(PITCH/2) 附近的方框。
-    const near = Math.min(
-      Math.hypot(x - 0, z - 0), Math.hypot(x - PITCH, z - 0),
-      Math.hypot(x - 0, z - PITCH), Math.hypot(x - PITCH, z - PITCH),
-    );
-    if (near < 17) continue;
-    if (r() < 0.35) {
-      rubble(B, {
-        x, z, y: 0, r: r.range(1.2, 3.0), n: 14,
-        keep: (sx, sz) => !onLane(sx, sz, 4.5), seed: (seed + i * 7) >>> 0,
-      });
-    } else if (r() < 0.3) {
-      if (onLane(x, z, 4.0)) continue;
-      deadTree(B, { x, z, y: 0, s: r.range(0.7, 1.4), seed: (seed + i * 13) >>> 0 });
-    } else {
-      mossTuft(B, x, 0, z, r);   // 苔沒有碰撞，撒在走廊上也沒關係
+   只有城牆平台有這一圈（它的黑牆在 22，砌體只到 19）；室內那三個房間的
+   黑牆貼在牆面上，沒有外圈可撒。
+
+   這一圈只撒不擋路的東西——壓進地板的碎石與苔。理由不是好看：外圈是
+   樓梯與門洞的必經之路，而一顆有碰撞的石頭擺在那裡，畫面上看不出有
+   問題，走到那裡才會發現上不去。
+   ------------------------------------------------------------------ */
+function outskirts(B, seed) {
+  const r = rng(seed);
+  for (const b of BLOCKS) {
+    const A = b.arena;
+    if (!A.ring) continue;             // 貼著牆面的房間沒有外圈
+    const ox = b.origin[0] + A.x, oz = b.origin[1] + A.z;
+    const r0 = A.ring, r1 = A.r - 0.8;
+    for (let i = 0; i < 22; i++) {
+      const a = r() * Math.PI * 2;
+      // 半徑取平方根：不然全部擠在內圈（環的面積跟半徑成正比）
+      const rad = Math.sqrt(r.range(r0 * r0, r1 * r1));
+      const x = ox + Math.cos(a) * rad, z = oz + Math.sin(a) * rad;
+      if (r() < 0.6) {
+        /* 逐顆問「還在黑牆裡面嗎」。一叢碎石的半徑到 3.4，所以叢心在牆內
+           不代表每一顆都在——而一顆被牆削掉一半的石頭，黑霧淡不掉那個
+           切面（它就在牆腳，霧最濃的地方反而是它後面）。 */
+        rubble(B, {
+          x, z, y: 0, r: r.range(1.4, 3.4), n: 12,
+          keep: (sx, sz) => Math.hypot(sx - ox, sz - oz) < A.r - 0.6,
+          seed: (seed + i * 7 + b.seed) >>> 0,
+        });
+      } else {
+        mossTuft(B, x, 0, z, r);
+      }
     }
-  }
-  // 幾段孤立的殘牆，把空地切開，讓走過去的路上有東西擋一下視線。
-  for (let i = 0; i < 5; i++) {
-    const x = r.range(-half + 6, half + 24), z = r.range(-half + 6, half + 24);
-    if (Math.min(Math.hypot(x, z), Math.hypot(x - PITCH, z), Math.hypot(x, z - PITCH), Math.hypot(x - PITCH, z - PITCH)) < 19) continue;
-    const len = r.range(4, 9), a = r() * Math.PI;
-    // 殘牆是實心的，所以整段都不能碰到走廊——兩端各檢查一次。
-    if (onLane(x, z, 5.5) || onLane(x + Math.cos(a) * len, z + Math.sin(a) * len, 5.5)) continue;
-    wall(B, {
-      from: [x, z], to: [x + Math.cos(a) * len, z + Math.sin(a) * len],
-      h: r.range(1.6, 3.4), thick: 0.9, ruin: 0.7, seed: (seed + 300 + i) >>> 0,
-    });
   }
 }
 
@@ -548,7 +534,23 @@ function grounds(B, seed) {
    每一個區塊：一個 id、一個名字、一個世界座標、一支砌它的函式。
    `origin` 是那個區塊自己的原點在世界裡的位置——區塊內部一律用自己的
    局部座標寫，砌完再整個平移過去，所以四個區塊的程式碼互相看不到彼此。 */
-/* `room` 是這個區塊「可玩的那一片」：房間自己的局部座標、地板的高度、
+/* `arena` 是這個區塊的**黑牆**，也就是移動的上限（在 buildRuins 裡登記成
+   一個 'bound' 碰撞體，跟柱子和牆進同一張清單）。兩種形狀：
+
+     方（'rect'）  室內的房間。邊界貼在牆面上——中庭與王座廳的牆本來就是
+                  方的，用圓去圍會在四個角留下一圈到不了的空地。
+     圓（'circle'）水窖（環牆本來就是圓的）與城牆平台。
+
+   ── 貼合，還是留一圈 ────────────────────────────────────────────
+   室內的三個房間貼著牆面走，所以牆外的東西（扶壁）就拿掉了：從裡面看不到
+   （牆擋著），從外面到不了（那是黑牆外面）。城牆平台相反，它的半徑是 22
+   ——那一座遺跡的重點有一半在牆外面（塔基、扶壁、牆腳塌下來的石頭），
+   圍在牆邊就只剩一個天井。`ring` 是外圈撒碎石的內界，只有它有。
+
+   `veil` 是黑牆的高度 [實心到多高, 淡到全透明的高度]，見 veil.js。它比
+   砌體高一點就夠——再高就把天空吃掉，而遺跡的剪影是打在天空上的。
+
+   `room` 是這個區塊「可玩的那一片」：房間自己的局部座標、地板的高度、
    以及方的（hx/hz，可加 cx/cz 偏心）或圓的（rad）範圍。
 
    它的定義很嚴格：**這一片之內，凡是走得到的地方，支撐高度都必須剛好
@@ -563,16 +565,23 @@ export const BLOCKS = [
     id: 'courtyard', name: '崩塌中庭', hint: '兩側拱廊、一圈斷柱、門樓與鐵閘',
     origin: [0, 0], build: courtyard, seed: 0x1a2b,
     room: { y: 0, hx: 12.4, hz: 12.4 },
+    // 牆面：南牆 13.5、門樓 13.6、兩側拱廊 13.5。砌體最高 7.4。
+    arena: { shape: 'rect', x0: -13.8, x1: 13.8, z0: -13.8, z1: 13.8, veil: [5.4, 8.4], hug: true },
   },
   {
     id: 'rampart', name: '城牆平台', hint: '抬高的露台、女牆垛口、斷塔',
     origin: [PITCH, 0], build: rampart, seed: 0x3c4d,
     room: { y: 3.2, hx: 9.8, hz: 6.2 },
+    // 圓形黑牆，半徑 22——露台的牆在 7.5～11，斷塔伸到 18.5、樓梯到 16.4，
+    // 所以牆外那一圈（塔、階、扶壁、牆腳的碎石）整個留在場地裡。
+    arena: { shape: 'circle', x: 0, z: 0, r: 22, ring: 13, veil: [6.5, 11.5], hug: false },
   },
   {
     id: 'throne', name: '王座廳', hint: '兩列柱、斜插的穹稜、台座與王座',
     origin: [0, PITCH], build: throne, seed: 0x5e6f,
     room: { y: 0, cz: -1.5, hx: 6.9, hz: 12.0 },
+    // 牆面：兩側 8.05、南端 14.95、北端（王座背後那道）18.95。
+    arena: { shape: 'rect', x0: -8.3, x1: 8.3, z0: -15.2, z1: 19.2, veil: [5.6, 8.8], hug: true },
   },
   {
     id: 'cistern', name: '圓塔水窖', hint: '環形拱廊、貼牆殘階、垂鏈',
@@ -580,6 +589,8 @@ export const BLOCKS = [
     // 9.9 而不是 10.5：貼牆那道殘階的第一級（頂面 0.33）伸進來到 10.35，
     // 而樓梯是房間之間的垂直交通，不算房間的地板。
     room: { y: 0, rad: 9.9 },
+    // 環牆的外皮在 13.55。
+    arena: { shape: 'circle', x: 0, z: 0, r: 13.9, veil: [5.4, 8.4], hug: true },
   },
 ];
 
@@ -596,23 +607,37 @@ export function buildRuins(opts = {}) {
   const B = new Build(new Kit(), opts);
   const flames = [];
   const spawns = {};
+  const arenas = [];
   _colCursor = _inkCursor = _flameCursor = 0;   // 同一個行程裡砌第二遍也要對
   _partCursor = _wallCursor = _floorCursor = 0;
 
   for (const b of BLOCKS) {
     const [ox, oz] = b.origin;
     const mark = B.pos.length;
-    const meta = b.build(B, flames, b.seed);
+    // 場地帶進去，因為撒出去的東西要逐顆問「還在黑牆裡面嗎」。
+    const meta = b.build(B, flames, b.seed, b.arena);
     // 區塊是用自己的局部座標砌的，砌完把這一段整個平移到世界位置上——
     // 包含頂點、墨線、碰撞盒與火焰。
     shift(B, mark, ox, oz, flames);
     spawns[b.id] = [meta.spawn[0] + ox, meta.spawn[1], meta.spawn[2] + oz];
+    const A = b.arena;
+    arenas.push(A.shape === 'circle'
+      ? { id: b.id, shape: 'circle', x: A.x + ox, z: A.z + oz, r: A.r, veil: A.veil, hug: A.hug }
+      : {
+        id: b.id, shape: 'rect', veil: A.veil, hug: A.hug,
+        x0: A.x0 + ox, x1: A.x1 + ox, z0: A.z0 + oz, z1: A.z1 + oz,
+      });
   }
-  grounds(B, 0x9c0d);
+  outskirts(B, 0x9c0d);
+
+  /* 黑牆。砌完、平移完才登記，因為它拿的是世界座標——`shift` 搬的是
+     「還沒搬過的」那些盒子，這幾筆進來得太早會被多搬一次。 */
+  for (const a of arenas) B.bound(a);
 
   const out = B.finish();
   out.flames = flames;
   out.spawns = spawns;
+  out.arenas = arenas;
   return out;
 }
 

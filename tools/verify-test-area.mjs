@@ -50,7 +50,8 @@
 
 import * as THREE from '../public/test-area/vendor/three.module.js';
 import { buildRuins, BLOCKS, PITCH } from '../public/test-area/src/blocks.js';
-import { PHYS, solveXZ, supportAt, BLOCK_TOP, TRIP, MOUNT } from '../public/test-area/src/walk.js';
+import { PHYS, solveXZ, supportAt, arenaGap, BLOCK_TOP, TRIP, MOUNT } from '../public/test-area/src/walk.js';
+import { VEIL, buildVeil, outline } from '../public/test-area/src/veil.js';
 import { readFileSync } from 'node:fs';
 import { loadZoo } from '../public/test-area/src/critter.js';
 import { Pad } from '../public/test-area/src/pad.js';
@@ -357,111 +358,209 @@ for (const b of BLOCKS) {
       : `最近只到 ${worst.best.toFixed(1)} m${worst.fell ? '（掉下去了）' : ''}`);
 }
 
-head('走得出去');
-/* 出口是設計的一部分：中庭靠兩側拱廊的拱洞、王座廳靠塌掉的正門、
-   圓塔靠環牆上四個門洞、城牆平台靠那兩折樓梯。這一項驗的是那些洞真的
-   是洞——牆是一塊一塊砌的，少留一個缺口不會有人在程式裡看出來，只會在
-   跑進去之後發現出不來。 */
-const EXITS = {
-  courtyard: [[-13, 0], [-19, 0]],
-  rampart: [[4.2, -5.5], [4.2, -9.5], [4.2, -14], [4.2, -21]],
-  throne: [[0, -14.4], [0, -19]],
-  cistern: [[12.7, 2.5], [17.5, 3.4]],
+head('門洞進得去也回得來');
+/* 以前這一項驗的是「從中心走得出去」。現在室內那三個房間的黑牆貼在牆面
+   上，門洞後面就是黑牆——走不出去是設計，不是 bug。
+
+   所以改驗一件仍然會壞、而且看不出來的事：**進得去也回得來**。拱洞後面
+   剩下的那條縫只有幾十公分寬，而身體的半徑是 0.30；碰撞是逐盒推出的，
+   兩個方向相反的推力（拱的墩柱與黑牆）有可能把身體夾在中間推來推去，
+   那時候畫面上什麼都沒發生，人就是走不動了。城牆平台照舊要驗那條真的
+   路：露台 → 兩折樓梯 → 牆外那一圈。 */
+/* 每個房間的一個門洞，以及走到它那裡的轉折點。轉折點是必要的：驗證用的
+   走法是朝目標直線走，而直線穿過拱廊的墩柱是走不過去的——真人也不會
+   那樣走。中庭與水窖的座標都落在拱洞的正中間（拱廊的洞口每 4.05 公尺
+   一個、環牆的門在每一段的中點 11.25°），不是隨手挑的。 */
+const HOLES = {
+  courtyard: [[-12.6, 0], [-13.4, 0]],
+  rampart: [[4.2, -5.5], [4.2, -9.5], [4.2, -14], [4.2, -19]],
+  throne: [[0, -13.4], [0, -14.6]],
+  cistern: [[11.6, 2.3], [12.9, 2.6]],
 };
 for (const b of BLOCKS) {
   const c = CENTERS[b.id];
   const [ox, oz] = b.origin;
-  let from = [ox, c.y, oz], out = true, worst = null;
-  for (const [vx, vz] of EXITS[b.id]) {
+  const legs = HOLES[b.id];
+  let from = [ox, c.y, oz], went = true, worst = null;
+  for (const [vx, vz] of legs) {
     const res = walkTo(from, [ox + vx, 0, oz + vz]);
-    if (!res.arrived) { out = false; worst = res; break; }
+    if (!res.arrived) { went = false; worst = res; break; }
     from = res.at;
   }
-  ok(out, `${b.name}：從中心走得出去`, out ? '' : `卡在還差 ${worst.best.toFixed(1)} m 的地方`);
+  ok(went, `${b.name}：走到門洞裡`, went ? '' : `卡在還差 ${worst.best.toFixed(1)} m 的地方`);
+  if (!went) continue;
+  // 回頭走同一條路（不是直線切回中心——那會撞到自己剛剛繞過的牆）。
+  const back = [...legs].reverse().slice(1).map(([vx, vz]) => [ox + vx, 0, oz + vz]);
+  back.push([ox, c.y, oz]);
+  let ret = true, rworst = null, secs = 0;
+  for (const leg of back) {
+    const res = walkTo(from, leg, 40);
+    secs += res.t;
+    if (!res.arrived) { ret = false; rworst = res; break; }
+    from = res.at;
+  }
+  ok(ret, `${b.name}：從門洞走得回來`,
+    ret ? `${secs.toFixed(1)} 秒` : `卡在還差 ${rworst.best.toFixed(1)} m 的地方（被夾住了）`);
 }
 
-head('區塊之間那片空地是通的');
-/* 只驗空地，不驗「走進隔壁的區塊」：每個區塊都是有牆的，進出口在固定
-   的幾個缺口上，而這支測試的走法是直線——直線撞牆是對的行為，不是 bug。
-   要驗的是「兩個區塊中間那條走廊不會被孤立的殘牆或大石頭堵死」。 */
-for (let i = 0; i < BLOCKS.length; i++) {
-  const a = BLOCKS[i], b = BLOCKS[(i + 1) % BLOCKS.length];
-  const mid = [(a.origin[0] + b.origin[0]) / 2, 0, (a.origin[1] + b.origin[1]) / 2];
-  const dir = [b.origin[0] - a.origin[0], b.origin[1] - a.origin[1]];
-  const L = Math.hypot(dir[0], dir[1]);
-  // 從走廊的一端走到另一端，兩端各離區塊 19 公尺（區塊的半徑約 15）。
-  const from = [a.origin[0] + (dir[0] / L) * 19, 0, a.origin[1] + (dir[1] / L) * 19];
-  const to = [b.origin[0] - (dir[0] / L) * 19, 0, b.origin[1] - (dir[1] / L) * 19];
-  const res = walkTo(from, to, 40);
-  ok(res.arrived, `${a.name} → ${b.name} 的走廊是通的`,
-    res.arrived ? `${res.t.toFixed(1)} 秒` : `最近只到 ${res.best.toFixed(1)} m`);
-  void mid;
+head('黑牆就是移動的上限');
+/* 黑牆是場地的邊界，而它跟障礙物走**同一套**阻擋邏輯（`walk.js` 的
+   solveXZ，只差形狀是方或圓而不是盒子）——所以驗它的方式跟驗一道牆
+   一樣：走過去，看有沒有出去。
+
+     1. 走不出去。從出生點朝十六個方向各走三十秒（約九十公尺）。
+     2. 停在牆**上**，不是停在牆前面。身體半徑 0.30，所以走到底的時候
+        身體表面應該剛好貼著牆面。差得多就是「畫面上的牆」與「走得到的
+        地方」不一致，而消掉那個不一致就是這道牆存在的理由。
+     3. 黑牆沒有切到任何幾何。切到的話畫面上是一面被削掉一半的牆，而
+        牆上那層薄霧淡不掉一個切面。
+     4. 貼合。室內那三個房間的黑牆要貼在砌體的外皮上（差 1 公尺以內）；
+        城牆平台相反，它要留出至少一公尺的牆外區域。這一項看不出來——
+        黑牆離牆面兩公尺或十公尺，站在房間中央看起來一模一樣，只有走到
+        牆邊才會發現外面多了一圈到不了的空地。
+*/
+const vol = (q) => (q.max[0] - q.min[0]) * (q.max[1] - q.min[1]) * (q.max[2] - q.min[2]);
+/* 每一塊幾何離「它自己那個場地」的邊界最近的距離（在裡面是正的）。
+
+   量的是真正的頂點，不是 AABB：圓形的鋪面基座是一塊直徑 25 公尺的圓盤，
+   它的 AABB 的角比它本身遠 40%，照 AABB 量的話每一片鋪面都會被判成
+   戳到牆外面。一塊石頭一次、全圖走一遍頂點緩衝區，幾十毫秒。 */
+const PART_GAP = (() => {
+  const P = R.geometry.attributes.position.array;
+  const out = new Float64Array(R.parts.length);
+  for (let k = 0; k < R.parts.length; k++) {
+    const q = R.parts[k];
+    const end = k + 1 < R.parts.length ? R.parts[k + 1].i0 : P.length;
+    const cx = (q.min[0] + q.max[0]) / 2, cz = (q.min[2] + q.max[2]) / 2;
+    // 它屬於哪個場地：中心離邊界最裡面的那一個。
+    let a = R.arenas[0], bg = -Infinity;
+    for (const c of R.arenas) {
+      const g = arenaGap(c, cx, cz);
+      if (g > bg) { bg = g; a = c; }
+    }
+    let worst = Infinity;
+    for (let i = q.i0; i < end; i += 3) {
+      const g = arenaGap(a, P[i], P[i + 2]);
+      if (g < worst) worst = g;
+    }
+    out[k] = worst;
+  }
+  return out;
+})();
+for (const a of R.arenas) {
+  const name = BLOCKS.find((b) => b.id === a.id).name;
+  const spawn = R.spawns[a.id];
+  let escaped = 0, tight = Infinity;
+  for (let k = 0; k < 16; k++) {
+    const ang = (k / 16) * Math.PI * 2;
+    const far = 60;
+    const res = walkTo(spawn, [spawn[0] + Math.cos(ang) * far, 0, spawn[2] + Math.sin(ang) * far], 30);
+    if (!res.at) continue;                       // 掉下去了（另一項在驗）
+    const gap = arenaGap(a, res.at[0], res.at[2]);
+    if (gap < -1e-3) escaped++;
+    if (gap < tight) tight = gap;
+  }
+  ok(escaped === 0, `${name}：十六個方向都走不出黑牆`,
+    escaped ? `${escaped}/16 出去了` : `${a.shape === 'circle' ? `半徑 ${a.r}` : '方形'} m`);
+  ok(Math.abs(tight - PHYS.radius) < 0.05, `${name}：走到底就貼在牆面上`,
+    `身體離牆面 ${(tight - PHYS.radius).toFixed(3)} m`);
+
+  /* 貼合：黑牆與砌體外皮的距離。只算大於 0.25 m³ 的砌體（牆磚 0.35、
+     扶壁的階更大；碎石的磚只有 0.11——碎石是可以夾掉的，牆不行）。 */
+  let nearest = Infinity;
+  for (let k = 0; k < R.parts.length; k++) {
+    const q = R.parts[k];
+    if (vol(q) < 0.25) continue;
+    const cx = (q.min[0] + q.max[0]) / 2, cz = (q.min[2] + q.max[2]) / 2;
+    if (arenaGap(a, cx, cz) < 0) continue;        // 別的場地的
+    if (PART_GAP[k] < nearest) nearest = PART_GAP[k];
+  }
+  if (a.hug) {
+    ok(nearest < 1.0, `${name}：黑牆貼在砌體的外皮上`, `離最近的砌體 ${nearest.toFixed(2)} m`);
+  } else {
+    ok(nearest > 1.0, `${name}：牆外那一圈留著`, `離最近的砌體 ${nearest.toFixed(2)} m`);
+  }
+}
+{
+  let cut = 0, worst = 0, at = null;
+  for (let k = 0; k < R.parts.length; k++) {
+    if (PART_GAP[k] >= 0) continue;
+    cut++;
+    if (-PART_GAP[k] > worst) {
+      worst = -PART_GAP[k];
+      const q = R.parts[k];
+      at = [(q.min[0] + q.max[0]) / 2, (q.min[2] + q.max[2]) / 2];
+    }
+  }
+  ok(cut === 0, '黑牆沒有切到任何幾何',
+    cut ? `${cut} 塊，最多戳出去 ${worst.toFixed(2)} m @ ${at[0].toFixed(1)},${at[1].toFixed(1)}` : `${R.parts.length} 塊`);
 }
 
-head('每個區塊都是一個可玩的房間');
-/* 「中心是空的」只驗了中央那一小片。房間要能拿去當 roguelike 的地形，
-   驗的必須是整片：
+head('黑牆與黑霧的幾何');
+/* 這一節驗的是 veil.js，而它有一個致命而且看不出來的失敗模式：三角形的
+   繞向。材質是單面的（雙面的話走進霧殼與牆之間會把整個畫面染暗一次），
+   所以法線必須朝內——反了就整片被剔掉，畫面上是「黑牆沒有出現」，而那跟
+   「還沒做」長得一模一樣。node 沒有 WebGL 可以畫，但繞向算得出來。 */
+{
+  const V = buildVeil(R.arenas);
+  console.log(`  ${V.tris} 三角形 ・ 一個 draw ・ ${VEIL.haze.length} 層霧`
+    + ` ・ 牆腳漸層 ${VEIL.skirt} m`);
+  ok(V.tris > 0 && V.pos.length === V.alpha.length * 3, '頂點與透明度數量對得上');
+  let nanCount = 0;
+  for (const v of V.pos) if (!Number.isFinite(v)) nanCount++;
+  for (const v of V.alpha) if (!(v >= 0 && v <= 1)) nanCount++;
+  ok(nanCount === 0, '沒有 NaN，透明度都在 [0,1]', `${nanCount}`);
 
-     平    房間裡凡是走得到的地方，支撐高度都剛好等於地板的高度。視覺上
-           的凹凸（砌歪的磚、缺塊的石板、壓進地板的碎石）一格都不准傳到
-           腳底下。
-     通    從房間中心用真的物理走得到每一格。障礙物（柱、井、火盆、雕像、
-           大石）把路擋住是可以的，但不能把一塊地圍死。
-     空    走得到的格子要佔多數——一個房間如果一半是障礙物，它不是房間，
-           是一堆石頭。
+  /* 法線：垂直的牆面要朝內（指向場地裡面），地上那圈要朝上。 */
+  let inward = 0, up = 0, outward = 0, down = 0;
+  for (let i = 0; i < V.pos.length; i += 9) {
+    const ax = V.pos[i], ay = V.pos[i + 1], az = V.pos[i + 2];
+    const bx = V.pos[i + 3], by = V.pos[i + 4], bz = V.pos[i + 5];
+    const cx2 = V.pos[i + 6], cy = V.pos[i + 7], cz2 = V.pos[i + 8];
+    const ux = bx - ax, uy = by - ay, uz = bz - az;
+    const wx = cx2 - ax, wy = cy - ay, wz = cz2 - az;
+    const nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
+    const mx = (ax + bx + cx2) / 3, mz = (az + bz + cz2) / 3;
+    if (Math.abs(ny) > Math.abs(nx) + Math.abs(nz)) { (ny > 0 ? up++ : down++); continue; }
+    // 朝內 = 法線與「從場地中心指向這個三角形」的方向相反
+    const a = R.arenas.reduce((p, q) => (arenaGap(q, mx, mz) > arenaGap(p, mx, mz) ? q : p));
+    const ox = a.shape === 'circle' ? a.x : (a.x0 + a.x1) / 2;
+    const oz = a.shape === 'circle' ? a.z : (a.z0 + a.z1) / 2;
+    ((mx - ox) * nx + (mz - oz) * nz < 0 ? inward++ : outward++);
+  }
+  ok(outward === 0, '牆面的法線都朝內（單面材質才看得到）', `朝內 ${inward}、朝外 ${outward}`);
+  ok(down === 0, '牆腳那圈的法線都朝上', `朝上 ${up}、朝下 ${down}`);
 
-   `BLOCKS[].room` 就是「可玩的那一片」的定義，樓梯與台座刻意劃在外面。 */
-for (const b of BLOCKS) {
-  const rm = b.room;
-  const [ox, oz] = b.origin;
-  const cx = ox + (rm.cx || 0), cz = oz + (rm.cz || 0);
-  const step = 0.5;
-  const hx = rm.rad || rm.hx, hz = rm.rad || rm.hz;
-  const inside = (x, z) => (rm.rad
-    ? Math.hypot(x - cx, z - cz) <= rm.rad + 1e-9
-    : Math.abs(x - cx) <= rm.hx + 1e-9 && Math.abs(z - cz) <= rm.hz + 1e-9);
-
-  const key = (i, j) => `${i},${j}`;
-  const walk = new Map();          // 走得到的格子
-  let bumps = [], blocked = 0, total = 0;
-  const ni = Math.round(hx / step), nj = Math.round(hz / step);
-  for (let i = -ni; i <= ni; i++) {
-    for (let j = -nj; j <= nj; j++) {
-      const x = cx + i * step, z = cz + j * step;
-      if (!inside(x, z)) continue;
-      total++;
-      const [px, pz] = solveXZ(COLS, x, z, rm.y);
-      if (Math.hypot(px - x, pz - z) > 1e-6) { blocked++; continue; }
-      const sup = supportAt(COLS, x, z, rm.y + 0.1);
-      if (Math.abs(sup - rm.y) > 0.06) { bumps.push([x, z, sup]); continue; }
-      walk.set(key(i, j), [i, j]);
+  /* 外框就是碰撞用的那個邊界：段數 56 的圓，弓高只有 1 公分。 */
+  let far = 0;
+  for (const a of R.arenas) {
+    for (const [px, pz] of outline(a, 0)) {
+      const g = Math.abs(arenaGap(a, px, pz));
+      if (g > far) far = g;
+    }
+    // 段的中點才是離邊界最遠的地方（圓的弓高）
+    const P = outline(a, 0);
+    for (let i = 0; i < P.length; i++) {
+      const q = P[(i + 1) % P.length];
+      const g = Math.abs(arenaGap(a, (P[i][0] + q[0]) / 2, (P[i][1] + q[1]) / 2));
+      if (g > far) far = g;
     }
   }
-  ok(bumps.length === 0, `${b.name}：整個房間的地面是平的`,
-    bumps.length
-      ? `${bumps.length}/${total} 格不平，例：${bumps.slice(0, 2).map(([x, z, y]) => `${x.toFixed(1)},${z.toFixed(1)} 支撐 ${y.toFixed(2)}`).join('；')}`
-      : `${total} 格（${walk.size} 格走得到、${blocked} 格是障礙物）`);
+  ok(far < 0.02, '畫出來的牆面貼合碰撞的邊界', `最多差 ${(far * 100).toFixed(1)} cm`);
 
-  // 從房間中心 flood fill。中心本身必須是走得到的。
-  const seed = [0, 0];
-  let reached = 0;
-  if (walk.has(key(0, 0))) {
-    const seen = new Set([key(0, 0)]);
-    const q = [seed];
-    while (q.length) {
-      const [i, j] = q.pop();
-      reached++;
-      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const k = key(i + di, j + dj);
-        if (!walk.has(k) || seen.has(k)) continue;
-        seen.add(k); q.push(walk.get(k));
-      }
+  /* 高度：實心的部分要蓋過砌體（不然隔壁那幾座從牆頭上看得到），但不能
+     高到把天空吃掉——所以頂端一定要淡到全透明。 */
+  for (const a of R.arenas) {
+    const name = BLOCKS.find((b) => b.id === a.id).name;
+    let hi = 0;
+    for (const q of R.parts) {
+      if (arenaGap(a, (q.min[0] + q.max[0]) / 2, (q.min[2] + q.max[2]) / 2) < 0) continue;
+      if (q.max[1] > hi) hi = q.max[1];
     }
+    ok(a.veil[0] > 3 && a.veil[0] < hi + 1.5, `${name}：黑牆的實心高度跟砌體差不多`,
+      `牆 ${a.veil[0]} m／砌體最高 ${hi.toFixed(1)} m`);
+    ok(a.veil[1] > a.veil[0], `${name}：頂端淡到全透明`, `${a.veil[0]} → ${a.veil[1]} m`);
   }
-  ok(reached === walk.size, `${b.name}：走得到房間裡的每一格`,
-    `${reached}/${walk.size} 格${reached === walk.size ? '' : '（有一塊地被圍死了）'}`);
-  ok(walk.size / total > 0.6, `${b.name}：障礙物沒有把房間塞滿`,
-    `${(walk.size / total * 100).toFixed(0)}% 走得到`);
 }
 
 head('動物（遊戲那幾隻本人）');

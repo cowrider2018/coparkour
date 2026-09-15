@@ -41,7 +41,8 @@ import { loadZoo } from './critter.js';
 import { Pad } from './pad.js';
 import { Hud } from './hud.js';
 import { facet } from './geom.js';
-import { PHYS, solveXZ, supportAt } from './walk.js';
+import { PHYS, solveXZ, supportAt, arenaGap, clampArena } from './walk.js';
+import { buildVeil } from './veil.js';
 import { lookInfo } from '../../src/cat/looks.js';
 
 const canvas = document.getElementById('view');
@@ -89,6 +90,48 @@ scene.add(ground);
 const ruins = buildRuins();
 scene.add(new THREE.Mesh(ruins.geometry, toonVC()), new THREE.LineSegments(ruins.ink, inkLine()));
 const COLS = ruins.colliders;
+
+/* ── 黑牆 ────────────────────────────────────────────────────────
+   形狀、尺寸、高度與黑霧的層次全部在 veil.js（那一支只吐頂點與透明度，
+   而且它算得對不對 node 驗得出來——三角形的繞向錯了，單面材質會把整片
+   剔掉，畫面上是「黑牆沒出現」，跟「還沒做」長得一模一樣）。
+
+   這裡只負責把那份資料變成一個 mesh：一顆材質、一個 draw。
+   ------------------------------------------------------------------ */
+function veilMesh(arenas) {
+  const v = buildVeil(arenas);
+  /* 純黑，不是調色盤的 C.fog（#1e1810）——牆要黑，而 #1e1810 在暖色的
+     天光下看起來是深褐色的一塊布。顏色在這裡而不在 veil.js，因為 sRGB
+     到線性的轉換是 three 的事。 */
+  const c = new THREE.Color(0x000000);
+  const col = new Float32Array(v.alpha.length * 4);
+  for (let i = 0; i < v.alpha.length; i++) {
+    col[i * 4] = c.r; col[i * 4 + 1] = c.g; col[i * 4 + 2] = c.b;
+    col[i * 4 + 3] = v.alpha[i];
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(v.pos, 3));
+  // 四個分量：透明度靠頂點色帶著走，所以整圈黑牆加黑霧是一個 draw。
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+  g.computeBoundingSphere();
+  /* 單面，法線朝內。這不是省一半的填色率而已——雙面的話，玩家走進霧殼
+     與牆之間那一公尺時，那層霧會跑到鏡頭前面，整個畫面被染暗一次。 */
+  return new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+    vertexColors: true, transparent: true, side: THREE.FrontSide,
+    fog: false, depthWrite: false,
+  }));
+}
+scene.add(veilMesh(ruins.arenas));
+
+/** 站在哪個場地裡。取「離邊界最裡面」的那一個——四個場地互不重疊。 */
+function arenaAt(x, z) {
+  let best = ruins.arenas[0], bg = -Infinity;
+  for (const a of ruins.arenas) {
+    const g = arenaGap(a, x, z);
+    if (g > bg) { bg = g; best = a; }
+  }
+  return best;
+}
 
 /* 火焰。一份幾何、一顆材質，逐盆一個 mesh——它們要各自抖，所以不能合併。
    抖法是三個不成比例的正弦相加（3.1／5.7／11.3 Hz），沒有一個週期看得
@@ -377,6 +420,13 @@ function frame(now) {
     player.y + eyeH + sp * cam.curDist,
     player.z - Math.cos(cam.yaw) * cp * cam.curDist,
   );
+  /* 相機不出黑牆：出去了就是從外面看牆的背面，畫面整片黑。夾在半徑內
+     0.35 處，所以鏡頭是沿著牆滑，而不是被牆頂出去。 */
+  {
+    const a = arenaAt(player.x, player.z);
+    const [cx, cz] = clampArena(a, _cv.x, _cv.z, 0.35);
+    _cv.x = cx; _cv.z = cz;
+  }
   // 相機不鑽到地底下。只擋地面：拿支撐面來擋的話，站在牆邊時相機會被
   // 牆頂頂上去，而那看起來像鏡頭自己跳了一下。
   camera.position.set(_cv.x, Math.max(_cv.y, 0.45), _cv.z);
