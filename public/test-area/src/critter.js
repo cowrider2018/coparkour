@@ -1320,6 +1320,23 @@ export class Critter {
       baked[v * 3 + 2] = baked[w * 3 + 2];
       inkW[v] = inkW[w];
     }
+
+    /* 貓的嘴——鼻子下面那個小小的「⌣」——在烘焙版不畫。認它的方法跟
+       src/cat/dog.js 的 isCatMouth 一樣：`unlit` 群組裡掛在 head 上的
+       就是它，沒有別的。狗的 cat.bin 早就把它丟了、畫的是自己的嘴，所以
+       只有貓要處理。收成一點就好：三角形退化成零面積，光柵化不會畫它，
+       臉的抬起是整張臉同一個位移，也不會把它拉開。 */
+    if (this.modelId === 'cat') {
+      const head = this.rig.names.indexOf('head');
+      let at = -1;
+      for (let v = 0; v < nv; v++) {
+        if (!isFace[v] || this._boneId[v] !== head) continue;
+        if (at < 0) at = v;
+        baked[v * 3] = baked[at * 3];
+        baked[v * 3 + 1] = baked[at * 3 + 1];
+        baked[v * 3 + 2] = baked[at * 3 + 2];
+      }
+    }
     return { pos: baked, nrm: surfaceNormals(baked, d.index, nv, this._nrmRaw), inkW };
   }
 

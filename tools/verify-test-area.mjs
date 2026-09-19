@@ -858,6 +858,30 @@ for (const id of zoo.models) {
   ok(!zoo.setLook('dog-prick/orangin'), '不存在的組合換不動（貓的毛色不會跑到狗身上）');
 }
 
+/* 烘焙版的貓沒有嘴：`unlit` 裡掛在 head 上的那幾個頂點收成一點（零面積，
+   不會被畫）。其他臉部頂點、以及每一隻狗的臉都不能被波及。 */
+{
+  const facePts = (c) => {
+    const G = c._unlitGroup, head = c.rig.names.indexOf('head');
+    const mouth = new Set(), rest = new Set();
+    for (let i = G.start; i < G.start + G.count; i++) {
+      const v = c.data.index[i];
+      const p = c._posBaked;
+      const key = `${p[v * 3]},${p[v * 3 + 1]},${p[v * 3 + 2]}`;
+      (c._boneId[v] === head ? mouth : rest).add(key);
+    }
+    return { mouth, rest };
+  };
+  const cat = facePts(zoo.critters.get('cat'));
+  ok(cat.mouth.size === 1, '烘焙版的貓：嘴收成一點，畫不出來', `${cat.mouth.size} 個相異位置`);
+  ok(cat.rest.size > 100, '烘焙版的貓：眼睛、鼻子、鬍鬚都還在', `${cat.rest.size} 個相異位置`);
+  for (const id of zoo.models.filter((m) => m !== 'cat')) {
+    const d = facePts(zoo.critters.get(id));
+    ok(d.mouth.size !== 1 && d.rest.size > 100, `${id}：狗的臉沒被收掉`,
+      `head 上 ${d.mouth.size}、其他 ${d.rest.size} 個相異位置`);
+  }
+}
+
 /* 換模型要接住朝向：不接的話玩家只是換了外觀，角色卻原地轉回正面。 */
 {
   zoo.setLook('cat/tabby');
