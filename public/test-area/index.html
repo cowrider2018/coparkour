@@ -25,9 +25,10 @@
   但動物不是重畫的，是遊戲那幾隻本人：assets/cat.bin 經過遊戲自己的
   src/cat/species.js（貓、立耳犬、垂耳犬）與 src/cat/wear.js（漁夫帽），
   23 根骨頭的剛體骨架與 src/cat/pose.js 的對角步、彈簧尾巴照原樣跑，
-  連 src/cat/shape.js 的圓角方形都跟過來了——那是每幀在頂點著色器裡做的
-  二次變形，部位的矩形由它自己的 measureShapes 量。沒跟過來的是那台正交
-  側視相機與 depthRange 的分段遮擋，理由見 src/critter.js。
+  連 src/cat/shape.js 的圓角方形都跟過來了——部位由它自己的 measureShapes
+  量，造型在載入時烘成每個部位一顆超橢球，從任何方向看都是圓角方形。沒
+  跟過來的是那台正交側視相機與 depthRange 的分段遮擋，理由見
+  src/critter.js。
 
   操作元件也是遊戲那一套：src/pad.js 是 public/src/pad.js 的搬移，
   水的配方（blobPath／fillLiquid／waveAt／tint）與彈簧常數都是原文，

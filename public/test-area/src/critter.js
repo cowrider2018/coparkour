@@ -23,15 +23,14 @@
      動作   `pose.js` 的 Driver（步態、呼吸、尾巴的擺）與 Sway（尾巴那條
             17 節的彈簧）。步頻跟著實際速度走，跟遊戲一樣。
      配色   cat.bin 自己的頂點色，三種毛色共用同一份幾何。
-     圓角   `shape.js` 的部位表、它量出來的矩形，以及整個二次變形。
-            這一段是每幀在頂點著色器裡做的，見下面「圓角方形」那一段。
+     圓角   `shape.js` 的部位表：每個部位的中心、三個半徑與圓角比例。
+            造型在載入時烘進頂點，見下面「圓角方形」那一段。
 
    沒搬的是「那個渲染器是什麼」，而那是刻意的：
 
-     · 正交側視相機本身。變形跟過來了，那台相機沒有——這一頁的二維平面
-       是透視投影之後的螢幕座標。
-     · 尾巴尖的方頭（TAIL_CAP_GLSL）。rrRadius 這裡已經有了（變形要用），
-       所以它是可以補上的；沒補是因為它只影響尾巴末端那兩三個像素，而
+     · 正交側視相機，以及遊戲在那台相機的畫面上每幀做的二次變形。這一頁
+       的鏡頭會繞著轉、會從斜上方看，造型改成烘進 3D 幾何。
+     · 尾巴尖的方頭（TAIL_CAP_GLSL）。沒補是因為它只影響尾巴末端那兩三個像素，而
        尾巴本身不是一個「部位」——shape.js 說得很清楚，一根管子不需要
        矩形。
      · gl.depthRange 分段遮擋，與遠側那隻眼睛的收合。兩個都是為了「一排
@@ -41,47 +40,23 @@
        不是它那支檔案；狗和石頭因此是被同一個方向的光打的，只是石頭
        分五階而狗分三階（理由在 palette.js 的「為什麼是五階」）。
 
-   ── 圓角方形：每幀的二次變形 ─────────────────────────────────────
-   那個造型是這隻動物的招牌，所以它整個跟過來了：`shape.js` 的
-   `measureShapes` 量出每個部位的中心、三個半徑、圓角比例與 norm，
-   那一組數字就是遊戲那支著色器吃的 uniform，一個都沒有換；而變形本身
-   （SHAPE_GLSL 的 `warpToRect`）也照搬，包含它那兩段：
+   ── 圓角方形：烘進幾何 ─────────────────────────────────────────
+   那個造型是這隻動物的招牌，所以它跟過來了，但不是照遊戲那樣每幀做。
+   遊戲是正交側視，永遠從同一個方向看，在畫面上把輪廓拉成圓角矩形就夠
+   了；這一頁的鏡頭會繞著轉，所以造型直接烘進 3D 幾何：`_bakeGeometry()`
+   在載入時把每個部位的皮放到一顆**超橢球**上
+   （|x/hx|ⁿ + |y/hy|ⁿ + |z/hz|ⁿ = 1），一次算完、每幀零成本。n = 2 是
+   橢球、n → ∞ 是方盒，n 由 shape.js 量到的每個部位自己的圓角比例定，
+   落在 4.4～5.6。方的特徵留著，但表面處處平滑，所以從任何方向看——包含
+   斜上方——輪廓都還是圓角矩形似的曲線。圓角盒與橢圓柱都試過，為什麼不用
+   寫在 `_bakeGeometry` 那一段。
 
-     第一段  把部位的包圍橢圓映射到圓角矩形。落在橢圓上的落在矩形上，
-             裡面的按同比例跟著走。
-     第二段  只作用在「法線側視 + 已經靠外」的頂點上，把輪廓精確拉到
-             矩形邊上。兩個條件都要：只看法線會抓到部位中間的一道摺並
-             把它拖到邊上，只看半徑就是第一段留下的坑坑巴巴。
+   這一頁先前也搬過遊戲那支每幀的二次變形（透視版），與烘焙版並存過一陣
+   子給人用眼睛比對；定案的是烘焙版，那一支已經拿掉了
+   （`git log -S cpWarp`）。
 
-   換掉的只有「那個二維平面是什麼」：遊戲是正交側視的螢幕像素，這裡是
-   透視投影之後、以 y 正規化的螢幕座標（ndc.x × aspect, ndc.y）。那個
-   空間是等向的，所以圓角矩形在畫面上是圓角矩形而不是被拉扁的。深度不
-   動，跟遊戲一樣——這一段只搬動頂點落在畫面上的哪裡。
-
-   ── 烘進幾何的那一版，與它為什麼不是預設 ─────────────────────────
-   `_bakeGeometry()` 把同一個造型烘進頂點，接在 `setShapeMode('bake')`
-   後面，一次算完、每幀零成本。烘的形狀是**超橢球**
-   （|x/hx|ⁿ + |y/hy|ⁿ + |z/hz|ⁿ = 1）：n = 2 是橢球、n → ∞ 是方盒，
-   n 由每個部位自己的圓角比例定，落在 4.4～5.6。方的特徵留著，但表面
-   處處平滑，所以從任何方向看——包含斜上方——輪廓都還是圓角矩形似的曲線。
-   圓角盒與橢圓柱都試過，為什麼不用寫在 `_bakeGeometry` 那一段。
-
-   對不起來的地方，以及為什麼消不掉：
-
-     · 轉身時寬度會起伏 ±10% 上下。超橢球的支撐是 ℓᵐ、runtime 的矩形是
-       照 ℓ²（橢球支撐）做的，45° 對角差 2^(1/m − 1/2)。fitShrink 量一個
-       縮放抹平平均，起伏本身消不掉——唯一寬度恆定的水平截面是橢圓，而
-       橢圓從正上方看就是橢圓。「上面看是矩形」與「轉身寬度不變」是同一
-       個取捨的兩端。
-     · 那一段「法線側視才拉到底」的第二段是視角相關的，烘的時候沒有視角
-       可問，所以輪廓比 warp 版鬆一點。
-     · 墨線寬度。runtime 拉到一個「大 uInkOut 像素」的矩形，那是螢幕量；
-       烘完只剩 INK_GROW 沿法線的模型空間外殼，線寬會隨遠近變。
-
-   而每幀那版的代價其實很小：每頂點多算一個部位框（三次矩陣乘法、幾十個
-   乘加）與一次圓角矩形求交，25,723 個頂點兩趟（皮毛與墨線），在任何
-   2015 年之後的 GPU 上都量不出來。省下這個換上面三條，不划算——所以
-   烘焙那一版留著給人用眼睛比對，不是預設。
+   墨線是螢幕空間的：翻面外殼沿烘焙後的表面法線，在畫面上往外推固定的
+   像素數（見 INK_PUSH），所以遠近一樣粗、處處等寬。
 
    ── 為什麼不是照抄那支著色器 ─────────────────────────────────────
    照抄要連正交投影、uPlace/uXform 的像素座標系、彎折與 depthRange 一起
@@ -98,7 +73,7 @@ import { parseCat, Rig } from '../../src/cat/rig.js';
 import { speciesModels } from '../../src/cat/species.js';
 import { Driver, Sway, applyPose, TAIL_AXIS, TAIL_LIFT } from '../../src/cat/pose.js';
 import { MODELS, MODEL_SKINS } from '../../src/cat/looks.js';
-import { measureShapes, SIL_NORMAL, SIL_RADIUS } from '../../src/cat/shape.js';
+import { measureShapes } from '../../src/cat/shape.js';
 import {
   BAND_KEY, BAND_AMB, SHADE_KEY_GAIN, SHADE_AMB_GAIN,
   TONE_REF_ALBEDO, MID_RANGE, SHADOW_RANGE, BAND_EDGE, REST_AIM,
@@ -172,12 +147,6 @@ const LIGHT_DIR = { value: new THREE.Vector3(...KEY_POS).normalize() };
 const SWAY_NONE = 0, SWAY_TAIL = 1;
 const NODES = TAIL_AXIS.length;          // 17
 
-/* 墨線外殼往外推多少（模型單位）。cat.bin 自己烘了 build.js 的 SHELL
-   （0.05），這是加上去的那一點——遊戲那邊是用像素算的（INK_PX 1.25 px
-   除以每單位幾像素），這裡是透視相機，沒有「每單位幾像素」這個數字，
-   所以直接給一個模型單位的值。0.022 × 這隻狗的縮放 ≈ 5 mm。 */
-const INK_GROW = 0.022;
-
 /* cat.bin 的 `outline` 群組自己烘了 build.js 的 SHELL：每個外殼頂點都已經
    沿法線推出去 0.05 了（量過，中位數正好 0.0500）。
 
@@ -228,12 +197,10 @@ const DECL = (boneN, partN) => `
 uniform mat4 uBones[${boneN}];
 uniform vec4 uSwayQ[${NODES}];
 uniform vec3 uSwayBend[${NODES}];
-uniform float uGrow;
-uniform float uBakeN;               // 1 = 外殼沿烘焙後的法線長，見 setShapeMode
 attribute float aBone;
 attribute float aSway;
 attribute float aOuter;
-attribute vec3 aBakeN;
+attribute vec3 aBakeN;              // 烘焙後的表面法線，墨線往外推的方向
 
 const vec3 CP_TAIL_AXIS[${NODES}] = vec3[${NODES}](
   ${axisGLSL()}
@@ -271,17 +238,7 @@ vec3 cpSwayNormal(vec3 n, float o) {
    各自算一遍的代價是十七節的內插做兩次，幾十個乘加，不值得為它冒那個險。 */
 vec3 cpSkinPos() {
   vec3 p = position;
-  vec3 n = normal;
-  if (aSway > 0.5) {                       // 只有尾巴會擺（狗沒有鬍鬚）
-    p = cpSwayPoint(p, aOuter);
-    n = cpSwayNormal(n, aOuter);
-  }
-  /* 墨線外殼沿法線長出去。烘焙模式下改用烘焙後的表面法線：原始法線是
-     量在原始曲面上的，烘完之後有 46% 的外殼頂點偏掉 15°～60°，沿它長
-     出去的外殼在那些地方只長到 cos(夾角) 那麼遠——線就被毛色吃掉了。
-     著色用的那份法線不動，那是 shape.js 堅持的（三階調要真的法線）。
-     會擺的只有尾巴，而尾巴不是部位、不烘，所以這裡不必管 sway。 */
-  p += mix(n, aBakeN, uBakeN) * uGrow;
+  if (aSway > 0.5) p = cpSwayPoint(p, aOuter);   // 只有尾巴會擺（狗沒有鬍鬚）
   return (uBones[int(aBone + 0.5)] * vec4(p, 1.0)).xyz;
 }
 vec3 cpSkinNrm() {
@@ -289,128 +246,21 @@ vec3 cpSkinNrm() {
   if (aSway > 0.5) n = cpSwayNormal(n, aOuter);
   return normalize(mat3(uBones[int(aBone + 0.5)]) * n);
 }
-/** 墨線往外推的方向：烘焙模式用烘焙後的表面法線，其餘用原始的。 */
+/** 墨線往外推的方向：烘焙後的表面法線。著色用的 normal 是原始曲面的，
+    那是 shape.js 堅持的（三階調要真的法線），所以兩份分開放。 */
 vec3 cpInkNrm() {
-  vec3 n = mix(normal, aBakeN, uBakeN);
+  vec3 n = aBakeN;
   if (aSway > 0.5) n = cpSwayNormal(n, aOuter);
   return normalize(mat3(uBones[int(aBone + 0.5)]) * n);
 }
 
-/* ── 二次變形：把每個部位的輪廓壓成圓角矩形 ──────────────────────
-   這一段是 src/cat/shape.js 的 SHAPE_GLSL，搬到透視相機上。搬過來的是
-   整個構造，包含那兩段：
-
-     第一段  把部位的包圍橢圓映射到圓角矩形。落在橢圓上的落在矩形上，
-             裡面的按同比例跟著走。
-     第二段  只作用在「法線側視 + 已經靠外」的頂點上，把輪廓精確拉到
-             矩形邊上。兩個條件都要：只看法線會抓到部位中間的一道摺並
-             把它拖到邊上，只看半徑就是第一段留下的那個坑坑巴巴。
-
-   換掉的只有「那個二維平面是什麼」：遊戲是正交側視的螢幕像素，這裡是
-   透視投影後、以 y 正規化的螢幕座標（ndc.x × aspect, ndc.y）。那個空間
-   是等向的，所以圓角矩形在畫面上是圓角矩形而不是被拉長的。深度不動——
-   跟遊戲一樣，這一段只搬動頂點落在畫面上的哪裡。
-
-   部位的框每幀由骨頭矩陣現算：中心投影一次，三個半徑軸各投影一次，
-   兩個半長是三者在框的兩個方向上的支撐、用平方和合成。平方和而不是
-   相加，因為相加是「盒」的支撐，而盒在對角線上最寬——頭的 X 與 Z 半徑
-   只差 3%，用相加它會在轉身途中胖 40%。
-
-   透視的代價講清楚：一個部位的三個半徑是在「部位中心那個深度」上換算
-   成畫面大小的，所以同一個部位裡比中心近的頂點會被算得略小、遠的略大。
-   頭在三公尺外的深度差是 ±5%，看不出來；貼到鏡頭前面就會看出來，而那
-   個距離下這頁的相機本來就不會停。 */
 #define CP_PARTS ${partN}
-uniform vec4 uPart[CP_PARTS];       // 中心 xyz，w = 掛在哪根骨頭
-uniform vec4 uPartB[CP_PARTS];      // 三個半徑，w = 圓角佔短邊的比例
-uniform float uPartNorm[CP_PARTS];  // 真實輪廓比橢圓多伸出去多少
-uniform int uBonePart[${boneN}];    // 每根骨頭：被哪個部位彎，−1 = 不彎
-uniform int uBoneRide[${boneN}];    // 1 = 被那個部位帶著走，不被它彎
-uniform float uInkOut;              // 這一趟要落在矩形外多遠（螢幕單位）
-uniform float uBend;                // 0/1，B 鍵
-uniform float uInkScreen;           // 1 = 墨線在螢幕空間推，見 WARP
-uniform float uInkInner;            // 內部交界的墨線留多少，0 = 只留最外圈
+uniform vec4 uPart[CP_PARTS];       // 中心 xyz，w = 掛在哪根骨頭（臉要找頭）
+uniform float uInkOut;              // 墨線往外推多遠（螢幕單位），皮毛與臉是 0
 attribute float aInkW;              // 這個頂點露在外面的程度（烘焙時量的）
-
-/** 圓角矩形的中心到邊界有多遠，沿單位方向。精確解，不是近似：矩形是
-    半徑 (h − r) 的盒被半徑 r 的圓掃過，射線要嘛從平邊出去（答案就是 h
-    除以方向自己的分量），要嘛從圓角出去（一個二次式）。 */
-float cpRR(vec2 d, vec2 h, float r) {
-  vec2 a = abs(d);
-  vec2 e = max(h - r, vec2(0.0));
-  if (h.x * a.y <= e.y * a.x) return h.x / max(a.x, 1e-6);
-  if (h.y * a.x <= e.x * a.y) return h.y / max(a.y, 1e-6);
-  float K = a.x * e.x + a.y * e.y;
-  return K + sqrt(max(0.0, K * K - (dot(e, e) - r * r)));
-}
 
 float cpAspect() {
   return projectionMatrix[1][1] / max(projectionMatrix[0][0], 1e-6);
-}
-/** 一個視空間的方向，換成「在中心那個深度上」的畫面長度。 */
-vec2 cpProjDir(vec3 dirView, float wc, float asp) {
-  vec4 q = projectionMatrix * vec4(dirView, 0.0);
-  return vec2(q.x / wc * asp, q.y / wc);
-}
-
-/** 部位在畫面上的框：中心 c、橫向 uHat、縱向 vHat，以及兩個半長。 */
-void cpPartFrame(int id, out vec2 c, out vec2 uHat, out vec2 vHat, out float lu, out float lv) {
-  vec4 P = uPart[id], B = uPartB[id];
-  mat4 mv = viewMatrix * modelMatrix * uBones[int(P.w + 0.5)];
-  vec4 cc = projectionMatrix * (mv * vec4(P.xyz, 1.0));
-  float wc = max(cc.w, 1e-4);
-  float asp = cpAspect();
-  c = vec2(cc.x / wc * asp, cc.y / wc);
-
-  vec2 ex = cpProjDir(mv[0].xyz * B.x, wc, asp);
-  vec2 ey = cpProjDir(mv[1].xyz * B.y, wc, asp);
-  vec2 ez = cpProjDir(mv[2].xyz * B.z, wc, asp);
-
-  /* 縱向取骨頭自己的 +Y 投影：那是部位的「上」——沿著一條腿、順著身體。
-     所以沒有轉動的骨頭在整個轉身過程中框都不會歪，只有真的轉了的骨頭
-     才會跟著傾。 */
-  float ly = length(ey);
-  vHat = ly > 1e-5 ? ey / ly : vec2(0.0, 1.0);
-  uHat = vec2(vHat.y, -vHat.x);
-  lu = length(vec3(dot(ex, uHat), dot(ey, uHat), dot(ez, uHat)));
-  lv = length(vec3(dot(ex, vHat), dot(ey, vHat), dot(ez, vHat)));
-}
-
-/**
- * 把一個 clip space 的點放到圓角矩形要它去的地方。
- *
- * sil 是這個頂點的法線有多側對鏡頭：0 是正對，1 是正好在輪廓上。
- */
-vec4 cpWarp(vec4 clip, int id, float sil) {
-  vec2 c, uHat, vHat; float lu, lv;
-  cpPartFrame(id, c, uHat, vHat, lu, lv);
-  if (lu < 1e-5 || lv < 1e-5) return clip;
-
-  float wv = max(clip.w, 1e-4);
-  float asp = cpAspect();
-  vec2 off = vec2(clip.x / wv * asp, clip.y / wv) - c;
-  vec2 p = vec2(dot(off, uHat), dot(off, vHat));
-  float len = length(p);
-  if (len < 1e-6) return clip;
-
-  // 這個頂點落在包圍盒隱含的那個橢圓上的哪裡。
-  float t = length(vec2(p.x / lu, p.y / lv)) / max(uPartNorm[id], 1e-6);
-  vec2 dir = p / len;
-
-  float r = min(min(lu, lv) * uPartB[id].w, min(lu, lv));
-  float R = cpRR(dir, vec2(lu, lv), r);
-
-  /* 墨線是「拉到稍微大一點的矩形」而不是「把殼加厚」，這樣線的寬度到處
-     都剛好是 uInkOut——連角上也是，而沿模型法線長出來的殼從來做不到
-     這件事（它在角上會比在邊上寬）。 */
-  float target = 1.0 + uInkOut / max(R, 1e-6);
-  float w = smoothstep(${SIL_NORMAL[0].toFixed(2)}, ${SIL_NORMAL[1].toFixed(2)}, sil)
-          * smoothstep(${SIL_RADIUS[0].toFixed(2)}, ${SIL_RADIUS[1].toFixed(2)}, t);
-  // 拉起沒到邊的，壓下超出去的：矩形因此是邊界而不是目標。
-  float tt = min(mix(t, target, w), target);
-  vec2 np = dir * tt * R;
-  vec2 ns = c + np.x * uHat + np.y * vHat;
-  return vec4(ns.x / asp * wv, ns.y * wv, clip.z, clip.w);
 }
 `;
 
@@ -489,45 +339,26 @@ vec3 cpFacePlace(vec3 v) {
 }
 `;
 
-/* 二次變形接在 three 算完 gl_Position 之後。這個位置是刻意的：變形要的
-   是「這個頂點落在畫面上的哪裡」，那個答案在 project_vertex 之前還不
-   存在，而在它之後 mvPosition 與 gl_Position 都在手上。
-
-   `sil` 需要視空間的法線與視線。法線這裡自己算（basic 材質沒有 vNormal，
-   而墨線與臉都是 basic），視線就是 mvPosition——透視相機下每個頂點的
-   視線方向都不一樣，這正是遊戲那個正交版本沒有的東西。 */
-const WARP = `
+/* ── 墨線：在螢幕空間往外推 ──────────────────────────────────────
+   接在 three 算完 gl_Position 之後，沿法線往外推固定的像素數。模型空間
+   的外殼在這裡是行不通的——線寬會隨鏡頭遠近變，近看粗得像一圈黑邊，而且
+   在部位交界那種掠射角上還會攤開成一片，那正是「墨線看起來膨脹」的來源。
+   遊戲那邊的 INK_PX 也是像素。 */
+const INK_PUSH = `
 #include <project_vertex>
   {
-    int cpB = int(aBone + 0.5);
-    int cpP = uBonePart[cpB];
-    if (uBend > 0.5 && cpP >= 0 && uBoneRide[cpB] == 0) {
-      vec3 cpNV = normalize(normalMatrix * cpSkinNrm());
-      float cpSil = 1.0 - abs(dot(cpNV, normalize(mvPosition.xyz)));
-      gl_Position = cpWarp(gl_Position, cpP, cpSil);
-    }
-    /* 烘焙模式的墨線：在螢幕空間沿法線往外推固定的像素數。
-       模型空間的外殼在這裡是行不通的——線寬會隨鏡頭遠近變，近看粗得像
-       一圈黑邊，而且在部位交界那種掠射角上還會攤開成一片，那正是「墨線
-       看起來膨脹」的來源。遊戲那邊 INK_PX 是像素，warp 版的 uInkOut 也
-       是螢幕量，這裡把同一件事補回來。 */
-    if (uInkScreen > 0.5) {
-      /* 推的方向要用**烘焙後**的表面法線。用原始法線的話，烘完之後有
-         46% 的外殼頂點偏掉 15°～60°，推出去的量變成 cos(夾角) 倍——線寬
-         就不等寬了。這跟沿法線長外殼那一段是同一個坑（見 cpSkinPos）。 */
-      vec3 cpN = normalize(normalMatrix * cpInkNrm());
-      vec4 cpPN = projectionMatrix * vec4(cpN, 0.0);
-      float cpA = cpAspect();
-      vec2 cpS = vec2(cpPN.x * cpA, cpPN.y);
-      if (length(cpS) > 1e-6) {
-        cpS = normalize(cpS);
-        /* 埋在別的部位裡的外殼不往外推，它就貼在皮上、被皮擋住——
-           內部交界的那些線因此消失，只剩整隻動物最外圈的輪廓。
-           uInkInner 是那道開關：1 = 全留（每個部位各自描邊），
-           0 = 只留最外圈。 */
-        float cpW = mix(aInkW, 1.0, uInkInner);
-        gl_Position.xy += vec2(cpS.x / cpA, cpS.y) * uInkOut * cpW * gl_Position.w;
-      }
+    /* 推的方向要用**烘焙後**的表面法線。用原始法線的話，烘完之後有
+       46% 的外殼頂點偏掉 15°～60°，推出去的量變成 cos(夾角) 倍——線寬
+       就不等寬了。aBakeN 就是為這件事存在的。 */
+    vec3 cpN = normalize(normalMatrix * cpInkNrm());
+    vec4 cpPN = projectionMatrix * vec4(cpN, 0.0);
+    float cpA = cpAspect();
+    vec2 cpS = vec2(cpPN.x * cpA, cpPN.y);
+    if (length(cpS) > 1e-6) {
+      cpS = normalize(cpS);
+      /* 埋在別的部位裡的外殼不往外推，它就貼在皮上、被皮擋住——
+         內部交界的那些線因此消失，只剩整隻動物最外圈的輪廓。 */
+      gl_Position.xy += vec2(cpS.x / cpA, cpS.y) * uInkOut * aInkW * gl_Position.w;
     }
   }
 `;
@@ -539,15 +370,9 @@ const WARP = `
  * 那一套走），只有「頂點在哪裡」被換掉。
  */
 function rig3(material, uniforms, opts) {
-  const { boneN, partN, grow, warp } = opts;
+  const { boneN, partN } = opts;
   material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms, {
-      uGrow: opts.growU || { value: grow },
-      uInkOut: opts.inkOut,
-    });
-    shader.uniforms.uBakeN = opts.bakeN;
-    shader.uniforms.uInkScreen = opts.inkScreen || { value: 0 };
-    shader.uniforms.uInkInner = opts.inkInner || { value: 1 };
+    Object.assign(shader.uniforms, uniforms, { uInkOut: opts.inkOut });
     /* 宣告一次寫齊，順序要對：臉那段會讀 uBones 與 uPart，所以它必須排在
        DECL 之後。分兩次 replace('#include <common>') 會踩到坑——第二次會
        配到第一次換進去的那個 include，把後面的程式碼插到宣告前面去，而
@@ -586,16 +411,13 @@ function rig3(material, uniforms, opts) {
   mvPosition.xyz = cpFacePlace(mvPosition.xyz);
   gl_Position = projectionMatrix * mvPosition;`);
     }
-    /* 臉不做二次變形——眼睛、鼻子、嘴巴被拉出去就是一張糊掉的臉，這是
-       shape.js 的結論（「把整張臉留在網格放它的地方，是唯一一種臉還是
-       臉的版本」）。所以臉那顆材質根本不插這一段。 */
-    if (warp) {
-      shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', WARP);
+    if (opts.shade === 'ink') {
+      shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', INK_PUSH);
     }
   };
-  /* 不同 grow、有沒有變形的材質要各自編譯一份，不然 three 會共用同一支
-     編好的程式，而它們的頂點著色器其實不一樣。 */
-  material.customProgramCacheKey = () => `cpdog${boneN}:${partN}:${grow}:${warp ? 1 : 0}:${opts.shade || '-'}`;
+  /* 三顆材質的頂點著色器都不一樣，要各自編譯一份，不然 three 會共用同一
+     支編好的程式。 */
+  material.customProgramCacheKey = () => `cpdog${boneN}:${partN}:${opts.shade}`;
   return material;
 }
 
@@ -670,7 +492,6 @@ export class Zoo {
     c.root.visible = true;
     c.setCoat(skin);
     c.setHat(this._hat !== false);
-    c.setShapeMode(this._shapeMode || 'warp');
     if (this._inkPx) c.setInkPx(this._inkPx[0], this._inkPx[1]);
     this.look = look;
     return true;
@@ -689,12 +510,6 @@ export class Zoo {
 
   setHat(on) { this._hat = !!on; this.active.setHat(on); }
   get hatOn() { return this._hat !== false; }
-  /** 保留給舊呼叫端：等同 setShapeMode(on ? 'warp' : 'off')。 */
-  setBend(on) { this.setShapeMode(on ? 'warp' : 'off'); }
-  get bendOn() { return this.active.bendOn; }
-  /** 'off' | 'warp'（預設，每幀變形） | 'bake'（烘進幾何，離線比對用）。 */
-  setShapeMode(mode) { this._shapeMode = mode; this.active.setShapeMode(mode); }
-  get shapeMode() { return this._shapeMode || 'warp'; }
   setInkPx(px, h) { this._inkPx = [px, h]; for (const c of this.critters.values()) c.setInkPx(px, h); }
   setFacing(yaw) { this.active.setFacing(yaw); }
   update(dt, st) { this.active.update(dt, st); }
@@ -702,8 +517,7 @@ export class Zoo {
 }
 
 /**
- * 上面那支 `cpRR`（＝ shape.js 的 `rrRadius`）的 JS 版，一字不改的同一
- * 條式子：圓角矩形的中心到邊界有多遠，沿單位方向 (dx, dy)。
+ * shape.js 的 `rrRadius`，一字不改的同一條式子：圓角矩形的中心到邊界有多遠，沿單位方向 (dx, dy)。
  */
 function rrRadius(dx, dy, hu, hv, r) {
   const ax = Math.abs(dx), ay = Math.abs(dy);
@@ -726,23 +540,6 @@ const superRadius = (dx, dy, dz, h, n) => (
 ) ** (-1 / n);
 
 /**
- * 超橢球的支撐函數——也就是「從這個方向看過去有多寬」。
- *
- * Hölder 對偶：超橢球是加權 ℓⁿ 範數的單位球，它的支撐函數就是對偶的
- * ℓᵐ 範數，m = n/(n−1)。這條式子是校正用的（見 fitShrink），而它同時
- * 把整件事講清楚了：n = 2 時 m = 2，這支就退化成 `cpPartFrame` 算 lu
- * 的那條平方和——runtime 的矩形是照橢球的支撐做的。n 越大 m 越小，
- * 支撐就越往「三軸直接相加」靠，而那正是 shape.js 警告過的盒的支撐
- * （「盒在對角線上最寬」）。兩者在 45° 對角差 2^(1/m − 1/2)。
- */
-const superSupport = (ux, uy, uz, h, n) => {
-  const m = n / (n - 1);
-  return (
-    Math.abs(h[0] * ux) ** m + Math.abs(h[1] * uy) ** m + Math.abs(h[2] * uz) ** m
-  ) ** (1 / m);
-};
-
-/**
  * 圓角比例 → 超橢球指數。
  *
  * 在 45° 對角線上對齊單位方形的圓角矩形：那是兩種形狀差最多的方向，
@@ -753,9 +550,6 @@ function shapeExponent(radius) {
   const R = rrRadius(Math.SQRT1_2, Math.SQRT1_2, 1, 1, Math.min(radius, 1));
   return Math.log(2) / Math.log(Math.SQRT2 / R);
 }
-
-/** 相機在這一頁的俯角範圍，見 main.js 夾 cam.pitch 的那兩個數字。 */
-const FIT_PITCH = [-0.35, 0, 0.3, 0.6, 0.9, 1.15];
 
 /**
  * 每個墨線外殼頂點，對應到哪個毛皮頂點。
@@ -978,67 +772,6 @@ function surfaceNormals(pos, index, nv, fallback) {
   return N;
 }
 
-/**
- * 量一個縮放，讓超橢球在相機真的會用到的角度範圍內，平均起來跟 runtime
- * 的圓角矩形一樣寬。做法與 shape.js 的 `measureNorm` 同一路：量，不是猜。
- *
- * 為什麼需要它：上面 superSupport 的注解說了，超橢球的支撐比橢球的支撐
- * 胖，45° 對角差 2^(1/m − 1/2)——n = 5.56 時是 24.8%。不校正的話，動物
- * 轉到斜 45° 就會胖一圈，而那正是「圓角盒版」被看出來的那個毛病。
- *
- * 校正抹平的是平均，抹不平變化：剩下的起伏是「從上面看要是矩形」這個
- * 要求的必然代價——唯一能讓寬度在轉身途中完全不變的水平截面是橢圓，而
- * 橢圓截面從正上方看就是個橢圓。這個取捨沒有兩全的解。
- *
- * 支撐函數兩邊都有閉式解（圓角矩形＝盒 ⊕ 圓盤，支撐相加），所以這裡不
- * 取樣、沒有分箱誤差，整隻動物三種模型加起來約 50 ms。
- */
-function fitShrink(h, radius, n = shapeExponent(radius)) {
-  let sum = 0, cnt = 0;
-  for (const pitch of FIT_PITCH) {
-    for (let y = 0; y < 24; y++) {
-      const psi = (y / 24) * Math.PI * 2;
-      /* 螢幕的兩根軸，在模型空間裡。a 是水平的那根，b 是另一根。 */
-      const f = [
-        Math.cos(pitch) * Math.sin(psi), -Math.sin(pitch), Math.cos(pitch) * Math.cos(psi),
-      ];
-      const a = [Math.cos(psi), 0, -Math.sin(psi)];
-      const b = [
-        f[1] * a[2] - f[2] * a[1], f[2] * a[0] - f[0] * a[2], f[0] * a[1] - f[1] * a[0],
-      ];
-
-      /* runtime 這一格的矩形，就是 cpPartFrame 的正交版。 */
-      const pr = (v) => [
-        v[0] * a[0] + v[1] * a[1] + v[2] * a[2],
-        v[0] * b[0] + v[1] * b[1] + v[2] * b[2],
-      ];
-      const ex = pr([h[0], 0, 0]), ey = pr([0, h[1], 0]), ez = pr([0, 0, h[2]]);
-      const ly = Math.hypot(ey[0], ey[1]);
-      const vH = ly > 1e-6 ? [ey[0] / ly, ey[1] / ly] : [0, 1];
-      const uH = [vH[1], -vH[0]];
-      const d2 = (p, q) => p[0] * q[0] + p[1] * q[1];
-      const lu = Math.hypot(d2(ex, uH), d2(ey, uH), d2(ez, uH));
-      const lv = Math.hypot(d2(ex, vH), d2(ey, vH), d2(ez, vH));
-      const r = Math.min(Math.min(lu, lv) * radius, Math.min(lu, lv));
-
-      for (let i = 0; i < 48; i++) {
-        const ang = (i / 48) * Math.PI * 2;
-        const du = Math.cos(ang), dv = Math.sin(ang);
-        // 這個螢幕方向，回到模型空間。
-        const sx = du * uH[0] + dv * vH[0], sy = du * uH[1] + dv * vH[1];
-        const D = [
-          sx * a[0] + sy * b[0], sx * a[1] + sy * b[1], sx * a[2] + sy * b[2],
-        ];
-        const got = superSupport(D[0], D[1], D[2], h, n);
-        // 圓角矩形的支撐：盒 ⊕ 圓盤。
-        const want = (lu - r) * Math.abs(du) + (lv - r) * Math.abs(dv) + r;
-        if (got > 1e-9) { sum += Math.log(want / got); cnt++; }
-      }
-    }
-  }
-  return cnt ? Math.exp(sum / cnt) : 1;
-}
-
 export class Critter {
   constructor(data, modelId, opts = {}) {
     this.data = data;
@@ -1073,14 +806,12 @@ export class Critter {
       else this._eyeMinusX = i;
     }
 
-    /* 部位的矩形。measureShapes 是 shape.js 的，回傳的就是遊戲那支
-       著色器吃的那一組 uniform：每個部位的中心、三個半徑、圓角比例、
-       norm，以及「每根骨頭被哪個部位彎、還是被它帶著走」兩張表。
+    /* 部位表。measureShapes 是 shape.js 的：每個部位的中心、三個半徑、
+       圓角比例——烘焙的超橢球就照它定，見 _bakeGeometry。
 
        它內部會 reset 並 update 骨架去量，所以一定要在姿勢開始跑之前
        叫——這裡是建構子，後面 _buildMesh 會再擺一次待機姿勢。 */
     this.shape = measureShapes(data, this.rig, this.model.parts, this.model.ride, this.model.patch);
-    this._bend = true;
     this._buildGeometry();
     this._buildMesh(opts);
   }
@@ -1107,8 +838,8 @@ export class Critter {
     this._nrmRaw = nrm;
     g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
     g.setAttribute('aOuter', new THREE.Float32BufferAttribute(outer, 1));
-    /* 墨線外殼在烘焙模式要沿烘焙後的法線長出去。先擺原始法線，烘完再填
-       （見 _bakeGeometry），這樣 warp／off 模式下它就是個沒人讀的備份。 */
+    /* 墨線往外推的方向。先擺原始法線，烘完換成烘焙後的表面法線（見
+       _buildMesh 最後那一段）。 */
     g.setAttribute('aBakeN', new THREE.Float32BufferAttribute(nrm.slice(), 3));
     /* 每個頂點露在外面的程度，烘焙時量（見 _bakeGeometry）。墨線用它決定
        要不要往外推——埋在別的部位裡的就不推。 */
@@ -1173,17 +904,16 @@ export class Critter {
      深度，所以要知道原本的皮在那個方向有多遠，那就是 ρ——只有臉需要它。
 
      ── 代價，寫清楚 ─────────────────────────────────────────────────
-       · 斜 45° 方位比 warp 版胖到 25%。超橢球的支撐是 ℓᵐ（m = n/(n−1)）、
-         warp 的矩形照 ℓ²（橢球支撐）做，兩者在對角差 2^(1/m − 1/2)。正交
-         軸向的輪廓則與 warp 版完全相同。這是幾何上消不掉的。
+       · 斜 45° 方位比遊戲的圓角矩形胖到 25%。超橢球的支撐是 ℓᵐ
+         （m = n/(n−1)）、遊戲的矩形照 ℓ²（橢球支撐）做，兩者在對角差
+         2^(1/m − 1/2)。正交軸向的輪廓則完全相同。這是幾何上消不掉的。
        · 部位內部的凹陷會被填平（腿窩、耳根的凹角）——「皮 = 超橢球」就是
          這個意思，部位變成嚴格凸的一塊。
-       · 那一段「法線側視才精確拉到邊」是視角相關的，烘不進去。
+       · 遊戲那支變形裡「法線側視才精確拉到邊」那一段是視角相關的，烘不進去。
 
      ── 每個圖形都有自己的中心 ───────────────────────────────────────
-     後大腿、後小腿、吻部本來就各自是一個部位。耳朵在 shape.js 裡是「被頭
-     帶著走」的（那邊刻意不動它們），這裡讓它們也成為獨立的形狀、有自己的
-     中心與自己的超橢球——只在烘焙模式，shape.js 與 warp 版都沒碰。 */
+     後大腿、後小腿、吻部本來就各自是一個部位，各有自己的中心與超橢球。
+     耳朵不烘，理由見下面。 */
   _bakeGeometry() {
     const d = this.data;
     const nv = d.header.vertexCount;
@@ -1209,7 +939,7 @@ export class Critter {
 
        「被帶著走」的骨頭（耳朵）不在裡面，所以下面那個迴圈會直接跳過
        它們的頂點——耳朵完全不烘，維持網格原本的三角形。這是 shape.js
-       的立場，也是參考版（warp）的行為：
+       的立場，也是遊戲的行為：
 
          「三角形才是耳朵，把它磨圓是唯一一個會讓這隻動物不再讀作貓的
            改動，所以它們保留自己確切的形狀與確切的位置。」
@@ -1285,10 +1015,10 @@ export class Critter {
       }
 
       /* 「埋在別的形狀裡多深」只拿來決定**墨線要不要往外推**，不再拿來
-         按住頂點。參考版（warp）的部位本來就自由重疊互穿、靠深度處理，
+         按住頂點。遊戲的部位本來就自由重疊互穿、靠深度處理，
          按住皮會讓頸部與腿根塌陷，部位就黏成一團——量過，先前髖部有
-         一半以上的皮根本沒烘。頭的墨線蓋住吻部那件事改由 uInkInner
-         處理（固定 0，只留整隻動物最外圈的輪廓），那才是對症的藥。 */
+         一半以上的皮根本沒烘。頭的墨線蓋住吻部那件事改由 aInkW
+         處理（只留整隻動物最外圈的輪廓），那才是對症的藥。 */
       let u = Infinity;
       const row = cross[si];
       for (let bi = 0; bi < row.length; bi++) {
@@ -1345,29 +1075,16 @@ export class Critter {
     const S = this.shape;
     const partN = S.parts.length;
 
-    /* 部位表攤平成 uniform。一個部位三顆：中心＋骨號、三個半徑＋圓角、
-       norm。骨頭兩張表：被哪個部位彎、是不是被帶著走。 */
+    /* 部位的中心＋骨號，攤平成 uniform。只有臉要用：它得知道頭在哪裡。 */
     const part = new Float32Array(partN * 4);
-    const partB = new Float32Array(partN * 4);
-    const partNorm = new Float32Array(partN);
     S.parts.forEach((p, i) => {
       part[i * 4] = p.center[0];
       part[i * 4 + 1] = p.center[1];
       part[i * 4 + 2] = p.center[2];
       part[i * 4 + 3] = p.bone;
-      partB[i * 4] = p.half[0];
-      partB[i * 4 + 1] = p.half[1];
-      partB[i * 4 + 2] = p.half[2];
-      partB[i * 4 + 3] = p.radius;
-      partNorm[i] = p.norm;
     });
 
     this._inkOut = { value: 0 };            // 墨線那一趟才不是 0，見 setInkPx
-    this._bendU = { value: 1 };
-    this._bakeN = { value: 0 };             // 1 = 外殼沿烘焙後的法線長
-    this._inkGrow = { value: INK_GROW };    // 烘焙模式歸零，改用螢幕空間
-    this._inkScreen = { value: 0 };
-    this._inkInner = { value: 0 };
     /* 臉往鏡頭推多遠，見 FACE_DECL。0.15 是遊戲 shape.js 的 FACE_LIFT，
        做的是同一件事，所以用同一個數字。 */
     this._faceLift = { value: 0.15 };
@@ -1378,11 +1095,6 @@ export class Critter {
       uSwayQ: { value: this.sway.qs },
       uSwayBend: { value: this.sway.bend },
       uPart: { value: part },
-      uPartB: { value: partB },
-      uPartNorm: { value: partNorm },
-      uBonePart: { value: Int32Array.from(S.byBone) },
-      uBoneRide: { value: Int32Array.from(S.rides) },
-      uBend: this._bendU,
     };
     const zero = { value: 0 };
 
@@ -1391,20 +1103,18 @@ export class Critter {
     const fur = rig3(new THREE.MeshBasicMaterial({
       vertexColors: true,
     }), this._uniforms, {
-      boneN, partN, grow: 0, warp: true, inkOut: zero, bakeN: this._bakeN,
-      shade: 'fur', lightDir: LIGHT_DIR,
+      boneN, partN, inkOut: zero, shade: 'fur', lightDir: LIGHT_DIR,
     });
     /* 臉：cat.bin 的 `unlit` 群組——眼睛、鼻子、嘴。它在遊戲裡就是不吃
        光的，所以這裡是 Basic 而不是 Toon。 */
     const face = rig3(new THREE.MeshBasicMaterial({
       vertexColors: true,
-      /* 臉不變形，而它周圍的臉皮會被拉出去——所以臉要贏得了深度測試，
-         不然眼睛會被自己的臉頰蓋掉。遊戲是把整個 unlit 群組往鏡頭方向
-         拉 FACE_LIFT；這裡有真的深度緩衝，polygonOffset 就是為這件事
-         存在的工具，而且不必動到頂點。 */
-      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+      /* 臉要贏得了深度測試，不然眼睛會被自己的臉頰蓋掉。皮是真的在 3D
+         裡被放到超橢球上的；臉雖然已經照原始網格的深度擺好了（見
+         _bakeGeometry），還是要一點偏移收尾。 */
+      polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6,
     }), this._uniforms, {
-      boneN, partN, grow: 0, warp: false, inkOut: zero, bakeN: this._bakeN, shade: 'face',
+      boneN, partN, inkOut: zero, shade: 'face',
       face: {
         uFaceLift: this._faceLift,
         uFaceHost: this._faceHost,
@@ -1416,12 +1126,9 @@ export class Critter {
     const ink = rig3(new THREE.MeshBasicMaterial({
       color: INK_TONED, side: THREE.BackSide,
     }), this._uniforms, {
-      boneN, partN, grow: INK_GROW, growU: this._inkGrow,
-      warp: true, inkOut: this._inkOut, bakeN: this._bakeN,
-      inkScreen: this._inkScreen, inkInner: this._inkInner,
+      boneN, partN, inkOut: this._inkOut, shade: 'ink',
     });
 
-    this._faceMat = face;                   // setShapeMode 要調它的深度偏移
     this.mesh = new THREE.Mesh(this.geometry, [fur, face, ink]);
     // 骨頭在著色器裡才動，three 算不出正確的邊界球，所以別讓它裁掉。
     this.mesh.frustumCulled = false;
@@ -1442,12 +1149,15 @@ export class Critter {
     this.root = new THREE.Group();
     this.root.add(this.mesh);
 
-    /* 烘焙版的頂點位置與表面法線，離線算一次，見 setShapeMode('bake')。 */
-    this._shapeMode = 'warp';
+    /* 造型烘進幾何：頂點位置、墨線往外推的方向、每個頂點露在外面的程度，
+       載入時算一次。大小與腳的位置上面是照原始網格量的，所以烘焙不會
+       改動牠有多高、站在哪裡。 */
     const b = this._bakeGeometry();
     this._posBaked = b.pos;
-    this._nrmBaked = b.nrm;
-    this._inkWBaked = b.inkW;
+    const A = this.geometry.attributes;
+    A.position.array.set(b.pos);
+    A.aBakeN.array.set(b.nrm);
+    A.aInkW.array.set(b.inkW);
   }
 
   /**
@@ -1512,64 +1222,9 @@ export class Critter {
   }
 
   /**
-   * 二次變形開或關。關掉就是 cat.bin 原本的曲面網格（等於遊戲
-   * `CatLayer` 的 `mesh` 樣式），開著是圓角矩形的輪廓。
-   *
-   * 保留給舊呼叫端（含 tools/verify-test-area.mjs）：等同
-   * `setShapeMode(on ? 'warp' : 'off')`。
-   */
-  setBend(on) { this.setShapeMode(on ? 'warp' : 'off'); }
-
-  get bendOn() { return this._bendU.value > 0.5; }
-
-  /**
-   * 圓角矩形這個造型現在怎麼來：
-   *
-   *   'off'   cat.bin 原本的曲面網格，不做任何圓角。
-   *   'warp'  預設。每幀在頂點著色器裡把輪廓二次變形成圓角矩形，見檔頭
-   *           「圓角方形：每幀的二次變形」。
-   *   'bake'  `_bakeGeometry()` 烘出來的頂點位置，離線比對用，見檔頭
-   *           「烘進幾何的那一版」——水平繞一圈對得上，壓低俯角會看出
-   *           差別，那是烘焙版本身的幾何限制，不是這裡的臭蟲。
-   *
-   * 'bake' 只是換手上這份 position 屬性的內容，跟 'warp'／'off' 共用同一顆
-   * uniform 開關（bake 時關掉，因為形狀已經在頂點裡了，不必再變形一次）。
-   */
-  setShapeMode(mode) {
-    if (mode !== 'off' && mode !== 'warp' && mode !== 'bake') return;
-    this._shapeMode = mode;
-    const bake = mode === 'bake';
-    const pos = this.geometry.attributes.position;
-    pos.array.set(bake ? this._posBaked : this._posRaw);
-    pos.needsUpdate = true;
-    // 墨線外殼往外長的方向。著色用的 normal 屬性不動。
-    const gn = this.geometry.attributes.aBakeN;
-    gn.array.set(bake ? this._nrmBaked : this._nrmRaw);
-    gn.needsUpdate = true;
-    const gw = this.geometry.attributes.aInkW;
-    if (bake) gw.array.set(this._inkWBaked); else gw.array.fill(1);
-    gw.needsUpdate = true;
-    this._bakeN.value = bake ? 1 : 0;
-    /* 烘焙模式的墨線完全走螢幕空間（見 WARP 裡 uInkScreen 那一段），所以
-       模型空間的外殼歸零——不然兩種外擴會疊起來，線更粗。warp 模式維持
-       原本那層薄殼，它在那邊是跟著螢幕空間的矩形拉一起作用的。 */
-    this._inkGrow.value = bake ? 0 : INK_GROW;
-    this._inkScreen.value = bake ? 1 : 0;
-    this._bendU.value = mode === 'warp' ? 1 : 0;
-    /* 臉在烘焙模式要多贏一點深度：皮是真的在 3D 裡被推出去的，不像
-       螢幕空間變形那樣不動深度，所以原本那點偏移壓不住。臉自己已經照
-       原始網格的深度擺好了（見 _bakeGeometry），這一項只是收尾。 */
-    const f = this._faceMat;
-    f.polygonOffsetFactor = bake ? -6 : -2;
-    f.polygonOffsetUnits = bake ? -6 : -2;
-  }
-
-  get shapeMode() { return this._shapeMode; }
-
-  /**
    * 墨線在畫面上多寬。
    *
-   * 要知道視窗多高才算得出來：變形是在「y 正規化的螢幕座標」裡做的，
+   * 要知道視窗多高才算得出來：墨線是在「y 正規化的螢幕座標」裡推的，
    * 那個空間的 y 從 −1 到 +1 橫跨整個畫面高，所以一個像素是 2/height。
    * main.js 在每次 resize 時叫一次。
    */

@@ -10,12 +10,11 @@
                      src/walk.js 那一份物理，不是另寫一份。城牆平台這一
                      項尤其重要：它要爬兩折樓梯穿過一道牆的缺口，而那條
                      路上任何一個看不見的盒子都會讓狗卡住。
-     3. 二次變形接上了  部位表量到了、uniform 攤平的順序沒錯、變形那一段
-                     真的插進了皮毛與墨線的著色器而沒有插進臉、耳朵被
-                     標成「不彎」、墨線的寬度換算對。node 沒有 WebGL 可以
-                     編譯，但這些全都查得出來，而它們就是這一段會壞的
-                     地方——字串比對失敗不會報錯，只會靜靜地畫出一隻沒有
-                     圓角的狗。
+     3. 烘焙接上了    部位表量到了、畫的就是烘出來的幾何、墨線那一推只
+                     插進了墨線的著色器、耳朵沒被烘、墨線的寬度換算對。
+                     node 沒有 WebGL 可以編譯，但這些全都查得出來，而它們
+                     就是這一段會壞的地方——字串比對失敗不會報錯，只會
+                     靜靜地畫出一隻沒有圓角的狗。
      4. 動物是遊戲那幾隻  cat.bin 讀得動、species.js 的三種模型都建得
                      起來、每一種的骨頭每幀算得出有限的矩陣、九種 look 都
                      換得動、腳踩在 y = 0 上。這一頁不重畫動物，所以要驗
@@ -927,60 +926,66 @@ zoo.setLook('dog-prick/yellow');
   }
   ok(moved > 3, '尾巴那條 17 節的彈簧真的在擺', `${moved}/17 節偏離靜止`);
 
-  /* ── 二次變形 ───────────────────────────────────────────────
+  /* ── 烘焙 ───────────────────────────────────────────────────
      沒有 GPU 可以驗「畫出來對不對」，所以驗的是「接上了沒有」。每一項
      都對應一個真的會發生、而且不會報錯的故障。 */
   const S = dog.shape;
   const earL = dog.rig.bone('earL'), earR = dog.rig.bone('earR');
-  ok(S.rides[earL] === 1 && S.rides[earR] === 1, '兩隻立耳被標成「不彎，只跟著頭走」');
-  ok(S.byBone[earL] >= 0, '耳朵知道自己掛在哪個部位上');
-  ok(S.byBone[dog.rig.bone('tail')] === -1, '尾巴沒有矩形（它是一根管子）');
+  ok(S.rides[earL] === 1 && S.rides[earR] === 1, '兩隻立耳被標成「只跟著頭走」');
+  ok(S.byBone[dog.rig.bone('tail')] === -1, '尾巴不是部位（它是一根管子）');
+
+  /* 畫的就是烘出來的那一份，而且烘焙真的動了皮；耳朵與尾巴不烘，維持
+     網格原本的形狀。墨線外殼不算：它照抄雙生毛皮頂點，連不烘的部位也
+     會退掉資產裡那 0.05 的厚度，那是刻意的（線寬處處相等）。 */
+  const P = dog.geometry.attributes.position.array;
+  let same = true;
+  for (let i = 0; i < P.length; i++) if (P[i] !== dog._posBaked[i]) { same = false; break; }
+  ok(same, '幾何就是烘焙後的頂點');
+  let movedSkin = 0, skin = 0, movedEar = 0, ears = 0;
+  const nv = dog.data.header.vertexCount;
+  const OG = dog._outlineGroup, isInk = new Uint8Array(nv);
+  for (let i = OG.start; i < OG.start + OG.count; i++) isInk[dog.data.index[i]] = 1;
+  for (let v = 0; v < nv; v++) {
+    if (isInk[v]) continue;
+    const d = Math.hypot(P[v * 3] - dog._posRaw[v * 3], P[v * 3 + 1] - dog._posRaw[v * 3 + 1],
+      P[v * 3 + 2] - dog._posRaw[v * 3 + 2]);
+    const b = dog._boneId[v];
+    if (b === earL || b === earR || b === dog.rig.bone('tail')) { ears++; if (d > 1e-6) movedEar++; }
+    else { skin++; if (d > 1e-6) movedSkin++; }
+  }
+  ok(movedSkin > skin * 0.9, '烘焙真的把皮放到超橢球上了', `${movedSkin}/${skin} 個皮與臉的頂點動了`);
+  ok(ears > 0 && movedEar === 0, '耳朵與尾巴沒被烘', `${ears} 個頂點、動了 ${movedEar}`);
 
   const U = dog._uniforms;
   ok(U.uPart.value.length === S.parts.length * 4, 'uPart 的長度對得上部位數');
-  let boneOk = true, halfOk = true;
-  S.parts.forEach((p, i) => {
-    if (U.uPart.value[i * 4 + 3] !== p.bone) boneOk = false;
-    for (let k = 0; k < 3; k++) {
-      if (Math.abs(U.uPartB.value[i * 4 + k] - p.half[k]) > 1e-6) halfOk = false;
-    }
-    if (Math.abs(U.uPartB.value[i * 4 + 3] - p.radius) > 1e-6) halfOk = false;
-  });
-  ok(boneOk, '每個部位的 uniform 記著正確的骨號');
-  ok(halfOk, '三個半徑與圓角比例都照 measureShapes 攤平了');
+  let boneOk = true;
+  S.parts.forEach((p, i) => { if (U.uPart.value[i * 4 + 3] !== p.bone) boneOk = false; });
+  ok(boneOk, '每個部位的 uniform 記著正確的骨號（臉靠它找頭）');
 
   dog.setInkPx(2, 900);
   ok(Math.abs(dog._inkOut.value - 2 * 2 / 900) < 1e-9, '墨線寬度從像素換算成螢幕單位',
     `2 px / 900 px 高 → ${dog._inkOut.value.toFixed(5)}`);
 
-  /* 變形沒有開關給玩家（那會是一個什麼都不多做的模式），但 API 留著，
-     因為它是「同一隻動物、同一個姿勢，只差變形」這件事唯一的比對方式，
-     而那是調造型的時候會想要的。主控台從 window.testArea.zoo 叫得到。 */
-  zoo.setBend(false);
-  ok(dog._bendU.value === 0 && zoo.bendOn === false, '變形關得掉（主控台用）');
-  zoo.setBend(true);
-  ok(dog._bendU.value === 1 && zoo.bendOn === true, '也開得回來');
+  ok(typeof zoo.setShapeMode !== 'function' && typeof zoo.setBend !== 'function',
+    '造型不再可選：沒有切換 warp／bake 的入口');
 
-  for (const [i, name, wantWarp] of [[0, '皮毛', true], [1, '臉', false], [2, '墨線', true]]) {
+  for (const [i, name, wantInk] of [[0, '皮毛', false], [1, '臉', false], [2, '墨線', true]]) {
     const src = i === 0 ? THREE.ShaderLib.toon : THREE.ShaderLib.basic;
     const shader = { uniforms: {}, vertexShader: src.vertexShader, fragmentShader: src.fragmentShader };
     dog.mesh.material[i].onBeforeCompile(shader, null);
-    const calls = (shader.vertexShader.match(/gl_Position = cpWarp\(/g) || []).length;
-    ok(calls === (wantWarp ? 1 : 0), `${name}：${wantWarp ? '有' : '沒有'}做二次變形`, `${calls} 處`);
+    const calls = (shader.vertexShader.match(/gl_Position\.xy \+= /g) || []).length;
+    ok(calls === (wantInk ? 1 : 0), `${name}：${wantInk ? '有' : '沒有'}在螢幕空間往外推`, `${calls} 處`);
+    ok(!shader.vertexShader.includes('cpWarp'), `${name}：沒有每幀的二次變形`);
     ok(shader.vertexShader.includes('cpSkinPos()'), `${name}：頂點位置換成骨架算的了`);
     ok(!!shader.uniforms.uBones && shader.uniforms.uBones.value === dog.rig.matrices,
       `${name}：uBones 指的就是 rig 每幀寫的那一份`);
-    if (wantWarp) {
-      ok(shader.vertexShader.includes('uniform vec4 uPart['), `${name}：部位的 uniform 宣告在`);
-      ok(shader.vertexShader.includes('float cpRR('), `${name}：圓角矩形的求交式在`);
-    }
   }
   const inkShader = { uniforms: {}, vertexShader: THREE.ShaderLib.basic.vertexShader, fragmentShader: '' };
   dog.mesh.material[2].onBeforeCompile(inkShader, null);
   const furShader = { uniforms: {}, vertexShader: THREE.ShaderLib.toon.vertexShader, fragmentShader: '' };
   dog.mesh.material[0].onBeforeCompile(furShader, null);
   ok(inkShader.uniforms.uInkOut.value > 0 && furShader.uniforms.uInkOut.value === 0,
-    '墨線落在矩形外一圈，皮毛落在矩形上');
+    '墨線推到輪廓外一圈，皮毛不推');
 }
 
 head('手把');
