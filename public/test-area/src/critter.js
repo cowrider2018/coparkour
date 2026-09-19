@@ -1262,7 +1262,7 @@ export class Critter {
 
     /* 步頻跟著實際速度走。speed01 是 Driver 要的「有多用力在跑」，
        遊戲那邊是除以 REF_SPEED，這裡除以自己世界的衝刺速度。 */
-    const speed01 = moving ? Math.min(1, speed / 6.2) : 0;
+    const speed01 = moving ? Math.min(1, speed / 8) : 0;
     const strideHz = moving
       ? Math.min(STRIDE_HZ_MAX, Math.max(STRIDE_HZ_MIN, speed / STRIDE_LEN))
       : undefined;

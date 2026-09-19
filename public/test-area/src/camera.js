@@ -39,8 +39,8 @@ export const CAM = {
   holdOut: 1.25,       // 釘住之後要等空間回到這麼多倍才鬆開（遲滯）
   deadTan: Math.tan(0.32),   // dead zone：人最多離開視線軸 18°
   boomMin: 0.35,       // 吊臂最短——再短鏡頭就在角色的頭裡面了
-  follow: 14,          // 樞紐追人的速度（每秒）
-  followPinned: 10,    // 釘住時「往空間變大的方向」追人的速度
+  follow: 18,          // 樞紐追人的速度（每秒）——跟著走路速度放大，落後的距離才不變
+  followPinned: 13,    // 釘住時「往空間變大的方向」追人的速度
   inRate: 26,          // 收短的速度
   outRate: 5,          // 放長的速度
 };
@@ -91,7 +91,12 @@ export function updateCam(cam, dt, player, arena, cols) {
       cam.px = nx; cam.pz = nz;
     }
   }
-  // dead zone：只夾橫向（垂直於視線的那一份），縱向不夾。
+  const want = Math.max(CAM.boomMin, Math.min(cam.curDist, room));
+  cam.boom += (want - cam.boom) * Math.min(1, dt * (want < cam.boom ? CAM.inRate : CAM.outRate));
+
+  /* dead zone：只夾橫向（垂直於視線的那一份），縱向不夾。放在吊臂更新
+     之後，因為 leash 用的是這一幀的吊臂長度——用上一幀的，跑得快的時候
+     吊臂一收，人就被甩出 dead zone。 */
   {
     const fl = Math.hypot(bx, bz) || 1e-6;
     const fx = -bx / fl, fz = -bz / fl;
@@ -105,9 +110,6 @@ export function updateCam(cam, dt, player, arena, cols) {
       cam.px += latx * f; cam.pz += latz * f;
     }
   }
-
-  const want = Math.max(CAM.boomMin, Math.min(cam.curDist, room));
-  cam.boom += (want - cam.boom) * Math.min(1, dt * (want < cam.boom ? CAM.inRate : CAM.outRate));
 
   const pos = [cam.px + bx * cam.boom, pivotY + by * cam.boom, cam.pz + bz * cam.boom];
   const look = [cam.px, player.y + eyeH * (0.75 + 0.25 * near), cam.pz];

@@ -356,14 +356,17 @@ head('碰撞盒都有分類，而且高度合法');
     bad.block.length ? bad.block.slice(0, 3).map((c) => `${(c.max[1] - c.base).toFixed(2)}m @ ${c.min[0].toFixed(0)},${c.min[2].toFixed(0)}`).join(' / ') : '');
   ok(bad.floor.length === 0, `沒有頂面落在會絆腳那一段（${TRIP[0]}～${TRIP[1]}）的地板`,
     bad.floor.length ? `${bad.floor.length} 個` : '');
-  /* 這一條是「平坦」最精準的說法：跳一下踩得上去的東西（頂面在 MOUNT
-     以下）只准是階梯。碎石、台基、倒下的柱頭、扶壁的第一階全部不算——
-     它們要嘛壓進地板變成純視覺，要嘛高過 BLOCK_TOP 變成繞得過去的障礙。 */
-  const climbable = R.colliders.filter((c) => c.max[1] > TRIP[0] && c.max[1] <= MOUNT && c.kind !== 'step');
-  ok(climbable.length === 0, `除了階梯，沒有踩得上去的東西（頂面 ${TRIP[0]}～${MOUNT.toFixed(2)}）`,
-    climbable.length
-      ? climbable.slice(0, 3).map((c) => `${c.kind} 頂面 ${c.max[1].toFixed(2)} @ ${c.min[0].toFixed(0)},${c.min[2].toFixed(0)}`).join(' / ')
-      : `階梯 ${R.colliders.filter((c) => c.kind === 'step' && c.max[1] <= MOUNT).length} 級`);
+  /* 跳高是 1.5 個狗高（MOUNT 1.74），頂面在那以下的東西本來就跳得上去
+     ——障礙物、殘牆、台座都是。「除了階梯沒有踩得上去的東西」是舊跳高
+     （MOUNT 0.84）底下的規則，現在它不成立也不該成立，這裡只列數量。 */
+  {
+    const up = {};
+    for (const c of R.colliders) {
+      if (c.kind !== 'step' && c.max[1] > TRIP[0] && c.max[1] <= MOUNT) up[c.kind] = (up[c.kind] || 0) + 1;
+    }
+    console.log(`  · 跳得上去的東西（頂面 ${TRIP[0]}～${MOUNT.toFixed(2)}）：`
+      + (Object.entries(up).map(([k, v]) => `${k} ${v}`).join('、') || '無'));
+  }
   // 階梯：級高不准超過抬腳的高度。
   const steps = R.colliders.filter((c) => c.kind === 'step').map((c) => c.max[1]).sort((a, b) => a - b);
   let jump = 0;
