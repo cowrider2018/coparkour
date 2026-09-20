@@ -36,6 +36,10 @@
      9. 碰撞盒都有分類  每個盒子都要說自己是地板、障礙、階梯還是牆體，
                      而每一種有自己的高度規矩。這一項是「視覺凹凸不准傳到
                      腳底下」唯一的執行者。
+    9b. 圓的東西是圓的  柱、井、樹是圓的，碰撞體也必須是圓的。方盒的角
+                     比它所代表的圓遠 41%，繞著走會在四個角上各被頂開
+                     一次——看不出來（畫面上是圓的），只有跑起來覺得
+                     這根柱子卡卡的。
     10. 房間是可玩的  整片房間都是平的、都走得到、沒有被障礙物塞滿。
                      這是 roguelike 要的那個單位。
     11. 地形的墨線與五階調  兩件事都活在著色器裡，node 沒有 WebGL 編不
@@ -375,6 +379,58 @@ head('碰撞盒都有分類，而且高度合法');
     if (d > PHYS.step + 1e-6 && d < 2) jump++;      // 2 m 以上是「另一道樓梯」
   }
   ok(jump === 0, '每一道樓梯的級高都在抬腳的高度以內', jump ? `${jump} 級超過 ${PHYS.step}` : `${steps.length} 級`);
+}
+
+head('圓的東西是圓的');
+/* 兩件事：圓柱帶著的外接盒真的是外接盒（吃盒子的那些檢查——分類、支撐、
+   相機——都靠它保守得住），以及繞著它走一圈，被推出來的每一個點到軸的
+   距離都一樣。後面那一項單獨拿一根圓柱去推，不是拿整張清單：一根柱子
+   腳下還有一塊方的台基，而那是它本來就該有的形狀。 */
+{
+  const round = R.colliders.filter((c) => c.shape === 'circle' && c.kind !== 'bound');
+  ok(round.length > 0, '有圓柱登記', `${round.length} 根`);
+
+  let badR = 0, badBox = 0;
+  for (const c of round) {
+    if (!(c.r > 0)) { badR++; continue; }
+    const e = Math.max(
+      Math.abs(c.min[0] - (c.x - c.r)), Math.abs(c.max[0] - (c.x + c.r)),
+      Math.abs(c.min[2] - (c.z - c.r)), Math.abs(c.max[2] - (c.z + c.r)),
+    );
+    if (e > 1e-9) badBox++;
+  }
+  ok(badR === 0, '每根圓柱都有半徑', `${badR} 根沒有`);
+  ok(badBox === 0, '外接盒就是外接盒', `${badBox} 根對不上`);
+
+  /* 推出來的那一圈。誤差用「同一根柱子上最遠與最近的差」來量——那正好
+     是方盒的角會造成的東西（一個方盒的差是 41%），圓的話是 0。 */
+  let worstSpread = 0, worstAt = '', offAxis = 0;
+  for (const c of round) {
+    const feet = c.base;
+    if (c.max[1] <= feet + PHYS.step) continue;      // 踩得上去的東西不推
+    let lo = Infinity, hi = -Infinity;
+    for (let a = 0; a < Math.PI * 2; a += Math.PI / 64) {
+      const x = c.x + Math.cos(a) * c.r * 0.5, z = c.z + Math.sin(a) * c.r * 0.5;
+      const [px, pz] = solveXZ([c], x, z, feet);
+      const d = Math.hypot(px - c.x, pz - c.z);
+      lo = Math.min(lo, d); hi = Math.max(hi, d);
+      // 推出的方向必須是半徑：推出來的點、軸、原來的點三個共線。
+      const cross = Math.abs(Math.cos(a) * (pz - c.z) - Math.sin(a) * (px - c.x));
+      if (cross > 1e-9) offAxis++;
+    }
+    if (hi - lo > worstSpread) {
+      worstSpread = hi - lo;
+      worstAt = `r=${c.r.toFixed(2)} @ ${c.x.toFixed(1)},${c.z.toFixed(1)}`;
+    }
+    const want = c.r + PHYS.radius;
+    if (Math.abs(hi - want) > 1e-9 || Math.abs(lo - want) > 1e-9) {
+      worstSpread = Math.max(worstSpread, Math.abs(hi - want), Math.abs(lo - want));
+      worstAt = `推到 ${lo.toFixed(3)}～${hi.toFixed(3)}、該是 ${want.toFixed(3)}`;
+    }
+  }
+  ok(worstSpread < 1e-6, '繞著圓柱走是一個圓，不是一個方框',
+    worstSpread > 1e-6 ? `差 ${worstSpread.toFixed(3)} m（${worstAt}）` : `${round.length} 根`);
+  ok(offAxis === 0, '推出的方向是半徑', `${offAxis} 次歪掉`);
 }
 
 head('每個區塊的中心是空的');
@@ -724,13 +780,18 @@ head('鏡頭的吊臂');
             if (g < MARGIN - 1e-3) { outWall++; worst = Math.max(worst, MARGIN - g); }
             if (cy > a.lid - MARGIN + 1e-3) outLid++;
             if (cy < FLOOR - 1e-3) outFloor++;
-            /* 跑進砌體裡面。盒子往內縮 0.25（吊臂留的餘裕是 0.35），
-               所以「剛好停在牆面前」不會被算成穿進去。 */
+            /* 跑進砌體裡面。碰撞體往內縮 0.25（吊臂留的餘裕是 0.35），
+               所以「剛好停在牆面前」不會被算成穿進去。圓柱要照圓量：
+               它的外接盒的角比它自己遠 41%，照盒子量的話，鏡頭停在柱面
+               前面會被誤判成停在柱子裡面。 */
             for (const b of COLS) {
               if (b.kind === 'bound') continue;
-              if (cx > b.min[0] + 0.25 && cx < b.max[0] - 0.25
-                && cy > b.min[1] + 0.25 && cy < b.max[1] - 0.25
-                && cz > b.min[2] + 0.25 && cz < b.max[2] - 0.25) { inStone++; break; }
+              if (cy <= b.min[1] + 0.25 || cy >= b.max[1] - 0.25) continue;
+              const deep = b.shape === 'circle'
+                ? Math.hypot(cx - b.x, cz - b.z) < b.r - 0.25
+                : (cx > b.min[0] + 0.25 && cx < b.max[0] - 0.25
+                  && cz > b.min[2] + 0.25 && cz < b.max[2] - 0.25);
+              if (deep) { inStone++; break; }
             }
           }
         }

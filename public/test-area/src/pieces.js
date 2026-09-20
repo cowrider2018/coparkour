@@ -420,10 +420,14 @@ export function column(B, o) {
     B.add(B.kit.drum(rad * 1.25, rad * 1.02, 0.2, 10), { p: [o.x, topY + 0.1, o.z], color: C.stoneLit });
     B.add(B.kit.brick(rad * 2.5, 0.24, rad * 2.5, 0.07), { p: [o.x, topY + 0.32, o.z], color: C.stone });
   }
-  /* 碰撞：從它站的地面一路到柱頂，寬度取台基（那是最寬的一階，不然
-     台基的四個角會被穿過去）。斷得最低的柱子頂面也有 1.1，過得了
-     BLOCK_TOP。 */
-  B.block(o.x, (y + topY) / 2, o.z, rad * 2.7, topY - y, rad * 2.7, { kind: 'block', base: y });
+  /* 碰撞：台基是方的（它真的是兩塊方石），柱身是圓的。以前整根是一個
+     台基那麼寬的方盒，於是繞著柱子走會在四個角上各被頂開一次——而畫面
+     上那四個角只存在於最底下那 48 公分。
+
+     柱身的半徑取柱頭那一圈（rad×1.3，鼓身只有 rad）：碰撞體寧可胖一點，
+     瘦的話身體會陷進石頭裡。斷得最低的柱子頂面也有 1.1，過得了 BLOCK_TOP。 */
+  B.block(o.x, y + 0.24, o.z, rad * 2.7, 0.48, rad * 2.7, { kind: 'shell', base: y });
+  B.round(o.x, o.z, rad * 1.3, y, topY, { kind: 'block', base: y });
   return { top: broken ? topY : topY + 0.44 };
 }
 
@@ -922,9 +926,10 @@ export function deadTree(B, o) {
     }
   };
   limb(o.x, o.y || 0, o.z, 1.6 * s, 0.22 * s, r.range(-0.12, 0.12), r() * 6.28, 0);
-  /* 樹幹從地面起算：以前是 [y+1−s, y+1+s]，小一點的樹底下就留了一段
-     離地 30 cm 的縫，而縫底下是看得到的樹幹。 */
-  B.block(o.x, (o.y || 0) + s, o.z, 0.5 * s, 2 * s, 0.5 * s, { kind: 'block', base: o.y || 0 });
+  /* 樹幹是一根圓的（它就是一支 drum），從地面起算：以前是
+     [y+1−s, y+1+s] 的一個方盒，小一點的樹底下就留了一段離地 30 cm 的縫，
+     而縫底下是看得到的樹幹。 */
+  B.round(o.x, o.z, 0.25 * s, o.y || 0, (o.y || 0) + 2 * s, { kind: 'block', base: o.y || 0 });
   for (let i = 0; i < 4; i++) {
     B.add(B.kit.brick(0.4 * s, 0.14 * s, 0.34 * s, 0.03), {
       p: [o.x + r.range(-0.6, 0.6) * s, (o.y || 0) + 0.06, o.z + r.range(-0.6, 0.6) * s],
@@ -961,7 +966,9 @@ export function well(B, o) {
   B.add(B.kit.drum(0.2, 0.17, 0.3, 8), { p: [o.x + 0.1, y + 0.75, o.z], color: C.woodDark });
   B.hangs(false);
   {
-    const wh = BLOCK_TOP + 0.1;     // 井口的石圈是障礙，不是矮台
-    B.block(o.x, y + wh / 2, o.z, R * 2.2, wh, R * 2.2, { kind: 'block', base: y });
+    /* 井口的石圈是障礙，不是矮台。半徑取石塊往外凸出來的那一圈
+       （R + 0.21，石塊是 0.42 深、擺在 R 上），不是 R 本身。 */
+    const wh = BLOCK_TOP + 0.1;
+    B.round(o.x, o.z, R + 0.21, y, y + wh, { kind: 'block', base: y });
   }
 }

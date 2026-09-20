@@ -316,6 +316,15 @@ const _s = new THREE.Vector3();
  * 沒有第五種。`solid: true` 這種寫法留著當 'block' 的簡寫，但驗證會
  * 逐個盒子檢查上面那幾條，所以「隨手登記一個盒子」不再是一個選項。
  *
+ * ── 形狀是方的或圓的 ────────────────────────────────────────────
+ * 種類說的是「這個東西在遊戲裡是什麼」，形狀說的是「它長什麼樣」，
+ * 兩件事互不干涉：一根柱子是圓的 'block'，露台是方的 'floor'。
+ *
+ *   方盒   預設。`block()`，或 `add` 的 `solid`。
+ *   圓柱   `round()`，或 `add` 的 `solid` 加 `round: true`（軸與半徑
+ *          從幾何的 AABB 算）。柱、井、樹、大石——場上一半的東西是圓的，
+ *          而方盒的角比它所代表的圓遠 41%，繞著走會被頂四下。
+ *
  * ── record ──────────────────────────────────────────────────────
  * 打開的話，每一塊 `add` 進來的幾何都會留下它的 AABB 與旗標。頁面上
  * 不需要（那是七千個物件），tools/verify-test-area.mjs 需要——「每塊
@@ -352,6 +361,9 @@ export class Build {
    *   color 頂點色／ink 是否描邊（預設 true）
    *   solid 碰撞的種類：'floor'／'block'／'step'（true = 'block'）
    *   base  'block' 站在哪個高度上（預設 0）——盒子從這裡拉到頂
+   *   round 圓的：登記成圓柱而不是方盒。軸取 AABB 的中心，半徑取 x／z
+   *         兩個半寬裡大的那一個——寧可胖一點，比石頭瘦的碰撞體會讓
+   *         身體陷進石頭裡。
    *   grow  碰撞盒往外放這麼多
    *   hang  這塊東西是掛著／靠著的（拱的楔石、旗、鏈、獸像），底下
    *         本來就不會有支撐。驗證的白名單靠這個旗標，不靠人記得。
@@ -416,11 +428,18 @@ export class Build {
       /* 'block' 的底不是它自己的底，是它站著的那個地面：一顆離地 30 cm
          的大石頭如果照 AABB 登記，腳下那 30 cm 就是一條可以鑽進去的縫。 */
       const bot = kind === 'block' ? (o.base === undefined ? 0 : o.base) : miny - gr;
-      this.colliders.push({
+      const c = {
         min: [minx - gr, bot, minz - gr],
         max: [maxx + gr, maxy + gr, maxz + gr],
         kind, base: bot,
-      });
+      };
+      if (o.round) {
+        c.shape = 'circle';
+        c.x = (c.min[0] + c.max[0]) / 2;
+        c.z = (c.min[2] + c.max[2]) / 2;
+        c.r = Math.max(c.max[0] - c.x, c.max[2] - c.z);
+      }
+      this.colliders.push(c);
     }
     return this;
   }
@@ -445,6 +464,31 @@ export class Build {
       max: [cx + w / 2, cy + h / 2, cz + d / 2],
       kind: o.kind || 'shell',
       base: o.base === undefined ? cy - h / 2 : o.base,
+    });
+    return this;
+  }
+
+  /**
+   * 一根直立的圓柱，不畫任何東西（柱身、井口、樹幹）。
+   *
+   * 跟 `block()` 是同一件事，只差水平的截面是圓的——推出的方向因此是
+   * 半徑，而不是「四個面裡最近的那一個」。外接的 AABB 照樣記著，所以
+   * 吃盒子的那些檢查（分類、支撐、相機）不必先認得圓。
+   *
+   * @param {number} cx 軸
+   * @param {number} cz 軸
+   * @param {number} r  半徑（取最大的那一圈：碰撞體寧可胖一點）
+   * @param {number} y0 底面
+   * @param {number} y1 頂面
+   * @param {object} [o] kind：'shell'（預設）／'floor'／'block'／'step'
+   */
+  round(cx, cz, r, y0, y1, o = {}) {
+    this.colliders.push({
+      shape: 'circle', x: cx, z: cz, r,
+      min: [cx - r, y0, cz - r],
+      max: [cx + r, y1, cz + r],
+      kind: o.kind || 'shell',
+      base: o.base === undefined ? y0 : o.base,
     });
     return this;
   }

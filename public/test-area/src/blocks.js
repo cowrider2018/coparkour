@@ -655,6 +655,8 @@ function shift(B, fromPos, ox, oz, flames) {
   for (let i = _colCursor; i < B.colliders.length; i++) {
     const c = B.colliders[i];
     c.min[0] += ox; c.max[0] += ox; c.min[2] += oz; c.max[2] += oz;
+    // 圓柱的軸是另外一組座標，跟著搬——漏搬的話那根柱子會擋在別的區塊裡。
+    if (c.shape === 'circle') { c.x += ox; c.z += oz; }
   }
   _colCursor = B.colliders.length;
   for (let i = _flameCursor; i < flames.length; i++) { flames[i].x += ox; flames[i].z += oz; }

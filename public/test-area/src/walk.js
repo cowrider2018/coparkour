@@ -16,6 +16,16 @@
      盒子（'floor'／'block'／'step'／'shell'）  不准進來。
      場地（'bound'）                          不准出去——黑牆。方的或圓的。
 
+   而「盒子」有兩種形狀。軸對齊的方盒是預設；`shape: 'circle'` 的是一根
+   直立的圓柱（軸 x, z 加半徑 r）。場上有一半的東西是圓的——柱、井、樹、
+   火盆、大石——而一個方盒的角比它所代表的圓遠 41%：繞著一根柱子走，身體
+   會在四個角上各被頂開一次，那個頓挫在畫面上找不到對應的東西，因為畫面上
+   是圓的。圓的東西因此就是一個圓，推出的方向是半徑。
+
+   欄位跟場地邊界同一組（`shape`／`x`／`z`／`r`），因為它們是同一個形狀，
+   差別只在「不准進來」還是「不准出去」。圓柱一樣帶著它的外接 AABB
+   （`min`／`max`），所以吃盒子的那些檢查不必先認得圓。
+
    場地邊界之所以不是「另一支夾限函式」，是因為障礙物與邊界在遊戲裡是
    同一件事：擋住。差別只在它被什麼外觀包裹（砌體，或是黑牆與黑霧）。
    兩套邏輯的話，「牆擋得住我但邊界把我吸過去」這種 bug 就有地方住。
@@ -143,6 +153,7 @@ export function boomLimit(a, cols, pivot, dir, want, margin = 0.35, floorY = 0.4
      只會讓鏡頭黏在角色身上。所有 spring arm 都要處理這個退化情況。 */
   for (const b of cols) {
     if (b.kind === 'bound') continue;
+    if (b.shape === 'circle') { t = cylLimit(b, pivot, dir, t, margin); continue; }
     let lo = 0, hi = t + margin, inside = true;
     for (let k = 0; k < 3; k++) {
       if (pivot[k] < b.min[k] || pivot[k] > b.max[k]) inside = false;
@@ -163,9 +174,53 @@ export function boomLimit(a, cols, pivot, dir, want, margin = 0.35, floorY = 0.4
   return Math.max(0, t);
 }
 
-/** 圓柱（用外接方框近似）與一個盒子在水平面上有沒有重疊。 */
+/**
+ * boomLimit 的圓柱那一段：射線打在柱面上，命中距離扣掉 margin。
+ *
+ * 分出來是因為它跟盒子那一段長得完全不一樣（二次式 vs. 三對平面），
+ * 混在同一個迴圈裡只會讓兩邊都讀不懂。規則本身是一樣的：打在**柱子
+ * 本身**上，不是打在放大過的柱子上；樞紐已經在裡面就跳過。
+ */
+function cylLimit(b, pivot, dir, t, margin) {
+  const px = pivot[0] - b.x, pz = pivot[2] - b.z;
+  const A = dir[0] * dir[0] + dir[2] * dir[2];
+  const Bq = 2 * (px * dir[0] + pz * dir[2]);
+  const Cq = px * px + pz * pz - b.r * b.r;
+  let lo = 0, hi = t + margin;
+  if (A > 1e-9) {
+    const disc = Bq * Bq - 4 * A * Cq;
+    if (disc <= 0) return t;                       // 擦不到
+    const sq = Math.sqrt(disc);
+    lo = Math.max(lo, (-Bq - sq) / (2 * A));
+    hi = Math.min(hi, (-Bq + sq) / (2 * A));
+  } else if (Cq > 0) return t;                     // 正上下看，而且在柱外
+  if (Math.abs(dir[1]) < 1e-9) {
+    if (pivot[1] < b.min[1] || pivot[1] > b.max[1]) return t;
+  } else {
+    let ta = (b.min[1] - pivot[1]) / dir[1], tb = (b.max[1] - pivot[1]) / dir[1];
+    if (ta > tb) { const sw = ta; ta = tb; tb = sw; }
+    lo = Math.max(lo, ta);
+    hi = Math.min(hi, tb);
+  }
+  if (lo > hi) return t;
+  if (Cq < 0 && pivot[1] > b.min[1] && pivot[1] < b.max[1]) return t;   // 已經在裡面
+  return lo - margin < t ? Math.max(0, lo - margin) : t;
+}
+
+/** 身體（用外接方框近似）與一個方盒在水平面上有沒有重疊。 */
 export function overlapXZ(x, z, b, pad) {
   return x + pad > b.min[0] && x - pad < b.max[0] && z + pad > b.min[2] && z - pad < b.max[2];
+}
+
+/**
+ * 身體（半徑 pad 的圓）在水平面上碰得到這個碰撞體嗎。
+ *
+ * 形狀的分派只有這一支。solveXZ 與 supportAt 因此不必各自記得「圓的要
+ * 用另一條式子」——那是兩份會分家的規則。
+ */
+export function nearXZ(b, x, z, pad) {
+  if (b.shape === 'circle') return Math.hypot(x - b.x, z - b.z) < b.r + pad;
+  return overlapXZ(x, z, b, pad);
 }
 
 /**
@@ -194,6 +249,19 @@ export function solveXZ(cols, x0, z0, feetY) {
     }
     if (b.max[1] <= feetY + PHYS.step) continue;   // 踏得上去 → 不是牆
     if (b.min[1] >= headY) continue;              // 從底下鑽得過去
+    if (b.shape === 'circle') {
+      /* 圓柱：推出的方向是半徑，所以繞著柱子走是滑順的一圈，而不是四段
+         各被一個角頂開的直線。推到 r + 身體半徑，身體表面因此剛好貼在
+         柱面上——跟方盒那一支推到面上是同一件事。 */
+      const dx = x - b.x, dz = z - b.z;
+      const d = Math.hypot(dx, dz);
+      const lim = b.r + R;
+      if (d >= lim) continue;
+      // 正好站在軸上（身體被別的東西擠進來）：往哪邊推都一樣遠，挑 +x。
+      if (d > 1e-6) { x = b.x + (dx / d) * lim; z = b.z + (dz / d) * lim; }
+      else x = b.x + lim;
+      continue;
+    }
     if (!overlapXZ(x, z, b, R)) continue;
     const dxL = x + R - b.min[0], dxR = b.max[0] - (x - R);
     const dzL = z + R - b.min[2], dzR = b.max[2] - (z - R);
@@ -215,7 +283,7 @@ export function supportAt(cols, x, z, fromY) {
   for (const b of cols) {
     if (b.kind === 'bound') continue;              // 邊界不是地板
     if (b.max[1] > fromY + PHYS.step) continue;
-    if (!overlapXZ(x, z, b, PHYS.radius * 0.85)) continue;
+    if (!nearXZ(b, x, z, PHYS.radius * 0.85)) continue;
     if (b.max[1] > top) top = b.max[1];
   }
   return top;
