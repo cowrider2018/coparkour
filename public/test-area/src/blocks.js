@@ -339,7 +339,10 @@ function throne(B, flames, seed, A) {
   for (const side of [-1, 1]) {
     knight(B, { x: side * 3.6, z: 14.4, y: 0.9, s: 1.15, yaw: Math.PI, damage: side < 0 ? 0 : 0.55, seed: seed + 120 + side });
     brazier(B, { x: side * 2.6, z: 12.0, y: 0, s: 1.05, seed: seed + 130 + side }, flames);
-    brazier(B, { x: side * 5.1, z: 2.0, y: 0, s: 0.95, seed: seed + 140 + side }, flames);
+    /* 挪到柱距的正中間：火盆的缽有 0.53 寬，擺在 z = 2.0 的話它整個
+       嵌在 z = 1.6 那根柱子裡（以前碰撞盒只有 0.35，看不出來）。x 也
+       往外挪一點，不然缽加上身體的半徑會伸進中殿那片空地。 */
+    brazier(B, { x: side * 5.35, z: 3.7, y: 0, s: 0.95, seed: seed + 140 + side }, flames);
   }
 
   // 南端：塌掉的正門，兩塊倒下的柱頭當踏腳石。

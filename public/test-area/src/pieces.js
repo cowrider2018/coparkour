@@ -774,10 +774,14 @@ export function rubble(B, o) {
     if (big) {
       boulders--;
       const h = r.range(1.15, 1.75), rr = r.range(0.5, 0.78);
+      /* 一顆石頭最寬的一圈在它的腰上，腰以上是一個圓頂——這是石頭之所以
+         叫石頭。跳得上去（頂面 1.4 左右），但站不住：不跳的話會照著
+         坡度緩緩滑下來，跳鍵隨時帶得走。 */
       B.add(B.kit.blob(rr, 1), {
         p: [x, y0 + h * 0.42, z], r: [r.range(-0.3, 0.3), r() * 3, r.range(-0.3, 0.3)],
         s: [1.25, h / rr * 0.5, 1.05],
         color: stoneTone(r), solid: 'block', base: y0, grow: -0.06,
+        round: 'dome', slip: 'slide',
       });
       if (r() < 0.6) mossTuft(B, x + r.range(-0.4, 0.4), y0 + h * 0.84, z + r.range(-0.3, 0.3), r);
       continue;
@@ -824,12 +828,13 @@ export function brazier(B, o, flames) {
       r: [r() * 3, r() * 3, r() * 3], color: C.stoneDeep, ink: false,
     });
   }
-  // 頂面至少 BLOCK_TOP：一盆 0.9 高的鐵器是「跳上去站得住」的高度，
-  // 而站在火盆上不是這一頁想給的東西。
-  {
-    const bh2 = Math.max(1.2 * s, BLOCK_TOP + 0.05);
-    B.block(o.x, y + bh2 / 2, o.z, 0.7 * s, bh2, 0.7 * s, { kind: 'block', base: y });
-  }
+  /* 碰撞：缽是圓的，而且頂上有火。所以是一根到缽口的圓柱（半徑取缽口
+     那一圈，不是三隻腳——畫面上寬的是缽），上面扣一個站不住的圓頂。
+     跳得到（頂面 1.7 s，MOUNT 是 1.74），但踩上去會失去操作、被甩下來
+     ——火堆是 DEVNOTES.md 裡 'fall' 的原型：站不站得住不是形狀的問題，
+     是這個東西本來就不給站。 */
+  B.round(o.x, o.z, 0.56 * s, y, y + 1.36 * s,
+    { kind: 'block', base: y, dome: 0.34 * s, slip: 'fall' });
   if (flames) flames.push({ x: o.x, y: y + 1.44 * s, z: o.z, s });
 }
 
@@ -929,7 +934,10 @@ export function deadTree(B, o) {
   /* 樹幹是一根圓的（它就是一支 drum），從地面起算：以前是
      [y+1−s, y+1+s] 的一個方盒，小一點的樹底下就留了一段離地 30 cm 的縫，
      而縫底下是看得到的樹幹。 */
-  B.round(o.x, o.z, 0.25 * s, o.y || 0, (o.y || 0) + 2 * s, { kind: 'block', base: o.y || 0 });
+  B.round(o.x, o.z, 0.25 * s, o.y || 0, (o.y || 0) + 1.7 * s,
+    /* 樹頂是一把枝椏：那是一堆細長的東西，不是一個踩得住的面，所以收成
+       一個不可踩的圓頂。矮一點的樹（s < 0.87）跳得到，跳到了會滑下來。 */
+    { kind: 'block', base: o.y || 0, dome: 0.3 * s, slip: 'fall' });
   for (let i = 0; i < 4; i++) {
     B.add(B.kit.brick(0.4 * s, 0.14 * s, 0.34 * s, 0.03), {
       p: [o.x + r.range(-0.6, 0.6) * s, (o.y || 0) + 0.06, o.z + r.range(-0.6, 0.6) * s],

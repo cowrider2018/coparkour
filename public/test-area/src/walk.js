@@ -26,6 +26,14 @@
    差別只在「不准進來」還是「不准出去」。圓柱一樣帶著它的外接 AABB
    （`min`／`max`），所以吃盒子的那些檢查不必先認得圓。
 
+   圓的東西垂直方向分兩段，界線在**最大 XZ 截面**的高度 `cap`：
+
+     cap 以下   直立的柱面。牆，照常擋住。
+     cap 以上   圓頂（半軸 r 與 dome 的橢球冠）。`dome = 0` 就是平頂的
+                純圓柱——柱頂、井口、台座：站得住，沒有第二條規則。
+
+   圓頂上站不住，怎麼滑由 `slip` 決定，見 SLIDE。
+
    場地邊界之所以不是「另一支夾限函式」，是因為障礙物與邊界在遊戲裡是
    同一件事：擋住。差別只在它被什麼外觀包裹（砌體，或是黑牆與黑霧）。
    兩套邏輯的話，「牆擋得住我但邊界把我吸過去」這種 bug 就有地方住。
@@ -63,6 +71,91 @@ export const APEX = (PHYS.jump * PHYS.jump) / (2 * PHYS.gravity);
 export const MOUNT = APEX + PHYS.step;
 export const BLOCK_TOP = 1.0;
 export const TRIP = [0.08, PHYS.step];
+
+/* ── 圓頂上會滑 ──────────────────────────────────────────────────
+   踩在圓頂上待不住。分兩種，差別不在形狀而在「這個東西本來就給不給
+   站」——所以它是砌的時候標上去的一個字，不是從幾何猜出來的：
+
+     'slide'  屋頂、斜坡、大石。站得住、操作得動，但不跳就會一路緩滑
+              下去。2D 跑酷的抓牆就是這個手感：牆留得住你，重力不會停，
+              而跳鍵隨時把你帶走。速度是**終端速度**而不是加速度
+              （SLIDE.max × sinθ），所以 45° 大約 1.4 m/s：明顯在滑、
+              追得上、跳得掉。積分加速度的話，一片大一點的屋頂會把人
+              加速到超過衝刺速，那是摔下去，不是抓牆。
+
+     'fall'   火盆、複雜的頂、設定上不可踩的地方。踩上去就**失去操作**，
+              沿著面加速 g·sinθ 直到被甩出去。45° 是 15.6 m/s²，所以在
+              一個火盆那麼大的圓頂上待不到半秒就被丟下來——那正是
+              「這裡站不得」該有的回饋。控制權在離開那個面的瞬間回來
+              （那時候人在空中，還救得回來）。
+
+   `stick` 是頂端那一小塊站得穩的區域：半球頂上 sinθ 就等於離軸的比例，
+   所以 18° 等於「離軸 31% 以內站得住」。沒有它的話柱頂一個都站不住，
+   而跳上柱頂是這一頁少數幾件好玩的事之一。'fall' 沒有那塊區域——它的
+   頂點是不穩定的，`kick` 是落在正頂上時給的最小斜度。
+   ------------------------------------------------------------------ */
+export const SLIDE = {
+  stick: Math.sin((18 * Math.PI) / 180),
+  max: 2.0,
+  kick: 0.30,
+};
+
+/**
+ * 緩滑（'slide'）：每秒被帶著走多遠。
+ *
+ * 終端速度而不是加速度——理由見 SLIDE。回傳的是**位移速度**，呼叫端
+ * 要把它加在位移上而不是加進速度裡。
+ *
+ * @param {object} sup supportInfo 的結果
+ * @returns {[number, number]} x／z 方向的速度
+ */
+export function slideDrift(sup) {
+  if (sup.slip !== 'slide') return [0, 0];
+  const v = SLIDE.max * sup.sin;
+  return [sup.dx * v, sup.dz * v];
+}
+
+/**
+ * 滑落（'fall'）：每秒被加速多少。
+ *
+ * 重力沿著斜面的分量，g·sinθ，沒有上限。這一支與上一支是同一條規則的
+ * 兩半，擺在一起是為了讓「兩種滑法差在哪」一眼看得完——而且頁面與離線
+ * 驗證讀的是同一份數字，不是兩份長得很像的。
+ *
+ * @returns {[number, number]} x／z 方向的加速度
+ */
+export function slideAccel(sup) {
+  if (sup.slip !== 'fall') return [0, 0];
+  const a = PHYS.gravity * sup.sin;
+  return [sup.dx * a, sup.dz * a];
+}
+
+/* ── 圓頂的三條式子 ──────────────────────────────────────────────
+   半軸 r（水平）與 dome（垂直）的橢球冠，坐在 cap 這個高度上。平頂的
+   圓柱是 dome = 0 的退化情形，三支都走得通，所以呼叫端不必分兩種。 */
+
+/** 離軸 d 的地方，表面在多高。 */
+export function roundTop(b, d) {
+  if (!b.dome) return b.cap;
+  const u = Math.min(1, Math.max(0, d) / b.r);
+  return b.cap + b.dome * Math.sqrt(1 - u * u);
+}
+
+/** 離軸 d 的地方，表面的 sin θ（θ = 表面與水平的夾角）。平頂是 0。 */
+export function roundSin(b, d) {
+  if (!b.dome || d <= 0) return 0;
+  const u = Math.min(1, d / b.r);
+  if (u >= 1) return 1;                       // 裙邊是垂直的
+  const s = (b.dome / b.r) * (u / Math.sqrt(1 - u * u));
+  return s / Math.sqrt(1 + s * s);
+}
+
+/** 表面降到高度 h 的那一圈半徑。柱身（h ≤ cap）就是整個半徑。 */
+export function roundReach(b, h) {
+  if (!b.dome || h <= b.cap) return b.r;
+  const t = (h - b.cap) / b.dome;
+  return t >= 1 ? 0 : b.r * Math.sqrt(1 - t * t);
+}
 
 /**
  * 點到場地邊界的距離：在裡面是正的，出去了是負的。
@@ -247,21 +340,28 @@ export function solveXZ(cols, x0, z0, feetY) {
       [x, z] = clampArena(b, x, z, R);
       continue;
     }
-    if (b.max[1] <= feetY + PHYS.step) continue;   // 踏得上去 → 不是牆
     if (b.min[1] >= headY) continue;              // 從底下鑽得過去
     if (b.shape === 'circle') {
       /* 圓柱：推出的方向是半徑，所以繞著柱子走是滑順的一圈，而不是四段
-         各被一個角頂開的直線。推到 r + 身體半徑，身體表面因此剛好貼在
-         柱面上——跟方盒那一支推到面上是同一件事。 */
+         各被一個角頂開的直線。 */
       const dx = x - b.x, dz = z - b.z;
       const d = Math.hypot(dx, dz);
-      const lim = b.r + R;
+      if (d >= b.r + R) continue;
+      /* 「踏得上去」這一項圓頂不能用頂點去判：圓頂是中間高、外圈低，
+         照頂點判的話人會在裙邊上就被擋住，而畫面上那裡只有腳踝高。
+         身體涵蓋到的表面裡最高的一點在離軸 d − R 的地方。 */
+      const reach = feetY + PHYS.step;
+      if (roundTop(b, Math.max(0, d - R)) <= reach) continue;
+      /* 推到「最高的那一點剛好踏得上去」的那一圈。平頂就是 r + 身體
+         半徑，身體表面因此剛好貼在柱面上；圓頂則是停在它踩得到的地方。 */
+      const lim = R + roundReach(b, reach);
       if (d >= lim) continue;
       // 正好站在軸上（身體被別的東西擠進來）：往哪邊推都一樣遠，挑 +x。
       if (d > 1e-6) { x = b.x + (dx / d) * lim; z = b.z + (dz / d) * lim; }
       else x = b.x + lim;
       continue;
     }
+    if (b.max[1] <= feetY + PHYS.step) continue;   // 踏得上去 → 不是牆
     if (!overlapXZ(x, z, b, R)) continue;
     const dxL = x + R - b.min[0], dxR = b.max[0] - (x - R);
     const dzL = z + R - b.min[2], dzR = b.max[2] - (z - R);
@@ -275,16 +375,54 @@ export function solveXZ(cols, x0, z0, feetY) {
 /**
  * 站在 (x, z)、腳原本在 fromY 的話，會踩在多高的地方。
  *
- * 只認「不高於 fromY + STEP」的盒子：跳上去之前，屋頂不是地板。
- * 沒有任何盒子的話就是地面（y = 0）。
+ * 只認「不高於 fromY + STEP」的東西：跳上去之前，屋頂不是地板。
+ * 什麼都沒有的話就是地面（y = 0）。
  */
 export function supportAt(cols, x, z, fromY) {
-  let top = 0;
+  return supportInfo(cols, x, z, fromY).y;
+}
+
+/**
+ * 同一件事，外加「踩到的是什麼」。
+ *
+ * 分出這一支是因為圓頂上站不住，而「站得住嗎」只有腳底下那個東西答得
+ * 出來——高度算出來的時候順手就知道了，分開再問一次等於把同一個搜尋
+ * 做兩遍，而且兩遍會不同意（中間差了半公尺的位移）。
+ *
+ * @returns {{y:number, on:object|null, slip:string|null, sin:number,
+ *            dx:number, dz:number}}
+ *   y 支撐高度／on 踩到的碰撞體／slip 滑法（null = 站得住）／
+ *   sin 斜面的 sin θ／dx,dz 下坡方向（水平的單位向量）
+ */
+export function supportInfo(cols, x, z, fromY) {
+  const pad = PHYS.radius * 0.85;
+  const reach = fromY + PHYS.step;
+  let y = 0, on = null;
   for (const b of cols) {
     if (b.kind === 'bound') continue;              // 邊界不是地板
-    if (b.max[1] > fromY + PHYS.step) continue;
-    if (!nearXZ(b, x, z, PHYS.radius * 0.85)) continue;
-    if (b.max[1] > top) top = b.max[1];
+    if (b.max[1] > reach) continue;                // 連頂點都構不到
+    if (!nearXZ(b, x, z, pad)) continue;
+    /* 圓頂踩到的是曲面上的那一點，不是它的頂點。站在裙邊上的人腳底下
+       是裙邊的高度——這正是「圓頂」與「一個跟它一樣高的方盒」的差別。 */
+    const t = b.shape === 'circle'
+      ? roundTop(b, Math.min(Math.hypot(x - b.x, z - b.z), b.r))
+      : b.max[1];
+    if (t > reach || t <= y) continue;
+    y = t; on = b;
   }
-  return top;
+
+  const out = { y, on, slip: null, sin: 0, dx: 0, dz: 0 };
+  if (!on || !on.slip || !on.dome) return out;
+  const ax = x - on.x, az = z - on.z;
+  const d = Math.hypot(ax, az);
+  let s = roundSin(on, Math.min(d, on.r));
+  if (on.slip === 'fall') s = Math.max(s, SLIDE.kick);   // 正頂上也站不住
+  else if (s <= SLIDE.stick) return out;                 // 頂端那一小塊平的
+  out.slip = on.slip;
+  out.sin = s;
+  /* 正頂上沒有下坡方向可言。給一個固定的方向而不是隨機的：離線驗證要
+     走得出同一條路，而「每次都滑向不同邊」也不是任何人想要的手感。 */
+  out.dx = d > 1e-6 ? ax / d : 1;
+  out.dz = d > 1e-6 ? az / d : 0;
+  return out;
 }

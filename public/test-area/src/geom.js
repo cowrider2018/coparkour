@@ -324,6 +324,11 @@ const _s = new THREE.Vector3();
  *   圓柱   `round()`，或 `add` 的 `solid` 加 `round: true`（軸與半徑
  *          從幾何的 AABB 算）。柱、井、樹、大石——場上一半的東西是圓的，
  *          而方盒的角比它所代表的圓遠 41%，繞著走會被頂四下。
+ *   圓頂   圓柱加一頂蓋（`round()` 的 `dome`，或 `add` 的
+ *          `round: 'dome'`）。頂上站不住，而站不住的方式要說清楚：
+ *          `slip: 'slide'` 是可操作的緩滑（屋頂、斜坡、大石），
+ *          `slip: 'fall'` 是失去操作的滑落（火盆、複雜的頂）。
+ *          判準與新增時的規矩寫在 DEVNOTES.md。
  *
  * ── record ──────────────────────────────────────────────────────
  * 打開的話，每一塊 `add` 進來的幾何都會留下它的 AABB 與旗標。頁面上
@@ -363,7 +368,9 @@ export class Build {
    *   base  'block' 站在哪個高度上（預設 0）——盒子從這裡拉到頂
    *   round 圓的：登記成圓柱而不是方盒。軸取 AABB 的中心，半徑取 x／z
    *         兩個半寬裡大的那一個——寧可胖一點，比石頭瘦的碰撞體會讓
-   *         身體陷進石頭裡。
+   *         身體陷進石頭裡。'dome' 則是「腰以上是圓頂」：一顆石頭最寬
+   *         的一圈就在它的腰上。
+   *   slip  圓頂上怎麼滑：'slide'（可操作的緩滑）／'fall'（失去操作）。
    *   grow  碰撞盒往外放這麼多
    *   hang  這塊東西是掛著／靠著的（拱的楔石、旗、鏈、獸像），底下
    *         本來就不會有支撐。驗證的白名單靠這個旗標，不靠人記得。
@@ -438,6 +445,16 @@ export class Build {
         c.x = (c.min[0] + c.max[0]) / 2;
         c.z = (c.min[2] + c.max[2]) / 2;
         c.r = Math.max(c.max[0] - c.x, c.max[2] - c.z);
+        /* 外接盒跟著撐到那個半徑。AABB 是「這個碰撞體不會超出去」的
+           保證，吃盒子的那些檢查（相機、分類、掃描）全靠它——瘦的那個
+           軸不補回來的話，那個保證就是假的。 */
+        c.min[0] = c.x - c.r; c.max[0] = c.x + c.r;
+        c.min[2] = c.z - c.r; c.max[2] = c.z + c.r;
+        /* 最大的 XZ 截面在哪：'dome' 的話在幾何自己的腰上（一顆石頭
+           最寬的一圈就在那裡），腰以上是圓頂。平頂的話就是頂面。 */
+        c.cap = o.round === 'dome' ? (miny + maxy) / 2 : c.max[1];
+        c.dome = c.max[1] - c.cap;
+        c.slip = c.dome ? (o.slip || null) : null;
       }
       this.colliders.push(c);
     }
@@ -479,14 +496,19 @@ export class Build {
    * @param {number} cz 軸
    * @param {number} r  半徑（取最大的那一圈：碰撞體寧可胖一點）
    * @param {number} y0 底面
-   * @param {number} y1 頂面
+   * @param {number} y1 柱身的頂面（= 最大 XZ 截面的高度）
    * @param {object} [o] kind：'shell'（預設）／'floor'／'block'／'step'
+   *   dome：柱頂再加一個這麼高的圓頂（預設 0 = 平頂，站得住）
+   *   slip：圓頂上怎麼滑，'slide'／'fall'，見 walk.js 的 SLIDE
    */
   round(cx, cz, r, y0, y1, o = {}) {
+    const dome = o.dome || 0;
     this.colliders.push({
-      shape: 'circle', x: cx, z: cz, r,
+      shape: 'circle', x: cx, z: cz, r, cap: y1, dome,
+      // 平頂沒有斜度，滑法無從談起——標了也是空話，所以不讓它存在。
+      slip: dome ? (o.slip || null) : null,
       min: [cx - r, y0, cz - r],
-      max: [cx + r, y1, cz + r],
+      max: [cx + r, y1 + dome, cz + r],
       kind: o.kind || 'shell',
       base: o.base === undefined ? y0 : o.base,
     });

@@ -40,6 +40,10 @@
                      比它所代表的圓遠 41%，繞著走會在四個角上各被頂開
                      一次——看不出來（畫面上是圓的），只有跑起來覺得
                      這根柱子卡卡的。
+    9c. 圓頂上站不住  火盆與大石的頂是圓的，站上去要滑下來——火盆是
+                     失去操作的那種，大石是可操作的緩滑。這一項也看不
+                     出來：火盆的頂如果悄悄變成站得住，畫面上什麼都不會
+                     變，只會有人站在火裡。所以用真的物理各滑一次。
     10. 房間是可玩的  整片房間都是平的、都走得到、沒有被障礙物塞滿。
                      這是 roguelike 要的那個單位。
     11. 地形的墨線與五階調  兩件事都活在著色器裡，node 沒有 WebGL 編不
@@ -59,7 +63,8 @@
 import * as THREE from '../public/test-area/vendor/three.module.js';
 import { buildRuins, BLOCKS, PITCH } from '../public/test-area/src/blocks.js';
 import {
-  PHYS, solveXZ, supportAt, arenaGap, boomLimit, BLOCK_TOP, TRIP, MOUNT,
+  PHYS, SLIDE, solveXZ, supportAt, supportInfo, roundTop, roundSin,
+  slideDrift, slideAccel, arenaGap, boomLimit, BLOCK_TOP, TRIP, MOUNT,
 } from '../public/test-area/src/walk.js';
 import { VEIL, buildVeil, outline } from '../public/test-area/src/veil.js';
 import { toonVC, inkLine, BAND_EDGE, BAND_KEY } from '../public/test-area/src/palette.js';
@@ -431,6 +436,136 @@ head('圓的東西是圓的');
   ok(worstSpread < 1e-6, '繞著圓柱走是一個圓，不是一個方框',
     worstSpread > 1e-6 ? `差 ${worstSpread.toFixed(3)} m（${worstAt}）` : `${round.length} 根`);
   ok(offAxis === 0, '推出的方向是半徑', `${offAxis} 次歪掉`);
+}
+
+head('圓頂上站不住');
+/* 滑的規則（slideDrift／slideAccel）跟頁面讀的是同一份，這裡只是照
+   main.js 那一套把它積起來——不給任何輸入，因為驗的正是「不操作會
+   怎樣」。 */
+{
+  const CS = R.colliders;
+  const domes = CS.filter((c) => c.shape === 'circle' && c.dome > 0);
+  const flat = CS.filter((c) => c.shape === 'circle' && !c.dome);
+  const falls = domes.filter((c) => c.slip === 'fall');
+  console.log(`  ${domes.length} 個圓頂（${falls.length} 個不可踩）、${flat.length} 根平頂圓柱`);
+
+  ok(domes.length > 0 && falls.length > 0, '圓頂與不可踩的圓頂都有登記');
+  ok(domes.every((c) => c.slip === 'slide' || c.slip === 'fall'),
+    '每個圓頂都說得出怎麼滑', `${domes.filter((c) => !c.slip).length} 個沒說`);
+  ok(flat.every((c) => !c.slip), '平頂的圓柱沒有滑法——它就是站得住的');
+
+  /* 表面接得上：裙邊那一圈就是柱身的頂面，正上方就是它的頂點。接不上
+     的話，圓頂與柱身之間會有一道看不見的階，人會卡在上面。 */
+  let gap = 0;
+  for (const c of domes) {
+    gap = Math.max(gap, Math.abs(roundTop(c, c.r) - c.cap), Math.abs(roundTop(c, 0) - c.max[1]));
+  }
+  ok(gap < 1e-9, '圓頂接在柱身上，中間沒有一道階', `差 ${gap.toExponential(1)}`);
+
+  /* 頂端那一小塊：'slide' 的正頂站得住（不然跳上大石只會被彈開），
+     'fall' 的正頂站不住（火盆沒有安全的一點）。 */
+  const slides = domes.filter((c) => c.slip === 'slide');
+  /* 問的是「站在它正上方，腳下是它的話，站不站得住」。腳下不是它的那些
+     不算——一顆石頭的頂可能被旁邊更高的一顆蓋住，那時候腳踩的是那一顆，
+     而那是場上真的會發生的事，不是這條規則壞了。 */
+  const apex = (c) => {
+    const s = supportInfo(CS, c.x, c.z, c.max[1] + 0.1);
+    return s.on === c ? s.slip : 'other';
+  };
+  const badSlide = slides.filter((c) => apex(c) !== null && apex(c) !== 'other');
+  const badFall = falls.filter((c) => apex(c) === null);
+  ok(badSlide.length === 0, '可操作的圓頂，正頂上站得住',
+    `${slides.length - badSlide.length} / ${slides.length} 個`);
+  ok(badFall.length === 0, '不可踩的圓頂，正頂上也站不住',
+    `${badFall.length} 個站得住`);
+
+  /** 放手，照 main.js 那一套滾。回報什麼時候離開 `c`、最快滑多快。 */
+  const sim = (c, d0, seconds = 6) => {
+    const dt = 1 / 60;
+    const x0 = c.x + d0, z0 = c.z;
+    const p = {
+      x: x0, y: roundTop(c, Math.abs(d0)), z: z0,
+      vx: 0, vy: 0, vz: 0, grounded: true, slip: null, sin: 0, dx: 0, dz: 0,
+    };
+    const first = supportInfo(CS, p.x, p.z, p.y + 0.1);
+    if (first.on !== c) return null;                 // 起點根本不在它頭上
+    p.slip = first.slip; p.sin = first.sin; p.dx = first.dx; p.dz = first.dz;
+    let peak = 0, locked = 0;
+    for (let t = 0; t < seconds; t += dt) {
+      const [ax, az] = p.grounded ? slideAccel(p) : [0, 0];
+      p.vx += ax * dt; p.vz += az * dt;
+      const [gx, gz] = p.grounded ? slideDrift(p) : [0, 0];
+      const mvx = p.vx + gx, mvz = p.vz + gz;
+      peak = Math.max(peak, Math.hypot(mvx, mvz));
+      if (p.grounded && p.slip === 'fall') locked++;
+      const nx = p.x + mvx * dt, nz = p.z + mvz * dt;
+      const [sx, sz] = solveXZ(CS, nx, nz, p.y);
+      if (Math.abs(sx - nx) > 1e-4) p.vx = 0;
+      if (Math.abs(sz - nz) > 1e-4) p.vz = 0;
+      p.x = sx; p.z = sz;
+      const prevY = p.y;
+      p.vy -= PHYS.gravity * dt;
+      p.y += p.vy * dt;
+      const sup = supportInfo(CS, p.x, p.z, prevY);
+      if (p.y <= sup.y && p.vy <= 0) {
+        p.y = sup.y; p.vy = 0; p.grounded = true;
+        p.slip = sup.slip; p.sin = sup.sin; p.dx = sup.dx; p.dz = sup.dz;
+      } else { p.grounded = false; p.slip = null; }
+      if (sup.on !== c) return { off: t, peak, locked, at: [p.x, p.y, p.z] };
+      if (p.y < -4) return { off: t, peak, locked, at: [p.x, p.y, p.z] };
+    }
+    return { off: null, peak, locked, at: [p.x, p.y, p.z] };
+  };
+
+  // 不可踩：站上正頂，兩秒內一定被丟下來，而且整段都是鎖著的。
+  {
+    let tried = 0, stuck = [], slow = 0, worst = 0;
+    for (const c of falls) {
+      const s = sim(c, 0, 3);
+      if (!s) continue;
+      tried++;
+      if (s.off === null) { stuck.push(c); continue; }
+      if (s.locked === 0) slow++;
+      worst = Math.max(worst, s.off);
+    }
+    ok(tried > 0, '試得到不可踩的圓頂', `${tried} / ${falls.length} 個`);
+    ok(stuck.length === 0, '踩上不可踩的圓頂，站不住',
+      stuck.length ? `${stuck.length} 個站得住` : `最久 ${worst.toFixed(2)} 秒就滑掉`);
+    ok(slow === 0, '滑的那段是鎖著的（操作不回來）', `${slow} 個沒鎖`);
+  }
+
+  // 可操作：緩滑。速度不准超過終端速度——超過就不是抓牆，是摔下去。
+  {
+    let tried = 0, fast = 0, stuck = 0, peak = 0, worst = 0;
+    for (const c of slides) {
+      const s = sim(c, c.r * 0.6, 6);
+      if (!s) continue;
+      tried++;
+      peak = Math.max(peak, s.peak);
+      if (s.peak > SLIDE.max + 1e-6) fast++;
+      if (s.off === null) stuck++;
+      else worst = Math.max(worst, s.off);
+      if (s.locked) fast++;                    // 緩滑不准鎖住操作
+    }
+    ok(tried > 0, '試得到可操作的圓頂', `${tried} / ${slides.length} 個`);
+    ok(stuck === 0, '不跳的話，緩滑會一路滑下來', stuck ? `${stuck} 個滑不動` : `最久 ${worst.toFixed(2)} 秒`);
+    ok(fast === 0, `緩滑不超過終端速度 ${SLIDE.max} m/s`, `最快 ${peak.toFixed(2)} m/s`);
+  }
+
+  /* 兩種滑法真的不一樣：同一個圓頂，'fall' 掉得比 'slide' 快。差別因此
+     不是一個只寫在註解裡的字。 */
+  {
+    const c = falls.find((q) => sim(q, 0, 3)?.off != null);
+    let fastT = null, slowT = null;
+    if (c) {
+      fastT = sim(c, c.r * 0.5, 6)?.off;
+      c.slip = 'slide';
+      slowT = sim(c, c.r * 0.5, 6)?.off;
+      c.slip = 'fall';
+    }
+    ok(fastT != null && slowT != null && fastT < slowT, '同一個圓頂，滑落比緩滑快',
+      fastT == null ? '沒試到' : `${fastT.toFixed(2)} 秒 vs ${slowT?.toFixed(2)} 秒`);
+  }
 }
 
 head('每個區塊的中心是空的');

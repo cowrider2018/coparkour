@@ -41,7 +41,7 @@ import { loadZoo } from './critter.js';
 import { Pad } from './pad.js';
 import { Hud } from './hud.js';
 import { facet } from './geom.js';
-import { PHYS, solveXZ, supportAt, arenaGap } from './walk.js';
+import { PHYS, solveXZ, supportInfo, slideDrift, slideAccel, arenaGap } from './walk.js';
 import { CAM, makeCam, snapCam, updateCam } from './camera.js';
 import { buildVeil } from './veil.js';
 import { lookInfo } from '../../src/cat/looks.js';
@@ -155,6 +155,10 @@ scene.add(zoo.root);
 const player = {
   x: ruins.spawns.courtyard[0], y: 0, z: ruins.spawns.courtyard[2],
   vx: 0, vy: 0, vz: 0, grounded: true, block: 'courtyard',
+  /* 腳底下那個面站不站得住，由 walk.js 的 supportInfo 給：null = 站得住，
+     'slide' = 可操作的緩滑，'fall' = 失去操作的滑落。欄位名字跟著它，
+     所以 slideDrift／slideAccel 直接吃 player，不必抄一份。 */
+  slip: null, sin: 0, dx: 0, dz: 0,
 };
 
 /* 碰撞的規則在 walk.js——那一支 tools/verify-test-area.mjs 也在用，
@@ -332,6 +336,12 @@ function frame(now) {
   let mag = Math.hypot(ix, iz);
   if (mag > 1) { ix /= mag; iz /= mag; mag = 1; }
 
+  /* 站在不可踩的圓頂上（火盆、樹梢）：操作整個失效，只剩重力。判斷用
+     的是**上一幀**踩到的那個面——這一幀踩到什麼要等垂直那一段算完才
+     知道，而輸入得在那之前處理。差一幀，16 毫秒，手上感覺不到。 */
+  const locked = player.grounded && player.slip === 'fall';
+  if (locked) { ix = 0; iz = 0; mag = 0; }
+
   /* 相機站在玩家的 −(sin yaw, cos yaw) 方向上，所以「前」就是
      +(sin yaw, cos yaw)。「右」是 cross(前, 上)——在 Y 軸朝上的右手系裡
      那等於 (−cos yaw, +sin yaw)，不是 (+cos yaw, −sin yaw)。
@@ -343,34 +353,56 @@ function frame(now) {
   const dirZ = mag > 1e-4 ? (fwdZ * iz + rgtZ * ix) / mag : 0;
   const tgtX = dirX * speed, tgtZ = dirZ * speed;
 
-  const rate = (mag > 0.01 ? PHYS.accel : PHYS.brake) * dt;
-  player.vx += Math.max(-rate, Math.min(rate, tgtX - player.vx));
-  player.vz += Math.max(-rate, Math.min(rate, tgtZ - player.vz));
+  if (locked) {
+    /* 沿著面加速 g·sinθ。不走 accel／brake 那一段：煞車是 23，比滑落的
+       加速度還大，兩個一起算的結果是站在火盆上紋風不動。 */
+    const [ax, az] = slideAccel(player);
+    player.vx += ax * dt;
+    player.vz += az * dt;
+  } else {
+    const rate = (mag > 0.01 ? PHYS.accel : PHYS.brake) * dt;
+    player.vx += Math.max(-rate, Math.min(rate, tgtX - player.vx));
+    player.vz += Math.max(-rate, Math.min(rate, tgtZ - player.vz));
+  }
 
   const jumped = pad.takeJump() || held(' ');
-  if (jumped && player.grounded) {
+  if (jumped && player.grounded && !locked) {
     player.vy = PHYS.jump;
     player.grounded = false;
   }
 
+  /* 緩滑（屋頂、斜坡、大石）。它是一個**終端速度**而不是一個加速度，
+     所以加在位移上而不是加進速度裡：加進速度的話，在斜面上站著不動的
+     每一幀都會再累積一次，一秒之後就不是緩滑而是摔下去了。走路、跳躍、
+     撞牆全部照常——這就是跑酷遊戲抓著牆往下溜的那個狀態。 */
+  const [driftX, driftZ] = player.grounded ? slideDrift(player) : [0, 0];
+
   // 水平：先解 x 再解 z，兩次都用同一支推出器（它自己會選軸）。
-  const [sx, sz] = solveXZ(COLS, player.x + player.vx * dt, player.z + player.vz * dt, player.y);
+  const mvx = player.vx + driftX, mvz = player.vz + driftZ;
+  const [sx, sz] = solveXZ(COLS, player.x + mvx * dt, player.z + mvz * dt, player.y);
   // 被推回來多少就把那個方向的速度吃掉，不然會沿著牆一直加速。
-  if (Math.abs(sx - (player.x + player.vx * dt)) > 1e-4) player.vx = 0;
-  if (Math.abs(sz - (player.z + player.vz * dt)) > 1e-4) player.vz = 0;
+  if (Math.abs(sx - (player.x + mvx * dt)) > 1e-4) player.vx = 0;
+  if (Math.abs(sz - (player.z + mvz * dt)) > 1e-4) player.vz = 0;
   player.x = sx; player.z = sz;
 
   // 垂直
   const prevY = player.y;
   player.vy -= PHYS.gravity * dt;
   player.y += player.vy * dt;
-  const sup = supportAt(COLS, player.x, player.z, prevY);
-  if (player.y <= sup && player.vy <= 0) {
-    player.y = sup;
+  const sup = supportInfo(COLS, player.x, player.z, prevY);
+  if (player.y <= sup.y && player.vy <= 0) {
+    player.y = sup.y;
     player.vy = 0;
     player.grounded = true;
+    /* 踩到的是什麼跟踩在多高是同一次搜尋的結果。分開問兩次的話，兩次
+       之間隔著一個位移，而那正是「明明已經滑下來了卻還被鎖著」。 */
+    player.slip = sup.slip;
+    player.sin = sup.sin;
+    player.dx = sup.dx;
+    player.dz = sup.dz;
   } else {
     player.grounded = false;
+    player.slip = null;                 // 在空中：控制權回來
   }
 
   // 走到哪個區塊了。用出生點最近的那一個，不用方框——區塊之間是連著的。
@@ -384,9 +416,12 @@ function frame(now) {
   player.block = best;
 
   // 動物
-  const realSpeed = Math.hypot(player.vx, player.vz);
+  const realSpeed = Math.hypot(mvx, mvz);
   zoo.root.position.set(player.x, player.y, player.z);
-  if (realSpeed > 0.35) zoo.setFacing(Math.atan2(player.vx, player.vz));
+  /* 朝向看的是**真正的位移**，不是自己的速度：緩滑的時候身體的速度是
+     零，滑走的是腳下那個面。用 vx／vz 的話，滑下屋頂的狗會整隻轉去面
+     對 +z（atan2(0, 0) = 0），而牠明明正在往別的方向走。 */
+  if (realSpeed > 0.35) zoo.setFacing(Math.atan2(mvx, mvz));
   /* 鏡頭在哪個方位，給「頭稍微轉向觀眾」與「遠側那隻眼睛收合」用——
      兩件事都是遊戲自己的做法，見 critter.js 的 REST_AIM 與 _eyeFade。 */
   const viewYaw = Math.atan2(camera.position.x - player.x, camera.position.z - player.z);
@@ -423,7 +458,8 @@ function frame(now) {
     fpsAcc = 0; fpsN = 0; hudAcc = 0;
     line = `${fpsShown} fps ・ 關卡 ${(ruins.tris / 1000).toFixed(0)}k tri ・ `
       + `${(ruins.inkLines / 1000).toFixed(0)}k 墨線 ・ 動物 ${(critterTris / 1000).toFixed(0)}k ・ `
-      + `x ${player.x.toFixed(1)} y ${player.y.toFixed(1)} z ${player.z.toFixed(1)}`;
+      + `x ${player.x.toFixed(1)} y ${player.y.toFixed(1)} z ${player.z.toFixed(1)}`
+      + (player.slip ? `・${player.slip === 'fall' ? '滑落' : '緩滑'}` : '');
   }
   hud.tick(dt, line);
   if (crossed) hud.paint({ block: player.block });
