@@ -336,7 +336,7 @@ function frame(now) {
   let mag = Math.hypot(ix, iz);
   if (mag > 1) { ix /= mag; iz /= mag; mag = 1; }
 
-  /* 站在不可踩的圓頂上（火盆、樹梢）：操作整個失效，只剩重力。判斷用
+  /* 站在不可踩的圓頂上（樹梢那種）：操作整個失效，只剩重力。判斷用
      的是**上一幀**踩到的那個面——這一幀踩到什麼要等垂直那一段算完才
      知道，而輸入得在那之前處理。差一幀，16 毫秒，手上感覺不到。 */
   const locked = player.grounded && player.slip === 'fall';
@@ -355,7 +355,7 @@ function frame(now) {
 
   if (locked) {
     /* 沿著面加速 g·sinθ。不走 accel／brake 那一段：煞車是 23，比滑落的
-       加速度還大，兩個一起算的結果是站在火盆上紋風不動。 */
+       加速度還大，兩個一起算的結果是站在上面紋風不動。 */
     const [ax, az] = slideAccel(player);
     player.vx += ax * dt;
     player.vz += az * dt;
