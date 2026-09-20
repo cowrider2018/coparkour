@@ -178,6 +178,13 @@ const STRIDE_LEN = 1.15;
 const STRIDE_HZ_MIN = 1.0, STRIDE_HZ_MAX = 5.5;
 /** 低於這個速度就是站著（src/cat/cat.js 的 IDLE_SPEED 同一個意思）。 */
 const IDLE_SPEED = 0.2;
+
+/* 外觀轉身的速率（rad/s）。遊戲那邊是 14（cat.js 的 TURN_RATE），這裡
+   **刻意**是它的兩倍：移動的方向已經是瞬間跟著操控走的（walk.js 的
+   steer），身體要是還用 14 轉，畫面上那隻狗會有整整兩幀在往側邊跑——
+   而牠實際上早就往新方向去了。轉向不再是物理的一部分之後，它唯一的
+   工作就是讓人看清楚「牠現在朝哪」，那件事越快越好。 */
+export const TURN_RATE = 28;
 /** 彈簧的次步長上限，跟 cat.js 的 MAX_SUB_DT 一樣。 */
 const MAX_SUB_DT = 0.005;
 
@@ -1253,10 +1260,12 @@ export class Critter {
     const moving = grounded && speed > IDLE_SPEED;
     const state = grounded ? (moving ? 'run' : 'idle') : ((st.vy || 0) > 0 ? 'air' : 'fall');
 
-    // 轉身：連續轉過去，走最短的一邊。14 rad/s 是遊戲的 TURN_RATE。
+    /* 轉身：連續轉過去，走最短的一邊。純外觀——移動一點都不等它，見
+       walk.js 的 steer。每幀都轉，所以人停下來之後牠會繼續轉到最後
+       推的那個方向才停。 */
     let diff = ((this._yawGoal - this._yaw + Math.PI) % (Math.PI * 2)) - Math.PI;
     if (diff < -Math.PI) diff += Math.PI * 2;
-    const step = 14 * d;
+    const step = TURN_RATE * d;
     this._yaw += Math.abs(diff) < step ? diff : Math.sign(diff) * step;
     this.root.rotation.y = this._yaw;
 

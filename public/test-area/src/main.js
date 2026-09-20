@@ -43,7 +43,7 @@ import { loadZoo } from './critter.js';
 import { Pad } from './pad.js';
 import { Hud } from './hud.js';
 import { facet } from './geom.js';
-import { PHYS, solveXZ, supportInfo, slideDrift, slideAccel, arenaGap, portalAt } from './walk.js';
+import { PHYS, solveXZ, supportInfo, steer, slideDrift, slideAccel, arenaGap, portalAt } from './walk.js';
 import { CAM, makeCam, snapCam, updateCam } from './camera.js';
 import { buildVeil } from './veil.js';
 import { lookInfo } from '../../src/cat/looks.js';
@@ -194,6 +194,11 @@ const player = {
      'slide' = 可操作的緩滑，'fall' = 失去操作的滑落。欄位名字跟著它，
      所以 slideDrift／slideAccel 直接吃 player，不必抄一份。 */
   slip: null, sin: 0, dx: 0, dz: 0,
+  /* 最後一次操控的方向。移動與朝向都讀它：移動是「沿著它的那一份速度」
+     （walk.js 的 steer），朝向是「轉到這裡為止」。放開手之後它不會被
+     清掉——那正是「停下來還會轉完最後那一下」的全部機制。
+     初值 +Z，因為模型的靜止朝向就是 +Z。 */
+  aimX: 0, aimZ: 1,
 };
 
 /* 碰撞的規則在 walk.js——那一支 tools/verify-test-area.mjs 也在用，
@@ -407,10 +412,11 @@ function frame(now) {
      少了這兩個負號就是 A、D 互換：畫面上看起來像在鏡子裡走路。 */
   const fwdX = Math.sin(cam.yaw), fwdZ = Math.cos(cam.yaw);
   const rgtX = -fwdZ, rgtZ = fwdX;
-  const speed = speedFor(mag);
-  const dirX = mag > 1e-4 ? (fwdX * iz + rgtX * ix) / mag : 0;
-  const dirZ = mag > 1e-4 ? (fwdZ * iz + rgtZ * ix) / mag : 0;
-  const tgtX = dirX * speed, tgtZ = dirZ * speed;
+  if (mag > 1e-4) {
+    // 操控的方向當幀就是移動的方向。轉向沒有延遲，加速量照舊。
+    player.aimX = (fwdX * iz + rgtX * ix) / mag;
+    player.aimZ = (fwdZ * iz + rgtZ * ix) / mag;
+  }
 
   if (locked) {
     /* 沿著面加速 g·sinθ。不走 accel／brake 那一段：煞車是 23，比滑落的
@@ -419,9 +425,9 @@ function frame(now) {
     player.vx += ax * dt;
     player.vz += az * dt;
   } else {
-    const rate = (mag > 0.01 ? PHYS.accel : PHYS.brake) * dt;
-    player.vx += Math.max(-rate, Math.min(rate, tgtX - player.vx));
-    player.vz += Math.max(-rate, Math.min(rate, tgtZ - player.vz));
+    [player.vx, player.vz] = steer(
+      player.vx, player.vz, player.aimX, player.aimZ, speedFor(mag), dt,
+    );
   }
 
   const jumped = pad.takeJump() || held(' ');
@@ -436,12 +442,12 @@ function frame(now) {
      撞牆全部照常——這就是跑酷遊戲抓著牆往下溜的那個狀態。 */
   const [driftX, driftZ] = player.grounded ? slideDrift(player) : [0, 0];
 
-  // 水平：先解 x 再解 z，兩次都用同一支推出器（它自己會選軸）。
+  /* 水平。撞到東西不必把速度清掉：速度永遠只沿著操控的方向，所以「沿著
+     牆一直加速」不會發生（速率被 speedFor 封在 8 以內），而正面撞牆之後
+     轉開，新方向上的投影本來就是 0——以前那兩行逐軸清零做的事，現在是
+     steer 的投影在做。 */
   const mvx = player.vx + driftX, mvz = player.vz + driftZ;
   const [sx, sz] = solveXZ(COLS, player.x + mvx * dt, player.z + mvz * dt, player.y, doors);
-  // 被推回來多少就把那個方向的速度吃掉，不然會沿著牆一直加速。
-  if (Math.abs(sx - (player.x + mvx * dt)) > 1e-4) player.vx = 0;
-  if (Math.abs(sz - (player.z + mvz * dt)) > 1e-4) player.vz = 0;
   player.x = sx; player.z = sz;
 
   // 垂直
@@ -484,10 +490,11 @@ function frame(now) {
   // 動物
   const realSpeed = Math.hypot(mvx, mvz);
   zoo.root.position.set(player.x, player.y, player.z);
-  /* 朝向看的是**真正的位移**，不是自己的速度：緩滑的時候身體的速度是
-     零，滑走的是腳下那個面。用 vx／vz 的話，滑下屋頂的狗會整隻轉去面
-     對 +z（atan2(0, 0) = 0），而牠明明正在往別的方向走。 */
-  if (realSpeed > 0.35) zoo.setFacing(Math.atan2(mvx, mvz));
+  /* 朝向只看操控，不看位移，而且每幀都送：
+       · 停下來之後還會繼續轉到最後推的那個方向才停（目標不會被清掉）。
+       · 緩滑的時候不會被下坡的方向帶著轉——人沒有下那個指令。
+     轉多快是外觀的事，在 critter.js 的 TURN_RATE。 */
+  zoo.setFacing(Math.atan2(player.aimX, player.aimZ));
   /* 鏡頭在哪個方位，給「頭稍微轉向觀眾」與「遠側那隻眼睛收合」用——
      兩件事都是遊戲自己的做法，見 critter.js 的 REST_AIM 與 _eyeFade。 */
   const viewYaw = Math.atan2(camera.position.x - player.x, camera.position.z - player.z);

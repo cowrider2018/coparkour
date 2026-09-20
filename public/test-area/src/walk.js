@@ -103,6 +103,43 @@ export const SLIDE = {
 };
 
 /**
+ * 操控：把速度轉到操控的方向上，再逼近想要的速率。
+ *
+ * ── 為什麼是投影而不是把向量加過去 ──────────────────────────────
+ * 以前是「速度向量朝目標向量以 accel 移動」。那個做法裡，轉向與加速是
+ * 同一件事：往旁邊轉 90°，舊方向那一份動量只能被加速掉，衝刺速 8 要
+ * 0.33 秒才轉完，這段期間往原方向還會多滑 1.3 公尺——玩家推了新方向，
+ * 狗卻先往舊方向畫了一段弧。那 1.3 公尺是操作誤差的全部來源。
+ *
+ * 投影把兩件事拆開：**沿著**操控方向的那一份動量留著，**垂直於**它的
+ * 那一份丟掉。於是
+ *
+ *   轉 90°   投影成 0，當場停住往新方向加速，側向一公分都不跑。
+ *   直線反向  投影成 −8，照舊要走 |Δv| / accel ≈ 0.47 秒經過 0 再到 +8。
+ *
+ * 也就是說：沒有延遲的只有轉向，加速量一點都沒變。
+ *
+ * 撞牆之後不必再逐軸把速度清掉（以前 main.js 要那樣做，不然會沿著牆
+ * 一直加速）：正面撞牆再轉開，新方向上的投影本來就是 0。
+ *
+ * @param {number} vx 現在的速度
+ * @param {number} vz
+ * @param {number} dirX 操控方向（單位向量）。沒有操控時傳最後一次的，
+ *   於是煞車是沿著原來那條線減速，而不是原地亂飄。
+ * @param {number} dirZ
+ * @param {number} want 想要的速率（speedFor 算出來的）
+ * @param {number} dt
+ * @returns {[number, number]} 新的 vx, vz
+ */
+export function steer(vx, vz, dirX, dirZ, want, dt) {
+  const cur = vx * dirX + vz * dirZ;
+  // 有想去的地方就用 accel，沒有就用 brake——want 只有在放開手時是 0。
+  const rate = (want > 1e-6 ? PHYS.accel : PHYS.brake) * dt;
+  const next = cur + Math.max(-rate, Math.min(rate, want - cur));
+  return [dirX * next, dirZ * next];
+}
+
+/**
  * 緩滑（'slide'）：每秒被帶著走多遠。
  *
  * 終端速度而不是加速度——理由見 SLIDE。回傳的是**位移速度**，呼叫端
