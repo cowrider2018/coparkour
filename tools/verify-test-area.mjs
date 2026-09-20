@@ -51,6 +51,10 @@
                      插進去也查得出來，那正是會壞的兩個地方：面法線沒
                      烘進去，畫面上是墨線整批消失；字串沒配到，畫面上是
                      每一道轉折又全都描上了。兩種都不會報錯。
+    13. 轉向不欠帳  操控轉向是瞬間的，加速量一點都沒變。這兩件事只有
+                     一起驗才有意義：少了前面那半，推了新方向的人會先
+                     往舊方向滑一段；少了後面那半，全速反向會變成瞬移。
+                     兩種都是「跑起來覺得不對」，而不是看得出來的東西。
     12. 手把的版面與手感  兩側是操作列、中間那一整片是遊戲——這條規則
                      是這個版面存在的全部理由，而「觸控區悄悄長到畫面
                      中央」看不出來，只會讓人覺得點哪裡都在走路。軸是
@@ -64,7 +68,7 @@ import * as THREE from '../public/test-area/vendor/three.module.js';
 import { buildRuins, BLOCKS, PITCH } from '../public/test-area/src/blocks.js';
 import {
   PHYS, SLIDE, APEX, solveXZ, supportAt, supportInfo, roundTop, roundSin, portalAt,
-  slideDrift, slideAccel, arenaGap, boomLimit, BLOCK_TOP, TRIP, MOUNT,
+  steer, slideDrift, slideAccel, arenaGap, boomLimit, BLOCK_TOP, TRIP, MOUNT,
 } from '../public/test-area/src/walk.js';
 import { VEIL, buildVeil, outline } from '../public/test-area/src/veil.js';
 import { toonVC, toon, inkLine, BAND_EDGE, BAND_KEY } from '../public/test-area/src/palette.js';
@@ -72,7 +76,7 @@ import { SURF, SURF_DEF, TEX_N, MOSS, surfacePixels, mossAt } from '../public/te
 import { stone } from '../public/test-area/src/geom.js';
 import { CAM, makeCam, updateCam } from '../public/test-area/src/camera.js';
 import { readFileSync } from 'node:fs';
-import { loadZoo } from '../public/test-area/src/critter.js';
+import { loadZoo, TURN_RATE } from '../public/test-area/src/critter.js';
 import { Pad } from '../public/test-area/src/pad.js';
 import { railTier } from '../public/test-area/src/hud.js';
 
@@ -810,6 +814,65 @@ head('圓頂上站不住');
     ok(fastT != null && slowT != null && fastT < slowT, '同一個圓頂，滑落比緩滑快',
       fastT == null ? '沒試到' : `${fastT.toFixed(2)} 秒 vs ${slowT?.toFixed(2)} 秒`);
   }
+}
+
+head('轉向不欠帳');
+/* 這一段完全不碰地形：驗的是 steer 本身。開闊地上跑一段，每幀 steer
+   再積分，然後量軌跡——這跟頁面每幀做的是同一支函式。 */
+{
+  const dt = 1 / 60;
+  const drive = (v0, dir, want, seconds) => {
+    let vx = v0[0], vz = v0[1], x = 0, z = 0;
+    const path = [];
+    for (let t = dt; t <= seconds + 1e-9; t += dt) {
+      [vx, vz] = steer(vx, vz, dir[0], dir[1], want, dt);
+      x += vx * dt; z += vz * dt;
+      path.push({ t, x, z, vx, vz });
+    }
+    return path;
+  };
+
+  /* 全速往 +z 跑，然後推 +x。舊的向量加速要 0.33 秒才轉完，這段期間
+     往 +z 還會多滑 1.3 公尺——那 1.3 公尺就是操作誤差。 */
+  const turn = drive([0, PHYS.run], [1, 0], PHYS.run, 1);
+  const side = Math.max(...turn.map((p) => Math.abs(p.z)));
+  ok(side < 1e-9, '轉 90° 之後一公分都不往舊方向跑', `側移 ${side.toExponential(1)} m`);
+  ok(turn[0].x > 0 && turn.every((p) => p.vx >= 0), '轉 90° 的第一幀就已經往新方向走');
+
+  /* 直線反向：轉向雖然是瞬間的，動量還在——沿著新方向的那一份投影是
+     −8，所以照舊要減速到 0 再加速。這一項是「只有轉向沒有延遲」的另
+     一半，少了它，全速反向會變成瞬移。 */
+  const rev = drive([0, PHYS.run], [0, -1], PHYS.run, 1);
+  const cross = rev.find((p) => p.vz <= 0).t;
+  const full = rev.find((p) => p.vz <= -PHYS.run + 1e-9).t;
+  const wantCross = PHYS.run / PHYS.accel, wantFull = (2 * PHYS.run) / PHYS.accel;
+  ok(Math.abs(cross - wantCross) < 2 * dt, '直線反向仍然要先減速到 0',
+    `${cross.toFixed(3)} 秒 / 該是 ${wantCross.toFixed(3)}`);
+  ok(Math.abs(full - wantFull) < 2 * dt, '反向到全速的時間沒有變',
+    `${full.toFixed(3)} 秒 / 該是 ${wantFull.toFixed(3)}`);
+  const over = Math.max(...rev.map((p) => p.z));
+  /* v²/2a。逐幀積分會比它少半幀的位移（每幀先減速再位移），所以容差
+     給一幀的位移量，不是「差不多就好」。 */
+  const wantOver = (PHYS.run * PHYS.run) / (2 * PHYS.accel);
+  ok(Math.abs(over - wantOver) < PHYS.run * dt, '反向期間還會往前多跑一段（動量沒有被偷走）',
+    `${over.toFixed(2)} m / 連續的算法是 ${wantOver.toFixed(2)}`);
+
+  /* 放開手：方向留著（player.aim 不會被清掉），所以是沿著原來那條線
+     減速，不是原地亂飄。 */
+  const stop = drive([0, PHYS.run], [0, 1], 0, 1);
+  ok(stop.every((p) => p.x === 0 && p.vx === 0), '放開手是沿著原來那條線減速');
+  const stopT = stop.find((p) => p.vz <= 1e-9).t;
+  ok(Math.abs(stopT - PHYS.run / PHYS.brake) < 2 * dt, '煞停的時間沒有變',
+    `${stopT.toFixed(3)} 秒 / 該是 ${(PHYS.run / PHYS.brake).toFixed(3)}`);
+
+  /* 轉向本身只是一次投影，所以小角度幾乎不損速。單看投影，不讓加速
+     插手（想要的速率就給成投影後的速率）——不然一幀的 accel 0.57 比
+     11.5° 的損失 0.16 還大，一幀就補回來了，什麼也量不到。 */
+  const th = 0.2, k = Math.cos(th);
+  const [lx, lz] = steer(0, PHYS.run, Math.sin(th), Math.cos(th), PHYS.run * k, dt);
+  ok(Math.abs(Math.hypot(lx, lz) - PHYS.run * k) < 1e-9
+    && Math.abs(Math.atan2(lx, lz) - th) < 1e-9,
+    `轉向只是一次投影：轉 ${(th * 180 / Math.PI).toFixed(1)}° 只損失 ${((1 - k) * 100).toFixed(1)}%`);
 }
 
 head('每個區塊的中心是空的');
@@ -1683,6 +1746,35 @@ for (const id of zoo.models) {
   ok(Math.abs(h - 1.0) < 0.02, `${id}：站著剛好一公尺高（含帽子）`, `${h.toFixed(3)} m`);
   const feet = box.min[1] * c._scale + c.mesh.position.y;
   ok(Math.abs(feet) < 0.01, `${id}：腳掌落在 y = 0 上`, `${feet.toFixed(4)}`);
+}
+
+/* ── 外觀的轉身 ──────────────────────────────────────────────────
+   移動不等身體轉過去（walk.js 的 steer），所以轉身純粹是「讓人看清楚
+   牠朝哪」，而那件事越快越好——這裡是遊戲那邊 TURN_RATE 的兩倍。
+
+   另一半是「停下來之後還會轉完最後那一下」：main.js 每幀都送朝向、而且
+   送的是最後一次的操控方向，所以放開手、人煞停了，身體還會繼續轉到那個
+   方向才停。驗的是 update() 在 speed = 0 的時候照樣會轉。 */
+{
+  ok(TURN_RATE === 28, '外觀轉向是遊戲那邊（14 rad/s）的兩倍', `${TURN_RATE} rad/s`);
+  const c = zoo.active;
+  const dt = 1 / 60;
+  c.setFacing(0);
+  for (let i = 0; i < 200; i++) c.update(dt, { speed: 0, grounded: true, vy: 0 });
+  ok(Math.abs(c.root.rotation.y) < 1e-9, '從正面開始', `${c.root.rotation.y}`);
+  c.setFacing(Math.PI / 2);
+  let turned = 0;
+  for (let i = 0; i < 600; i++) {
+    c.update(dt, { speed: 0, grounded: true, vy: 0 });     // speed = 0：人站著不動
+    turned = i + 1;
+    if (Math.abs(c.root.rotation.y - Math.PI / 2) < 1e-9) break;
+  }
+  const want = (Math.PI / 2) / TURN_RATE;
+  ok(Math.abs(turned * dt - want) < 2 * dt, '站著不動也會轉到最後的操控方向',
+    `${(turned * dt).toFixed(3)} 秒 / 該是 ${want.toFixed(3)}`);
+  ok(Math.abs(c.root.rotation.y - Math.PI / 2) < 1e-9, '轉到就停，不會轉過頭');
+  c.setFacing(0);
+  for (let i = 0; i < 200; i++) c.update(dt, { speed: 0, grounded: true, vy: 0 });
 }
 
 /* 九種 look 都換得動，而且同一時間只有一隻看得見——切換是換可見度，
