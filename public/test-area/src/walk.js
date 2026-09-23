@@ -247,7 +247,9 @@ export function boomLimit(a, cols, pivot, dir, want, margin = 0.35, floorY = 0.4
      樞紐已經在盒子裡面的時候跳過那個盒子：那時候吊臂沒有答案，硬給一個
      只會讓鏡頭黏在角色身上。所有 spring arm 都要處理這個退化情況。 */
   for (const b of cols) {
-    if (b.kind === 'bound') continue;
+    /* 空氣牆（`air`）只擋身體。它立在女牆上、一路到頂，擋鏡頭的話吊臂
+       永遠伸不出走道——而站在城牆上往外看，正是那個場地存在的理由。 */
+    if (b.kind === 'bound' || b.air) continue;
     if (b.shape === 'circle') { t = cylLimit(b, pivot, dir, t, margin); continue; }
     let lo = 0, hi = t + margin, inside = true;
     for (let k = 0; k < 3; k++) {

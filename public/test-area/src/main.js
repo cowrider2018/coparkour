@@ -181,7 +181,7 @@ function goto(id) {
   player.x = s[0]; player.y = s[1] + 0.2; player.z = s[2];
   player.vx = player.vy = player.vz = 0;
   player.block = id;
-  cam.yaw = Math.PI;
+  cam.yaw = s[3] ?? Math.PI;          // 區塊可以指定出生時面朝哪裡
   snapCam(cam, player.x, player.z);
   hud.flash(BLOCKS.find((b) => b.id === id).name);
   hud.paint({ block: id });
@@ -290,7 +290,7 @@ addEventListener('keydown', (e) => {
   if (k === 'c') cycleSkin(e.shiftKey ? -1 : 1);
   if (k === 'x') cycleModel(e.shiftKey ? -1 : 1);
   if (k === 'r') goto(player.block);
-  if (k >= '1' && k <= '4') goto(BLOCKS[+k - 1].id);
+  if (k >= '1' && k <= '9' && BLOCKS[+k - 1]) goto(BLOCKS[+k - 1].id);
   if ([' ', 'w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
 });
 addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));

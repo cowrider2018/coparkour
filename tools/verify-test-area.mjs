@@ -93,9 +93,10 @@ const CENTERS = {
   rampart: { y: 3.2, hx: 8.0, hz: 4.2, via: [[4.2, -14], [4.2, -9.5], [4.2, -5.5]] },
   throne: { y: 0, hx: 4.4, hz: 8.5 },
   cistern: { y: 0, hx: 6.0, hz: 6.0 },
+  wallwalk: { y: 5.2, hx: 7.0, hz: 2.4 },
 };
 
-head('砌四個區塊');
+head('砌全部區塊');
 const t0 = Date.now();
 const R = buildRuins({ record: true });
 const ms = Date.now() - t0;
@@ -263,6 +264,32 @@ head('每塊石頭底下有東西頂著');
     `${vol(b).toFixed(2)}m³ @ ${((b.min[0] + b.max[0]) / 2).toFixed(1)},`
     + `${b.min[1].toFixed(1)},${((b.min[2] + b.max[2]) / 2).toFixed(1)}`).join('  ');
   ok(floats.length === 0, '沒有一塊石頭浮在空中', floats.length ? `${floats.length} 塊：${worst}` : `${P.length} 塊都站得住`);
+}
+
+head('旗面沒有被砌體戳穿');
+/* 布是掛著的（hang），所以「底下有沒有東西頂著」那一項管不到它；而它跟
+   牆之間差幾公分，站遠一點看不出來，走近了就是幾塊磚從布裡戳出來。所以
+   逐塊量：每一片布（`tag: 'cloth'`）的外接盒，跟任何一塊不是掛件的幾何
+   重疊超過 2 公分就算。布面有波浪、牆面有突出的丁磚，兩個加起來就是
+   `banner()` 的 WALL_CLEAR 在防的那件事。 */
+{
+  const cloth = R.parts.filter((q) => q.tag === 'cloth');
+  const solid = R.parts.filter((q) => !q.hang && q.tag !== 'cloth');
+  const E = 0.02;
+  let hit = 0, at = null;
+  for (const c of cloth) {
+    for (const q of solid) {
+      if (Math.min(c.max[0], q.max[0]) - Math.max(c.min[0], q.min[0]) > E
+        && Math.min(c.max[1], q.max[1]) - Math.max(c.min[1], q.min[1]) > E
+        && Math.min(c.max[2], q.max[2]) - Math.max(c.min[2], q.min[2]) > E) {
+        hit++;
+        at = at || [(c.min[0] + c.max[0]) / 2, (c.min[2] + c.max[2]) / 2];
+        break;
+      }
+    }
+  }
+  ok(cloth.length > 0, '旗有登記成布', `${cloth.length} 片`);
+  ok(hit === 0, '沒有一片布被砌體戳穿', hit ? `${hit} 片，例如 @ ${at[0].toFixed(1)},${at[1].toFixed(1)}` : '');
 }
 
 head('牆身之內不透光');
@@ -659,6 +686,8 @@ const HOLES = {
   rampart: [[4.2, -5.5], [4.2, -9.5], [4.2, -14], [4.2, -19]],
   throne: [[0, -13.4], [0, -14.6]],
   cistern: [[11.6, 2.3], [12.9, 2.6]],
+  // 城牆步道沒有門洞通到外面——走道本身就是整個場地。驗的是走進東塔的塔頂再回來。
+  wallwalk: [[12, 2.4], [12, 5.8]],
 };
 for (const b of BLOCKS) {
   const c = CENTERS[b.id];
@@ -771,6 +800,13 @@ head('整片走一遍：沒有鑽得進去的空心，也沒有回不來的地�
       hollow.length ? `${hollow.length} 格，例如 ${at(hollow[0])}` : `${queue.length} 格走得到`);
     ok(stuck.length === 0, `${b.name}：每個走得到的地方都走得回出生點`,
       stuck.length ? `${stuck.length} 格回不來，例如 ${at(stuck[0])}` : '');
+    /* 圍著空氣牆的場地：走到哪、跳到哪，腳都不准低於出生的那個面。
+       空氣牆漏一段的話，這一項就會找到從那裡跳下去之後的每一格地面。 */
+    if (b.fenced) {
+      const low = queue.map((s) => s.split(',').map(Number)).filter(([, , y]) => y < sp[1] - 0.05);
+      ok(low.length === 0, `${b.name}：走得到的每一格都在牆頂上`,
+        low.length ? `${low.length} 格掉下去了，例如 ${at([low[0][0] * G - ox, low[0][1] * G - oz, low[0][2]])}` : '');
+    }
   }
 }
 
@@ -819,9 +855,10 @@ const PART_GAP = (() => {
   return out;
 })();
 for (const a of R.arenas) {
-  const name = BLOCKS.find((b) => b.id === a.id).name;
+  const blk = BLOCKS.find((b) => b.id === a.id);
+  const name = blk.name;
   const spawn = R.spawns[a.id];
-  let escaped = 0, tight = Infinity;
+  let escaped = 0, tight = Infinity, dropped = 0;
   for (let k = 0; k < 16; k++) {
     const ang = (k / 16) * Math.PI * 2;
     const far = 60;
@@ -830,18 +867,26 @@ for (const a of R.arenas) {
     const gap = arenaGap(a, res.at[0], res.at[2]);
     if (gap < -1e-3) escaped++;
     if (gap < tight) tight = gap;
+    if (res.at[1] < spawn[1] - 0.05) dropped++;
   }
   ok(escaped === 0, `${name}：十六個方向都走不出黑牆`,
     escaped ? `${escaped}/16 出去了` : `${a.shape === 'circle' ? `半徑 ${a.r}` : '方形'} m`);
-  ok(Math.abs(tight - PHYS.radius) < 0.05, `${name}：走到底就貼在牆面上`,
-    `身體離牆面 ${(tight - PHYS.radius).toFixed(3)} m`);
+  /* 圍著空氣牆的場地（城牆步道）走不到黑牆腳下——空氣牆先擋住了。那裡
+     要驗的是另一件事：朝哪個方向走到底，腳都還在走道面上，沒有掉下去。 */
+  if (blk.fenced) {
+    ok(dropped === 0, `${name}：十六個方向走到底都還在牆頂上`,
+      dropped ? `${dropped}/16 掉下去了` : `離黑牆最近 ${tight.toFixed(1)} m`);
+  } else {
+    ok(Math.abs(tight - PHYS.radius) < 0.05, `${name}：走到底就貼在牆面上`,
+      `身體離牆面 ${(tight - PHYS.radius).toFixed(3)} m`);
+  }
 
   /* 貼合：黑牆與砌體外皮的距離。只算大於 0.25 m³ 的砌體（牆磚 0.35、
      扶壁的階更大；碎石的磚只有 0.11——碎石是可以夾掉的，牆不行）。 */
   let nearest = Infinity;
   for (let k = 0; k < R.parts.length; k++) {
     const q = R.parts[k];
-    if (vol(q) < 0.25) continue;
+    if (vol(q) < 0.25 || q.pierce) continue;   // 故意穿過黑牆的那一段不算
     const cx = (q.min[0] + q.max[0]) / 2, cz = (q.min[2] + q.max[2]) / 2;
     if (arenaGap(a, cx, cz) < 0) continue;        // 別的場地的
     if (PART_GAP[k] < nearest) nearest = PART_GAP[k];
@@ -853,9 +898,12 @@ for (const a of R.arenas) {
   }
 }
 {
-  let cut = 0, worst = 0, at = null;
+  /* `pierce` 的幾何是故意穿過去的（城牆步道那段沒入黑霧的幕牆）：切面在
+     不透明的黑牆外面，鏡頭出不去，永遠看不到。其餘的一塊都不准切。 */
+  let cut = 0, worst = 0, at = null, pierced = 0;
   for (let k = 0; k < R.parts.length; k++) {
     if (PART_GAP[k] >= 0) continue;
+    if (R.parts[k].pierce) { pierced++; continue; }
     cut++;
     if (-PART_GAP[k] > worst) {
       worst = -PART_GAP[k];
@@ -864,7 +912,8 @@ for (const a of R.arenas) {
     }
   }
   ok(cut === 0, '黑牆沒有切到任何幾何',
-    cut ? `${cut} 塊，最多戳出去 ${worst.toFixed(2)} m @ ${at[0].toFixed(1)},${at[1].toFixed(1)}` : `${R.parts.length} 塊`);
+    cut ? `${cut} 塊，最多戳出去 ${worst.toFixed(2)} m @ ${at[0].toFixed(1)},${at[1].toFixed(1)}`
+      : `${R.parts.length} 塊（${pierced} 塊是刻意穿過去的）`);
 }
 
 head('黑牆與黑霧的幾何');
@@ -1009,7 +1058,7 @@ head('鏡頭的吊臂');
                它的外接盒的角比它自己遠 41%，照盒子量的話，鏡頭停在柱面
                前面會被誤判成停在柱子裡面。 */
             for (const b of COLS) {
-              if (b.kind === 'bound') continue;
+              if (b.kind === 'bound' || b.air) continue;   // 空氣牆本來就不擋鏡頭
               if (cy <= b.min[1] + 0.25 || cy >= b.max[1] - 0.25) continue;
               const deep = b.shape === 'circle'
                 ? Math.hypot(cx - b.x, cz - b.z) < b.r - 0.25

@@ -181,14 +181,19 @@ export function smooth(g) {
  * 它沿 x 折出兩個波、沿 y 往下越垂越鬆，於是同一片布上同時出現好幾個色階，
  * 而且左右兩側各有一道亮邊。兩面都要看得見，所以背面另外複製一份反繞向的。
  */
-export function cloth(w, h, wave = 0.16, segX = 10, segY = 6) {
+export function cloth(w, h, wave = 0.16, tail = 0, segX = 10, segY = 6) {
   const g = new THREE.PlaneGeometry(w, h, segX, segY);
   const p = g.attributes.position;
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i), y = p.getY(i);
-    const slack = 0.35 + 0.65 * (0.5 - y / h);          // 越往下越鬆
+    const down = 0.5 - y / h;                            // 0 = 上緣，1 = 下擺
+    const slack = 0.35 + 0.65 * down;                    // 越往下越鬆
     p.setZ(i, Math.sin((x / w) * Math.PI * 2.4) * wave * slack);
     p.setX(i, x * (1 - 0.06 * slack));                  // 下擺略收
+    /* 燕尾：下擺中間往上收一個 V，深 `tail`。整片布跟著下擺的比例一起
+       往上推（上緣不動、下擺推滿），不是只推最下面那一排——只推一排的話
+       那一排格子會被壓扁成一條，V 的兩邊看得到折痕。 */
+    if (tail) p.setY(i, y + tail * down * Math.max(0, 1 - Math.abs(x) / (w * 0.32)));
   }
   return twoSided(facet(g));
 }
@@ -426,6 +431,7 @@ export class Build {
         i0: start,
         min: [minx, miny, minz], max: [maxx, maxy, maxz],
         hang: !!o.hang || !!this._hang, solid: o.solid || null,
+        pierce: !!this._pierce, tag: o.tag || null,
       });
     }
 
@@ -473,6 +479,17 @@ export class Build {
   hangs(on) { this._hang = !!on; return this; }
 
   /**
+   * 這一段之內 `add` 進來的東西是**故意穿過黑牆的**。
+   *
+   * 驗證器守著「黑牆沒有切到任何幾何」——一塊被削掉一半的石頭，牆上那層
+   * 薄霧淡不掉那個切面。但有一種東西本來就該穿過去：一段沒入黑霧、看起來
+   * 一直延伸下去的城牆。它的切面在黑牆外面，站在場地裡永遠看不到（牆是
+   * 不透明的、鏡頭出不去），所以這裡給它一個白名單，而白名單是旗標、不是
+   * 人的記性——跟 `hangs` 同一個理由。
+   */
+  pierces(on) { this._pierce = !!on; return this; }
+
+  /**
    * 只登記一個碰撞盒，不畫任何東西（牆體、台基、地板本身）。
    *
    * @param {object} [o] kind：'shell'（預設）／'floor'／'block'／'step'
@@ -485,6 +502,30 @@ export class Build {
       base: o.base === undefined ? cy - h / 2 : o.base,
       // 底下是故意空著的（懸臂石階）。只有驗證器在問。
       ...(o.open ? { open: true } : {}),
+    });
+    return this;
+  }
+
+  /**
+   * 空氣牆：擋身體、不擋鏡頭、不畫任何東西。
+   *
+   * 給「站在高處、外面是空的」的場地用（城牆步道）：黑牆是場地的外框，
+   * 但走道的邊緣離黑牆還有十幾公尺，中間是六公尺的落差。空氣牆沿著女牆
+   * 的外框從走道面一路立到 `y1`，於是女牆與垛口爬不上去、也跳不過去。
+   *
+   * 它是一個普通的 'shell' 盒子，只多一個 `air` 旗標。身體照常被它擋住
+   * （solveXZ 不認得這個字）；鏡頭的吊臂跳過它——不然鏡頭會被關在三公尺
+   * 寬的走道裡，永遠看不到城牆的外面。
+   *
+   * @param {number} x0 @param {number} z0 @param {number} x1 @param {number} z1 水平範圍
+   * @param {number} y0 底（女牆腳，走道面稍下一點）
+   * @param {number} y1 頂（拉到場地的封頂高度就不必再想跳多高）
+   */
+  air(x0, z0, x1, z1, y0, y1) {
+    this.colliders.push({
+      min: [Math.min(x0, x1), y0, Math.min(z0, z1)],
+      max: [Math.max(x0, x1), y1, Math.max(z0, z1)],
+      kind: 'shell', base: y0, air: true,
     });
     return this;
   }

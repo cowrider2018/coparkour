@@ -93,7 +93,8 @@ export function buildVeil(arenas) {
   };
   for (const a of arenas) {
     const lid = a.lid;
-    for (const [inset, al] of VEIL.haze) {
+    // 場地可以帶自己的霧（城牆步道要厚一點，走道才是慢慢淡進黑暗裡）。
+    for (const [inset, al] of a.haze || VEIL.haze) {
       const P = outline(a, inset);
       for (let i = 0; i < P.length; i++) {
         quad(P[i], P[(i + 1) % P.length], VEIL.base, lid, al, al);
