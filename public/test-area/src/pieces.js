@@ -608,13 +608,20 @@ export function buttress(B, o) {
     { kind: 'block', base });
 }
 
-/** 階梯。每一階都是一個碰撞盒，所以真的踩得上去。 */
+/**
+ * 階梯。每一階都是一個碰撞盒，所以真的踩得上去。
+ *
+ * `ground` 是這道樓梯底下的填石砌到哪裡（預設就是起步的 `y`）。接在另一折
+ * 上面的那一折要傳它站著的地面：第二折從 1.6 公尺起步，填石只補到 1.6 的話，
+ * 底下那一段是一個看不到、但鑽得進去的空腔。
+ */
 export function stair(B, o) {
   const r = rng(o.seed);
   const n = o.steps;
   const rise = o.rise || 0.28, run = o.run || 0.6;
   const yaw = o.yaw || 0;
   const cs = Math.cos(yaw), sn = Math.sin(yaw);
+  const ground = o.ground === undefined ? (o.y || 0) : o.ground;
   for (let i = 0; i < n; i++) {
     const off = (i + 0.5) * run;
     const x = o.x + sn * off, z = o.z + cs * off;
@@ -622,11 +629,17 @@ export function stair(B, o) {
     // 缺角：邊上少一塊，露出裡面的填石。
     const w = (o.w || 3) * (r() < 0.25 ? r.range(0.72, 0.95) : 1);
     /* 每一級底下的砌體。少了它，一道兩折的樓梯就是十二塊浮在空中的板
-       ——第二折的第一級底下本來什麼都沒有。 */
-    const fill = y - rise / 2 - (o.y || 0);
+       ——第二折的第一級底下本來什麼都沒有。
+
+       填石取整道樓梯的寬度，不是這一級（可能缺了角）的寬度：缺角露出來
+       的必須是填石，否則那一條縫一路看穿到地面。它也是實心的——只登記
+       踏板的話，踏板底下就是一段鑽得過去的空氣。登記成 'step'，因為低處
+       那幾級的填石頂面落在會絆腳的高度，而那正是階梯才准有的高度。 */
+    const fill = y - rise / 2 - ground;
     if (fill > 0.02) {
-      B.add(B.kit.brick(w * 0.96, fill, (run + 0.06) * 0.96, 0.04), {
-        p: [x, (o.y || 0) + fill / 2, z], r: [0, yaw, 0], color: C.stoneDeep, ink: false,
+      B.add(B.kit.brick((o.w || 3) * 0.96, fill, (run + 0.06) * 0.96, 0.04), {
+        p: [x, ground + fill / 2, z], r: [0, yaw, 0], color: C.stoneDeep, ink: false,
+        solid: 'step', base: ground,
       });
     }
     B.add(B.kit.brick(w, rise, run + 0.06, 0.05), {
