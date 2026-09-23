@@ -52,9 +52,9 @@ export class Kit {
     const q = (v) => Math.round(v * 100) / 100;
     return this._get(`r${q(r)},${q(t)}`, () => ring(q(r), q(t)));
   }
-  cloth(w, h, wave) {
+  cloth(w, h, wave, tail = 0) {
     const q = (v) => Math.round(v * 50) / 50;
-    return this._get(`f${q(w)},${q(h)},${q(wave || 0.16)}`, () => cloth(q(w), q(h), wave));
+    return this._get(`f${q(w)},${q(h)},${q(wave || 0.16)},${q(tail)}`, () => cloth(q(w), q(h), wave, q(tail)));
   }
 }
 
@@ -851,28 +851,49 @@ export function brazier(B, o, flames) {
 }
 
 /** 旗。一根橫桿、一片布、桿頭兩顆銅球。 */
+/**
+ * 旗。
+ *
+ * `wall`（+1／−1）表示它掛在一道牆的牆面上：`x`／`z` 給的是**牆面**，旗往
+ * 牆面的法線方向（+1 是 (sin yaw, cos yaw)）撐出 WALL_CLEAR，兩根托架把旗桿
+ * 接回牆上。不給就是懸在兩根柱子之間，位置就是旗桿本身。
+ *
+ * 撐出去是必要的，不是造型：布面有波浪（±0.18），牆面上有突出的丁磚
+ * （外露到 0.1）——旗直接貼在牆面上的話，那幾塊磚會從布裡戳出來。掛在牆上
+ * 的布也收平一點（波浪 0.07），真的貼牆掛的旗不會像晾在風裡的布。
+ */
+const WALL_CLEAR = 0.24;
 export function banner(B, o) {
   const s = o.s || 1;
+  const yaw = o.yaw || 0;
+  const hung = o.wall || 0;
+  const nx = Math.sin(yaw) * hung, nz = Math.cos(yaw) * hung;   // 牆面往外的方向
+  const ax = Math.cos(yaw), az = -Math.sin(yaw);                  // 旗桿的方向
+  const x = o.x + nx * (hung ? WALL_CLEAR : 0), z = o.z + nz * (hung ? WALL_CLEAR : 0);
   B.hangs(true);                    // 旗掛在牆面上
   /* 1.75 × 2.5 而不是 1.3 × 3.0：窄長的布在十幾公尺外只是一條色帶，
      而旗在這種畫面裡的工作是「一塊顏色」——整片廢墟只有它和火是暖色。
      太窄的話那塊顏色不夠大，讀不到。 */
   const w = 1.75 * s, h = 2.5 * s;
-  B.add(B.kit.brick(w * 1.25, 0.12 * s, 0.12 * s, 0.04), { p: [o.x, o.y, o.z], r: [0, o.yaw || 0, 0], color: C.woodDark });
+  B.add(B.kit.brick(w * 1.25, 0.12 * s, 0.12 * s, 0.04), { p: [x, o.y, z], r: [0, yaw, 0], color: C.woodDark });
   for (const side of [-1, 1]) {
     B.add(B.kit.blob(0.1 * s), {
-      p: [o.x + Math.cos(o.yaw || 0) * side * w * 0.66, o.y, o.z - Math.sin(o.yaw || 0) * side * w * 0.66],
+      p: [x + ax * side * w * 0.66, o.y, z + az * side * w * 0.66],
       color: C.gold, ink: false,
     });
+    // 托架：從牆面伸到旗桿，不然一根撐在半空中的旗桿是浮著的。
+    if (hung) {
+      B.add(B.kit.brick(0.08 * s, 0.1 * s, WALL_CLEAR, 0.02), {
+        p: [o.x + ax * side * w * 0.5 + nx * WALL_CLEAR / 2, o.y, o.z + az * side * w * 0.5 + nz * WALL_CLEAR / 2],
+        r: [0, yaw, 0], color: C.woodDark,
+      });
+    }
   }
-  B.add(B.kit.cloth(w, h, 0.18), {
-    p: [o.x, o.y - h / 2 - 0.06 * s, o.z], r: [0, o.yaw || 0, 0],
-    color: o.color || C.banner, ink: false,
-  });
-  // 下擺的三角缺口：破布才是遺跡的旗。
-  B.add(B.kit.brick(w * 0.3, 0.5 * s, 0.06, 0.02), {
-    p: [o.x + 0.2 * s, o.y - h - 0.1 * s, o.z], r: [0, o.yaw || 0, 0.3],
-    color: o.color || C.banner, ink: false,
+  /* 下擺剪一個燕尾（布本身的形狀）。以前是另外疊一塊斜放的小磚當「缺口」，
+     畫出來就是旗底多了一個小方塊。 */
+  B.add(B.kit.cloth(w, h, hung ? 0.07 : 0.18, 0.55 * s), {
+    p: [x, o.y - h / 2 - 0.06 * s, z], r: [0, yaw, 0],
+    color: o.color || C.banner, ink: false, tag: 'cloth',
   });
   B.hangs(false);
 }
