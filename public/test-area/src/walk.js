@@ -249,7 +249,7 @@ export function boomLimit(a, cols, pivot, dir, want, margin = 0.35, floorY = 0.4
   for (const b of cols) {
     /* 空氣牆（`air`）只擋身體。它立在女牆上、一路到頂，擋鏡頭的話吊臂
        永遠伸不出走道——而站在城牆上往外看，正是那個場地存在的理由。 */
-    if (b.kind === 'bound' || b.air) continue;
+    if (b.kind === 'bound' || b.kind === 'pit' || b.air) continue;
     if (b.shape === 'circle') { t = cylLimit(b, pivot, dir, t, margin); continue; }
     let lo = 0, hi = t + margin, inside = true;
     for (let k = 0; k < 3; k++) {
@@ -333,7 +333,27 @@ export function solveXZ(cols, x0, z0, feetY) {
   const R = PHYS.radius;
   const headY = feetY + PHYS.height;
   let x = x0, z = z0;
+  /* 已經掉進坑裡的身體：坑口那一層（頂面不高於坑口的盒子，例如鋪面的碰撞板）
+     對它來說是被挖掉的，跟 supportInfo 同一條規則。不挖的話，一塊 −0.4～0 的
+     鋪面板在腳低於 −0.4 之後就是一道牆，會把人從井底橫著推回廣場上。 */
+  let pit = null;
   for (const b of cols) {
+    if (b.kind === 'pit' && feetY < b.top - 0.05 && Math.hypot(x0 - b.x, z0 - b.z) < b.r + R) { pit = b; break; }
+  }
+  for (const b of cols) {
+    if (pit && b.kind !== 'pit' && b.kind !== 'bound' && b.max[1] <= pit.top + 0.01) continue;
+    if (b.kind === 'pit') {
+      /* 坑（井口）：掉進去的身體被井壁圍住。坑是一個圓，由內往外擋——
+         跟場地的黑牆同一個方向，只是只對「腳已經在坑口以下」的身體作用。
+         地面上的人走過坑口旁邊不受影響，擋他的是井圈那一圈石頭。 */
+      if (feetY >= b.top - 0.05) continue;
+      const dx = x - b.x, dz = z - b.z;
+      const d = Math.hypot(dx, dz);
+      if (d > b.r + 3) continue;
+      const lim = Math.max(0, b.r - R);
+      if (d > lim) { x = b.x + (dx / d) * lim; z = b.z + (dz / d) * lim; }
+      continue;
+    }
     if (b.kind === 'bound') {
       /* 場地的邊界。由內往外擋，所以它只能對「已經在裡面的東西」作用
          ——這張清單裡有四個場地，而站在一個場地裡的時候，另外三個在
@@ -401,9 +421,18 @@ export function supportAt(cols, x, z, fromY) {
 export function supportInfo(cols, x, z, fromY) {
   const pad = PHYS.radius * 0.85;
   const reach = fromY + PHYS.step;
-  let y = 0, on = null;
+  /* 腳底下是不是一個坑口。是的話，地面（y = 0）與鋪在坑口那一層的東西
+     （頂面不高於坑口的盒子——鋪面的碰撞就是一塊 −0.4～0 的板）都不算，
+     支撐從坑底算起。判斷用身體中心：中心在坑口裡面就掉，在外面就是井圈
+     那一圈石頭接得住。 */
+  let pit = null;
   for (const b of cols) {
-    if (b.kind === 'bound') continue;              // 邊界不是地板
+    if (b.kind === 'pit' && Math.hypot(x - b.x, z - b.z) < b.r) { pit = b; break; }
+  }
+  let y = pit ? pit.bottom : 0, on = null;
+  for (const b of cols) {
+    if (b.kind === 'bound' || b.kind === 'pit') continue;   // 邊界與坑不是地板
+    if (pit && b.max[1] <= pit.top + 0.01) continue;         // 坑口那一層被挖掉了
     if (b.max[1] > reach) continue;                // 連頂點都構不到
     if (!nearXZ(b, x, z, pad)) continue;
     /* 圓頂踩到的是曲面上的那一點，不是它的頂點。站在裙邊上的人腳底下

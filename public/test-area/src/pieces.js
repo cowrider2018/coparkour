@@ -18,7 +18,7 @@
    main.js 建成自己的 mesh：合併過的頂點沒有辦法逐幀縮放。
    ------------------------------------------------------------------ */
 
-import { stone, drum, spike, blob, ring, cloth, rng } from './geom.js';
+import { stone, drum, spike, blob, ring, cloth, gablePrism, rng } from './geom.js';
 import { C } from './palette.js';
 import { BLOCK_TOP, TRIP } from './walk.js';
 
@@ -51,6 +51,10 @@ export class Kit {
   ring(r, t) {
     const q = (v) => Math.round(v * 100) / 100;
     return this._get(`r${q(r)},${q(t)}`, () => ring(q(r), q(t)));
+  }
+  gable(w, h, d) {
+    const q = (v) => Math.round(v * 50) / 50;
+    return this._get(`g${q(w)},${q(h)},${q(d)}`, () => gablePrism(q(w), q(h), q(d)));
   }
   cloth(w, h, wave, tail = 0) {
     const q = (v) => Math.round(v * 50) / 50;
@@ -1006,7 +1010,16 @@ export function well(B, o) {
   B.hangs(true);
   B.add(B.kit.drum(0.2, 0.17, 0.3, 8), { p: [o.x + 0.1, y + 0.75, o.z], color: C.woodDark });
   B.hangs(false);
-  {
+  if (o.open) {
+    /* 開著的井：井圈是一圈站得上去的石頭，中間是一個坑。井圈照石頭本身
+       登記——十二根小圓柱，頂面在第二皮的頂（0.7），相鄰兩根重疊，所以
+       是一圈連續的邊，不是一排柱子。坑口的半徑就是那片黑色的井口。 */
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      B.round(o.x + Math.cos(a) * R, o.z + Math.sin(a) * R, 0.33, y, y + 0.7, { kind: 'floor', base: y });
+    }
+    B.pit(o.x, o.z, R * 0.78, y, y - 8);
+  } else {
     /* 井口的石圈是障礙，不是矮台。半徑取石塊往外凸出來的那一圈
        （R + 0.21，石塊是 0.42 深、擺在 R 上），不是 R 本身。 */
     const wh = BLOCK_TOP + 0.1;

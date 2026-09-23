@@ -94,6 +94,9 @@ const CENTERS = {
   throne: { y: 0, hx: 4.4, hz: 8.5 },
   cistern: { y: 0, hx: 6.0, hz: 6.0 },
   wallwalk: { y: 5.2, hx: 7.0, hz: 2.4 },
+  breach: { y: 5.2, hx: 3.5, hz: 2.4 },
+  crypt: { y: 0, hx: 2.4, hz: 8.0 },
+  alley: { y: 0, hx: 2.0, hz: 6.0 },
 };
 
 head('砌全部區塊');
@@ -688,6 +691,12 @@ const HOLES = {
   cistern: [[11.6, 2.3], [12.9, 2.6]],
   // 城牆步道沒有門洞通到外面——走道本身就是整個場地。驗的是走進東塔的塔頂再回來。
   wallwalk: [[12, 2.4], [12, 5.8]],
+  // 缺口那一座的門洞就是西段走道本身（缺口要跳，這裡的走法不跳）。
+  breach: [[-8, 0], [-12, 0]],
+  // 墓室：走上南端那道樓梯，到鐵閘前的平台。
+  crypt: [[0, -8.0], [0, -13.0]],
+  // 窄巷：走出巷口，進廣場、繞到井的東邊。
+  alley: [[0, 5], [3.6, 9.0]],
 };
 for (const b of BLOCKS) {
   const c = CENTERS[b.id];
@@ -744,7 +753,7 @@ head('整片走一遍：沒有鑽得進去的空心，也沒有回不來的地�
     const overhead = (x, z, y) => {
       let lo = Infinity, open = false;
       for (const c of cols) {
-        if (c.kind === 'bound' || c.min[1] < y + PHYS.height - 0.02) continue;
+        if (c.kind === 'bound' || c.kind === 'pit' || c.min[1] < y + PHYS.height - 0.02) continue;
         const inside = c.shape === 'circle' ? Math.hypot(x - c.x, z - c.z) < c.r
           : x > c.min[0] && x < c.max[0] && z > c.min[2] && z < c.max[2];
         if (inside && c.min[1] < lo) { lo = c.min[1]; open = !!c.open; }
@@ -791,10 +800,14 @@ head('整片走一遍：沒有鑽得進去的空心，也沒有回不來的地�
     while (stack.length) {
       for (const p of from.get(stack.pop())) if (!back.has(p)) { back.add(p); stack.push(p); }
     }
-    const stuck = queue.filter((s) => !back.has(s)).map((s) => {
-      const [i, k, y] = s.split(',').map(Number);
-      return [i * G - ox, k * G - oz, y];
-    });
+    /* 掉進坑裡（窄巷那口開著的井）的格子，現在本來就上不來——井底怎麼回去
+       是下一步的事。這裡先把它們分出來、印出數量，不算「回不來」。 */
+    const pits = cols.filter((c) => c.kind === 'pit');
+    const inPit = ([i, k, y]) => pits.some((c) => Math.hypot(i * G - c.x, k * G - c.z) < c.r && y < c.top - 0.5);
+    const lost = queue.filter((s) => !back.has(s)).map((s) => s.split(',').map(Number));
+    const fell = lost.filter(inPit);
+    if (fell.length) console.log(`  · ${b.name}：掉進井裡 ${fell.length} 格（井底還沒有出口）`);
+    const stuck = lost.filter((c) => !inPit(c)).map(([i, k, y]) => [i * G - ox, k * G - oz, y]);
     const at = (p) => `(${p[0].toFixed(1)}, ${p[2]}, ${p[1].toFixed(1)})`;
     ok(hollow.length === 0, `${b.name}：沒有鑽得進去的空心`,
       hollow.length ? `${hollow.length} 格，例如 ${at(hollow[0])}` : `${queue.length} 格走得到`);
@@ -803,11 +816,46 @@ head('整片走一遍：沒有鑽得進去的空心，也沒有回不來的地�
     /* 圍著空氣牆的場地：走到哪、跳到哪，腳都不准低於出生的那個面。
        空氣牆漏一段的話，這一項就會找到從那裡跳下去之後的每一格地面。 */
     if (b.fenced) {
-      const low = queue.map((s) => s.split(',').map(Number)).filter(([, , y]) => y < sp[1] - 0.05);
+      const floorY = typeof b.fenced === 'number' ? b.fenced : sp[1];
+      const low = queue.map((s) => s.split(',').map(Number)).filter(([, , y]) => y < floorY - 0.05);
       ok(low.length === 0, `${b.name}：走得到的每一格都在牆頂上`,
         low.length ? `${low.length} 格掉下去了，例如 ${at([low[0][0] * G - ox, low[0][1] * G - oz, low[0][2]])}` : '');
     }
   }
+}
+
+head('城牆缺口：衝刺跳得過，走路跳不過');
+/* 淹水那一項只問相鄰的格子，跨不過四公尺的缺口，所以這一跳要另外驗：
+   用 main.js 同一套的垂直積分（重力、supportInfo 接住），從缺口邊上起跳，
+   看落在哪裡。衝刺跳不過就是這一座壞了；走路也跳得過，這一跳就沒有意義。 */
+{
+  const b = BLOCKS.find((q) => q.id === 'breach');
+  const [ox, oz] = b.origin;
+  const H = 5.2, G0 = 4.5, G1 = 9.0;
+  /* `at` 是起跳時身體中心在哪。腳底的支撐量的是半徑 0.255 的一圈，所以中心
+     過了邊緣 0.25 還踩得到——那是最有利的起跳點。 */
+  const leap = (speed, at) => {
+    const dt = 1 / 120;
+    const p = { x: ox + G0 - 2.0, y: H, z: oz, vy: 0, air: false, jumped: false };
+    for (let t = 0; t < 4; t += dt) {
+      if (!p.jumped && p.x >= ox + at) { p.vy = PHYS.jump; p.jumped = true; }
+      const [sx, sz] = solveXZ(COLS, p.x + speed * dt, p.z, p.y);
+      p.x = sx; p.z = sz;
+      const prevY = p.y;
+      p.vy -= PHYS.gravity * dt;
+      p.y += p.vy * dt;
+      const sup = supportAt(COLS, p.x, p.z, prevY);
+      if (p.y <= sup && p.vy <= 0) {
+        p.y = sup; p.vy = 0;
+        if (p.jumped) return { x: p.x - ox, y: p.y };
+      }
+    }
+    return { x: p.x - ox, y: p.y };
+  };
+  // 衝刺給一個不利的起跳（提早 0.3），走路給最有利的（邊緣外 0.25）。
+  const run = leap(PHYS.run, G0 - 0.3), walk = leap(PHYS.walk, G0 + 0.25);
+  ok(run.y > H - 0.05 && run.x > G1, '衝刺起跳（提早 0.3 m）落在對岸的走道上', `落在 x ${run.x.toFixed(1)}、y ${run.y.toFixed(2)}`);
+  ok(walk.y < H - 1, '走路起跳（踩到最邊緣）也掉進缺口', `落在 x ${walk.x.toFixed(1)}、y ${walk.y.toFixed(2)}`);
 }
 
 head('黑牆就是移動的上限');
@@ -859,6 +907,8 @@ for (const a of R.arenas) {
   const name = blk.name;
   const spawn = R.spawns[a.id];
   let escaped = 0, tight = Infinity, dropped = 0;
+  // 圍著空氣牆的場地可以給一個高度：比它低才算掉下去（城牆缺口的坑底不算）。
+  const floorY = typeof blk.fenced === 'number' ? blk.fenced : spawn[1];
   for (let k = 0; k < 16; k++) {
     const ang = (k / 16) * Math.PI * 2;
     const far = 60;
@@ -867,7 +917,7 @@ for (const a of R.arenas) {
     const gap = arenaGap(a, res.at[0], res.at[2]);
     if (gap < -1e-3) escaped++;
     if (gap < tight) tight = gap;
-    if (res.at[1] < spawn[1] - 0.05) dropped++;
+    if (res.at[1] < floorY - 0.05) dropped++;
   }
   ok(escaped === 0, `${name}：十六個方向都走不出黑牆`,
     escaped ? `${escaped}/16 出去了` : `${a.shape === 'circle' ? `半徑 ${a.r}` : '方形'} m`);
@@ -876,6 +926,10 @@ for (const a of R.arenas) {
   if (blk.fenced) {
     ok(dropped === 0, `${name}：十六個方向走到底都還在牆頂上`,
       dropped ? `${dropped}/16 掉下去了` : `離黑牆最近 ${tight.toFixed(1)} m`);
+  } else if (blk.sealed) {
+    /* 四面都是牆的房間（墓室）：走到底停在牆上，黑牆在牆外面，本來就
+       走不到。走不出去已經在上一項驗過了。 */
+    ok(tight > PHYS.radius, `${name}：四面是牆，走到底停在牆上`, `離黑牆最近 ${tight.toFixed(2)} m`);
   } else {
     ok(Math.abs(tight - PHYS.radius) < 0.05, `${name}：走到底就貼在牆面上`,
       `身體離牆面 ${(tight - PHYS.radius).toFixed(3)} m`);
@@ -1033,6 +1087,12 @@ head('鏡頭的吊臂');
         // 站不住的地方不算（樞紐在砌體裡面的話，吊臂本來就沒有答案）
         const [sx2, sz2] = solveXZ(COLS, px, pz, 0);
         if (Math.hypot(sx2 - px, sz2 - pz) > 1e-6) continue;
+        /* 推不動不代表不在牆裡：一道牆切成 1.2 公尺一段，正好落在兩段交界、
+           又在牆身正中間的點，兩段會把它往相反的方向各推一次，推完回到原地。
+           身體走不到那裡（它是從牆外面走進來的），但格點撒得到，所以直接問。 */
+        if (COLS.some((c) => c.kind !== 'bound' && !c.air && c.min[1] < 0.5 && c.max[1] > 0.5
+          && (c.shape === 'circle' ? Math.hypot(px - c.x, pz - c.z) < c.r
+            : px > c.min[0] && px < c.max[0] && pz > c.min[2] && pz < c.max[2]))) continue;
         /* 樞紐放在站得住的那個面上方一公尺，而且頭頂兩公尺內不能有東西。
            後面這一條是在濾掉「人到不了的封閉空腔」——露台的台體中間是
            中空的（四周砌牆、上面鋪面），格點會撒進去，而那裡的鏡頭當然

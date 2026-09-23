@@ -51,6 +51,15 @@ export const C = {
   banner: 0xc2452f,
   bannerAlt: 0xe8862f,
   gold: 0xe8b23a,
+  /* 城裡的東西：屋瓦兩階、骨頭（墓室的頭骨與蠟燭）。瓦比石頭飽和，好讓一排
+     屋頂在一片石色裡讀得出是另一種材料。 */
+  tile: 0x9a4b32,
+  /* 抹灰牆兩階。木構房子的牆面是一整片素色，磚縫只留在牆基——整排房子
+     都是磚的話，巷子裡滿眼都是縫。 */
+  plaster: 0xd8c7a2,
+  plasterAlt: 0xc7b089,
+  tileDark: 0x6e3222,
+  bone: 0xd9ccaa,
   /* 火與水。火是自發光，水是一片平的半透明。 */
   flame: 0xffb43c,
   flameCore: 0xfff0c0,

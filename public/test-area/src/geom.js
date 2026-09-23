@@ -158,6 +158,29 @@ export function ring(r, t) {
   return facet(new THREE.TorusGeometry(r, t, 5, 8));
 }
 
+/**
+ * 一塊三角形的山牆：底寬 w、高 h、厚 d。底邊的中點在原點，厚度沿 z 置中。
+ *
+ * 磚一層一層疊出來的階梯山牆在一整排房子上會變成滿眼的磚縫——木構的
+ * 房子，山牆就是一整片抹灰的三角形，木頭另外釘在上面。
+ */
+export function gablePrism(w, h, d) {
+  const a = [-w / 2, 0], b = [w / 2, 0], c = [0, h];
+  const f = d / 2, k = -d / 2;
+  const P = [];
+  const tri = (p, q, r) => P.push(...p, ...q, ...r);
+  const V = (xy, z) => [xy[0], xy[1], z];
+  tri(V(a, f), V(b, f), V(c, f));                            // 正面
+  tri(V(b, k), V(a, k), V(c, k));                            // 背面
+  tri(V(a, k), V(b, k), V(b, f)); tri(V(a, k), V(b, f), V(a, f));   // 底
+  tri(V(b, k), V(c, k), V(c, f)); tri(V(b, k), V(c, f), V(b, f));   // 右斜面
+  tri(V(c, k), V(a, k), V(a, f)); tri(V(c, k), V(a, f), V(c, f));   // 左斜面
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
 /** 把任何幾何轉成「平法線、頂點不共用」。 */
 export function facet(g) {
   const n = g.index ? g.toNonIndexed() : g;
@@ -502,6 +525,22 @@ export class Build {
       base: o.base === undefined ? cy - h / 2 : o.base,
       // 底下是故意空著的（懸臂石階）。只有驗證器在問。
       ...(o.open ? { open: true } : {}),
+    });
+    return this;
+  }
+
+  /**
+   * 一個坑：半徑 r 的圓形坑口，坑口在 top、坑底在 bottom。站在坑口上方的
+   * 身體腳底下沒有地面（地面與鋪在坑口那一層的東西都不算），一路掉到坑底；
+   * 掉進去之後被坑壁圍住。它不畫任何東西，也不擋鏡頭。
+   *
+   * 不用 `shape: 'circle'`——那是「不准進來」的圓柱，推出的方向是半徑往外；
+   * 坑是反過來的。欄位名字跟圓柱一樣（x／z／r），`shift()` 一起搬。
+   */
+  pit(x, z, r, top, bottom) {
+    this.colliders.push({
+      kind: 'pit', x, z, r, top, bottom,
+      min: [x - r, bottom, z - r], max: [x + r, top, z + r], base: bottom,
     });
     return this;
   }
