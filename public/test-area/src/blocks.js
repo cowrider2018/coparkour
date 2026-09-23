@@ -1,5 +1,5 @@
 /* ── test-area/src/blocks.js ─────────────────────────────────────────
-   五個城堡關卡區塊：四座遺跡擺成一片 2×2 的廢墟，外加一段完好的城牆。
+   八個城堡關卡區塊：四座遺跡、兩段完好的城牆（一段塌了一截）、一間墓室、一條巷子。
 
    ── 每一個區塊的規矩 ─────────────────────────────────────────────
    一模一樣的三條，因為它們是「可以跑的關卡」而不是「一張場景」：
@@ -18,6 +18,9 @@
      王座廳     兩列柱、斜插的穹稜、台座與王座、掛旗的側牆
      圓塔水窖   環形拱廊、貼牆的殘階、垂下的鎖鏈、牆頭的獸像
      城牆步道   沒入黑霧的完好幕牆、兩座方塔，人在牆頂上，空氣牆擋住牆外的落差
+     城牆缺口   同一段城牆塌了一截，衝刺跳過去；掉下去從起跑那一側爬回來
+     地下墓室   壓低的拱肋墓室、兩排石棺、壁龕裡的頭骨、燭火
+     城內窄巷   木構的連棟屋夾出一條巷子，一頭沒入黑霧、一頭是小廣場
 
    每一個都只回報資料（幾何、碰撞盒、出生點、火焰座標），不碰場景也不碰
    材質——組裝是 main.js 的事，這樣同一份區塊資料離線也建得起來，
@@ -570,6 +573,88 @@ function cistern(B, flames, seed, A) {
   return { spawn: [0, 0, -6] };
 }
 
+/* ── 完好城牆的零件：女牆、幕牆、方塔 ────────────────────────────
+   城牆步道與城牆缺口共用。三支都只收軸對齊的東西——這兩座全部是直角，
+   空氣牆因此就是女牆的外框本身，一公分都不多。 */
+
+/**
+ * 女牆與空氣牆。`H` 是走道面：女牆從鋪面裡面砌起（H − 0.14，理由見城牆
+ * 平台），外框同時立一道空氣牆，從走道面稍下一點一路到場地的封頂。
+ */
+function battlements(B, seed, A, H) {
+  const air = (x0, z0, x1, z1, y0 = H - 0.2) => B.air(x0, z0, x1, z1, y0, A.lid);
+  const parapet = (from, to, h, th, crenel, s) => {
+    const w = wall(B, { from, to, h, y: H - 0.14, thick: th, ruin: 0, course: 0.36, seed: seed + s });
+    /* ruin 給 1e-6 而不是 0：merlons 的預設是 `ruin || 0.3`，0 會被當成「沒給」，
+       於是完好的城牆少了三成垛口。 */
+    if (crenel) merlons(B, { from, to, on: w, h: 0.9, thick: th, pitch: 1.5, ruin: 1e-6, seed: seed + s + 1 });
+    if (from[1] === to[1]) air(from[0], from[1] - th / 2, to[0], to[1] + th / 2);
+    else air(from[0] - th / 2, from[1], to[0] + th / 2, to[1]);
+    return w;
+  };
+  return { air, parapet };
+}
+
+/**
+ * 一段幕牆的兩道牆面（x0..x1，厚 T，高 h），加上牆腳一條外放的基石、
+ * 牆頂下一條挑出的壓簷。兩條水平線是完好的城牆與遺跡最大的差別：遺跡的
+ * 牆頂是鋸齒，這裡是一條直線，而且它一路延伸進黑霧裡。
+ *
+ * 牆芯不在這裡登記（碰撞是呼叫端的事），因為缺口那一座的牆芯不是一整塊。
+ * `cornice: false` 給塌掉那一段用——斷牆沒有壓簷。
+ */
+function curtain(B, seed, o) {
+  const { x0, x1, h, T, WT, s = 0 } = o;
+  const len = x1 - x0, xm = (x0 + x1) / 2;
+  for (const side of [-1, 1]) {
+    const zc = side * (T / 2 - WT / 2);
+    wall(B, { from: [x0, zc], to: [x1, zc], h, thick: WT, ruin: o.ruin || 0, course: o.course, seed: seed + 10 + s + side });
+    B.add(B.kit.brick(len, 0.5, 0.5, 0.05), { p: [xm, 0.25, side * (T / 2 + 0.1)], color: C.stoneDark });
+    if (o.cornice === false) continue;
+    B.hangs(true);
+    B.add(B.kit.brick(len, 0.24, 0.34, 0.05), { p: [xm, h - 0.3, side * (T / 2 + 0.1)], color: C.stoneLit });
+    B.hangs(false);
+  }
+}
+
+/**
+ * 一座方塔：從幕牆外皮（z = T/2）往城外凸到 TZ，寬 TW，中心 x = xc。
+ * 塔頂跟走道同高，是走道往外長出去的一塊；三面女牆都有垛口，外側兩角
+ * 各一盆火。`sx` 只拿來錯開亂數與旗色，讓兩座塔不長得一模一樣。
+ */
+function squareTower(B, flames, seed, parapet, o) {
+  const { xc, sx, H, T, WT, TW, TZ, course, OUT } = o;
+  const xa = xc - TW / 2, xb = xc + TW / 2;
+  const z0 = T / 2, zm = (z0 + TZ) / 2, D = TZ - z0;
+  // 塔身三面（第四面就是幕牆）。
+  wall(B, { from: [xa, TZ - WT / 2], to: [xb, TZ - WT / 2], h: H, thick: WT, ruin: 0, course, seed: seed + 50 + sx });
+  wall(B, { from: [xa + WT / 2, z0], to: [xa + WT / 2, TZ], h: H, thick: WT, ruin: 0, course, seed: seed + 52 + sx });
+  wall(B, { from: [xb - WT / 2, z0], to: [xb - WT / 2, TZ], h: H, thick: WT, ruin: 0, course, seed: seed + 54 + sx });
+  B.add(B.kit.brick(TW + 0.2, 0.5, D + 0.1, 0.05), { p: [xc, 0.25, zm + 0.05], color: C.stoneDark });
+  B.block(xc, H / 2, zm, TW, H, D, { kind: 'floor', base: 0 });
+  /* 塔頂的鋪面接在幕牆鋪面的外緣上：幕牆那一片的外緣在 T/2 − WT/2，
+     這一片從那裡開始，所以兩片之間沒有縫。 */
+  const fz0 = T / 2 - WT / 2, fz1 = TZ - WT / 2;
+  flagstones(B, { x: xc, z: (fz0 + fz1) / 2, w: TW - WT, d: fz1 - fz0, y: H, out: 0.5, seed: seed + 60 + sx, ruin: 0.02, cell: 1.5 });
+  parapet([xa, TZ - 0.35], [xb, TZ - 0.35], 1.3, 0.7, true, 70 + sx * 5);
+  parapet([xa + 0.35, OUT - 0.35], [xa + 0.35, TZ - 0.7], 1.3, 0.7, true, 80 + sx * 5);
+  parapet([xb - 0.35, OUT - 0.35], [xb - 0.35, TZ - 0.7], 1.3, 0.7, true, 90 + sx * 5);
+  for (const bx of [xa + 1.6, xb - 1.6]) {
+    brazier(B, { x: bx, z: TZ - 1.6, y: H, s: 0.95, seed: seed + 120 + sx * 3 + (bx > xc ? 1 : 0) }, flames);
+  }
+  banner(B, { x: xc, y: H - 0.35, z: TZ, wall: 1, yaw: 0, s: 1.0, color: sx < 0 ? C.banner : C.bannerAlt });
+  return { xa, xb };
+}
+
+/** 牆腳的地面：只有苔。完好的城牆，牆腳沒有塌下來的石頭。 */
+function footMoss(B, r, A, n, onWall) {
+  for (let i = 0; i < n; i++) {
+    const a = r() * Math.PI * 2, rad = r.range(4, A.r - 1.5);
+    const x = Math.cos(a) * rad, z = Math.sin(a) * rad;
+    if (!onWall(x, z)) mossTuft(B, x, 0, z, r);
+  }
+}
+
 /* ── 五、城牆步道 ─────────────────────────────────────────────────
    一段完好的幕牆。前四座都是遺跡，這一座是「還在用的城牆」——所以 ruin
    一律是 0：牆頂是平的、垛口一個不缺、鋪面沒有缺塊。
@@ -598,33 +683,11 @@ function wallwalk(B, flames, seed, A) {
   const TC = 12;                 // 兩座塔的中心 x = ±TC
   const TZ = T / 2 + 4.0;        // 塔往城外凸到哪裡
   const OUT = T / 2 - 0.35, IN = -T / 2 + 0.3;   // 外側、內側女牆的中線
-  const air = (x0, z0, x1, z1) => B.air(x0, z0, x1, z1, H - 0.2, A.lid);
-
-  /* 女牆：從鋪面裡面砌起（H − 0.14，理由見城牆平台），外框同時立一道
-     空氣牆。全部是軸對齊的，空氣牆因此就是女牆的外框本身。 */
-  const parapet = (from, to, h, th, crenel, s) => {
-    const w = wall(B, { from, to, h, y: H - 0.14, thick: th, ruin: 0, course: 0.36, seed: seed + s });
-    /* ruin 給 1e-6 而不是 0：merlons 的預設是 `ruin || 0.3`，0 會被當成「沒給」，
-       於是完好的城牆少了三成垛口。 */
-    if (crenel) merlons(B, { from, to, on: w, h: 0.9, thick: th, pitch: 1.5, ruin: 1e-6, seed: seed + s + 1 });
-    if (from[1] === to[1]) air(from[0], from[1] - th / 2, to[0], to[1] + th / 2);
-    else air(from[0] - th / 2, from[1], to[0] + th / 2, to[1]);
-    return w;
-  };
+  const { parapet } = battlements(B, seed, A, H);
 
   // ── 幕牆：整段穿過黑牆，所以這一段的幾何全部標 pierces ──
   B.pierces(true);
-  for (const side of [-1, 1]) {
-    const zc = side * (T / 2 - WT / 2);
-    wall(B, { from: [-L, zc], to: [L, zc], h: H, thick: WT, ruin: 0, course: COURSE, seed: seed + 10 + side });
-    /* 牆腳一條外放的基石、牆頂下一條挑出的壓簷。兩條水平線是完好的城牆
-       與遺跡最大的差別：遺跡的牆頂是鋸齒，這裡是一條直線，而且它一路
-       延伸進黑霧裡——「沒有盡頭」靠的就是這兩條線。 */
-    B.add(B.kit.brick(2 * L, 0.5, 0.5, 0.05), { p: [0, 0.25, side * (T / 2 + 0.1)], color: C.stoneDark });
-    B.hangs(true);
-    B.add(B.kit.brick(2 * L, 0.24, 0.34, 0.05), { p: [0, H - 0.3, side * (T / 2 + 0.1)], color: C.stoneLit });
-    B.hangs(false);
-  }
+  curtain(B, seed, { x0: -L, x1: L, h: H, T, WT, course: COURSE });
   flagstones(B, { x: 0, z: 0, w: 2 * L, d: T - WT, y: H, out: 0.5, seed: seed + 20, ruin: 0.02, cell: 1.5 });
   // 城內那一側是一道連續的矮牆；城外那一側有垛口，在兩座塔那裡讓開。
   parapet([-L, IN], [L, IN], 0.95, 0.6, false, 40);
@@ -633,47 +696,423 @@ function wallwalk(B, flames, seed, A) {
   B.pierces(false);
   B.block(0, H / 2, 0, 2 * L, H, T, { kind: 'floor', base: 0 });
 
-  // ── 兩座塔：從幕牆外皮往城外凸 4 公尺，塔頂就是走道往外長出去的一塊 ──
   for (const sx of [-1, 1]) {
-    const xc = sx * TC, xa = xc - TW / 2, xb = xc + TW / 2;
-    const z0 = T / 2, zm = (z0 + TZ) / 2, D = TZ - z0;
-    // 塔身三面（第四面就是幕牆）。
-    wall(B, { from: [xa, TZ - WT / 2], to: [xb, TZ - WT / 2], h: H, thick: WT, ruin: 0, course: COURSE, seed: seed + 50 + sx });
-    wall(B, { from: [xa + WT / 2, z0], to: [xa + WT / 2, TZ], h: H, thick: WT, ruin: 0, course: COURSE, seed: seed + 52 + sx });
-    wall(B, { from: [xb - WT / 2, z0], to: [xb - WT / 2, TZ], h: H, thick: WT, ruin: 0, course: COURSE, seed: seed + 54 + sx });
-    B.add(B.kit.brick(TW + 0.2, 0.5, D + 0.1, 0.05), { p: [xc, 0.25, zm + 0.05], color: C.stoneDark });
-    B.block(xc, H / 2, zm, TW, H, D, { kind: 'floor', base: 0 });
-    /* 塔頂的鋪面接在幕牆鋪面的外緣上：幕牆那一片的外緣在 T/2 − WT/2，
-       這一片從那裡開始，所以兩片之間沒有縫。 */
-    const fz0 = T / 2 - WT / 2, fz1 = TZ - WT / 2;
-    flagstones(B, { x: xc, z: (fz0 + fz1) / 2, w: TW - WT, d: fz1 - fz0, y: H, out: 0.5, seed: seed + 60 + sx, ruin: 0.02, cell: 1.5 });
-
-    // 塔頂的女牆：比幕牆高一點，三面都有垛口。
-    parapet([xa, TZ - 0.35], [xb, TZ - 0.35], 1.3, 0.7, true, 70 + sx * 5);
-    parapet([xa + 0.35, OUT - 0.35], [xa + 0.35, TZ - 0.7], 1.3, 0.7, true, 80 + sx * 5);
-    parapet([xb - 0.35, OUT - 0.35], [xb - 0.35, TZ - 0.7], 1.3, 0.7, true, 90 + sx * 5);
-
-    // 塔頂外側兩個角各一盆火，離走道遠、不擋路。
-    for (const bx of [xa + 1.6, xb - 1.6]) {
-      brazier(B, { x: bx, z: TZ - 1.6, y: H, s: 0.95, seed: seed + 120 + sx * 3 + (bx > xc ? 1 : 0) }, flames);
-    }
-    banner(B, { x: xc, y: H - 0.35, z: TZ, wall: 1, yaw: 0, s: 1.0, color: sx < 0 ? C.banner : C.bannerAlt });
+    squareTower(B, flames, seed, parapet, { xc: sx * TC, sx, H, T, WT, TW, TZ, course: COURSE, OUT });
   }
   // 兩座塔之間那一段幕牆，城外那一面掛兩面旗。
   for (const t of [-3.6, 3.6]) {
     banner(B, { x: t, y: H - 0.55, z: T / 2, wall: 1, yaw: 0, s: 0.9, color: t < 0 ? C.bannerAlt : C.banner });
   }
-
-  // 牆腳的地面：只有苔。這一座是完好的城牆，牆腳沒有塌下來的石頭。
-  for (let i = 0; i < 30; i++) {
-    const a = r() * Math.PI * 2, rad = r.range(4, A.r - 1.5);
-    const x = Math.cos(a) * rad, z = Math.sin(a) * rad;
-    const onWall = Math.abs(z) < T / 2 + 0.7
-      || (z > 0 && z < TZ + 0.6 && Math.abs(Math.abs(x) - TC) < TW / 2 + 0.6);
-    if (!onWall) mossTuft(B, x, 0, z, r);
-  }
+  footMoss(B, r, A, 30, (x, z) => Math.abs(z) < T / 2 + 0.7
+    || (z > 0 && z < TZ + 0.6 && Math.abs(Math.abs(x) - TC) < TW / 2 + 0.6));
   // 出生點在走道正中，面朝東（+x）：一眼看到東塔，和它後面沒入黑霧的那一段牆。
   return { spawn: [0, H, 0], yaw: Math.PI / 2 };
+}
+
+/* ── 六、城牆缺口 ─────────────────────────────────────────────────
+   城牆步道的那一段牆，中段塌了。走道斷開 4.5 公尺——走路跳過不去（走速
+   跳得了 2.8 公尺加上身體的半徑），要衝刺跳。這是這一頁第一個「要練」的
+   東西。
+
+   跳不過就掉進缺口：塌下來的石頭把牆芯填到 2.0 公尺，四周一樣是空氣牆，
+   掉下去不會掉出城外。爬回去的路只在起跑那一側——兩塊倒下來的方石疊成
+   兩級台階，一級一公尺出頭，跳得上去。對岸那一面是整齊的斷面，爬不上
+   去；不然掉下去再從對岸爬上來，這一跳就沒有意義了。
+
+   對岸是一座方塔，跳過去的獎勵是塔頂的兩盆火與一面旗。
+
+   座標跟城牆步道一樣：幕牆沿 x，城外是 +z，兩端穿進黑牆。缺口偏東，
+   讓場地中心（原點）落在西段的走道上，出生點面朝東就看得到那道缺口。 */
+function breach(B, flames, seed, A) {
+  const r = rng(seed);
+  const H = 5.2, T = 7.4, WT = 1.1, COURSE = H / 13;
+  const L = A.r + 3;
+  /* 缺口的 x 範圍，寬 4.5。4.2 的時候走路起跳落在對岸 0.3 公尺前——踩在最邊緣
+     起跳就勉強過得去，那就不是「要衝刺」了。 */
+  const G0 = 4.5, G1 = 9.0;
+  const PIT = 2.0;               // 缺口底：塌下來的石頭填到這麼高
+  const TC = 14.4, TW = 7.2, TZ = T / 2 + 4.0;
+  const OUT = T / 2 - 0.35, IN = -T / 2 + 0.3;
+  const IW = T - 2 * WT;         // 兩道牆面之間的牆芯寬
+  const { air, parapet } = battlements(B, seed, A, H);
+
+  // ── 西段與東段：跟城牆步道一樣完好，只是停在缺口邊上 ──
+  B.pierces(true);
+  curtain(B, seed, { x0: -L, x1: G0, h: H, T, WT, course: COURSE, s: 0 });
+  curtain(B, seed, { x0: G1, x1: L, h: H, T, WT, course: COURSE, s: 5 });
+  /* 鋪面停在缺口前半公尺，基座（外放 0.5）剛好停在斷面上——基座再往外
+     就是一片懸在缺口上方的石板。 */
+  flagstones(B, { x: (-L + G0 - 0.5) / 2, z: 0, w: G0 - 0.5 + L, d: T - WT, y: H, out: 0.5, seed: seed + 20, ruin: 0.05, cell: 1.5 });
+  flagstones(B, { x: (G1 + 0.5 + L) / 2, z: 0, w: L - G1 - 0.5, d: T - WT, y: H, out: 0.5, seed: seed + 21, ruin: 0.05, cell: 1.5 });
+  parapet([-L, IN], [G0, IN], 0.95, 0.6, false, 40);
+  parapet([G1, IN], [L, IN], 0.95, 0.6, false, 44);
+  parapet([-L, OUT], [G0, OUT], 1.1, 0.7, true, 30);
+  parapet([G1, OUT], [TC - TW / 2, OUT], 1.1, 0.7, true, 33);
+  parapet([TC + TW / 2, OUT], [L, OUT], 1.1, 0.7, true, 36);
+  B.pierces(false);
+  B.block((-L + G0) / 2, H / 2, 0, G0 + L, H, T, { kind: 'floor', base: 0 });
+  B.block((G1 + L) / 2, H / 2, 0, L - G1, H, T, { kind: 'floor', base: 0 });
+
+  /* 斷面。兩道牆面之間是牆芯，塌開之後看得到——所以兩端各砌一塊暗色的
+     填石封住切口，頂面停在鋪面基座底下。沒有它，站在缺口上往下看就是
+     兩道牆面中間一條空的縫。 */
+  for (const [x0, x1] of [[G0 - 0.6, G0], [G1, G1 + 0.6]]) {
+    B.add(B.kit.brick(x1 - x0, H - 0.45, IW, 0.05), { p: [(x0 + x1) / 2, (H - 0.45) / 2, 0], color: C.stoneDeep });
+  }
+
+  // ── 缺口：塌到只剩 2 公尺的牆面，中間填滿碎石 ──
+  curtain(B, seed, { x0: G0, x1: G1, h: PIT, T, WT, ruin: 0.4, course: PIT / 5, s: 20, cornice: false });
+  B.add(B.kit.brick(G1 - G0, PIT, IW, 0.05), { p: [(G0 + G1) / 2, PIT / 2, 0], color: C.stoneDeep });
+  B.block((G0 + G1) / 2, PIT / 2, 0, G1 - G0, PIT, T, { kind: 'floor', base: 0 });
+  /* 缺口四周的空氣牆從缺口底立起。走道那一段的空氣牆在女牆上（H − 0.2），
+     這一段沒有女牆，所以要從坑底算。 */
+  air(G0 - 0.05, T / 2 - 0.7, G1 + 0.05, T / 2, PIT - 0.2);
+  air(G0 - 0.05, -T / 2, G1 + 0.05, -T / 2 + 0.6, PIT - 0.2);
+  // 坑底的碎石。大石只放在東半邊，免得擋住爬回去的那兩級。
+  rubble(B, {
+    x: (G0 + G1) / 2, z: 0, y: PIT, r: 2.4, n: 30, boulders: 1,
+    keep: (x, z) => x > G0 + 2.2 && x < G1 - 0.4 && Math.abs(z) < 2.4, seed: seed + 60,
+  });
+
+  /* 爬回去的兩級：倒下來的方石，一塊 1.2 高、一塊 2.3 高，靠著西邊的斷面。
+     坑底 2.0 → 3.2 → 4.3 → 走道 5.2，每一跳 0.9～1.2，都在 MOUNT（1.74）以內。
+     石頭歪一點點（0.06 弧度），碰撞取石頭本身的 96%：歪的外接盒會比石頭
+     胖，而踩上去的人感覺得到那幾公分。 */
+  const stones = [
+    { x: G0 + 0.85, z: 1.3, w: 1.7, d: 2.2, h: 1.2, yaw: 0.06 },
+    { x: G0 + 0.5, z: -0.7, w: 1.0, d: 1.8, h: 2.3, yaw: -0.05 },
+  ];
+  for (const s of stones) {
+    B.add(B.kit.brick(s.w, s.h, s.d, 0.08), { p: [s.x, PIT + s.h / 2, s.z], r: [0, s.yaw, 0], color: C.stone });
+    B.block(s.x, PIT + s.h / 2, s.z, s.w * 0.96, s.h, s.d * 0.96, { kind: 'floor', base: PIT });
+  }
+
+  squareTower(B, flames, seed, parapet, { xc: TC, sx: 1, H, T, WT, TW, TZ, course: COURSE, OUT });
+  banner(B, { x: -3.6, y: H - 0.55, z: T / 2, wall: 1, yaw: 0, s: 0.9, color: C.bannerAlt });
+  footMoss(B, r, A, 30, (x, z) => Math.abs(z) < T / 2 + 0.7
+    || (z > 0 && z < TZ + 0.6 && Math.abs(x - TC) < TW / 2 + 0.6));
+  // 出生點在西段，面朝東：缺口就在正前方十公尺。
+  return { spawn: [-6, H, 0], yaw: Math.PI / 2 };
+}
+
+/* ── 七、地下墓室 ─────────────────────────────────────────────────
+   一間壓低的墓室。從南端一道樓梯頂上的鐵閘前進來（那是來時的路，閘是
+   關的），往下走進兩排石棺之間的走道；北端兩級台階上去是一座大墓。
+
+   頂是黑的，但不是空的：七道橫跨整間的尖拱肋從兩側的壁柱起拱，拱與拱
+   之間是黑牆封的頂——所以抬頭看到的是「肋」而不是「天」，黑色讀起來是
+   拱頂深處的陰影。封頂壓在拱頂上方一公尺多，是全片最低的。
+
+   石棺是平台（'floor'）：一公尺高，跳得上去，可以在棺蓋上跑。兩側牆上
+   一格一格的壁龕放著頭骨，棺蓋上點著蠟燭。 */
+function crypt(B, flames, seed, A) {
+  const r = rng(seed);
+  const X = 7.6, Z = 14.4;               // 牆的中線（±X、±Z）
+  const IX = X - 0.45, IZ = Z - 0.45;    // 牆的內皮
+  const WH = 6.0;
+  flagstones(B, { x: 0, z: 0, w: 2 * IX, d: 2 * IZ, y: 0, seed: seed + 1, ruin: 0.22, cell: 1.5 });
+  wall(B, { from: [-X, -Z], to: [X, -Z], h: WH, thick: 0.9, ruin: 0.08, seed: seed + 2 });
+  wall(B, { from: [-X, Z], to: [X, Z], h: WH, thick: 0.9, ruin: 0.08, seed: seed + 3 });
+  wall(B, { from: [-X, -Z], to: [-X, Z], h: WH, thick: 0.9, ruin: 0.08, seed: seed + 4 });
+  wall(B, { from: [X, -Z], to: [X, Z], h: WH, thick: 0.9, ruin: 0.08, seed: seed + 5 });
+
+  // ── 拱肋與壁柱 ──
+  const SPRING = 2.6;
+  for (let i = 0; i < 7; i++) {
+    const z = -12 + i * 4;
+    pointedArch(B, { x: 0, z, y: SPRING, span: 2 * IX, rise: 3.1, yaw: 0, thick: 0.42, depth: 0.55, ruin: 0, seed: seed + 10 + i });
+    for (const side of [-1, 1]) {
+      B.add(B.kit.brick(0.6, SPRING, 0.8, 0.05), {
+        p: [side * (IX - 0.3), SPRING / 2, z], color: i % 2 ? C.stone : C.stoneDark, solid: 'block', base: 0,
+      });
+      B.add(B.kit.brick(0.8, 0.2, 1.0, 0.05), { p: [side * (IX - 0.4), SPRING + 0.1, z], color: C.stoneLit });
+    }
+  }
+
+  // ── 壁龕：壁柱之間的兩層，暗色的底板、一條石架、架上幾顆頭骨 ──
+  for (let i = 0; i < 6; i++) {
+    const z = -10 + i * 4;
+    for (const side of [-1, 1]) {
+      for (const y of [0.9, 1.75]) {
+        B.add(B.kit.brick(0.06, 0.62, 2.4, 0.01), { p: [side * (IX - 0.02), y + 0.31, z], color: C.stoneDeep, ink: false });
+        B.add(B.kit.brick(0.34, 0.08, 2.5, 0.02), { p: [side * (IX - 0.15), y, z], color: C.stoneLit });
+        const n = 2 + Math.floor(r() * 3);
+        for (let k = 0; k < n; k++) {
+          const sz = z + (k - (n - 1) / 2) * 0.5 + r.range(-0.08, 0.08);
+          B.add(B.kit.blob(0.11), { p: [side * (IX - 0.16), y + 0.14, sz], s: [1, 0.9, 1.1], color: C.bone });
+          // 兩個眼窩，朝著房間。沒有它，一排頭骨讀起來是一排石頭。
+          for (const e of [-0.045, 0.045]) {
+            B.add(B.kit.blob(0.028), { p: [side * (IX - 0.26), y + 0.16, sz + e], color: 0x161310, ink: false });
+          }
+        }
+      }
+    }
+  }
+
+  // ── 石棺：兩排，每排四具。蓋子有的滑開了一截，露出黑的內膛 ──
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < 4; i++) {
+      const x = side * 4.2, z = -6.4 + i * 4.2;
+      B.add(B.kit.brick(1.2, 0.8, 2.3, 0.05), { p: [x, 0.4, z], color: i % 2 ? C.stone : C.stoneDark });
+      const open = r() < 0.35;
+      const dz = open ? 0.45 : 0, yaw = open ? r.range(-0.12, 0.12) : 0;
+      if (open) B.add(B.kit.brick(1.0, 0.04, 2.1, 0.01), { p: [x, 0.8, z], color: 0x161310, ink: false });
+      B.add(B.kit.brick(1.34, 0.22, 2.44, 0.05), { p: [x, 0.91, z + dz], r: [0, yaw, 0], color: C.stoneLit });
+      // 碰撞蓋住棺身加滑開的那一截蓋子。
+      B.block(x, 0.51, z + dz / 2, 1.4, 1.02, 2.5 + dz, { kind: 'floor', base: 0 });
+      // 蠟燭：棺蓋的一角一根，火苗交給 main.js 做（跟火盆同一份火焰，縮小）。
+      const cz = z + dz + (r() < 0.5 ? -0.85 : 0.85), cx = x - side * 0.42;
+      B.add(B.kit.drum(0.06, 0.07, 0.22, 7), { p: [cx, 1.13, cz], color: C.bone });
+      flames.push({ x: cx, y: 1.29, z: cz, s: 0.22 });
+    }
+  }
+
+  // ── 北端：兩級台階、台座、大墓、兩盆火 ──
+  stair(B, { x: 0, z: 9.6, y: 0, yaw: 0, steps: 2, rise: 0.3, run: 0.6, w: 5.0, seed: seed + 40 });
+  B.add(B.kit.brick(5.4, 0.6, IZ - 10.8, 0.06), { p: [0, 0.3, (10.8 + IZ) / 2], color: C.granite, solid: 'floor' });
+  B.add(B.kit.brick(1.7, 1.1, 2.8, 0.06), { p: [0, 0.6 + 0.55, 12.3], color: C.stoneDark });
+  B.add(B.kit.brick(1.9, 0.24, 3.0, 0.06), { p: [0, 1.82, 12.3], color: C.stoneLit });
+  B.block(0, 1.27, 12.3, 1.9, 1.34, 3.0, { kind: 'floor', base: 0.6 });   // 0.6～1.94，到石蓋的頂
+  for (const side of [-1, 1]) brazier(B, { x: side * 2.0, z: 13.1, y: 0.6, s: 0.8, seed: seed + 50 + side }, flames);
+
+  // ── 南端：來時的路。一道樓梯上到一塊平台，平台後面是關著的鐵閘 ──
+  /* 從 −8.4 起、往南七級：最後一級停在 −12.74，平台就有 1.2 公尺深——扣掉
+     鐵閘的 0.3，還站得下一隻狗。 */
+  const up = stair(B, { x: 0, z: -8.4, y: 0, yaw: Math.PI, steps: 7, rise: 0.3, run: 0.62, w: 3.0, seed: seed + 60 });
+  const end = -8.4 - up.depth;                  // 最後一級的外緣
+  const LZ = (end - IZ) / 2, LD = end + IZ + 0.04;
+  B.add(B.kit.brick(3.2, 0.3, LD, 0.05), { p: [0, up.top - 0.15, LZ], color: C.granite, solid: 'step' });
+  B.add(B.kit.brick(3.0, up.top - 0.3, LD * 0.96, 0.04), {
+    p: [0, (up.top - 0.3) / 2, LZ], color: C.stoneDeep, ink: false, solid: 'shell', base: 0,
+  });
+  // 閘後面是一片黑：通道往外面去，這裡看不到它通到哪。
+  B.add(B.kit.brick(2.6, 2.8, 0.06, 0.01), { p: [0, up.top + 1.4, -IZ + 0.03], color: 0x161310, ink: false });
+  portcullis(B, { x: 0, z: -IZ + 0.15, y: up.top, w: 2.4, h: 2.6, yaw: 0 });
+
+  /* 出生點在走道南段，面朝北（+z）。不是鐵閘前的平台：那裡背後貼著牆，
+     鏡頭的吊臂一伸就撞牆，縮到角色的頭裡面。站在這裡，鏡頭落在樓梯上方，
+     來時的那道樓梯與鐵閘就在畫面的下緣。 */
+  return { spawn: [0, 0, -6], yaw: 0 };
+}
+
+/* ── 八、城內窄巷 ─────────────────────────────────────────────────
+   一條 5.4 公尺寬的巷子，兩邊是一整排木構的連棟屋。巷子南端沒入黑霧
+   （跟城牆步道同一招：房子一路蓋進黑牆裡），北端開成一個小廣場，中間一口
+   井，角落堆著木箱與木桶——那幾個跳得上去。
+
+   牆面刻意是素的：一條石砌的牆基，上面一整片抹灰，深色的木樑、木柱與
+   斜撐釘在外面。第一版整排都是一皮一皮的磚加階梯山牆，巷子窄、兩側貼得
+   近，滿眼都是磚縫，走一段就看累了。木構給的是少數幾條粗線，而那幾條線
+   本身就是這條巷子的節奏。
+
+   房子是封起來的，進不去也上不去（簷口最低 4.6，木箱疊兩層只到 1.8，
+   加上跳躍的 1.74 還差一公尺）。所以房子的碰撞就是一個盒子，屋頂另一個
+   盒子擋鏡頭——不需要一個「站在屋頂上會怎樣」的答案。 */
+
+/**
+ * 一棟木構的連棟屋。`at(u, v)` 把房子自己的座標換成世界的 x, z：u 沿著
+ * 立面（−W/2..W/2），v 從立面往後（0..D）。`vx` 表示 v 軸是不是沿著 x
+ * ——斜的木料與屋頂要繞著某一根世界軸轉，而 three 的旋轉是照世界軸給的。
+ * `us` 是 u 軸在世界裡的正負號（±1），斜板往哪一邊倒靠它。
+ */
+function house(B, seed, o) {
+  const r = rng(seed);
+  const { at, W, D, e, vx } = o;
+  const PL = 0.9;                         // 石砌牆基多高
+  const GT = 0.5;                         // 山牆多厚
+  const gh = (W / 2) * 1.1;               // 山牆多高（屋頂約 48°）
+  const FL = Math.max(PL + 1.9, e * 0.5); // 二樓的樓板線
+  const wallC = o.alt ? C.plasterAlt : C.plaster;
+  const size = (u, v) => (vx ? [v, u] : [u, v]);   // (沿立面, 往後) → (x, z)
+  const [cx, cz] = at(0, D / 2);
+
+  /* 牆身：一塊牆基加一塊抹灰。碰撞一個盒子從地面到簷口——房子進不去，
+     裡面是空的還是實的沒有人看得到。
+
+     立面那一層（v 0～RD）另外砌，因為門要嵌進牆裡：牆面在門口開一個洞，
+     門板退到洞底，比牆面深 RD − 0.06。一整塊牆身的話門只能貼在牆面外面，
+     看起來像靠在牆上的一片木板。 */
+  const RD = 0.18;                        // 立面那一層多厚，也就是門洞多深
+  const du = (r() < 0.5 ? -1 : 1) * W / 4;  // 門的位置
+  const DW = 1.1, DH = 2.2;               // 門洞寬、高
+  const slab = (u0, u1, v0, v1, y0, y1, color) => {
+    const [x, z] = at((u0 + u1) / 2, (v0 + v1) / 2);
+    const [sx, sz] = size(u1 - u0, v1 - v0);
+    B.add(B.kit.brick(sx, y1 - y0, sz, 0.03), { p: [x, (y0 + y1) / 2, z], color });
+  };
+  {
+    const a = du - DW / 2, b = du + DW / 2;
+    // 後面那一大塊：牆基往兩側與背面外放 0.04，抹灰就是房子本身。
+    slab(-W / 2 - 0.04, W / 2 + 0.04, RD, D + 0.04, 0, PL, C.stoneDark);
+    slab(-W / 2, W / 2, RD, D, PL, e, wallC);
+    // 立面那一層：牆基（外放 0.04）與抹灰，都在門洞兩側斷開；門洞上方補一塊。
+    slab(-W / 2 - 0.04, a, -0.04, RD, 0, PL, C.stoneDark);
+    slab(b, W / 2 + 0.04, -0.04, RD, 0, PL, C.stoneDark);
+    slab(-W / 2, a, 0, RD, PL, e, wallC);
+    slab(b, W / 2, 0, RD, PL, e, wallC);
+    slab(a, b, 0, RD, DH, e, wallC);
+    const [bx, bz] = size(W, D);
+    B.block(cx, e / 2, cz, bx, e, bz, { kind: 'shell', base: 0 });
+  }
+
+  // 山牆：前後各一片抹灰的三角形。
+  for (const v of [GT / 2, D - GT / 2]) {
+    const [x, z] = at(0, v);
+    B.add(B.kit.gable(W, gh, GT), { p: [x, e, z], r: [0, vx ? Math.PI / 2 : 0, 0], color: wallC });
+  }
+
+  /* 屋頂：兩塊斜板，從簷口斜到屋脊，前後各挑出山牆 0.15。木構房子的屋頂
+     本來就壓在山牆外面，挑出去的那一截是山牆上最好認的一條影子。 */
+  const th = Math.atan2(gh, W / 2);
+  const slope = (W / 2) / Math.cos(th) + 0.3;
+  for (const side of [-1, 1]) {
+    const [x, z] = at(side * W / 4, D / 2);
+    const y = e + gh / 2 + 0.08;
+    /* 往屋脊的方向要往上：繞 x 轉 a 時局部 +z 的斜率是 −tan a，繞 z 轉時局部
+       +x 的斜率是 +tan a，而屋脊在這塊板的 −us·side 那一邊——兩個正負號
+       就是從這裡來的。 */
+    const tilt = side * o.us * th;
+    if (vx) B.add(B.kit.brick(D + 0.3, 0.16, slope, 0.03), { p: [x, y, z], r: [tilt, 0, 0], color: side < 0 ? C.tile : C.tileDark });
+    else B.add(B.kit.brick(slope, 0.16, D + 0.3, 0.03), { p: [x, y, z], r: [0, 0, -tilt], color: side < 0 ? C.tile : C.tileDark });
+  }
+  /* 屋頂的碰撞：一個從簷口到屋脊的盒子。人上不去，但鏡頭上得去——沒有
+     它的話吊臂會從屋頂穿進房子裡面。 */
+  {
+    const [bx, bz] = size(W, D);
+    B.block(cx, e + gh / 2, cz, bx, gh, bz, { kind: 'shell' });
+  }
+
+  /* ── 立面的木頭 ──
+     `beam(u0, y0, u1, y1)` 在立面上釘一根木料，兩端是立面座標。木料埋進牆面
+     4 公分（有東西托著），凸出來 8 公分（有影子）。 */
+  const V0 = -0.04;
+  const beam = (u0, y0, u1, y1, t = 0.16) => {
+    const [x0, z0] = at(u0, V0), [x1, z1] = at(u1, V0);
+    const dx = x1 - x0, dz = z1 - z0, dy = y1 - y0;
+    const len = Math.hypot(dx, dy, dz);
+    const p = [(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2];
+    if (vx) B.add(B.kit.brick(0.12, t, len, 0.02), { p, r: [-Math.atan2(dy, dz), 0, 0], color: C.woodDark });
+    else B.add(B.kit.brick(len, t, 0.12, 0.02), { p, r: [0, 0, Math.atan2(dy, dx)], color: C.woodDark });
+  };
+  const U = W / 2 - 0.1;
+  // 牆基上的地檻，在門那裡斷開。
+  beam(-U - 0.08, PL + 0.08, du - 0.55, PL + 0.08);
+  beam(du + 0.55, PL + 0.08, U + 0.08, PL + 0.08);
+  beam(-U - 0.08, FL, U + 0.08, FL);                            // 樓板線
+  beam(-U - 0.08, e - 0.08, U + 0.08, e - 0.08);                // 簷口
+  for (const u of [-U, 0, U]) beam(u, PL + 0.16, u, e - 0.16, 0.16); // 三根柱
+  /* 二樓兩角的斜撐：從角柱斜上 0.6。短一點，窗戶才不會被它穿過去——窗在
+     角柱與中柱的正中間。 */
+  for (const s of [-1, 1]) beam(s * (U - 0.6), FL + 0.08, s * U, FL + 0.6);
+  // 山牆上：一根中柱、一根橫樑。
+  beam(0, e + 0.08, 0, e + gh * 0.72);
+  beam(-(W / 2) * 0.52, e + gh * 0.45, (W / 2) * 0.52, e + gh * 0.45);
+
+  /* 門：嵌在門洞底的一片木門，兩側一對門框、上面一根門楣，門上一個鐵
+     門把。門板的正面在 v = RD − 0.06，比牆面深 12 公分——那一段陰影就是
+     「這裡是一個洞」的全部證據。 */
+  {
+    const [x, z] = at(du, RD - 0.02);
+    const [dw, dd] = size(DW - 0.08, 0.08);
+    B.add(B.kit.brick(dw, DH - 0.04, dd, 0.02), { p: [x, (DH - 0.04) / 2, z], color: C.wood });
+    for (const s of [-1, 1]) slab(du + s * (DW / 2 - 0.05) - 0.05, du + s * (DW / 2 - 0.05) + 0.05, 0.0, RD, 0, DH, C.woodDark);
+    beam(du - 0.72, DH + 0.06, du + 0.72, DH + 0.06, 0.18);
+    // 門把開在離門軸遠的那一側（離房子中線近的那一邊）。
+    const hu = du - Math.sign(du) * 0.32;
+    const [px, pz] = at(hu, RD - 0.075);
+    const [qx, qz] = at(hu, RD - 0.12);
+    const [pw, pd] = size(0.07, 0.03);
+    B.add(B.kit.brick(pw, 0.18, pd, 0.01), { p: [px, 1.0, pz], color: C.iron, ink: false });
+    B.add(B.kit.blob(0.045), { p: [qx, 1.0, qz], color: C.ironLit });
+  }
+  // 二樓兩扇窗，窗台是一根木料。
+  for (const wu of [-(U / 2 - 0.05), U / 2 - 0.05]) {
+    const wy = FL + 0.5;
+    const [x, z] = at(wu, -0.02);
+    const [pw, pd] = size(0.7, 0.06);
+    B.add(B.kit.brick(pw, 0.95, pd, 0.01), { p: [x, wy + 0.47, z], color: 0x161310, ink: false });
+    beam(wu - 0.45, wy - 0.02, wu + 0.45, wy - 0.02, 0.12);
+  }
+}
+
+function alley(B, flames, seed, A) {
+  const r = rng(seed);
+  /* 巷子 5.4 公尺寬、廣場 14.7 × 9.9。第一版是 3.6 與 9.8 × 6.6——兩側的房子
+     五六公尺高，3.6 寬的巷子抬頭只看得到一條縫，鏡頭也一直被兩面牆夾著。 */
+  const S = 2.7;                 // 巷子半寬
+  const BACK = A.x1 - 0.4;       // 房子背面的外皮（離黑牆 0.4）
+  const SQ = 4.0;                // 廣場從這裡開始（z）
+  const SQX = 7.35;              // 廣場的半寬
+  const NZ = 13.9;               // 北排房子的立面
+  /* 北排房子的背面。離黑牆 0.6 而不是 0.4：廣場兩側那幾棟的屋簷沿著 z
+     伸出側牆 0.25，最北那一棟的屋簷會戳出黑牆。 */
+  const NB = A.z1 - 0.6;
+
+  B.pierces(true);
+  flagstones(B, { x: 0, z: (A.z0 - 4 + SQ) / 2, w: 2 * S, d: SQ - A.z0 + 4, y: 0, seed: seed + 1, ruin: 0.3, cell: 1.2 });
+  B.pierces(false);
+  flagstones(B, { x: 0, z: (SQ + NZ) / 2, w: 2 * SQX, d: NZ - SQ, y: 0, seed: seed + 2, ruin: 0.3, cell: 1.5 });
+
+  /* 巷子兩排。立面在 x = ±S，往外砌到 ±BACK。分界的 z 刻意不等距、
+     簷口高度逐棟抽、牆色一棟一換——整排一樣的連棟屋看起來像一道牆。
+     最南那一棟穿過黑牆，所以它標 pierces。 */
+  const rows = [
+    { sx: -1, cuts: [-19.6, -14.4, -9.4, -4.6, 0.0, SQ] },
+    { sx: 1, cuts: [-19.6, -15.0, -9.8, -4.4, 0.4, SQ] },
+  ];
+  let hn = 0;
+  for (const { sx, cuts } of rows) {
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const z0 = cuts[i], z1 = cuts[i + 1], zm = (z0 + z1) / 2;
+      const through = z0 < A.z0;
+      if (through) B.pierces(true);
+      house(B, seed + 100 + hn * 13, { alt: hn++ % 2 === 1,
+        W: z1 - z0, D: BACK - S, e: r.range(4.6, 6.2), vx: true, us: -sx,
+        at: (u, v) => [sx * (S + v), zm - sx * u],
+      });
+      if (through) B.pierces(false);
+    }
+  }
+  /* 廣場三面。東西兩側的房子立面朝廣場（淺一點，3 公尺出頭），北排立面朝南。 */
+  for (const sx of [-1, 1]) {
+    const cuts = [SQ, 8.3, 12.6, NB];
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const z0 = cuts[i], z1 = cuts[i + 1], zm = (z0 + z1) / 2;
+      house(B, seed + 100 + hn * 13, { alt: hn++ % 2 === 1,
+        W: z1 - z0, D: BACK - SQX, e: r.range(4.8, 6.0), vx: true, us: -sx,
+        at: (u, v) => [sx * (SQX + v), zm - sx * u],
+      });
+    }
+  }
+  {
+    const cuts = [-SQX, -2.3, 2.6, SQX];
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const x0 = cuts[i], x1 = cuts[i + 1], xm = (x0 + x1) / 2;
+      house(B, seed + 100 + hn * 13, { alt: hn++ % 2 === 1,
+        W: x1 - x0, D: NB - NZ, e: r.range(5.0, 6.2), vx: false, us: 1,
+        at: (u, v) => [xm + u, NZ + v],
+      });
+    }
+  }
+
+  // ── 廣場：井、兩盆火、角落的木箱與木桶 ──
+  const WZ = (SQ + NZ) / 2;      // 井在廣場正中
+  // 這一口井是開的：井口是一個坑，跳上井圈再往裡走就掉下去。
+  well(B, { x: 0, z: WZ, y: 0, r: 1.15, seed: seed + 3, open: true });
+  for (const sx of [-1, 1]) brazier(B, { x: sx * 5.6, z: NZ - 1.2, y: 0, s: 0.9, seed: seed + 4 + sx }, flames);
+  const crate = (x, y, z, yaw) => B.add(B.kit.brick(0.9, 0.9, 0.9, 0.04), {
+    p: [x, y + 0.45, z], r: [0, yaw, 0], color: C.wood, solid: 'floor',
+  });
+  crate(-6.0, 0, 5.2, 0.0); crate(-6.0, 0.9, 5.2, 0.12); crate(-5.1, 0, 5.3, -0.1);
+  crate(6.1, 0, 6.6, 0.05);
+  for (const [bx, bz] of [[6.1, 5.3], [5.3, 5.2]]) {
+    B.add(B.kit.drum(0.38, 0.34, 1.0, 10), { p: [bx, 0.5, bz], color: C.woodDark, solid: 'floor', round: true });
+    B.add(B.kit.drum(0.39, 0.39, 0.06, 10), { p: [bx, 0.75, bz], color: C.iron, ink: false });
+  }
+  for (let i = 0; i < 10; i++) mossTuft(B, r.range(-S + 0.3, S - 0.3), 0, r.range(-15, 3), r);
+
+  // 出生點在巷子中段，面朝北（+z）：巷子的盡頭就是廣場。
+  return { spawn: [0, 0, -8], yaw: 0 };
 }
 
 /* ── 黑牆裡、建築外的那一圈 ──────────────────────────────────────
@@ -802,6 +1241,37 @@ export const BLOCKS = [
     },
     fenced: true,
   },
+  {
+    id: 'breach', name: '城牆缺口', hint: '塌了一截的城牆，衝刺跳過缺口',
+    origin: [PITCH, 2 * PITCH], build: breach, seed: 0xb1c2,
+    // 西段走道，缺口（x 4.5～9.0）之前那一片。
+    room: { y: 5.2, hx: 3.8, hz: 2.6 },
+    /* 跟城牆步道同一個外框與同一層霧。`fenced` 給的是一個高度：掉進缺口
+       是這一座的一部分（坑底 2.0），掉出城外才不是。 */
+    arena: {
+      shape: 'circle', x: 0, z: 0, r: 22, lid: 14.0, hug: false,
+      haze: [[0, 1.0], [1.2, 0.34], [3.5, 0.24], [6.5, 0.14]],
+    },
+    fenced: 1.9,
+  },
+  {
+    id: 'crypt', name: '地下墓室', hint: '拱肋、石棺、壁龕與燭火',
+    origin: [0, 3 * PITCH], build: crypt, seed: 0xc3d4,
+    room: { y: 0, hx: 2.6, hz: 8.2 },
+    /* 牆面：兩側 8.05、兩端 14.85。封頂壓在拱頂上方一公尺多（拱頂約 7.1）。
+       `sealed`：四面都是牆，沒有一個門洞通到黑牆——走到底停在牆上，
+       不是停在黑牆上，所以驗證不驗「走到底貼在黑牆上」。 */
+    arena: { shape: 'rect', x0: -8.3, x1: 8.3, z0: -15.1, z1: 15.1, lid: 8.4, hug: true },
+    sealed: true,
+  },
+  {
+    id: 'alley', name: '城內窄巷', hint: '木構的連棟屋、盡頭的小廣場',
+    origin: [PITCH, 3 * PITCH], build: alley, seed: 0xd5e6,
+    // 巷子那一段（廣場從 z = 4 開始）。
+    room: { y: 0, hx: 2.3, hz: 6.0 },
+    // 房子背面的外皮在 ±10.6、北排在 16.9；南端整條巷子穿進黑牆。
+    arena: { shape: 'rect', x0: -11.0, x1: 11.0, z0: -16.0, z1: 17.5, lid: 11.0, hug: true },
+  },
 ];
 
 /**
@@ -865,7 +1335,7 @@ function shift(B, fromPos, ox, oz, flames) {
     const c = B.colliders[i];
     c.min[0] += ox; c.max[0] += ox; c.min[2] += oz; c.max[2] += oz;
     // 圓柱的軸是另外一組座標，跟著搬——漏搬的話那根柱子會擋在別的區塊裡。
-    if (c.shape === 'circle') { c.x += ox; c.z += oz; }
+    if (c.shape === 'circle' || c.kind === 'pit') { c.x += ox; c.z += oz; }
   }
   _colCursor = B.colliders.length;
   for (let i = _flameCursor; i < flames.length; i++) { flames[i].x += ox; flames[i].z += oz; }
