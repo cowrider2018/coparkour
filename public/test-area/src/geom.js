@@ -384,6 +384,7 @@ export class Build {
     this.parts = [];        // record 打開時：每塊幾何的 AABB
     this.walls = [];         // 每一道牆的登記（給「牆身不透光」那一項驗）
     this.floors = [];        // 每一片鋪面的登記（給「鋪面有基座」那一項驗）
+    this.portals = [];       // 感測區：走進去就被送到別的地方（見 `portal()`）
     this._c = new THREE.Color();
   }
 
@@ -546,6 +547,20 @@ export class Build {
   }
 
   /**
+   * 一個感測區：身體走進這個直立的圓柱（中心 x, z、半徑 r、y0～y1）就被
+   * 送走。`to` 是目的地——一個區塊的 id，送到那個區塊的出生點（跟按 R
+   * 一樣）；`'spawn'` 是「這個區塊自己的出生點」，砌完的時候才認得是誰。
+   *
+   * 它不是碰撞體，不進 `colliders`：那張清單上的每一支程式（走路、鏡頭、
+   * 驗證）都在問「擋不擋」，而感測區什麼都不擋。混進去的話，每一支都得
+   * 學會跳過它，漏一支就是一面看不見的牆。
+   */
+  portal(x, z, r, y0, y1, to = 'spawn') {
+    this.portals.push({ x, z, r, y0, y1, to });
+    return this;
+  }
+
+  /**
    * 空氣牆：擋身體、不擋鏡頭、不畫任何東西。
    *
    * 給「站在高處、外面是空的」的場地用（城牆步道）：黑牆是場地的外框，
@@ -645,6 +660,7 @@ export class Build {
       parts: this.parts,
       walls: this.walls,
       floors: this.floors,
+      portals: this.portals,
       tris: this.pos.length / 9,
       inkLines: this.ink.length / 6,
     };

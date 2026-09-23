@@ -397,6 +397,20 @@ export function solveXZ(cols, x0, z0, feetY) {
 }
 
 /**
+ * 腳在 (x, y, z) 的身體在不在某一個感測區裡。回傳那一個（blocks.js 砌的，
+ * `to` 已經換成區塊 id），不在就是 null。
+ *
+ * 規則只有這一支：頁面每幀問一次、驗證器淹水的時候問一次，兩邊不准各寫
+ * 一份「怎樣算走進去」。
+ */
+export function portalAt(portals, x, y, z) {
+  for (const p of portals) {
+    if (y >= p.y0 && y <= p.y1 && Math.hypot(x - p.x, z - p.z) < p.r) return p;
+  }
+  return null;
+}
+
+/**
  * 站在 (x, z)、腳原本在 fromY 的話，會踩在多高的地方。
  *
  * 只認「不高於 fromY + STEP」的東西：跳上去之前，屋頂不是地板。

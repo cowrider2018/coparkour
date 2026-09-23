@@ -41,7 +41,7 @@ import { loadZoo } from './critter.js';
 import { Pad } from './pad.js';
 import { Hud } from './hud.js';
 import { facet } from './geom.js';
-import { PHYS, solveXZ, supportInfo, slideDrift, slideAccel, arenaGap } from './walk.js';
+import { PHYS, solveXZ, supportInfo, slideDrift, slideAccel, arenaGap, portalAt } from './walk.js';
 import { CAM, makeCam, snapCam, updateCam } from './camera.js';
 import { buildVeil } from './veil.js';
 import { lookInfo } from '../../src/cat/looks.js';
@@ -403,6 +403,13 @@ function frame(now) {
   } else {
     player.grounded = false;
     player.slip = null;                 // 在空中：控制權回來
+  }
+
+  /* 感測區（窄巷的井底）：走進去就回到它指定的那個區塊的出生點，跟按 R
+     一樣。判斷在 walk.js，驗證器淹水的時候問的是同一支。 */
+  {
+    const gate = portalAt(ruins.portals, player.x, player.y, player.z);
+    if (gate) goto(gate.to);
   }
 
   // 走到哪個區塊了。用出生點最近的那一個，不用方框——區塊之間是連著的。
