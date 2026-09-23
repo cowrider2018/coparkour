@@ -1097,8 +1097,11 @@ function alley(B, flames, seed, A) {
 
   // ── 廣場：井、兩盆火、角落的木箱與木桶 ──
   const WZ = (SQ + NZ) / 2;      // 井在廣場正中
-  // 這一口井是開的：井口是一個坑，跳上井圈再往裡走就掉下去。
+  /* 這一口井是開的：井口是一個坑，跳上井圈再往裡走就掉下去。掉到地下三公尺
+     就碰到感測區，送回巷子的出生點——井底沒有路上來，也不需要：人掉進去
+     的那一瞬間是整個畫面一片黑，那一片黑就是這條通道。 */
   well(B, { x: 0, z: WZ, y: 0, r: 1.15, seed: seed + 3, open: true });
+  B.portal(0, WZ, 1.15 * 0.78, -8.5, -3, 'spawn');
   for (const sx of [-1, 1]) brazier(B, { x: sx * 5.6, z: NZ - 1.2, y: 0, s: 0.9, seed: seed + 4 + sx }, flames);
   const crate = (x, y, z, yaw) => B.add(B.kit.brick(0.9, 0.9, 0.9, 0.04), {
     p: [x, y + 0.45, z], r: [0, yaw, 0], color: C.wood, solid: 'floor',
@@ -1289,7 +1292,7 @@ export function buildRuins(opts = {}) {
   const spawns = {};
   const arenas = [];
   _colCursor = _inkCursor = _flameCursor = 0;   // 同一個行程裡砌第二遍也要對
-  _partCursor = _wallCursor = _floorCursor = 0;
+  _partCursor = _wallCursor = _floorCursor = _portalCursor = 0;
 
   for (const b of BLOCKS) {
     const [ox, oz] = b.origin;
@@ -1298,7 +1301,7 @@ export function buildRuins(opts = {}) {
     const meta = b.build(B, flames, b.seed, b.arena);
     // 區塊是用自己的局部座標砌的，砌完把這一段整個平移到世界位置上——
     // 包含頂點、墨線、碰撞盒與火焰。
-    shift(B, mark, ox, oz, flames);
+    shift(B, mark, ox, oz, flames, b.id);
     // 第四個數是出生時的鏡頭方位（cam.yaw）；沒給就是 π，也就是面朝 −z。
     spawns[b.id] = [meta.spawn[0] + ox, meta.spawn[1], meta.spawn[2] + oz, meta.yaw ?? Math.PI];
     const A = b.arena;
@@ -1326,8 +1329,8 @@ export function buildRuins(opts = {}) {
    索引開始的那一段；碰撞盒與火焰則是「還沒有被搬過的」那些，用一個游標
    記著——比重算一次整個區塊便宜，也不必讓每個零件都去接一個 offset。 */
 let _colCursor = 0, _inkCursor = 0, _flameCursor = 0;
-let _partCursor = 0, _wallCursor = 0, _floorCursor = 0;
-function shift(B, fromPos, ox, oz, flames) {
+let _partCursor = 0, _wallCursor = 0, _floorCursor = 0, _portalCursor = 0;
+function shift(B, fromPos, ox, oz, flames, id) {
   for (let i = fromPos; i < B.pos.length; i += 3) { B.pos[i] += ox; B.pos[i + 2] += oz; }
   for (let i = _inkCursor; i < B.ink.length; i += 3) { B.ink[i] += ox; B.ink[i + 2] += oz; }
   _inkCursor = B.ink.length;
@@ -1356,4 +1359,12 @@ function shift(B, fromPos, ox, oz, flames) {
     B.floors[i].x += ox; B.floors[i].z += oz;
   }
   _floorCursor = B.floors.length;
+  // 感測區也是區塊自己的座標；`'spawn'` 在這裡換成區塊的 id——砌它的那支
+  // 函式不知道自己叫什麼。
+  for (let i = _portalCursor; i < B.portals.length; i++) {
+    const p = B.portals[i];
+    p.x += ox; p.z += oz;
+    if (p.to === 'spawn') p.to = id;
+  }
+  _portalCursor = B.portals.length;
 }

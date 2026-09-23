@@ -64,7 +64,7 @@
 import * as THREE from '../public/test-area/vendor/three.module.js';
 import { buildRuins, BLOCKS, PITCH } from '../public/test-area/src/blocks.js';
 import {
-  PHYS, SLIDE, APEX, solveXZ, supportAt, supportInfo, roundTop, roundSin,
+  PHYS, SLIDE, APEX, solveXZ, supportAt, supportInfo, roundTop, roundSin, portalAt,
   slideDrift, slideAccel, arenaGap, boomLimit, BLOCK_TOP, TRIP, MOUNT,
 } from '../public/test-area/src/walk.js';
 import { VEIL, buildVeil, outline } from '../public/test-area/src/veil.js';
@@ -794,20 +794,26 @@ head('整片走一遍：沒有鑽得進去的空心，也沒有回不來的地�
           from.get(t).push(s);
         }
       }
+      /* 感測區：走進去就被送到目的地區塊的出生點，那也是一步——所以井底的
+         格子接得回出生點，「走得回去」這一項不必替它開例外。 */
+      const gate = portalAt(R.portals, x, y, z);
+      if (gate) {
+        const tp = R.spawns[gate.to];
+        const ti = Math.round(tp[0] / G), tk = Math.round(tp[2] / G);
+        const t = key(ti, tk, snap(supportAt(COLS, ti * G, tk * G, tp[1] + 0.2)));
+        if (!from.has(t)) { from.set(t, []); queue.push(t); }
+        from.get(t).push(s);
+      }
     }
     const back = new Set([s0]);
     const stack = [s0];
     while (stack.length) {
       for (const p of from.get(stack.pop())) if (!back.has(p)) { back.add(p); stack.push(p); }
     }
-    /* 掉進坑裡（窄巷那口開著的井）的格子，現在本來就上不來——井底怎麼回去
-       是下一步的事。這裡先把它們分出來、印出數量，不算「回不來」。 */
-    const pits = cols.filter((c) => c.kind === 'pit');
-    const inPit = ([i, k, y]) => pits.some((c) => Math.hypot(i * G - c.x, k * G - c.z) < c.r && y < c.top - 0.5);
-    const lost = queue.filter((s) => !back.has(s)).map((s) => s.split(',').map(Number));
-    const fell = lost.filter(inPit);
-    if (fell.length) console.log(`  · ${b.name}：掉進井裡 ${fell.length} 格（井底還沒有出口）`);
-    const stuck = lost.filter((c) => !inPit(c)).map(([i, k, y]) => [i * G - ox, k * G - oz, y]);
+    const stuck = queue.filter((s) => !back.has(s)).map((s) => {
+      const [i, k, y] = s.split(',').map(Number);
+      return [i * G - ox, k * G - oz, y];
+    });
     const at = (p) => `(${p[0].toFixed(1)}, ${p[2]}, ${p[1].toFixed(1)})`;
     ok(hollow.length === 0, `${b.name}：沒有鑽得進去的空心`,
       hollow.length ? `${hollow.length} 格，例如 ${at(hollow[0])}` : `${queue.length} 格走得到`);
@@ -820,6 +826,40 @@ head('整片走一遍：沒有鑽得進去的空心，也沒有回不來的地�
       const low = queue.map((s) => s.split(',').map(Number)).filter(([, , y]) => y < floorY - 0.05);
       ok(low.length === 0, `${b.name}：走得到的每一格都在牆頂上`,
         low.length ? `${low.length} 格掉下去了，例如 ${at([low[0][0] * G - ox, low[0][1] * G - oz, low[0][2]])}` : '');
+    }
+  }
+}
+
+head('坑都有出口');
+/* 坑（開著的井）底下沒有路上來，出口是感測區：碰到就回出生點。兩件事要成立：
+   每一個坑的坑底都在某一個感測區裡（不然掉下去就只剩按 R），以及用 main.js
+   那一套垂直積分真的從坑口掉下去，會在幾秒內碰到它、被送到一個站得住的地方。 */
+{
+  const pits = COLS.filter((c) => c.kind === 'pit');
+  ok(pits.length > 0, '有登記坑', `${pits.length} 個`);
+  for (const c of pits) {
+    const gate = portalAt(R.portals, c.x, c.bottom, c.z);
+    const name = gate ? BLOCKS.find((q) => q.id === gate.to).name : '';
+    ok(!!gate, '坑底在一個感測區裡', gate ? `送回 ${name}` : `(${c.x.toFixed(1)}, ${c.z.toFixed(1)}) 底下什麼都沒有`);
+    if (!gate) continue;
+    const dt = 1 / 60;
+    const p = { x: c.x, y: c.top + 1.2, z: c.z, vy: 0 };
+    let hit = null, t = 0;
+    for (; t < 4 && !hit; t += dt) {
+      const [sx, sz] = solveXZ(COLS, p.x, p.z, p.y);
+      p.x = sx; p.z = sz;
+      const prevY = p.y;
+      p.vy -= PHYS.gravity * dt;
+      p.y += p.vy * dt;
+      const sup = supportAt(COLS, p.x, p.z, prevY);
+      if (p.y <= sup && p.vy <= 0) { p.y = sup; p.vy = 0; }
+      hit = portalAt(R.portals, p.x, p.y, p.z);
+    }
+    ok(!!hit, '從坑口掉下去會碰到感測區', hit ? `${t.toFixed(2)} 秒，碰到時在 y ${p.y.toFixed(1)}` : `4 秒後停在 y ${p.y.toFixed(1)}`);
+    if (hit) {
+      const tp = R.spawns[hit.to];
+      const sup = supportAt(COLS, tp[0], tp[2], tp[1] + 0.4);
+      ok(Math.abs(sup - tp[1]) < 0.05, '送到的地方站得住', `${name}出生點，支撐 ${sup.toFixed(2)}`);
     }
   }
 }
