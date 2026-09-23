@@ -64,7 +64,7 @@
 import * as THREE from '../public/test-area/vendor/three.module.js';
 import { buildRuins, BLOCKS, PITCH } from '../public/test-area/src/blocks.js';
 import {
-  PHYS, SLIDE, solveXZ, supportAt, supportInfo, roundTop, roundSin,
+  PHYS, SLIDE, APEX, solveXZ, supportAt, supportInfo, roundTop, roundSin,
   slideDrift, slideAccel, arenaGap, boomLimit, BLOCK_TOP, TRIP, MOUNT,
 } from '../public/test-area/src/walk.js';
 import { VEIL, buildVeil, outline } from '../public/test-area/src/veil.js';
@@ -684,6 +684,94 @@ for (const b of BLOCKS) {
   }
   ok(ret, `${b.name}：從門洞走得回來`,
     ret ? `${secs.toFixed(1)} 秒` : `卡在還差 ${rworst.best.toFixed(1)} m 的地方（被夾住了）`);
+}
+
+head('整片走一遍：沒有鑽得進去的空心，也沒有回不來的地方');
+/* 上面兩項走的都是「給定的一條路」。這一項把走得到的地方全部淹一遍——
+   每 0.2 公尺一格，走（抬腳 STEP 以內、往下不限）與跳（頂點 APEX、頭頂
+   要有淨空）兩種移動，用的是同一支 solveXZ／supportAt。然後問兩件事：
+
+     空心     走得到的格子，頭頂 3 公尺內不准有砌體蓋著。蓋著的意思是
+              人鑽進了一個東西的底下——城牆平台的台體以前是空的，從樓梯
+              旁的矮牆跳進第二折樓梯底下、穿過南牆缺口，整座露台的正下方
+              都走得到，而畫面上看不出來，除非你真的走進去。底下本來就
+              該是空的東西（水窖的懸臂石階）在碰撞盒上標 `open`，不算。
+     回不來   每一個走得到的格子都要走得回出生點。水窖以前可以從殘階頂
+              跳上環牆、往外掉進牆與黑牆之間那條縫，掉進去就只剩重生。
+
+   碰撞盒先照場地的外接框篩一次：四個場地相隔六十公尺，全掃的話九成
+   的時間花在問另外三個場地的盒子。 */
+{
+  const G = 0.2;
+  const snap = (v) => Math.round(v * 20) / 20;
+  for (const b of BLOCKS) {
+    const [ox, oz] = b.origin;
+    const A = R.arenas.find((a) => a.id === b.id);
+    const x0 = A.shape === 'circle' ? A.x - A.r : A.x0, x1 = A.shape === 'circle' ? A.x + A.r : A.x1;
+    const z0 = A.shape === 'circle' ? A.z - A.r : A.z0, z1 = A.shape === 'circle' ? A.z + A.r : A.z1;
+    const cols = COLS.filter((c) => (c.kind === 'bound' ? c.id === b.id
+      : c.max[0] > x0 - 2 && c.min[0] < x1 + 2 && c.max[2] > z0 - 2 && c.min[2] < z1 + 2));
+    /** 頭頂上最低的那個碰撞體（底面在頭以上的那些裡面）：底面多高、底下是不是故意空著的。 */
+    const overhead = (x, z, y) => {
+      let lo = Infinity, open = false;
+      for (const c of cols) {
+        if (c.kind === 'bound' || c.min[1] < y + PHYS.height - 0.02) continue;
+        const inside = c.shape === 'circle' ? Math.hypot(x - c.x, z - c.z) < c.r
+          : x > c.min[0] && x < c.max[0] && z > c.min[2] && z < c.max[2];
+        if (inside && c.min[1] < lo) { lo = c.min[1]; open = !!c.open; }
+      }
+      return { lo, open };
+    };
+    const moves = (nx, nz, y) => {
+      const [sx, sz] = solveXZ(cols, nx, nz, y);
+      return Math.hypot(sx - nx, sz - nz) <= 0.03;
+    };
+    const sp = R.spawns[b.id];
+    const key = (i, k, y) => `${i},${k},${y}`;
+    const i0 = Math.round(sp[0] / G), k0 = Math.round(sp[2] / G);
+    const s0 = key(i0, k0, snap(supportAt(cols, i0 * G, k0 * G, sp[1] + 0.2)));
+    const from = new Map([[s0, []]]);   // 格子 → 走得到它的那些格子
+    const queue = [s0];
+    const hollow = [];
+    for (let h = 0; h < queue.length; h++) {
+      const s = queue[h];
+      const [i, k, y] = s.split(',').map(Number);
+      const x = i * G, z = k * G;
+      /* 懸臂石階（`open`）底下本來就是空的，走進去不算空心；但它仍然是
+         天花板，跳的時候照樣要算淨空。 */
+      const { lo: lid, open } = overhead(x, z, y);
+      if (lid - y < 3 && !open) hollow.push([x - ox, z - oz, y]);
+      for (const [di, dk] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = (i + di) * G, nz = (k + dk) * G;
+        const to = [];
+        if (moves(nx, nz, y)) to.push(snap(supportAt(cols, nx, nz, y)));
+        /* 跳：起跳、在頂點跨過去、落在那裡的任何高度。落點比原地低也算——
+           被圓頂的裙邊與牆夾住的時候，走是被推回來的，跳才出得去。 */
+        if (lid > y + APEX + PHYS.height && moves(nx, nz, y + APEX)) {
+          to.push(snap(supportAt(cols, nx, nz, y + APEX)));
+        }
+        for (const ny of to) {
+          const t = key(i + di, k + dk, ny);
+          if (!from.has(t)) { from.set(t, []); queue.push(t); }
+          from.get(t).push(s);
+        }
+      }
+    }
+    const back = new Set([s0]);
+    const stack = [s0];
+    while (stack.length) {
+      for (const p of from.get(stack.pop())) if (!back.has(p)) { back.add(p); stack.push(p); }
+    }
+    const stuck = queue.filter((s) => !back.has(s)).map((s) => {
+      const [i, k, y] = s.split(',').map(Number);
+      return [i * G - ox, k * G - oz, y];
+    });
+    const at = (p) => `(${p[0].toFixed(1)}, ${p[2]}, ${p[1].toFixed(1)})`;
+    ok(hollow.length === 0, `${b.name}：沒有鑽得進去的空心`,
+      hollow.length ? `${hollow.length} 格，例如 ${at(hollow[0])}` : `${queue.length} 格走得到`);
+    ok(stuck.length === 0, `${b.name}：每個走得到的地方都走得回出生點`,
+      stuck.length ? `${stuck.length} 格回不來，例如 ${at(stuck[0])}` : '');
+  }
 }
 
 head('黑牆就是移動的上限');

@@ -433,8 +433,10 @@ export class Build {
       const gr = o.grow || 0;
       const kind = o.solid === true ? 'block' : o.solid;
       /* 'block' 的底不是它自己的底，是它站著的那個地面：一顆離地 30 cm
-         的大石頭如果照 AABB 登記，腳下那 30 cm 就是一條可以鑽進去的縫。 */
-      const bot = kind === 'block' ? (o.base === undefined ? 0 : o.base) : miny - gr;
+         的大石頭如果照 AABB 登記，腳下那 30 cm 就是一條可以鑽進去的縫。
+         其他種類預設照 AABB，但給了 `base` 就一樣拉到那裡——樓梯底下的
+         填石就是這樣從地面登記起的。 */
+      const bot = o.base !== undefined ? o.base : kind === 'block' ? 0 : miny - gr;
       const c = {
         min: [minx - gr, bot, minz - gr],
         max: [maxx + gr, maxy + gr, maxz + gr],
@@ -481,6 +483,8 @@ export class Build {
       max: [cx + w / 2, cy + h / 2, cz + d / 2],
       kind: o.kind || 'shell',
       base: o.base === undefined ? cy - h / 2 : o.base,
+      // 底下是故意空著的（懸臂石階）。只有驗證器在問。
+      ...(o.open ? { open: true } : {}),
     });
     return this;
   }

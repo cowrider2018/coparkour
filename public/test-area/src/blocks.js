@@ -176,7 +176,11 @@ function rampart(B, flames, seed, A) {
      牆的牆頂上才有東西頂著，而且缺掉的石板看到的是它——以前那 11 塊
      缺口是看穿到 3.2 公尺底下的真洞，因為台體中間是中空的。 */
   flagstones(B, { x: 0, z: 0, w: W - 1.6, d: D - 1.6, y: H, out: 0.8, seed: seed + 5, ruin: 0.22, cell: 1.6 });
-  B.block(0, H - 1, 0, W, 2, D, { kind: 'floor', base: H - 2 });   // 露台的地板
+  /* 露台的地板，一路實心到地面。以前只登記了最上面 2 公尺（1.2～3.2），
+     底下那 1.2 比狗還高，於是整座台體的肚子是一片鑽得進去的空地：
+     從樓梯旁的矮牆跳進第二折底下的空腔、穿過南牆的缺口，就站在露台的
+     正下方了。台基本來就是實心的——四道牆只是它的外皮。 */
+  B.block(0, H / 2, 0, W, H, D, { kind: 'floor', base: 0 });
 
   // 外側扶壁。城牆的側面沒有它就只是一片板子。
   for (const t of [-8.5, -4.2, 0, 4.2, 8.5]) {
@@ -233,9 +237,18 @@ function rampart(B, flames, seed, A) {
      平台接到牆的缺口上——樓梯只要有一階落在露台鋪面的正下方，那片鋪面
      的碰撞盒就會變成一道擋在半空的牆。 */
   const s1 = stair(B, { x: SX, z: -hd - 8.9, y: 0, yaw: 0, steps: 6, rise: 0.27, run: 0.62, w: 3.2, seed: seed + 70 });
-  const s2 = stair(B, { x: SX, z: -hd - 5.0, y: s1.top, yaw: 0, steps: 6, rise: 0.27, run: 0.62, w: 3.2, seed: seed + 71 });
+  // 第二折的填石砌到地面，不是砌到第一折的頂——那 1.6 公尺底下是空的。
+  const s2 = stair(B, { x: SX, z: -hd - 5.0, y: s1.top, ground: 0, yaw: 0, steps: 6, rise: 0.27, run: 0.62, w: 3.2, seed: seed + 71 });
   // 接到缺口的那塊平台，頂面跟最後一階同高。
   B.add(B.kit.brick(3.4, 0.36, 1.5, 0.06), { p: [SX, s2.top - 0.18, -hd - 0.75], color: C.granite, solid: 'step' });
+  /* 平台底下的砌體，一樣到地面。它同時把南牆缺口的下半截封起來：缺口是
+     給樓梯穿過牆用的，不是給人從地面走進台體裡的。 */
+  {
+    const fh = s2.top - 0.36;
+    B.add(B.kit.brick(3.4 * 0.96, fh, 1.5 * 0.96, 0.04), {
+      p: [SX, fh / 2, -hd - 0.75], color: C.stoneDeep, ink: false, solid: 'shell', base: 0,
+    });
+  }
   // 階梯兩側的矮牆，免得從側面掉下去。
   for (const side of [-1, 1]) {
     /* 從地面砌起，不是從 0.5 起——以前那道牆底下是一段空的，而牆是
@@ -380,6 +393,21 @@ function cistern(B, flames, seed, A) {
   const r = rng(seed);
   const keepIn = inArena(A);
   const R = 13;
+  /* 貼牆殘階的位置：n 級，從 a0 起沿著牆爬 span 弧度，踏板中心在半徑 rr，
+     石梁往外一路砌到 back（牆身裡）。碎石、火盆、枯樹都要讓開這一段——
+     它底下是空的，而擺在懸臂梯底下的東西不是頂進梁裡（大石、樹），就是
+     在燒上面那一級（火盆）。 */
+  const STAIR = { n: 14, a0: 2.4, span: 2.3, rr: R - 1.5, back: 12.55 };
+  /** (x, z) 離殘階有沒有 pad 那麼遠。角度的餘裕是踏板的半寬（1.0 公尺）加 pad。 */
+  const offStair = (x, z, pad) => {
+    const rad = Math.hypot(x, z);
+    if (rad < STAIR.rr - 0.65 - pad) return true;
+    let a = Math.atan2(z, x);
+    if (a < 0) a += Math.PI * 2;
+    const da = (1.0 + pad) / STAIR.rr;
+    const last = STAIR.a0 + ((STAIR.n - 1) / STAIR.n) * STAIR.span;
+    return a < STAIR.a0 - da || a > last + da;
+  };
   /* 圓的房間、圓的鋪面。`round` 讓石板照半徑裁、基座換成一塊圓盤——
      方的基座會在環牆的四個對角戳出去 2.6 公尺。 */
   flagstones(B, { x: 0, z: 0, w: 24, d: 24, y: 0, round: R - 0.8, seed: seed + 1, ruin: 0.4, cell: 1.5 });
@@ -393,7 +421,12 @@ function cistern(B, flames, seed, A) {
     const gate = i % 4 === 0;
     const from = [Math.cos(a0) * R, Math.sin(a0) * R];
     const to = [Math.cos(a1) * R, Math.sin(a1) * R];
-    if (gate) {
+    if (gate && !offStair(Math.cos(mid) * STAIR.rr, Math.sin(mid) * STAIR.rr, 0)) {
+      /* 殘階正好橫過西門。懸臂石階的每一級都要砌進牆裡，門洞那一段沒有牆
+         可以砌——那幾級會是真的浮在門口的空氣裡。所以這一段不開門，砌成
+         整段牆。殘破度給定值、不抽籤：抽了的話後面整串亂數都會錯位。 */
+      ring[i] = wall(B, { from, to, h: 6.0, thick: 1.1, ruin: 0.3, seed: seed + 10 + i });
+    } else if (gate) {
       // 門洞：拱腳兩側各留一小段牆，中間是拱。
       const t = 0.28;
       const lerp = (u) => [from[0] + (to[0] - from[0]) * u, from[1] + (to[1] - from[1]) * u];
@@ -433,24 +466,54 @@ function cistern(B, flames, seed, A) {
 
   /* 貼著內壁往上爬的殘階。每一階都是獨立的碰撞盒，所以真的踩得上去；
      爬到第 14 階就沒了，斷面上放幾塊翹起的碎石。 */
-  const steps = 14;
-  for (let i = 0; i < steps; i++) {
-    const a = 2.4 + (i / steps) * 2.3;
-    const rr = R - 1.5;
+  for (let i = 0; i < STAIR.n; i++) {
+    const a = STAIR.a0 + (i / STAIR.n) * STAIR.span;
+    const rr = STAIR.rr;
     const x = Math.cos(a) * rr, z = Math.sin(a) * rr;
     /* 第一級從 0.18 起（頂面 0.33），所以走得上去——以前是 0.3 起、
        頂面 0.45，比抬腳的 0.36 高，得跳一下才上得去第一級。 */
     const y = 0.18 + i * 0.32;
-    // 每一級底下的填石。以前每一級都是一塊懸空的板貼在牆上，十四級
-    // 疊起來就是一道浮在空中的樓梯。
-    B.add(B.kit.brick(1.9, 0.32, 1.15, 0.04), {
-      p: [x, y - 0.31, z], r: [0, -a + Math.PI / 2, 0], color: C.stoneDeep, ink: false,
+    const yaw = -a + Math.PI / 2;
+    // 這一塊的兩條軸：u 沿著牆（踏板的長邊），v 往外指向牆。
+    const ux = [Math.cos(yaw), -Math.sin(yaw)], uv = [Math.sin(yaw), Math.cos(yaw)];
+    /* 懸臂石階：每一級是一根從牆裡伸出來的石梁，底下是空的——塔樓裡的
+       旋轉梯就是這樣砌的，所以狗走得進樓梯底下是對的。
+
+       「懸空」與「浮在空中」的差別只在一件事：石梁有沒有砌進牆裡。以前踏板
+       的外緣停在 12.15，而牆的內皮在 12.2～12.45，中間那一條縫讓十四塊板
+       看起來是黏在牆面上的。現在踏板和它底下那塊梁身都往外一路伸進牆身
+       （到 back），從房間裡看，每一級都是從牆裡長出來的。 */
+    const inner = rr - 0.65;                        // 踏板內緣（房間那一側）
+    const depth = STAIR.back - inner;               // 內緣 → 牆裡
+    const off = inner + depth / 2 - rr;             // 石梁中心相對踏板中心往外多少
+    const cx = x + uv[0] * off, cz = z + uv[1] * off;
+    B.add(B.kit.brick(2.0, 0.3, depth, 0.05), {
+      p: [cx, y, cz], r: [0, yaw, 0],
+      color: i % 2 ? C.granite : C.graniteDark,
     });
-    B.add(B.kit.brick(2.0, 0.3, 1.3, 0.05), {
-      p: [x, y, z], r: [0, -a + Math.PI / 2, 0],
-      color: i % 2 ? C.granite : C.graniteDark, solid: 'step',
+    // 踏板底下的梁身：一級 0.32 厚，讓每一級讀起來是一塊石梁而不是一片板。
+    B.add(B.kit.brick(1.9, 0.32, depth - 0.1, 0.04), {
+      p: [cx + uv[0] * 0.05, y - 0.31, cz + uv[1] * 0.05], r: [0, yaw, 0], color: C.stoneDeep, ink: false,
     });
-    if (i === steps - 1) {
+    /* 碰撞：踏板加梁身那一段（y − 0.47 ～ y + 0.15），切成 4×3 的小格。
+       這一塊是斜的而碰撞盒是軸對齊的——整塊一個盒子的話，45° 那幾級的
+       外接盒會往房間裡多伸半公尺，底下就是一片看不見的天花板（站在火盆上
+       的狗頭頂上以前就有一片）。切小之後每格只胖幾公分。
+
+       `open`：這一級底下是故意空著的。驗證器掃「鑽進建築底下的空心」時
+       認得這個字，懸臂梯底下的空間不算。 */
+    const bot = Math.max(0, y - 0.47), top = y + 0.15;
+    const cw = 2.0 / 4, cd = depth / 3;
+    const ex = Math.abs(ux[0]) * cw + Math.abs(uv[0]) * cd;
+    const ez = Math.abs(ux[1]) * cw + Math.abs(uv[1]) * cd;
+    for (let u = 0; u < 4; u++) {
+      for (let v = 0; v < 3; v++) {
+        const lu = (u - 1.5) * cw, lv = (v - 1) * cd;
+        B.block(cx + ux[0] * lu + uv[0] * lv, (bot + top) / 2, cz + ux[1] * lu + uv[1] * lv,
+          ex, top - bot, ez, { kind: 'step', open: true });
+      }
+    }
+    if (i === STAIR.n - 1) {
       for (let k = 0; k < 4; k++) {
         B.add(B.kit.brick(0.5, 0.22, 0.4, 0.04), {
           p: [x + r.range(-0.8, 0.8), y + 0.26, z + r.range(-0.6, 0.6)],
@@ -461,8 +524,12 @@ function cistern(B, flames, seed, A) {
   }
 
   // 從殘存的穹稜垂下來的鎖鏈，以及牆邊的火盆與根。
+  /* 起始角 0.6 而不是 0.8：殘階佔了整圈的三分之一以上，四個等分的角度裡
+     至少一個落在它上面。0.8 的時候是兩個（一盆火嵌在第九級底下、另一盆
+     頂著第一級），0.6 只剩一個，那一組就不擺。 */
   for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * Math.PI * 2 + 0.8;
+    const a = (i / 4) * Math.PI * 2 + 0.6;
+    if (!offStair(Math.cos(a) * 10.4, Math.sin(a) * 10.4, 0.6)) continue;
     // 鏈子掛在牆頭上，不是掛在一個寫死的 5.6——牆頭比它低的地方，鏈子
     // 的上端會浮在牆外面的空氣裡。
     const anchor = Math.max(2.9, restsOn(ring.filter(Boolean), Math.cos(a) * R, Math.sin(a) * R) - 0.3);
@@ -475,14 +542,19 @@ function cistern(B, flames, seed, A) {
   }
   for (let i = 0; i < 3; i++) {
     const a = r() * Math.PI * 2;
-    deadTree(B, { x: Math.cos(a) * 11.2, z: Math.sin(a) * 11.2, y: 0, s: r.range(0.8, 1.2), seed: seed + 160 + i });
+    const s = r.range(0.8, 1.2);          // 先抽：跳過的那一棵不能讓後面的亂數整串錯位
+    if (!offStair(Math.cos(a) * 11.2, Math.sin(a) * 11.2, 0.8)) continue;
+    deadTree(B, { x: Math.cos(a) * 11.2, z: Math.sin(a) * 11.2, y: 0, s, seed: seed + 160 + i });
   }
   for (let i = 0; i < 9; i++) {
     const a = r() * Math.PI * 2, rad = r.range(8.5, 12.5);
     rubble(B, {
       x: Math.cos(a) * rad, z: Math.sin(a) * rad, y: 0, r: r.range(1.4, 2.8), n: 20,
       boulders: rad > 10.5 ? 1 : 0,
-      keep: (x, z) => clearOf(7.0, 7.0, 7.4)(x, z) && keepIn(x, z), seed: seed + 170 + i,
+      // 大石的半徑到 1 公尺，所以離殘階要留 1.3：石頭本身加上一個身體寬，
+      // 不然石頭與石階之間會夾出一條進得去、爬不出來的縫。
+      keep: (x, z) => clearOf(7.0, 7.0, 7.4)(x, z) && keepIn(x, z) && offStair(x, z, 1.3),
+      seed: seed + 170 + i,
     });
   }
   for (let i = 0; i < 18; i++) {
@@ -594,8 +666,12 @@ export const BLOCKS = [
     // 9.9 而不是 10.5：貼牆那道殘階的第一級（頂面 0.33）伸進來到 10.35，
     // 而樓梯是房間之間的垂直交通，不算房間的地板。
     room: { y: 0, rad: 9.9 },
-    // 環牆的外皮在 13.55。
-    arena: { shape: 'circle', x: 0, z: 0, r: 13.9, lid: 12.0, hug: true },
+    /* 環牆的外皮在 13.55——那是轉角。環牆是 16 段直牆，每一段的中點外皮
+       只到 13.0·cos(π/16) + 0.55 ≈ 13.3。黑牆以前在 13.9，於是每段牆中點
+       外面有一條 0.6 寬的縫：從殘階頂跳上牆頭、往外一走就掉進去，剛好塞得
+       下狗，而且再也走不回來。13.75 讓那條縫只剩 0.45，比身體窄，站在牆頭
+       往外走會先被黑牆擋住，不會掉下去。 */
+    arena: { shape: 'circle', x: 0, z: 0, r: 13.75, lid: 12.0, hug: true },
   },
 ];
 
