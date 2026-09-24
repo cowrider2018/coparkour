@@ -470,6 +470,8 @@ export class Build {
     this.walls = [];         // 每一道牆的登記（給「牆身不透光」那一項驗）
     this.floors = [];        // 每一片鋪面的登記（給「鋪面有基座」那一項驗）
     this.portals = [];       // 感測區：走進去就被送到別的地方（見 `portal()`）
+    this.arrivals = [];      // 到達點：感測區送人去的地方（見 `arrive()`）
+    this.pieces = [];        // 不進合併緩衝區的幾何（門的兩種狀態，見 `detach()`）
     this._c = new THREE.Color();
     /* 每個頂點 4 個 int8：紋理方向與「材料 × 16 + 偏移」（見 surface.js）。
        用型別陣列自己長，不用一般陣列——兩百萬個頂點，一般陣列的每一格是
@@ -676,15 +678,99 @@ export class Build {
 
   /**
    * 一個感測區：身體走進這個直立的圓柱（中心 x, z、半徑 r、y0～y1）就被
-   * 送走。`to` 是目的地——一個區塊的 id，送到那個區塊的出生點（跟按 R
-   * 一樣）；`'spawn'` 是「這個區塊自己的出生點」，砌完的時候才認得是誰。
+   * 送走。`to` 是目的地，三種寫法：
+   *
+   *   'spawn'          這個區塊自己的出生點（砌完的時候才認得是誰）
+   *   'alley'          那個區塊的出生點（跟按 R 一樣）
+   *   'alley.fog'      那個區塊的一個到達點（`arrive()` 登記的名字）
+   *   '.towerTop'      這個區塊自己的一個到達點
+   *
+   * 送到到達點而不是出生點，是因為一扇門的另一邊不是房間的中央：從塔頂的
+   * 門進去，要從塔腳的門出來。到達點一律擺在對面那個感測區**外面**——擺在
+   * 裡面的話，一落地就又被送回來，兩邊來回彈。
+   *
+   * `o.door`：這個感測區屬於哪一組門。那一組門關著的時候它不存在（門的
+   * 狀態是執行時的，見 walk.js 的 portalAt）。`o.oneWay`：單向的通道（井），
+   * 驗證器不替它找回程。
    *
    * 它不是碰撞體，不進 `colliders`：那張清單上的每一支程式（走路、鏡頭、
    * 驗證）都在問「擋不擋」，而感測區什麼都不擋。混進去的話，每一支都得
    * 學會跳過它，漏一支就是一面看不見的牆。
    */
-  portal(x, z, r, y0, y1, to = 'spawn') {
-    this.portals.push({ x, z, r, y0, y1, to });
+  portal(x, z, r, y0, y1, to = 'spawn', o = {}) {
+    this.portals.push({ shape: 'circle', x, z, r, y0, y1, to, ...gate(o) });
+    return this;
+  }
+
+  /**
+   * 方的感測區（x0～x1、z0～z1、y0～y1），其餘跟 `portal()` 一樣。門洞與
+   * 一條路沒入黑霧的那一截都是方的——用圓去蓋一扇門，圓會凸到走道上。
+   */
+  portalBox(x0, z0, x1, z1, y0, y1, to, o = {}) {
+    this.portals.push({
+      shape: 'box', x0: Math.min(x0, x1), x1: Math.max(x0, x1),
+      z0: Math.min(z0, z1), z1: Math.max(z0, z1), y0, y1, to, ...gate(o),
+    });
+    return this;
+  }
+
+  /**
+   * 一個到達點：感測區送人來的地方。y 是腳的高度，可以比地面高（那就是從
+   * 那裡掉下來）；yaw 是到達時鏡頭的方位，跟區塊出生點的第四個數同一個意思。
+   * 名字只要在區塊裡不重複——砌完的時候前面會加上區塊的 id。
+   */
+  arrive(name, x, y, z, yaw = Math.PI) {
+    this.arrivals.push({ name, x, y, z, yaw });
+    return this;
+  }
+
+  /**
+   * 這一段之內 `add` 進來的幾何**不進合併的那一份**，另外成一塊。
+   *
+   * 整張地圖是一個 mesh，因為它是靜態的——但門不是：一扇門關著是木門、
+   * 開著是一段漸漸暗進去的門洞（`haze()`），兩種狀態都砌好，執行時只換哪一
+   * 塊看得到。`tag` 原樣帶到 `finish()` 的 `pieces` 上（門是 `{ door, open, face }`）。
+   *
+   * 碰撞照常進 `colliders`（兩種狀態的門都不擋路，所以目前沒有）；`record`
+   * 在這一段裡關掉，因為驗證器的 `parts` 記的是合併那一份的頂點位置。
+   */
+  detach(tag, fn) {
+    const keep = {
+      pos: this.pos, nrm: this.nrm, col: this.col, ink: this.ink, inkA: this.inkA, inkB: this.inkB,
+      sf: this.sf, sfN: this.sfN, mo: this.mo, record: this.record, hz: this.hz,
+    };
+    this.pos = []; this.nrm = []; this.col = []; this.ink = []; this.inkA = []; this.inkB = [];
+    this.sf = new Int8Array(1 << 12); this.sfN = 0; this.mo = new Uint8Array(1 << 10);
+    this.record = false;
+    this.hz = { pos: [], alpha: [] };
+    try {
+      fn();
+      this.pieces.push({
+        ...tag, pos: this.pos, nrm: this.nrm, col: this.col,
+        ink: this.ink, inkA: this.inkA, inkB: this.inkB,
+        sf: this.sf.slice(0, this.sfN), mo: this.mo.slice(0, this.sfN / 4), haze: this.hz,
+      });
+    } finally {
+      Object.assign(this, keep);
+    }
+    return this;
+  }
+
+  /**
+   * 一片黑霧：四個角（依序繞一圈）、一個透明度，法線朝 `toward`（從哪一邊
+   * 看得到它）。跟黑牆的霧殼同一種東西（veil.js）——純黑、只有透明度，材質
+   * 是單面的，所以繞向由這裡照 `toward` 排好，呼叫端不必記得順序。
+   *
+   * 只收在 `detach()` 裡面：黑霧是半透明的，進不了合併的那一份（那一份是
+   * 不透明的材質），它跟著那一塊一起出現、一起消失。
+   */
+  haze(p0, p1, p2, p3, alpha, toward) {
+    if (!this.hz) throw new Error('haze() 只能在 detach() 裡面用');
+    const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
+    const wx = p2[0] - p0[0], wy = p2[1] - p0[1], wz = p2[2] - p0[2];
+    const nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
+    const q = nx * toward[0] + ny * toward[1] + nz * toward[2] >= 0 ? [p0, p1, p2, p3] : [p0, p3, p2, p1];
+    for (const k of [0, 1, 2, 0, 2, 3]) { this.hz.pos.push(...q[k]); this.hz.alpha.push(alpha); }
     return this;
   }
 
@@ -727,6 +813,9 @@ export class Build {
    * @param {object} [o] kind：'shell'（預設）／'floor'／'block'／'step'
    *   dome：柱頂再加一個這麼高的圓頂（預設 0 = 平頂，站得住）
    *   slip：圓頂上怎麼滑，'slide'／'fall'，見 walk.js 的 SLIDE
+   *   notch：開在柱身上的門洞，一串 { min, max, door } 方盒。`door` 那一組門
+   *     開著、身體的中心在其中一塊裡面的時候，這根圓柱不擋它（walk.js 的
+   *     solveXZ）；洞裡擋人的東西另外用 `block()` 登記。鏡頭照舊把圓柱當成實心的。
    */
   round(cx, cz, r, y0, y1, o = {}) {
     const dome = o.dome || 0;
@@ -738,6 +827,7 @@ export class Build {
       max: [cx + r, y1 + dome, cz + r],
       kind: o.kind || 'shell',
       base: o.base === undefined ? y0 : o.base,
+      ...(o.notch ? { notch: o.notch } : {}),
     });
     return this;
   }
@@ -769,30 +859,52 @@ export class Build {
     return this;
   }
 
-  /** @returns {{geometry, ink, colliders, parts, walls, floors, tris, inkLines}} */
+  /** @returns {{geometry, ink, colliders, parts, walls, floors, portals, arrivals, pieces, tris, inkLines}} */
   finish() {
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
-    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nrm, 3));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
-    g.setAttribute('aSurf', new THREE.Int8BufferAttribute(this.sf.slice(0, this.sfN), 4, true));
-    g.setAttribute('aMoss', new THREE.Uint8BufferAttribute(this.mo.slice(0, this.sfN / 4), 1, true));
-    g.computeBoundingSphere();
-    const ink = new THREE.BufferGeometry();
-    ink.setAttribute('position', new THREE.Float32BufferAttribute(this.ink, 3));
-    ink.setAttribute('aN0', new THREE.Int8BufferAttribute(new Int8Array(this.inkA), 3, true));
-    ink.setAttribute('aN1', new THREE.Int8BufferAttribute(new Int8Array(this.inkB), 3, true));
-    ink.computeBoundingSphere();
+    const { geometry, ink } = toGeometry({
+      pos: this.pos, nrm: this.nrm, col: this.col, ink: this.ink, inkA: this.inkA, inkB: this.inkB,
+      sf: this.sf.slice(0, this.sfN), mo: this.mo.slice(0, this.sfN / 4),
+    });
+    /* 另外成一塊的幾何（門）：同一套屬性，所以吃同一顆材質。黑霧另外帶著
+       （頂點與透明度，跟 veil.js 吐的是同一種資料）。 */
+    const pieces = this.pieces.map(({ pos, nrm, col, ink: ik, inkA, inkB, sf, mo, haze, ...tag }) => ({
+      ...tag, ...toGeometry({ pos, nrm, col, ink: ik, inkA, inkB, sf, mo }),
+      haze: { pos: new Float32Array(haze.pos), alpha: new Float32Array(haze.alpha) },
+    }));
     return {
-      geometry: g,
+      geometry,
       ink,
       colliders: this.colliders,
       parts: this.parts,
       walls: this.walls,
       floors: this.floors,
       portals: this.portals,
+      arrivals: this.arrivals,
+      pieces,
       tris: this.pos.length / 9,
       inkLines: this.ink.length / 6,
     };
   }
+}
+
+/** 感測區的兩個旗標：屬於哪一組門、是不是單向的。沒給就不帶這兩個欄位。 */
+function gate(o) {
+  return { ...(o.door ? { door: o.door } : {}), ...(o.oneWay ? { oneWay: true } : {}) };
+}
+
+/** 一份頂點資料 → 砌體的 BufferGeometry 與它的墨線。 */
+function toGeometry(d) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(d.pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(d.nrm, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(d.col, 3));
+  g.setAttribute('aSurf', new THREE.Int8BufferAttribute(d.sf, 4, true));
+  g.setAttribute('aMoss', new THREE.Uint8BufferAttribute(d.mo, 1, true));
+  g.computeBoundingSphere();
+  const ink = new THREE.BufferGeometry();
+  ink.setAttribute('position', new THREE.Float32BufferAttribute(d.ink, 3));
+  ink.setAttribute('aN0', new THREE.Int8BufferAttribute(new Int8Array(d.inkA), 3, true));
+  ink.setAttribute('aN1', new THREE.Int8BufferAttribute(new Int8Array(d.inkB), 3, true));
+  ink.computeBoundingSphere();
+  return { geometry: g, ink };
 }

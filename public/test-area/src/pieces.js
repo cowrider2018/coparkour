@@ -84,7 +84,10 @@ const chipAt = (x, y, z) => {
 /* ── 地板 ────────────────────────────────────────────────────────
    中央空地。這是唯一一片「必須乾淨」的區域：狗要在上面跑，所以石板是
    平的、沒有一塊突出來會卡腳的東西。缺塊處直接不畫（露出底下的土色
-   地面），苔只長在縫上，兩者都不影響行走。 */
+   地面），苔只長在縫上，兩者都不影響行走。
+
+   `keep(x, z)` 給每一格一個留下來的機率（0～1），疊在殘破之上：一條路要在
+   哪裡慢慢稀疏、斷掉，由呼叫端說。留不留用位置決定（hashAt），不多抽亂數。 */
 export function flagstones(B, o) {
   const r = rng(o.seed);
   const cell = o.cell || 1.5;
@@ -121,6 +124,7 @@ export function flagstones(B, o) {
         ? Math.hypot(cx - o.x, cz - o.z) / o.round
         : Math.max(Math.abs(cx - o.x) / (o.w / 2), Math.abs(cz - o.z) / (o.d / 2));
       if (r() < (o.ruin || 0.3) * q * q) continue;
+      if (o.keep && hashAt(cx, y, cz, 17) >= o.keep(cx, cz)) continue;
       const gap = 0.06 + r() * 0.05;
       const th = 0.18 + r() * 0.05;
       B.add(B.kit.brick(cell - gap, th, cell - gap, 0.05, chipAt(cx, y, cz)), {
@@ -254,6 +258,13 @@ export function wall(B, o) {
     return cmax < 0 ? y0 : y0 + bh * (cmax + 1) - 0.01;
   }
 
+  /* 錯開半塊的那一皮，最後一塊磚的中心就在牆的端頭上，多出去半塊——平常
+     那半塊插進隔壁那一段牆裡，看不到。隔壁那一段在某個高度開了洞（圓塔的
+     門）的話，它就斜插在洞裡。`flush` 給這一頭（`from`／`to`）一段絕對高度
+     [y0, y1]：那段高度裡的磚裁到端頭為止，不伸出去。 */
+  const flush = o.flush || {};
+  const flushed = (end, y) => !!end && y > end[0] && y < end[1];
+
   for (let c = 0; c < courses; c++) {
     const rel = bh * (c + 0.5);            // 離牆底多高——不是絕對 y
     const cy = y0 + rel;
@@ -266,11 +277,14 @@ export function wall(B, o) {
       if (rel > skyline(s)) continue;
       const jut = r() < 0.12 ? r.range(0.05, 0.16) : 0;   // 突出的丁磚
       const wob = r.range(-0.02, 0.02);                    // 砌歪的那一點點
+      const s0 = flushed(flush.from, cy) ? Math.max(s - bl / 2, -len / 2) : s - bl / 2;
+      const s1 = flushed(flush.to, cy) ? Math.min(s + bl / 2, len / 2) : s + bl / 2;
+      const tc = (s0 + s1) / 2 / len + 0.5;
       /* 磚縫只留 2 cm，倒角也收到 3.5 cm。第一版是 6 cm 縫加 5 cm 倒角，
          畫出來一面牆是一堆各自漂浮的方塊而不是砌體——那兩個數字加起來
          就是縫的視覺寬度，而砌體的縫必須比石頭薄一個數量級。 */
-      const bx = x0 + dx * t + nrm[0] * wob, bz = z0 + dz * t + nrm[1] * wob;
-      B.add(B.kit.brick(bl - 0.02, bh - 0.02, th + jut, 0.035, chipAt(bx, cy, bz)), {
+      const bx = x0 + dx * tc + nrm[0] * wob, bz = z0 + dz * tc + nrm[1] * wob;
+      B.add(B.kit.brick(s1 - s0 - 0.02, bh - 0.02, th + jut, 0.035, chipAt(bx, cy, bz)), {
         p: [bx, cy, bz],
         r: [0, yaw + r.range(-0.02, 0.02), 0],
         color: stoneTone(r),

@@ -327,9 +327,12 @@ export function nearXZ(b, x, z, pad) {
  * 再由 `supportAt` 把牠抬上來。「踏得上去」因此不是另外一條規則，
  * 而是這兩步的順序造成的結果。
  *
+ * `doors` 是門的狀態（門的組名 → 開著嗎），跟 `portalAt` 同一份：圓柱上屬於
+ * 某一組門的缺口，那一組門開著才存在。沒給就是全部關著。
+ *
  * @returns {[number, number]} 推出後的 x, z
  */
-export function solveXZ(cols, x0, z0, feetY) {
+export function solveXZ(cols, x0, z0, feetY, doors = {}) {
   const R = PHYS.radius;
   const headY = feetY + PHYS.height;
   let x = x0, z = z0;
@@ -366,6 +369,10 @@ export function solveXZ(cols, x0, z0, feetY) {
     }
     if (b.min[1] >= headY) continue;              // 從底下鑽得過去
     if (b.shape === 'circle') {
+      /* 圓柱上開的門洞（`notch`）：那一組門開著、身體的中心在洞口那一塊裡的
+         時候，這根圓柱不擋它——擋它的是門洞自己的盒子（兩側的門框、甬道的盡頭）。 */
+      if (b.notch && b.notch.some((n) => doors[n.door] && x > n.min[0] && x < n.max[0]
+        && z > n.min[2] && z < n.max[2] && feetY >= n.min[1] && feetY < n.max[1])) continue;
       /* 圓柱：推出的方向是半徑，所以繞著柱子走是滑順的一圈，而不是四段
          各被一個角頂開的直線。 */
       const dx = x - b.x, dz = z - b.z;
@@ -398,14 +405,22 @@ export function solveXZ(cols, x0, z0, feetY) {
 
 /**
  * 腳在 (x, y, z) 的身體在不在某一個感測區裡。回傳那一個（blocks.js 砌的，
- * `to` 已經換成區塊 id），不在就是 null。
+ * `dest` 是送去的地方），不在就是 null。
+ *
+ * `doors` 是門的狀態（門的組名 → 開著嗎）。屬於某一組門的感測區，那一組門
+ * 開著才存在；沒給 `doors` 就是全部關著。
  *
  * 規則只有這一支：頁面每幀問一次、驗證器淹水的時候問一次，兩邊不准各寫
  * 一份「怎樣算走進去」。
  */
-export function portalAt(portals, x, y, z) {
+export function portalAt(portals, x, y, z, doors = {}) {
   for (const p of portals) {
-    if (y >= p.y0 && y <= p.y1 && Math.hypot(x - p.x, z - p.z) < p.r) return p;
+    if (y < p.y0 || y > p.y1) continue;
+    if (p.door && !doors[p.door]) continue;
+    const inside = p.shape === 'box'
+      ? x > p.x0 && x < p.x1 && z > p.z0 && z < p.z1
+      : Math.hypot(x - p.x, z - p.z) < p.r;
+    if (inside) return p;
   }
   return null;
 }
