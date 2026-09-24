@@ -259,6 +259,37 @@ const gritField = (() => {
   };
 })();
 
+/* ── 苔長多少 ─────────────────────────────────────────────────────
+   每一張圖有自己的苔量（blocks.js 名冊的 `moss`，0～1，1 = 預設那麼多）。
+   著色器那邊的苔是「遮罩高過門檻的地方長」，所以苔量要換算成門檻——而且要
+   照遮罩的分佈換，不是線性地把門檻往上推：遮罩的值集中在 0.5 附近，線性
+   推的話 0.9 跟 0.5 看起來幾乎一樣，0.4 就突然全沒了。
+
+   做法是把遮罩在整張貼圖上的分佈排好，「苔量 k」就是「面積是預設的 k 倍」
+   的那個門檻。0 回傳 1：遮罩到不了 1，一塊苔都不會長。 */
+let MOSS_SORTED = null;
+const MOSS_CACHE = new Map();
+/** @param {number} rate 苔量 0～1 @returns {number} 著色器用的門檻 */
+export function mossAt(rate) {
+  const k = Math.min(1, Math.max(0, rate));
+  if (k >= 1) return MOSS.at;
+  if (k <= 0) return 1;
+  let t = MOSS_CACHE.get(k);
+  if (t !== undefined) return t;
+  if (!MOSS_SORTED) {
+    const N = 128, a = new Float32Array(N * N);
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) a[j * N + i] = plasterField((i + 0.5) / N, (j + 0.5) / N);
+    MOSS_SORTED = a.sort();
+  }
+  const S = MOSS_SORTED, n = S.length;
+  let above = 0;
+  for (let i = n - 1; i >= 0 && S[i] >= MOSS.at; i--) above++;
+  const want = Math.max(1, Math.round(above * k));
+  t = S[n - want];
+  MOSS_CACHE.set(k, t);
+  return t;
+}
+
 /** 兩張貼圖、各四個通道。順序就是 SURF_DEF 裡的 tex／ch。 */
 export const FIELDS = [
   [stoneField, woodField, plasterField, tileField],

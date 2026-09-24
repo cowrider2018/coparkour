@@ -1189,6 +1189,7 @@ function outskirts(B, seed) {
   for (const b of BLOCKS) {
     const A = b.arena;
     if (!A.ring) continue;             // 貼著牆面的房間沒有外圈
+    B.mossRate = b.moss ?? 1;          // 外圈的苔跟著它那一張圖
     const ox = b.origin[0] + A.x, oz = b.origin[1] + A.z;
     const r0 = A.ring, r1 = A.r - 0.8;
     for (let i = 0; i < 22; i++) {
@@ -1243,7 +1244,11 @@ function outskirts(B, seed) {
    地板，以及繞得過去、爬不上去的障礙物（柱、井、火盆、雕像、大石）。
 
    這是 roguelike 要的那個單位：一個房間拼進地圖之後，「跑不跑得動」
-   不必靠玩，`tools/verify-test-area.mjs` 用真的物理走一遍就知道。 */
+   不必靠玩，`tools/verify-test-area.mjs` 用真的物理走一遍就知道。
+
+   `moss` 是這一張圖的苔量，0～1，不給就是 1（預設那麼多）。它同時管石頭
+   朝上那一面的苔（面積是預設的幾倍）與苔叢（每一叢長不長的機率）。只能往下
+   調：1 以上跟 1 一樣。墓室是封死的地下室、沒有光，所以是 0。 */
 export const BLOCKS = [
   {
     id: 'courtyard', name: '崩塌中庭', hint: '兩側拱廊、一圈斷柱、門樓與鐵閘',
@@ -1254,7 +1259,7 @@ export const BLOCKS = [
   },
   {
     id: 'rampart', name: '城牆平台', hint: '抬高的露台、女牆垛口、斷塔',
-    origin: [PITCH, 0], build: rampart, seed: 0x3c4d,
+    origin: [PITCH, 0], build: rampart, seed: 0x3c4d, moss: 0.2,
     room: { y: 3.2, hx: 9.8, hz: 6.2 },
     // 圓形黑牆，半徑 22——露台的牆在 7.5～11，斷塔伸到 18.5、樓梯到 16.4，
     // 所以牆外那一圈（塔、階、扶壁、牆腳的碎石）整個留在場地裡。
@@ -1262,14 +1267,14 @@ export const BLOCKS = [
   },
   {
     id: 'throne', name: '王座廳', hint: '兩列柱、斜插的穹稜、台座與王座',
-    origin: [0, PITCH], build: throne, seed: 0x5e6f,
+    origin: [0, PITCH], build: throne, seed: 0x5e6f, moss: 0.3,
     room: { y: 0, cz: -1.5, hx: 6.9, hz: 12.0 },
     // 牆面：兩側 8.05、南端 14.95、北端（王座背後那道）18.95。
     arena: { shape: 'rect', x0: -8.3, x1: 8.3, z0: -15.2, z1: 19.2, lid: 14.0, hug: true },
   },
   {
     id: 'cistern', name: '圓塔水窖', hint: '環形拱廊、貼牆殘階、垂鏈',
-    origin: [PITCH, PITCH], build: cistern, seed: 0x7a8b,
+    origin: [PITCH, PITCH], build: cistern, seed: 0x7a8b, moss: 0,
     // 9.9 而不是 10.5：貼牆那道殘階的第一級（頂面 0.33）伸進來到 10.35，
     // 而樓梯是房間之間的垂直交通，不算房間的地板。
     room: { y: 0, rad: 9.9 },
@@ -1282,7 +1287,7 @@ export const BLOCKS = [
   },
   {
     id: 'wallwalk', name: '城牆步道', hint: '沒入黑霧的幕牆、兩座方塔、牆頂走道',
-    origin: [0, 2 * PITCH], build: wallwalk, seed: 0x9cad,
+    origin: [0, 2 * PITCH], build: wallwalk, seed: 0x9cad, moss: 0.2,
     // 走道：女牆之間（−3.1～3.0），兩座塔之間那一段。塔頂也走得到，但塔頂不算這一片。
     room: { y: 5.2, hx: 7.6, hz: 2.6 },
     /* 圓形黑牆，半徑 22。幕牆整段穿過它（兩端的切面藏在牆外），塔角離它
@@ -1299,7 +1304,7 @@ export const BLOCKS = [
   },
   {
     id: 'breach', name: '城牆缺口', hint: '塌了一截的城牆，衝刺跳過缺口',
-    origin: [PITCH, 2 * PITCH], build: breach, seed: 0xb1c2,
+    origin: [PITCH, 2 * PITCH], build: breach, seed: 0xb1c2, moss: 0.2,
     // 西段走道，缺口（x 4.5～9.0）之前那一片。
     room: { y: 5.2, hx: 3.8, hz: 2.6 },
     /* 跟城牆步道同一個外框與同一層霧。`fenced` 給的是一個高度：掉進缺口
@@ -1312,7 +1317,7 @@ export const BLOCKS = [
   },
   {
     id: 'crypt', name: '地下墓室', hint: '拱肋、石棺、壁龕與燭火',
-    origin: [0, 3 * PITCH], build: crypt, seed: 0xc3d4,
+    origin: [0, 3 * PITCH], build: crypt, seed: 0xc3d4, moss: 0,
     room: { y: 0, hx: 2.6, hz: 8.2 },
     /* 牆面：兩側 8.05、兩端 14.85。封頂壓在拱頂上方一公尺多（拱頂約 7.1）。
        `sealed`：四面都是牆，沒有一個門洞通到黑牆——走到底停在牆上，
@@ -1350,6 +1355,7 @@ export function buildRuins(opts = {}) {
   for (const b of BLOCKS) {
     const [ox, oz] = b.origin;
     const mark = B.pos.length;
+    B.mossRate = b.moss ?? 1;
     // 場地帶進去，因為撒出去的東西要逐顆問「還在黑牆裡面嗎」。
     const meta = b.build(B, flames, b.seed, b.arena);
     // 區塊是用自己的局部座標砌的，砌完把這一段整個平移到世界位置上——
@@ -1366,6 +1372,7 @@ export function buildRuins(opts = {}) {
       });
   }
   outskirts(B, 0x9c0d);
+  B.mossRate = 1;
 
   /* 黑牆。砌完、平移完才登記，因為它拿的是世界座標——`shift` 搬的是
      「還沒搬過的」那些盒子，這幾筆進來得太早會被多搬一次。 */

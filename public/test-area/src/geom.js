@@ -29,7 +29,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { SURF_OF } from './palette.js';
-import { SURF, packSurf } from './surface.js';
+import { SURF, packSurf, mossAt } from './surface.js';
 
 /* ── 隨機源 ──────────────────────────────────────────────────────
    mulberry32，跟 src/rng.js 同一支。碎石、苔、缺口全部由它決定，所以
@@ -463,6 +463,11 @@ export class Build {
        8 個位元組。 */
     this.sf = new Int8Array(1 << 20);
     this.sfN = 0;
+    /* 苔量：這一段 `add` 進來的東西屬於哪一張圖，那張圖的苔長多少（0～1）。
+       blocks.js 每砌一個區塊就換一次。它管兩件事：石頭朝上那一面的苔
+       （逐頂點烘成著色器的門檻，aMoss）與苔叢（pieces.js 的 mossTuft）。 */
+    this.mossRate = 1;
+    this.mo = new Uint8Array(1 << 18);
   }
 
   /**
@@ -589,11 +594,17 @@ export class Build {
       const grown = new Int8Array(L);
       grown.set(this.sf.subarray(0, this.sfN));
       this.sf = grown;
+      const mo = new Uint8Array(L / 4);
+      mo.set(this.mo.subarray(0, this.sfN / 4));
+      this.mo = mo;
     }
     const F = this.sf;
     for (let i = 0, k = this.sfN; i < nv; i++, k += 4) {
       F[k] = gx; F[k + 1] = gy; F[k + 2] = gz; F[k + 3] = gw;
     }
+    // 苔的門檻。只有石頭會長苔，其他材料一律 1（不長）。
+    const ma = sid === SURF.stone ? Math.round(mossAt(this.mossRate) * 255) : 255;
+    this.mo.fill(ma, this.sfN / 4, this.sfN / 4 + nv);
     this.sfN += nv * 4;
   }
 
@@ -752,6 +763,7 @@ export class Build {
     g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nrm, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
     g.setAttribute('aSurf', new THREE.Int8BufferAttribute(this.sf.slice(0, this.sfN), 4, true));
+    g.setAttribute('aMoss', new THREE.Uint8BufferAttribute(this.mo.slice(0, this.sfN / 4), 1, true));
     g.computeBoundingSphere();
     const ink = new THREE.BufferGeometry();
     ink.setAttribute('position', new THREE.Float32BufferAttribute(this.ink, 3));
