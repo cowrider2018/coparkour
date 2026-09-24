@@ -28,9 +28,24 @@
        永遠鬆不開。
    縱向（人往鏡頭走過來）不拖：那是「變近」，由吊臂處理。把縱向也拖住的
    話，倒退撞牆的時候樞紐會被人推著往牆裡走，鏡頭跟著被擠扁。
+
+   ── 樞紐不准出牆 ────────────────────────────────────────────────
+   上面那條橫向的拖是**直線**的（垂直於視線），而圓形的黑牆是彎的：沿著
+   圓牆走的時候，拖出來的那條線是一條弦，它會切到牆外面去。人一直在牆內
+   （身體被 solveXZ 擋著），樞紐卻一路飄出去——方的場地看不到這件事，因為
+   直線拖在直牆邊不會離開房間。
+
+   出了牆就不只是「看點跑掉」：`boomLimit` 的射線與圓是從**牆內**解的，
+   樞紐在外面的時候那條二次式取到的是另一側的交點，吊臂因此不是當場歸零
+   （鏡頭縮進頭裡），就是一路伸到牆外去——畫面整片黑。
+
+   所以樞紐每一幀最後都夾回場地裡，留的餘裕跟吊臂問牆用的是同一個
+   （`CAM.wall`）：於是 `boomLimit` 永遠是從牆內發出的射線，一定有解。
+   夾住的代價是人可能被留在 dead zone 外面——那跟釘住樞紐換來的是同一
+   件事，而且只有貼著圓牆繞的時候才會發生。
    ------------------------------------------------------------------ */
 
-import { boomLimit } from './walk.js';
+import { boomLimit, clampArena } from './walk.js';
 
 export const CAM = {
   near: 1.2,           // 玩家能拉多近
@@ -39,6 +54,9 @@ export const CAM = {
   holdOut: 1.25,       // 釘住之後要等空間回到這麼多倍才鬆開（遲滯）
   deadTan: Math.tan(0.32),   // dead zone：人最多離開視線軸 18°
   boomMin: 0.35,       // 吊臂最短——再短鏡頭就在角色的頭裡面了
+  /* 離黑牆留多少。鏡頭（吊臂的 margin）與樞紐共用這一個數：兩邊各給一個
+     的話，樞紐會停在吊臂解不出答案的地方。 */
+  wall: 0.35,
   follow: 18,          // 樞紐追人的速度（每秒）——跟著走路速度放大，落後的距離才不變
   followPinned: 13,    // 釘住時「往空間變大的方向」追人的速度
   inRate: 26,          // 收短的速度
@@ -77,7 +95,7 @@ export function updateCam(cam, dt, player, arena, cols) {
   /* 吊臂**能**伸多長（不受玩家縮放的上限影響）——要用它才分得出「牆把
      鏡頭逼近了」與「玩家自己把鏡頭拉近了」。混在一起的話，玩家在空地上
      拉到最近，人也會被判成該離開畫面中心。 */
-  const room = boomLimit(arena, cols, [cam.px, pivotY, cam.pz], [bx, by, bz], 1e4);
+  const room = boomLimit(arena, cols, [cam.px, pivotY, cam.pz], [bx, by, bz], 1e4, CAM.wall);
   const blocked = room < cam.curDist - 0.05;
   cam.pinned = blocked && room < CAM.hold * (cam.pinned ? CAM.holdOut : 1);
 
@@ -87,7 +105,7 @@ export function updateCam(cam, dt, player, arena, cols) {
     const nx = cam.px + (player.x - cam.px) * k;
     const nz = cam.pz + (player.z - cam.pz) * k;
     if (!cam.pinned
-      || boomLimit(arena, cols, [nx, pivotY, nz], [bx, by, bz], 1e4) > room + 1e-3) {
+      || boomLimit(arena, cols, [nx, pivotY, nz], [bx, by, bz], 1e4, CAM.wall) > room + 1e-3) {
       cam.px = nx; cam.pz = nz;
     }
   }
@@ -96,18 +114,38 @@ export function updateCam(cam, dt, player, arena, cols) {
 
   /* dead zone：只夾橫向（垂直於視線的那一份），縱向不夾。放在吊臂更新
      之後，因為 leash 用的是這一幀的吊臂長度——用上一幀的，跑得快的時候
-     吊臂一收，人就被甩出 dead zone。 */
+     吊臂一收，人就被甩出 dead zone。
+
+     拖完樞紐就夾回牆內，再拿新位置重問一次吊臂：
+
+       夾   橫向的拖是**直線**、圓牆是彎的，沿著圓牆走的時候拖出來的是
+            一條弦，一路切到牆外面去（見檔頭）。夾完樞紐改成貼著牆繞，
+            boomLimit 的射線因此一定是從牆內發出的。
+       重問 上面那個 room 量的是這一幀**開始**的樞紐，追人與這裡的拖都在
+            那之後把它搬走了，而拖是瞬間的（一幀走得了一公尺）。不重問的
+            話，鏡頭會拿舊位置量到的長度從新位置伸出去，照樣穿出牆外。
+            只縮不放：放長是下一幀的事（outRate 慢慢放），當場放會彈一下。
+
+     兩輪。一輪不夠是因為這兩件事互相咬：拖完吊臂會變短，而 dead zone 的
+     容忍量是用吊臂長度算的（角度固定，吊臂越短、容得下的橫向位移越小），
+     所以照舊長度拖到的位置，在新長度底下已經出了 dead zone。第二輪用的是
+     收短之後的長度，剩下的誤差在十分之一度的量級。 */
   {
     const fl = Math.hypot(bx, bz) || 1e-6;
     const fx = -bx / fl, fz = -bz / fl;
-    const ox = player.x - cam.px, oz = player.z - cam.pz;
-    const lon = ox * fx + oz * fz;
-    const latx = ox - lon * fx, latz = oz - lon * fz;
-    const lat = Math.hypot(latx, latz);
-    const leash = Math.max(0.12, cam.boom * CAM.deadTan);
-    if (lat > leash) {
-      const f = 1 - leash / lat;
-      cam.px += latx * f; cam.pz += latz * f;
+    for (let pass = 0; pass < 2; pass++) {
+      const ox = player.x - cam.px, oz = player.z - cam.pz;
+      const lon = ox * fx + oz * fz;
+      const latx = ox - lon * fx, latz = oz - lon * fz;
+      const lat = Math.hypot(latx, latz);
+      const leash = Math.max(0.12, cam.boom * CAM.deadTan);
+      if (lat > leash) {
+        const f = 1 - leash / lat;
+        cam.px += latx * f; cam.pz += latz * f;
+      }
+      [cam.px, cam.pz] = clampArena(arena, cam.px, cam.pz, CAM.wall);
+      cam.boom = Math.max(CAM.boomMin, Math.min(cam.boom,
+        boomLimit(arena, cols, [cam.px, pivotY, cam.pz], [bx, by, bz], cam.boom, CAM.wall)));
     }
   }
 

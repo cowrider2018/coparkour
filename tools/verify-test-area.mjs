@@ -68,7 +68,7 @@ import * as THREE from '../public/test-area/vendor/three.module.js';
 import { buildRuins, BLOCKS, PITCH } from '../public/test-area/src/blocks.js';
 import {
   PHYS, SLIDE, APEX, solveXZ, supportAt, supportInfo, roundTop, roundSin, portalAt,
-  steer, slideDrift, slideAccel, arenaGap, boomLimit, BLOCK_TOP, TRIP, MOUNT,
+  steer, slideDrift, slideAccel, arenaGap, clampArena, boomLimit, BLOCK_TOP, TRIP, MOUNT,
 } from '../public/test-area/src/walk.js';
 import { VEIL, buildVeil, outline } from '../public/test-area/src/veil.js';
 import { toonVC, toon, inkLine, BAND_EDGE, BAND_KEY } from '../public/test-area/src/palette.js';
@@ -1710,6 +1710,75 @@ head('鏡頭的吊臂');
   ok(!pinned2, '走開之後樞紐鬆得開',
     `走了 ${(steps / 60).toFixed(1)} 秒、離牆 ${(a.r - Math.hypot(player.x, player.z)).toFixed(1)} m`);
   ok(deg(off2) < 2, '角色回到畫面中心', `偏 ${deg(off2).toFixed(2)}°`);
+}
+
+/* ── 蹭著牆繞一整圈，樞紐會不會被拖到牆外 ────────────────────────
+   dead zone 的橫向拖是一條**直線**（垂直於視線），而圓牆是彎的：沿著圓牆
+   繞的時候那條線是一條弦，一路切到牆外面去。人始終在牆內（身體被 solveXZ
+   擋在半徑那麼遠的地方），樞紐卻飄出去——方的場地看不出這件事，因為直線
+   拖在直牆邊不會離開房間（只有牆角會）。
+
+   出了牆不只是看點跑掉：boomLimit 的射線與圓是從**牆內**解的，樞紐在外面
+   的時候那條二次式取到的是另一側的交點，吊臂因此不是當場歸零（鏡頭縮進
+   頭裡），就是一路伸到牆外，畫面整片黑——而那是一個不會被回報成「相機
+   出界」的災難：看起來就只是「畫面黑掉了」。
+
+   驗法：狗貼著牆（離牆剛好是身體半徑，也就是 solveXZ 擋下來的位置）繞一
+   整圈，鏡頭的 yaw 全程不動——那就是「位移方向與操作方向不一致」的極端，
+   而它是玩家一根手指推著搖桿繞場就會做出來的事。圓的與方的都掃，順逆
+   兩個方向、八個起始視角。 */
+{
+  const dt = 1 / 60, RAD = PHYS.radius;
+  /* 貼著牆的那一圈：把一個遠在場外的點夾進場地裡，落點就是身體能到的
+     最外圈——用的是 solveXZ 擋人時的同一支 clampArena，所以「貼著牆」
+     不是這裡另外定義的一個半徑。 */
+  const hug = (a, s) => {
+    if (a.shape === 'circle') {
+      return clampArena(a, a.x + Math.sin(s * 2 * Math.PI) * a.r * 2,
+        a.z + Math.cos(s * 2 * Math.PI) * a.r * 2, RAD);
+    }
+    const w = a.x1 - a.x0, h = a.z1 - a.z0, u = (s % 1) * 2 * (w + h);
+    const p = u < w ? [a.x0 + u, a.z0 - 9]
+      : u < w + h ? [a.x1 + 9, a.z0 + (u - w)]
+        : u < 2 * w + h ? [a.x1 - (u - w - h), a.z1 + 9]
+          : [a.x0 - 9, a.z1 - (u - 2 * w - h)];
+    return clampArena(a, p[0], p[1], RAD);
+  };
+  const lap = (a) => (a.shape === 'circle'
+    ? 2 * Math.PI * (a.r - RAD)
+    : 2 * ((a.x1 - a.x0) + (a.z1 - a.z0)) - 8 * RAD);
+
+  let worstPivot = Infinity, worstCam = Infinity, where = '';
+  for (const a of R.arenas) {
+    const per = lap(a);
+    for (let k = 0; k < 8; k++) {
+      for (const dir of [1, -1]) {
+        const yaw = (k * Math.PI) / 4;
+        let s = 0;
+        const [sx, sz] = hug(a, s);
+        const player = { x: sx, y: 0, z: sz };
+        const cam = makeCam(sx, sz);
+        cam.yaw = yaw;
+        // 先站定幾幀讓吊臂收到該有的長度，再開始繞
+        for (let i = 0; i < 30; i++) updateCam(cam, dt, player, a, []);
+        for (let i = 0; i < Math.ceil(per / (PHYS.run * dt)); i++) {
+          s += (dir * PHYS.run * dt) / per;
+          [player.x, player.z] = hug(a, (s % 1 + 1) % 1);
+          const rig = updateCam(cam, dt, player, a, []);
+          const gp = arenaGap(a, cam.px, cam.pz);
+          const gc = arenaGap(a, rig.pos[0], rig.pos[2]);
+          if (gp < worstPivot || gc < worstCam) where = `${a.id}／yaw ${(k * 45)}°`;
+          worstPivot = Math.min(worstPivot, gp);
+          worstCam = Math.min(worstCam, gc);
+        }
+      }
+    }
+  }
+  ok(worstPivot > -1e-6, '蹭著牆繞圈也不會把樞紐拖出牆外',
+    `最靠牆 ${worstPivot.toFixed(2)} m（${where}）`);
+  /* 鏡頭自己：吊臂最短那 0.35 公尺是硬給的（再短就在頭裡面），所以它
+     吃得掉牆的餘裕——但不准真的穿出牆面。 */
+  ok(worstCam > 0, '鏡頭也一直在牆內', `最靠牆 ${worstCam.toFixed(2)} m`);
 }
 
 head('動物（遊戲那幾隻本人）');
