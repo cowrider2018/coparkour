@@ -6,6 +6,7 @@
 
    ── 場景一共幾個 draw call ───────────────────────────────────────
      地圖      2（合併後的砌體 + 合併後的墨線）
+     門        每扇門看得到的那一種狀態 1～2（門扇 + 墨線；開著的黑門洞沒有墨線）
      地面      1
      天空      1
      火焰      每盆 1（十幾盆）
@@ -92,8 +93,29 @@ scene.add(ground);
 
 /* ── 廢墟 ────────────────────────────────────────────────────── */
 const ruins = buildRuins();
-scene.add(new THREE.Mesh(ruins.geometry, toonVC({ surf: SURF_ON })), new THREE.LineSegments(ruins.ink, inkLine()));
+const stoneMat = toonVC({ surf: SURF_ON }), inkMat = inkLine();
+scene.add(new THREE.Mesh(ruins.geometry, stoneMat), new THREE.LineSegments(ruins.ink, inkMat));
 const COLS = ruins.colliders;
+
+/* ── 門 ──────────────────────────────────────────────────────────
+   每一組門的狀態（組名 → 開著嗎）是執行時的，一開始照 blocks.js 的
+   `doors`。兩種狀態的門扇都砌好了，各自一個 mesh，換狀態只換哪一個看得到；
+   感測區認不認得這一組門也看這一份（walk.js 的 portalAt）。 */
+const doors = { ...ruins.doors };
+const doorMeshes = ruins.pieces.map((q) => {
+  const g = new THREE.Group();
+  if (q.geometry.attributes.position.count) g.add(new THREE.Mesh(q.geometry, stoneMat));
+  if (q.ink.attributes.position.count) g.add(new THREE.LineSegments(q.ink, inkMat));
+  // 開著的門洞裡那幾層黑霧：跟黑牆同一種材質，所以門洞的盡頭跟黑牆是同一個黑。
+  if (q.haze.alpha.length) g.add(hazeMesh(q.haze));
+  scene.add(g);
+  return { node: g, door: q.door, open: q.open };
+});
+function setDoor(group, open) {
+  doors[group] = open;
+  for (const m of doorMeshes) if (m.door === group) m.node.visible = m.open === open;
+}
+for (const g of Object.keys(doors)) setDoor(g, doors[g]);
 
 /* ── 黑牆 ────────────────────────────────────────────────────────
    形狀、尺寸、高度與黑霧的層次全部在 veil.js（那一支只吐頂點與透明度，
@@ -102,8 +124,8 @@ const COLS = ruins.colliders;
 
    這裡只負責把那份資料變成一個 mesh：一顆材質、一個 draw。
    ------------------------------------------------------------------ */
-function veilMesh(arenas) {
-  const v = buildVeil(arenas);
+/** 黑牆與黑霧的 mesh：veil.js 吐的那一份，或門洞裡的那幾層（同一種資料）。 */
+function hazeMesh(v) {
   /* 純黑，不是調色盤的 C.fog（#1e1810）——牆要黑，而 #1e1810 在暖色的
      天光下看起來是深褐色的一塊布。顏色在這裡而不在 veil.js，因為 sRGB
      到線性的轉換是 three 的事。 */
@@ -125,7 +147,7 @@ function veilMesh(arenas) {
     fog: false, depthWrite: false,
   }));
 }
-scene.add(veilMesh(ruins.arenas));
+scene.add(hazeMesh(buildVeil(ruins.arenas)));
 
 /** 站在哪個場地裡。取「離邊界最裡面」的那一個——四個場地互不重疊。 */
 function arenaAt(x, z) {
@@ -198,6 +220,29 @@ function goto(id) {
   snapCam(cam, player.x, player.z);
   hud.flash(BLOCKS.find((b) => b.id === id).name);
   hud.paint({ block: id });
+}
+
+/** 把角色送到一個感測區的目的地（blocks.js 解好的 `dest`）。換了區塊才報名字。 */
+function warp(dest) {
+  const crossed = dest.block !== player.block;
+  player.x = dest.x; player.y = dest.y + 0.2; player.z = dest.z;
+  player.vx = player.vy = player.vz = 0;
+  player.block = dest.block;
+  cam.yaw = dest.yaw;
+  snapCam(cam, player.x, player.z);
+  if (crossed) {
+    hud.flash(BLOCKS.find((b) => b.id === dest.block).name);
+    hud.paint({ block: dest.block });
+  }
+}
+
+/** O：這個區塊裡的每一組門一起開或關（試玩用；之後由別的東西來開）。 */
+function toggleDoors() {
+  const mine = Object.keys(doors).filter((g) => g.startsWith(`${player.block}.`));
+  if (!mine.length) { hud.flash('這裡沒有門'); return; }
+  const open = !doors[mine[0]];
+  for (const g of mine) setDoor(g, open);
+  hud.flash(open ? '門開了' : '門關了');
 }
 
 /* ── 外觀 ────────────────────────────────────────────────────── */
@@ -303,6 +348,7 @@ addEventListener('keydown', (e) => {
   if (k === 'c') cycleSkin(e.shiftKey ? -1 : 1);
   if (k === 'x') cycleModel(e.shiftKey ? -1 : 1);
   if (k === 'r') goto(player.block);
+  if (k === 'o') toggleDoors();
   if (k >= '1' && k <= '9' && BLOCKS[+k - 1]) goto(BLOCKS[+k - 1].id);
   if ([' ', 'w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
 });
@@ -392,7 +438,7 @@ function frame(now) {
 
   // 水平：先解 x 再解 z，兩次都用同一支推出器（它自己會選軸）。
   const mvx = player.vx + driftX, mvz = player.vz + driftZ;
-  const [sx, sz] = solveXZ(COLS, player.x + mvx * dt, player.z + mvz * dt, player.y);
+  const [sx, sz] = solveXZ(COLS, player.x + mvx * dt, player.z + mvz * dt, player.y, doors);
   // 被推回來多少就把那個方向的速度吃掉，不然會沿著牆一直加速。
   if (Math.abs(sx - (player.x + mvx * dt)) > 1e-4) player.vx = 0;
   if (Math.abs(sz - (player.z + mvz * dt)) > 1e-4) player.vz = 0;
@@ -418,11 +464,11 @@ function frame(now) {
     player.slip = null;                 // 在空中：控制權回來
   }
 
-  /* 感測區（窄巷的井底）：走進去就回到它指定的那個區塊的出生點，跟按 R
-     一樣。判斷在 walk.js，驗證器淹水的時候問的是同一支。 */
+  /* 感測區（井底、沒入黑霧的路、開著的門）：走進去就被送到它的目的地。
+     判斷在 walk.js，驗證器淹水的時候問的是同一支；門關著的那幾個不算。 */
   {
-    const gate = portalAt(ruins.portals, player.x, player.y, player.z);
-    if (gate) goto(gate.to);
+    const gate = portalAt(ruins.portals, player.x, player.y, player.z, doors);
+    if (gate) warp(gate.dest);
   }
 
   // 走到哪個區塊了。用出生點最近的那一個，不用方框——區塊之間是連著的。
@@ -527,4 +573,4 @@ goto('courtyard');
 requestAnimationFrame(frame);
 
 // 給主控台一個把手，方便手動看東西（這頁沒有存檔，改了重載就回原樣）。
-window.testArea = { scene, camera, renderer, zoo, player, ruins, cam, pad, hud, goto, setLook };
+window.testArea = { scene, camera, renderer, zoo, player, ruins, cam, pad, hud, goto, warp, setLook, doors, setDoor };

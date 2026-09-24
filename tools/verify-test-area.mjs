@@ -84,18 +84,30 @@ const ok = (cond, label, detail = '') => {
 const head = (s) => console.log(`\n── ${s} ${'─'.repeat(Math.max(0, 56 - s.length))}`);
 
 /* 每個區塊「必須是空的」那一片。區塊自己的局部座標，加上 origin 才是
-   世界座標。y 是那片空地的鋪面高度——城牆步道的空地在牆頂上，不在地面。 */
+   世界座標。y 是那片空地的鋪面高度，cx／cz 是那一片的中心（不給就是區塊的
+   原點）。兩層的區塊（城牆步道）給一串：兵營的路在地上，走道在牆頂上。 */
 /* `via` 是那條路上的幾個轉折點（區塊的局部座標），給「朝目標直線走」走不到
    的區塊用（直線走進一面牆是走不過去的，真人也不會那樣走）。給轉折點不是
-   放寬標準：每一段仍然是用真的物理走完的。 */
+   放寬標準：每一段仍然是用真的物理走完的。
+
+   `from` 是從哪裡走過去：不給就是出生點。牆頂的走道從出生點（兵營）是走
+   不到的——只有圓塔的門開著才上得去——所以從牆頂那扇門的到達點走。 */
 const CENTERS = {
   courtyard: { y: 0, hx: 6.0, hz: 6.0 },
   throne: { y: 0, hx: 4.4, hz: 8.5 },
   cistern: { y: 0, hx: 6.0, hz: 6.0 },
-  wallwalk: { y: 5.2, hx: 7.0, hz: 2.4 },
+  wallwalk: [
+    { y: 0, cz: -12, hx: 2.0, hz: 6.0 },
+    { y: 5.2, hx: 7.0, hz: 2.4, from: 'wallwalk.towerTop' },
+  ],
   crypt: { y: 0, hx: 2.4, hz: 8.0 },
   alley: { y: 0, hx: 2.0, hz: 6.0 },
 };
+/** 一個區塊的每一片空地，帶上世界座標的中心與一個給人看的名字。 */
+const areasOf = (b) => [].concat(CENTERS[b.id]).map((c, i, all) => ({
+  ...c, wx: b.origin[0] + (c.cx || 0), wz: b.origin[1] + (c.cz || 0),
+  name: all.length > 1 ? `${b.name}（${c.y > 0 ? '牆頂' : '地面'}）` : b.name,
+}));
 
 head('砌全部區塊');
 const t0 = Date.now();
@@ -802,14 +814,12 @@ head('圓頂上站不住');
 
 head('每個區塊的中心是空的');
 const COLS = R.colliders;
-for (const b of BLOCKS) {
-  const c = CENTERS[b.id];
-  const [ox, oz] = b.origin;
+for (const b of BLOCKS) for (const c of areasOf(b)) {
   let holes = 0, walls = 0, worst = 0;
   const step = 0.5;
   for (let x = -c.hx; x <= c.hx + 1e-6; x += step) {
     for (let z = -c.hz; z <= c.hz + 1e-6; z += step) {
-      const wx = ox + x, wz = oz + z;
+      const wx = c.wx + x, wz = c.wz + z;
       const sup = supportAt(COLS, wx, wz, c.y + 0.1);
       if (Math.abs(sup - c.y) > 0.06) { holes++; worst = Math.max(worst, Math.abs(sup - c.y)); }
       const [px, pz] = solveXZ(COLS, wx, wz, c.y);
@@ -817,9 +827,9 @@ for (const b of BLOCKS) {
     }
   }
   const n = Math.round((2 * c.hx / step + 1) * (2 * c.hz / step + 1));
-  ok(holes === 0, `${b.name}：${(c.hx * 2).toFixed(0)}×${(c.hz * 2).toFixed(0)} 全是平的`,
+  ok(holes === 0, `${c.name}：${(c.hx * 2).toFixed(0)}×${(c.hz * 2).toFixed(0)} 全是平的`,
     holes ? `${holes}/${n} 格高度不符，最差 ${worst.toFixed(2)} m` : `${n} 格`);
-  ok(walls === 0, `${b.name}：空地裡沒有擋路的東西`, walls ? `${walls}/${n} 格被推開` : '');
+  ok(walls === 0, `${c.name}：空地裡沒有擋路的東西`, walls ? `${walls}/${n} 格被推開` : '');
 }
 
 head('從出生點走到中心');
@@ -850,26 +860,29 @@ function walkTo(from, target, seconds = 26) {
   return { arrived: false, best, t: seconds, at: [p.x, p.y, p.z] };
 }
 for (const b of BLOCKS) {
-  const c = CENTERS[b.id];
   const [ox, oz] = b.origin;
   const spawn = R.spawns[b.id];
   const sup = supportAt(COLS, spawn[0], spawn[2], spawn[1] + 0.4);
   ok(Math.abs(sup - spawn[1]) < 0.5, `${b.name}：出生點站得住`, `支撐 ${sup.toFixed(2)} / 期望 ${spawn[1].toFixed(2)}`);
   const [px, pz] = solveXZ(COLS, spawn[0], spawn[2], spawn[1]);
   ok(Math.hypot(px - spawn[0], pz - spawn[2]) < 1e-6, `${b.name}：出生點不在牆裡`);
-  const route = [...(c.via || []).map(([vx, vz]) => [ox + vx, 0, oz + vz]), [ox, c.y, oz]];
-  let from = spawn, arrived = true, secs = 0, worst = null;
-  for (const leg of route) {
-    const res = walkTo(from, leg);
-    secs += res.t;
-    if (!res.arrived) { arrived = false; worst = res; break; }
-    // 下一段從「真的走到的地方」接下去，不是從轉折點的 y = 0 接：
-    // 上到一半的樓梯上，y = 0 是石階的內部。
-    from = res.at;
+  for (const c of areasOf(b)) {
+    const start = c.from ? R.arrivals[c.from] : null;
+    const route = [...(c.via || []).map(([vx, vz]) => [ox + vx, 0, oz + vz]), [c.wx, c.y, c.wz]];
+    let from = start ? [start.x, start.y, start.z] : spawn, arrived = true, secs = 0, worst = null;
+    for (const leg of route) {
+      const res = walkTo(from, leg);
+      secs += res.t;
+      if (!res.arrived) { arrived = false; worst = res; break; }
+      // 下一段從「真的走到的地方」接下去，不是從轉折點的 y = 0 接：
+      // 上到一半的樓梯上，y = 0 是石階的內部。
+      from = res.at;
+    }
+    ok(arrived, `${c.name}：走得到中心`,
+      (arrived ? `${secs.toFixed(1)} 秒${c.via ? `（經 ${c.via.length} 個轉折）` : ''}`
+        : `最近只到 ${worst.best.toFixed(1)} m${worst.fell ? '（掉下去了）' : ''}`)
+      + (start ? `（從到達點 ${c.from}）` : ''));
   }
-  ok(arrived, `${b.name}：走得到中心`,
-    arrived ? `${secs.toFixed(1)} 秒${c.via ? `（經 ${c.via.length} 個轉折）` : ''}`
-      : `最近只到 ${worst.best.toFixed(1)} m${worst.fell ? '（掉下去了）' : ''}`);
 }
 
 head('門洞進得去也回得來');
@@ -884,32 +897,38 @@ head('門洞進得去也回得來');
    走法是朝目標直線走，而直線穿過拱廊的墩柱是走不過去的——真人也不會
    那樣走。中庭與水窖的座標都落在拱洞的正中間（拱廊的洞口每 4.05 公尺
    一個、環牆的門在每一段的中點 11.25°），不是隨手挑的。 */
+/* 每一條是 [哪一片空地（CENTERS 那一串的第幾個）, 轉折點…]。 */
 const HOLES = {
-  courtyard: [[-12.6, 0], [-13.4, 0]],
-  throne: [[0, -13.4], [0, -14.6]],
-  cistern: [[11.6, 2.3], [12.9, 2.6]],
-  // 城牆步道沒有門洞通到外面——走道本身就是整個場地。驗的是走進西邊方塔的塔頂再回來。
-  wallwalk: [[-12, 2.4], [-12, 5.8]],
+  courtyard: [[0, [-12.6, 0], [-13.4, 0]]],
+  throne: [[0, [0, -13.4], [0, -14.6]]],
+  cistern: [[0, [11.6, 2.3], [12.9, 2.6]]],
+  wallwalk: [
+    // 兵營：走進城門洞，到放下的鐵閘前（鐵閘在 z = 2.3，身體停在 1.85）。
+    [0, [0, -5], [0, 1.2]],
+    // 兵營：塔腳那扇門前留著的那條空地——從小路中段直線走到門前的到達點，中間什麼都不准擋。
+    [0, [2.2, -17], [16.9, -6.9]],
+    // 牆頂：走道沒有門洞通到外面。驗的是走進西邊方塔的塔頂再回來。
+    [1, [-12, 2.4], [-12, 5.8]],
+  ],
   // 墓室：走上南端那道樓梯，到鐵閘前的平台。
-  crypt: [[0, -8.0], [0, -13.0]],
+  crypt: [[0, [0, -8.0], [0, -13.0]]],
   // 窄巷：走出巷口，進廣場、繞到井的東邊。
-  alley: [[0, 5], [3.6, 9.0]],
+  alley: [[0, [0, 5], [3.6, 9.0]]],
 };
-for (const b of BLOCKS) {
-  const c = CENTERS[b.id];
+for (const b of BLOCKS) for (const [ai, ...legs] of HOLES[b.id]) {
+  const c = areasOf(b)[ai];
   const [ox, oz] = b.origin;
-  const legs = HOLES[b.id];
-  let from = [ox, c.y, oz], went = true, worst = null;
+  let from = [c.wx, c.y, c.wz], went = true, worst = null;
   for (const [vx, vz] of legs) {
     const res = walkTo(from, [ox + vx, 0, oz + vz]);
     if (!res.arrived) { went = false; worst = res; break; }
     from = res.at;
   }
-  ok(went, `${b.name}：走到門洞裡`, went ? '' : `卡在還差 ${worst.best.toFixed(1)} m 的地方`);
+  ok(went, `${c.name}：走到門洞裡`, went ? '' : `卡在還差 ${worst.best.toFixed(1)} m 的地方`);
   if (!went) continue;
   // 回頭走同一條路（不是直線切回中心——那會撞到自己剛剛繞過的牆）。
   const back = [...legs].reverse().slice(1).map(([vx, vz]) => [ox + vx, 0, oz + vz]);
-  back.push([ox, c.y, oz]);
+  back.push([c.wx, c.y, c.wz]);
   let ret = true, rworst = null, secs = 0;
   for (const leg of back) {
     const res = walkTo(from, leg, 40);
@@ -917,7 +936,7 @@ for (const b of BLOCKS) {
     if (!res.arrived) { ret = false; rworst = res; break; }
     from = res.at;
   }
-  ok(ret, `${b.name}：從門洞走得回來`,
+  ok(ret, `${c.name}：從門洞走得回來`,
     ret ? `${secs.toFixed(1)} 秒` : `卡在還差 ${rworst.best.toFixed(1)} m 的地方（被夾住了）`);
 }
 
@@ -930,16 +949,33 @@ head('整片走一遍：沒有鑽得進去的空心，也沒有回不來的地�
               人鑽進了一個東西的底下——城牆平台的台體以前是空的，從樓梯
               旁的矮牆跳進第二折樓梯底下、穿過南牆缺口，整座露台的正下方
               都走得到，而畫面上看不出來，除非你真的走進去。底下本來就
-              該是空的東西（水窖的懸臂石階）在碰撞盒上標 `open`，不算。
+              該是空的東西（水窖的懸臂石階、圓塔門洞的橫楣）在碰撞盒上標
+              `open`，不算。
      回不來   每一個走得到的格子都要走得回出生點。水窖以前可以從殘階頂
               跳上環牆、往外掉進牆與黑牆之間那條縫，掉進去就只剩重生。
 
    碰撞盒先照場地的外接框篩一次：四個場地相隔六十公尺，全掃的話九成
-   的時間花在問另外三個場地的盒子。 */
+   的時間花在問另外三個場地的盒子。
+
+   感測區：走進去就被送走，所以那一格不往四周長，只接到目的地。目的地在
+   同一個區塊裡（圓塔的兩扇門）就接著淹；在別的區塊裡（井、黑霧）就是這個
+   區塊的一個**出口**——那一格算「回得去」，因為走得出去的地方不是困住，
+   而目的地那一邊的路由那個區塊自己驗（見「傳送點」那一項）。
+
+   有門的區塊，門的每一種狀態各淹一遍：門是執行時開關的，兩種狀態都是
+   玩家會走到的地圖。 */
 {
   const G = 0.2;
   const snap = (v) => Math.round(v * 20) / 20;
   for (const b of BLOCKS) {
+    const groups = Object.keys(R.doors).filter((g) => g.startsWith(`${b.id}.`));
+    for (let mask = 0; mask < 1 << groups.length; mask++) {
+      const doors = Object.fromEntries(groups.map((g, i) => [g, !!(mask & (1 << i))]));
+      const tag = groups.map((g, i) => `${g.split('.')[1]}${mask & (1 << i) ? '開' : '關'}`).join('、');
+      flood(b, doors, tag ? `（門：${tag}）` : '');
+    }
+  }
+  function flood(b, doors, tag) {
     const [ox, oz] = b.origin;
     const A = R.arenas.find((a) => a.id === b.id);
     const x0 = A.shape === 'circle' ? A.x - A.r : A.x0, x1 = A.shape === 'circle' ? A.x + A.r : A.x1;
@@ -958,7 +994,7 @@ head('整片走一遍：沒有鑽得進去的空心，也沒有回不來的地�
       return { lo, open };
     };
     const moves = (nx, nz, y) => {
-      const [sx, sz] = solveXZ(cols, nx, nz, y);
+      const [sx, sz] = solveXZ(cols, nx, nz, y, doors);
       return Math.hypot(sx - nx, sz - nz) <= 0.03;
     };
     const sp = R.spawns[b.id];
@@ -968,6 +1004,9 @@ head('整片走一遍：沒有鑽得進去的空心，也沒有回不來的地�
     const from = new Map([[s0, []]]);   // 格子 → 走得到它的那些格子
     const queue = [s0];
     const hollow = [];
+    const exits = [];                    // 走進去就到別的區塊的那些格子
+    const drops = [];                    // 從空氣牆圍著的那一層，不經過門就下去的那幾步
+    const deck = b.fenced ? b.fenced - 0.05 : Infinity;
     for (let h = 0; h < queue.length; h++) {
       const s = queue[h];
       const [i, k, y] = s.split(',').map(Number);
@@ -976,6 +1015,19 @@ head('整片走一遍：沒有鑽得進去的空心，也沒有回不來的地�
          天花板，跳的時候照樣要算淨空。 */
       const { lo: lid, open } = overhead(x, z, y);
       if (lid - y < 3 && !open) hollow.push([x - ox, z - oz, y]);
+      /* 感測區：走進去的那一刻就被送走，所以這一格不往四周長。送到同一個
+         區塊裡就接著淹（那也是一步，所以門兩邊的格子互相回得去）；送到別的
+         區塊就記成出口。 */
+      const gate = portalAt(R.portals, x, y, z, doors);
+      if (gate) {
+        const d = gate.dest;
+        if (d.block !== b.id) { exits.push(s); continue; }
+        const ti = Math.round(d.x / G), tk = Math.round(d.z / G);
+        const t = key(ti, tk, snap(supportAt(cols, ti * G, tk * G, d.y + 0.2)));
+        if (!from.has(t)) { from.set(t, []); queue.push(t); }
+        from.get(t).push(s);
+        continue;
+      }
       for (const [di, dk] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const nx = (i + di) * G, nz = (k + dk) * G;
         const to = [];
@@ -987,23 +1039,15 @@ head('整片走一遍：沒有鑽得進去的空心，也沒有回不來的地�
         }
         for (const ny of to) {
           const t = key(i + di, k + dk, ny);
+          if (y >= deck && ny < deck) drops.push([x - ox, z - oz, ny]);
           if (!from.has(t)) { from.set(t, []); queue.push(t); }
           from.get(t).push(s);
         }
       }
-      /* 感測區：走進去就被送到目的地區塊的出生點，那也是一步——所以井底的
-         格子接得回出生點，「走得回去」這一項不必替它開例外。 */
-      const gate = portalAt(R.portals, x, y, z);
-      if (gate) {
-        const tp = R.spawns[gate.to];
-        const ti = Math.round(tp[0] / G), tk = Math.round(tp[2] / G);
-        const t = key(ti, tk, snap(supportAt(COLS, ti * G, tk * G, tp[1] + 0.2)));
-        if (!from.has(t)) { from.set(t, []); queue.push(t); }
-        from.get(t).push(s);
-      }
     }
-    const back = new Set([s0]);
-    const stack = [s0];
+    // 回得去：從出生點與每一個出口倒著走回來。
+    const back = new Set([s0, ...exits]);
+    const stack = [s0, ...exits];
     while (stack.length) {
       for (const p of from.get(stack.pop())) if (!back.has(p)) { back.add(p); stack.push(p); }
     }
@@ -1012,31 +1056,36 @@ head('整片走一遍：沒有鑽得進去的空心，也沒有回不來的地�
       return [i * G - ox, k * G - oz, y];
     });
     const at = (p) => `(${p[0].toFixed(1)}, ${p[2]}, ${p[1].toFixed(1)})`;
-    ok(hollow.length === 0, `${b.name}：沒有鑽得進去的空心`,
-      hollow.length ? `${hollow.length} 格，例如 ${at(hollow[0])}` : `${queue.length} 格走得到`);
-    ok(stuck.length === 0, `${b.name}：每個走得到的地方都走得回出生點`,
+    const high = queue.filter((s) => +s.split(',')[2] >= deck).length;
+    ok(hollow.length === 0, `${b.name}${tag}：沒有鑽得進去的空心`,
+      (hollow.length ? `${hollow.length} 格，例如 ${at(hollow[0])}` : `${queue.length} 格走得到`)
+      + (b.fenced ? `（牆頂 ${high} 格）` : '') + (exits.length ? `、${exits.length} 格是出口` : ''));
+    ok(stuck.length === 0, `${b.name}${tag}：每個走得到的地方都走得回出生點或出口`,
       stuck.length ? `${stuck.length} 格回不來，例如 ${at(stuck[0])}` : '');
-    /* 圍著空氣牆的場地：走到哪、跳到哪，腳都不准低於出生的那個面。
-       空氣牆漏一段的話，這一項就會找到從那裡跳下去之後的每一格地面。 */
+    /* 圍著空氣牆的那一層：從那一層走、跳，腳都不准落到它下面——只有門
+       （感測區）上下得了。空氣牆漏一段的話，這一項就會找到從那裡跳下去
+       的那一步。 */
     if (b.fenced) {
-      const low = queue.map((s) => s.split(',').map(Number)).filter(([, , y]) => y < sp[1] - 0.05);
-      ok(low.length === 0, `${b.name}：走得到的每一格都在牆頂上`,
-        low.length ? `${low.length} 格掉下去了，例如 ${at([low[0][0] * G - ox, low[0][1] * G - oz, low[0][2]])}` : '');
+      ok(drops.length === 0, `${b.name}${tag}：牆頂只從門上下，走、跳都下不去`,
+        drops.length ? `${drops.length} 步掉下去了，例如落在 ${at(drops[0])}` : '');
+      // 門全部關著：從出生點（地上）一格牆頂都到不了。
+      if (!Object.values(doors).some(Boolean)) ok(high === 0, `${b.name}${tag}：門關著上不了牆頂`, `${high} 格`);
     }
   }
 }
 
 head('坑都有出口');
-/* 坑（開著的井）底下沒有路上來，出口是感測區：碰到就回出生點。兩件事要成立：
+/* 坑（開著的井）底下沒有路上來，出口是感測區：碰到就被送走。兩件事要成立：
    每一個坑的坑底都在某一個感測區裡（不然掉下去就只剩按 R），以及用 main.js
-   那一套垂直積分真的從坑口掉下去，會在幾秒內碰到它、被送到一個站得住的地方。 */
+   那一套垂直積分真的從坑口掉下去，會在幾秒內碰到它、被送到一個站得住的地方。
+   坑底的感測區不屬於任何一組門（門關著的話掉下去就出不來），所以這裡不給門的狀態。 */
 {
   const pits = COLS.filter((c) => c.kind === 'pit');
   ok(pits.length > 0, '有登記坑', `${pits.length} 個`);
   for (const c of pits) {
     const gate = portalAt(R.portals, c.x, c.bottom, c.z);
-    const name = gate ? BLOCKS.find((q) => q.id === gate.to).name : '';
-    ok(!!gate, '坑底在一個感測區裡', gate ? `送回 ${name}` : `(${c.x.toFixed(1)}, ${c.z.toFixed(1)}) 底下什麼都沒有`);
+    const name = gate ? BLOCKS.find((q) => q.id === gate.dest.block).name : '';
+    ok(!!gate, '坑底在一個感測區裡', gate ? `送到 ${name}（${gate.to}）` : `(${c.x.toFixed(1)}, ${c.z.toFixed(1)}) 底下什麼都沒有`);
     if (!gate) continue;
     const dt = 1 / 60;
     const p = { x: c.x, y: c.top + 1.2, z: c.z, vy: 0 };
@@ -1053,10 +1102,198 @@ head('坑都有出口');
     }
     ok(!!hit, '從坑口掉下去會碰到感測區', hit ? `${t.toFixed(2)} 秒，碰到時在 y ${p.y.toFixed(1)}` : `4 秒後停在 y ${p.y.toFixed(1)}`);
     if (hit) {
-      const tp = R.spawns[hit.to];
-      const sup = supportAt(COLS, tp[0], tp[2], tp[1] + 0.4);
-      ok(Math.abs(sup - tp[1]) < 0.05, '送到的地方站得住', `${name}出生點，支撐 ${sup.toFixed(2)}`);
+      // 到達點可以在半空中（掉下來），落點由「傳送點」那一項驗。這裡只問底下接得住。
+      const d = hit.dest;
+      const sup = supportAt(COLS, d.x, d.z, d.y + 0.2);
+      ok(sup > d.y - 4 && sup <= d.y + 0.05, '送到的地方底下接得住', `${name}，落在 ${sup.toFixed(2)}（到達點 ${d.y}）`);
     }
+  }
+}
+
+head('傳送點');
+/* 感測區送人去的地方（到達點）。每一個都要成立三件事：
+
+     1. 在目的地那個區塊的黑牆裡，落得下來、站得住、不在牆裡。
+     2. 不在任何一個感測區裡——不然一落地就又被送走，兩邊來回彈。門全部
+        開著的時候問：那是感測區最多的時候。掉下來的到達點，整段落下都問。
+     3. 不是單向的（井）就要有回程：目的地那個區塊裡有一個感測區（同一組門）
+        把人送回這一個旁邊，而且從到達點用真的物理走得進它。 */
+{
+  const ALL = Object.fromEntries(Object.keys(R.doors).map((g) => [g, true]));
+  const centerOf = (p) => (p.shape === 'box' ? [(p.x0 + p.x1) / 2, (p.z0 + p.z1) / 2] : [p.x, p.z]);
+  /** 朝 target 走，碰到感測區就停（跟 main.js 一樣，每一步問一次）。 */
+  const walkInto = (from, target, doors, seconds = 20) => {
+    const dt = 1 / 60;
+    const p = { x: from[0], y: from[1] + 0.2, z: from[2], vy: 0 };
+    let best = Infinity;
+    for (let t = 0; t < seconds; t += dt) {
+      const dx = target[0] - p.x, dz = target[1] - p.z;
+      const d = Math.hypot(dx, dz) || 1e-9;
+      best = Math.min(best, d);
+      const [sx, sz] = solveXZ(COLS, p.x + (dx / d) * PHYS.walk * dt, p.z + (dz / d) * PHYS.walk * dt, p.y, doors);
+      p.x = sx; p.z = sz;
+      const prevY = p.y;
+      p.vy -= PHYS.gravity * dt;
+      p.y += p.vy * dt;
+      const sup = supportAt(COLS, p.x, p.z, prevY);
+      if (p.y <= sup && p.vy <= 0) { p.y = sup; p.vy = 0; }
+      const gate = portalAt(R.portals, p.x, p.y, p.z, doors);
+      if (gate) return { gate, t, best };
+    }
+    return { gate: null, t: seconds, best };
+  };
+  ok(R.portals.length >= 5, '感測區都登記了', `${R.portals.length} 個`);
+  for (const p of R.portals) {
+    const d = p.dest;
+    const label = `${p.block} → ${p.to}`;
+    const A = R.arenas.find((a) => a.id === d.block);
+    const sup = supportAt(COLS, d.x, d.z, d.y + 0.2);
+    const [sx, sz] = solveXZ(COLS, d.x, d.z, sup);
+    ok(arenaGap(A, d.x, d.z) > PHYS.radius && sup <= d.y + 0.05 && d.y - sup < 4
+      && Math.hypot(sx - d.x, sz - d.z) < 1e-6, `${label}：到達點落得下來、站得住`,
+      `落在 y ${sup.toFixed(2)}${d.y > sup + 0.05 ? `（從 ${d.y} 掉下來）` : ''}`);
+    let bounce = null;
+    for (let y = sup; y <= d.y + 0.25 && !bounce; y += 0.1) bounce = portalAt(R.portals, d.x, y, d.z, ALL);
+    ok(!bounce, `${label}：到達點不在任何感測區裡`, bounce ? `落在 ${bounce.block} → ${bounce.to} 那一塊裡` : '');
+    if (p.oneWay) continue;
+    const [px, pz] = centerOf(p);
+    const back = R.portals.find((q) => q.block === d.block && q.dest.block === p.block && q.door === p.door
+      && Math.hypot(q.dest.x - px, q.dest.z - pz) < 4);
+    ok(!!back, `${label}：有回程`, back ? `${back.block} → ${back.to}` : '目的地那一邊沒有送回這裡的感測區');
+    if (!back) continue;
+    const res = walkInto([d.x, sup, d.z], centerOf(back), p.door ? { [p.door]: true } : {});
+    ok(res.gate === back, `${label}：從到達點走得進回程的那一塊`,
+      res.gate === back ? `${res.t.toFixed(1)} 秒`
+        : res.gate ? `先碰到了 ${res.gate.block} → ${res.gate.to}` : `最近只到 ${res.best.toFixed(1)} m`);
+  }
+}
+
+head('門');
+/* 一組門是幾扇一起開關的門。每一組都要：兩種狀態各有一塊（關著的門扇、
+   開著的門洞），開著的時候至少兩個感測區（一扇進、一扇出），而且整塊在
+   自己那個區塊的黑牆裡（它不進合併的那一份，「黑牆沒有切到任何幾何」那一項
+   看不到它）。
+
+   開著的門洞是甬道裡一層層的黑霧，要成立三件事：
+     · 最裡面那一層是實心的（α = 1）——不然看得穿甬道，看到塔裡面。
+     · 每一片都朝門外（法線跟門面同向）。材質是單面的，朝裡的話整片被剔掉，
+       畫面上是「門開了但洞裡是亮的」，跟「黑霧沒做」長得一模一樣。
+     · 每一片都在塔的碰撞圓柱裡面：黑霧在門面**以內**。伸出門面的話，走到
+       門前會先穿過一片霧。（門開著的時候狗走得進去、穿過前面幾層才被送走，
+       那是要的：牠是走進黑裡不見的。）
+
+   門洞本身（`hole`：兩側門框石、上面頂板、下面地板圍出來的那一塊，從門面
+   到甬道盡頭）裡面沒有一個三角形。門框以外的東西會插進來：門洞兩側那兩段
+   塔牆錯開半塊的端磚，還有一路砌到塔心的幕牆——塔腳那扇門的甬道正好穿過
+   它城內那一面。關著看不到，開著隔著幾層淡霧就是一塊磚擋在洞裡。量的是
+   三角形切進盒子裡（每一片用盒子的六個面裁一次，裁完還剩一塊就是切進去了），
+   不是頂點：一塊斜插進來的磚，它的角可以全部在盒子外面。
+
+   從門前兩公尺朝門直直走進去（真的物理）：
+     · 關著：停在門前，身體不碰到門扇（最外面那一點是鐵條）。
+     · 開著：狗整隻走進門洞才被送走——被送走的那一刻，身體的中心在門面內
+       超過狗的後半身（0.48，1 公尺高的狗量出來的）。沒有這一條，感測區悄悄
+       退回門口，狗就又是在門前消失，看不出牠走進了門。 */
+{
+  const P = R.geometry.attributes.position.array;
+  /** 多邊形留下 axis 那一軸 ≥ v（sign = 1）或 ≤ v（sign = −1）的那一側。 */
+  const cut = (poly, axis, v, sign) => {
+    const out = [];
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      const ia = sign * (a[axis] - v) >= 0, ib = sign * (b[axis] - v) >= 0;
+      if (ia) out.push(a);
+      if (ia !== ib) { const t = (v - a[axis]) / (b[axis] - a[axis]); out.push(a.map((x, j) => x + (b[j] - x) * t)); }
+    }
+    return out;
+  };
+  /** 合併那一份裡，有三角形切進 [lo, hi] 這個盒子的幾塊。 */
+  const intruders = (lo, hi) => {
+    const hits = [];
+    for (let k = 0; k < R.parts.length; k++) {
+      const q = R.parts[k];
+      if ([0, 1, 2].some((j) => q.max[j] <= lo[j] || q.min[j] >= hi[j])) continue;
+      const end = k + 1 < R.parts.length ? R.parts[k + 1].i0 : P.length;
+      for (let i = q.i0; i < end; i += 9) {
+        let poly = [0, 3, 6].map((o) => [P[i + o], P[i + o + 1], P[i + o + 2]]);
+        for (let j = 0; j < 3 && poly.length; j++) poly = cut(cut(poly, j, lo[j], 1), j, hi[j], -1);
+        if (poly.length >= 3) { hits.push(q); break; }
+      }
+    }
+    return hits;
+  };
+  const inside = (x, y, z) => COLS.some((c) => c.kind !== 'bound' && c.kind !== 'pit' && !c.air
+    && y >= c.min[1] - 1e-3 && y <= c.max[1] + 1e-3
+    && (c.shape === 'circle' ? Math.hypot(x - c.x, z - c.z) <= c.r + 1e-3
+      : x >= c.min[0] - 1e-3 && x <= c.max[0] + 1e-3 && z >= c.min[2] - 1e-3 && z <= c.max[2] + 1e-3));
+  for (const [g, open0] of Object.entries(R.doors)) {
+    const mine = R.pieces.filter((q) => q.door === g);
+    const nOpen = mine.filter((q) => q.open).length, nShut = mine.length - nOpen;
+    ok(nOpen > 0 && nShut > 0 && nOpen === nShut, `${g}：每一扇門兩種狀態都有一塊`, `開 ${nOpen}、關 ${nShut}`);
+    const gates = R.portals.filter((p) => p.door === g);
+    ok(gates.length >= 2, `${g}：開著的時候有進有出`, `${gates.length} 個感測區`);
+    const A = R.arenas.find((a) => a.id === g.split('.')[0]);
+    let worst = Infinity;
+    for (const q of mine) {
+      for (const P of [q.geometry.attributes.position.array, q.haze.pos]) {
+        for (let i = 0; i < P.length; i += 3) worst = Math.min(worst, arenaGap(A, P[i], P[i + 2]));
+      }
+    }
+    ok(worst > 0, `${g}：門扇與門洞的黑霧在黑牆裡`, `離黑牆最近 ${worst.toFixed(2)} m`);
+    for (const q of mine.filter((m) => m.open)) {
+      const H = q.haze, [fx, fz] = q.face;
+      const layers = new Set(), solid = [...H.alpha].some((a) => a >= 1);
+      let back = 0, out = 0;
+      for (let i = 0; i < H.pos.length; i += 9) {
+        const p = H.pos;
+        const ux = p[i + 3] - p[i], uy = p[i + 4] - p[i + 1], uz = p[i + 5] - p[i + 2];
+        const wx = p[i + 6] - p[i], wy = p[i + 7] - p[i + 1], wz = p[i + 8] - p[i + 2];
+        const nx = uy * wz - uz * wy, nz = ux * wy - uy * wx;
+        if (nx * fx + nz * fz <= 0) back++;
+        for (let k = 0; k < 9; k += 3) if (!inside(p[i + k], p[i + k + 1], p[i + k + 2])) out++;
+        layers.add(H.alpha[i / 3]);
+      }
+      const where = `朝 (${fx.toFixed(0)}, ${fz.toFixed(0)}) 的那一扇`;
+      ok(H.alpha.length > 0 && solid, `${g}：${where}開著，門洞裡有黑霧、盡頭是實心的黑`, `${layers.size} 層`);
+      ok(back === 0, `${g}：${where}的黑霧每一片都朝門外`, back ? `${back} 片朝裡` : '');
+      ok(out === 0, `${g}：${where}的黑霧在門面以內`, out ? `${out} 個頂點露在外面` : '');
+      // 貼著門框的面是門框自己，所以盒子往裡收 2 公分。
+      const e = 0.02, lo = q.hole[0].map((v) => v + e), hi = q.hole[1].map((v) => v - e);
+      const hits = intruders(lo, hi);
+      ok(hits.length === 0, `${g}：${where}的門洞裡沒有門框以外的磚`,
+        hits.length ? hits.slice(0, 3).map((h) => `(${h.min.map((v) => v.toFixed(1))})`).join(' ') : '');
+
+      // 門的局部座標：m 沿門面的法線（往外是正，門面是 0），c 是門洞的中線。
+      const [lo0, hi0] = q.hole;
+      const faceAt = Math.max(fx * lo0[0] + fz * lo0[2], fx * hi0[0] + fz * hi0[2], fx * lo0[0] + fz * hi0[2], fx * hi0[0] + fz * lo0[2]);
+      const m = (x, z) => fx * x + fz * z - faceAt;
+      const c = [(lo0[0] + hi0[0]) / 2, (lo0[2] + hi0[2]) / 2], cm = m(...c);
+      const sill = lo0[1];
+      const DOG_BACK = 0.48;
+      const walkIn = (doors) => {
+        const dt = 1 / 60;
+        const p = { x: c[0] + fx * (2 - cm), z: c[1] + fz * (2 - cm), y: sill };
+        const target = [c[0] - fx * (1 + cm), c[1] - fz * (1 + cm)];
+        for (let t = 0; t < 3; t += dt) {
+          const dx = target[0] - p.x, dz = target[1] - p.z, d = Math.hypot(dx, dz) || 1e-9;
+          [p.x, p.z] = solveXZ(COLS, p.x + (dx / d) * PHYS.walk * dt, p.z + (dz / d) * PHYS.walk * dt, p.y, doors);
+          p.y = supportAt(COLS, p.x, p.z, p.y + 0.1);
+          if (portalAt(R.portals, p.x, p.y, p.z, doors)) return { sent: true, m: m(p.x, p.z) };
+        }
+        return { sent: false, m: m(p.x, p.z) };
+      };
+      const shutLeaf = mine.find((k) => !k.open && k.face[0] === fx && k.face[1] === fz);
+      const LP = shutLeaf.geometry.attributes.position.array;
+      let leaf = -Infinity;
+      for (let i = 0; i < LP.length; i += 3) leaf = Math.max(leaf, m(LP[i], LP[i + 2]));
+      const shut = walkIn({});
+      const front = shut.m - PHYS.radius;
+      ok(!shut.sent && front > leaf, `${g}：${where}關著，停在門前`, `前緣離門扇 ${(front - leaf).toFixed(2)} m`);
+      const open = walkIn({ [g]: true });
+      ok(open.sent && -open.m > DOG_BACK, `${g}：${where}開著，狗整隻走進門洞才被送走`,
+        open.sent ? `送走時中心在門面內 ${(-open.m).toFixed(2)} m` : `沒被送走，停在門面外 ${open.m.toFixed(2)} m`);
+    }
+    console.log(`  ${g} 一開始${open0 ? '開著' : '關著'}`);
   }
 }
 
@@ -1107,26 +1344,33 @@ for (const a of R.arenas) {
   const blk = BLOCKS.find((b) => b.id === a.id);
   const name = blk.name;
   const spawn = R.spawns[a.id];
-  let escaped = 0, tight = Infinity, dropped = 0;
-  const floorY = spawn[1];               // 圍著空氣牆的場地：比出生的那個面低就是掉下去了
-  for (let k = 0; k < 16; k++) {
-    const ang = (k / 16) * Math.PI * 2;
-    const far = 60;
-    const res = walkTo(spawn, [spawn[0] + Math.cos(ang) * far, 0, spawn[2] + Math.sin(ang) * far], 30);
-    if (!res.at) continue;                       // 掉下去了（另一項在驗）
-    const gap = arenaGap(a, res.at[0], res.at[2]);
-    if (gap < -1e-3) escaped++;
-    if (gap < tight) tight = gap;
-    if (res.at[1] < floorY - 0.05) dropped++;
-  }
+  /** 從 start 朝十六個方向各走到底：走出黑牆幾次、離黑牆最近多少、腳落到 floorY 以下幾次。 */
+  const sweep = (start, floorY) => {
+    let escaped = 0, tight = Infinity, dropped = 0;
+    for (let k = 0; k < 16; k++) {
+      const ang = (k / 16) * Math.PI * 2;
+      const far = 60;
+      const res = walkTo(start, [start[0] + Math.cos(ang) * far, 0, start[2] + Math.sin(ang) * far], 30);
+      if (!res.at) continue;                       // 掉下去了（另一項在驗）
+      const gap = arenaGap(a, res.at[0], res.at[2]);
+      if (gap < -1e-3) escaped++;
+      if (gap < tight) tight = gap;
+      if (res.at[1] < floorY - 0.05) dropped++;
+    }
+    return { escaped, tight, dropped };
+  };
+  const { escaped, tight } = sweep(spawn, spawn[1]);
   ok(escaped === 0, `${name}：十六個方向都走不出黑牆`,
     escaped ? `${escaped}/16 出去了` : `${a.shape === 'circle' ? `半徑 ${a.r}` : '方形'} m`);
-  /* 圍著空氣牆的場地（城牆步道）走不到黑牆腳下——空氣牆先擋住了。那裡
-     要驗的是另一件事：朝哪個方向走到底，腳都還在走道面上，沒有掉下去。 */
+  /* 圍著空氣牆的那一層（城牆步道的走道）走不到黑牆腳下——空氣牆先擋住了。
+     那裡要驗的是另一件事：從走道中央朝哪個方向走到底，腳都還在走道面上。 */
   if (blk.fenced) {
-    ok(dropped === 0, `${name}：十六個方向走到底都還在牆頂上`,
-      dropped ? `${dropped}/16 掉下去了` : `離黑牆最近 ${tight.toFixed(1)} m`);
-  } else if (blk.sealed) {
+    const top = [blk.origin[0], blk.fenced, blk.origin[1]];
+    const s = sweep(top, blk.fenced);
+    ok(s.escaped === 0 && s.dropped === 0, `${name}：從牆頂十六個方向走到底都還在牆頂上`,
+      s.dropped || s.escaped ? `${s.dropped}/16 掉下去了、${s.escaped}/16 出去了` : `離黑牆最近 ${s.tight.toFixed(1)} m`);
+  }
+  if (blk.sealed) {
     /* 四面都是牆的房間（墓室）：走到底停在牆上，黑牆在牆外面，本來就
        走不到。走不出去已經在上一項驗過了。 */
     ok(tight > PHYS.radius, `${name}：四面是牆，走到底停在牆上`, `離黑牆最近 ${tight.toFixed(2)} m`);
