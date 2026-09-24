@@ -36,6 +36,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { C, toonVC, toon, glow, inkLine } from './palette.js';
+import { SURF, surfaceTextures } from './surface.js';
 import { buildRuins, BLOCKS } from './blocks.js';
 import { loadZoo } from './critter.js';
 import { Pad } from './pad.js';
@@ -71,15 +72,27 @@ const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 420);
    只會讓人以為光是它給的。
    ------------------------------------------------------------------ */
 
+/* ── 表面紋路開不開 ──────────────────────────────────────────────
+   `?surf=0` 關掉石紋與木紋（貼圖不算、著色器不接），其他一模一樣——
+   同一台手機上開關各看一次 fps，就是紋路的成本。烘在頂點色裡的那一層
+   （逐塊深淺、牆根）不受影響：那一層在載入時就算完了，每幀不花任何東西。 */
+const SURF_ON = new URLSearchParams(location.search).get('surf') !== '0';
+if (SURF_ON) {
+  /* 各向異性過濾：地板是斜著看的，沒有它的話幾公尺外的石板紋路就糊成一片。
+     開到 4 就夠——再高，手機上多花的填色率換不到看得出來的差別。 */
+  const an = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+  for (const t of surfaceTextures()) t.anisotropy = an;
+}
+
 /* 地面。石板鋪面比它高 0.06，所以不會打架。 */
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(520, 520), toon(0x6a5844));
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(520, 520), toon(0x6a5844, SURF_ON ? SURF.dirt : false));
 ground.rotation.x = -Math.PI / 2;
 ground.position.y = -0.06;
 scene.add(ground);
 
 /* ── 廢墟 ────────────────────────────────────────────────────── */
 const ruins = buildRuins();
-scene.add(new THREE.Mesh(ruins.geometry, toonVC()), new THREE.LineSegments(ruins.ink, inkLine()));
+scene.add(new THREE.Mesh(ruins.geometry, toonVC({ surf: SURF_ON })), new THREE.LineSegments(ruins.ink, inkLine()));
 const COLS = ruins.colliders;
 
 /* ── 黑牆 ────────────────────────────────────────────────────────
@@ -463,7 +476,7 @@ function frame(now) {
   if (hudAcc > 0.25) {
     fpsShown = Math.round(fpsN / fpsAcc);
     fpsAcc = 0; fpsN = 0; hudAcc = 0;
-    line = `${fpsShown} fps ・ 關卡 ${(ruins.tris / 1000).toFixed(0)}k tri ・ `
+    line = `${fpsShown} fps${SURF_ON ? '' : '（無紋路）'} ・ 關卡 ${(ruins.tris / 1000).toFixed(0)}k tri ・ `
       + `${(ruins.inkLines / 1000).toFixed(0)}k 墨線 ・ 動物 ${(critterTris / 1000).toFixed(0)}k ・ `
       + `x ${player.x.toFixed(1)} y ${player.y.toFixed(1)} z ${player.z.toFixed(1)}`
       + (player.slip ? `・${player.slip === 'fall' ? '滑落' : '緩滑'}` : '');

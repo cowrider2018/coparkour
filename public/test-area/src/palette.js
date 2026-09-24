@@ -26,6 +26,7 @@
    ------------------------------------------------------------------ */
 
 import * as THREE from '../vendor/three.module.js';
+import { SURF, SURF_DEF, MOSS, surfaceTextures, surfaceUniforms } from './surface.js';
 
 /** 墨色。src/cat/cat.js 的 INK = [43, 35, 32]。 */
 export const INK = 0x2b2320;
@@ -165,24 +166,143 @@ ${BAND_EDGE.map((e, i) => `  cpTone = mix(cpTone, uBand[${i}], `
   diffuseColor.rgb *= cpTone;
 `;
 
+/* ── 表面紋路 ─────────────────────────────────────────────────────
+   貼圖怎麼來、每一種材料怎麼切階，全部在 surface.js。這裡只負責把它接到
+   著色器上：切出來的三階（溝／平／凸）乘在 diffuseColor 上，**然後**才
+   進五階調——所以紋路是材料的顏色，光照照舊只有那五塊平調。
+
+   頂點那邊送三樣東西到片段：世界座標（投影用）、紋理方向、材料與偏移。
+   材料編號在一塊幾何的三個頂點上都一樣，所以內插不會把它混掉，片段那邊
+   取整數就是原值。 */
+
+const SURF_U = (() => {
+  const { a, b } = surfaceUniforms();
+  return { a: { value: a }, b: { value: b } };
+})();
+const U_MOSS = { value: new THREE.Color(C.mossDark) };
+let U_TEX = null;
+const surfTex = () => {
+  if (!U_TEX) {
+    const [ta, tb] = surfaceTextures();
+    U_TEX = { a: { value: ta }, b: { value: tb } };
+  }
+  return U_TEX;
+};
+
+const SURF_VERT_DECL = `
+varying vec3 vSurfP;
+varying vec3 vSurfG;
+varying vec2 vSurf;
+#ifndef CP_SURF_CONST
+attribute vec4 aSurf;
+#endif
+`;
+const SURF_VERT = `
+  vSurfP = (modelMatrix * vec4(transformed, 1.0)).xyz;
+#ifdef CP_SURF_CONST
+  vSurfG = vec3(1.0, 0.0, 0.0);
+  vSurf = vec2(float(CP_SURF_CONST), 0.0);
+#else
+  vSurfG = mat3(modelMatrix) * aSurf.xyz;
+  float cpSW = floor(aSurf.w * 127.0 + 0.5);
+  vSurf = vec2(floor(cpSW / 16.0), mod(cpSW, 16.0));
+#endif
+`;
+const SURF_FRAG_DECL = `
+uniform sampler2D uSurfTexA;
+uniform sampler2D uSurfTexB;
+uniform vec4 uSurfA[${SURF_DEF.length}];
+uniform vec4 uSurfB[${SURF_DEF.length}];
+uniform vec3 uMoss;
+varying vec3 vSurfP;
+varying vec3 vSurfG;
+varying vec2 vSurf;
+`;
+/* 導數一律在分支之外取（dFdx／fwidth 在分支裡是未定義的），取樣用
+   textureGrad 帶著顯式導數——一個面換到下一個面時投影的軸跳了，但世界
+   座標是連續的，所以 mipmap 的層級不會在面與面的交界上跳一下。 */
+const SURF_FRAG = `
+  {
+    vec3 cpN = normalize(vBandN);
+    vec3 cpG = normalize(vSurfG + vec3(1e-5, 2e-5, 3e-5));
+    float cpEnd = abs(dot(cpN, cpG));
+    /* 端面：紋理方向正對著鏡頭這一面，換一組軸（上方向，或 x）。 */
+    vec3 cpH = cpEnd > 0.7 ? (abs(cpN.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)) : cpG;
+    vec3 cpT = normalize(cross(cpN, cpH));
+    vec3 cpU = cross(cpT, cpN);
+    int cpMi = int(vSurf.x + 0.5);
+    if (cpMi == ${SURF.wood} && cpEnd > 0.7) cpMi = ${SURF.endGrain};
+    vec4 cpA = uSurfA[cpMi], cpB = uSurfB[cpMi];
+    vec3 cpDx = dFdx(vSurfP), cpDy = dFdy(vSurfP);
+    vec3 cpP = vSurfP + vSurf.y * vec3(7.31, 3.17, 5.53);
+    vec2 cpUV = vec2(dot(cpP, cpU), dot(cpP, cpT)) * cpA.zw;
+    vec2 cpGX = vec2(dot(cpDx, cpU), dot(cpDx, cpT)) * cpA.zw;
+    vec2 cpGY = vec2(dot(cpDy, cpU), dot(cpDy, cpT)) * cpA.zw;
+    vec4 cpS = cpA.x < 0.5 ? textureGrad(uSurfTexA, cpUV, cpGX, cpGY)
+                           : textureGrad(uSurfTexB, cpUV, cpGX, cpGY);
+    float cpV = dot(cpS, vec4(equal(vec4(cpA.y), vec4(0.0, 1.0, 2.0, 3.0))));
+    float cpW = max(fwidth(cpV) * 0.7, 0.012);
+    float cpK = mix(cpB.z, 1.0, smoothstep(cpB.x - cpW, cpB.x + cpW, cpV));
+    cpK = mix(cpK, cpB.w, smoothstep(cpB.y - cpW, cpB.y + cpW, cpV));
+    if (cpMi == 0) cpK = 1.0;
+    diffuseColor.rgb *= cpK;
+
+    /* 苔：只長在石頭朝上的面上，一大塊一大塊的，而且跨磚連續（不吃每塊
+       的偏移）——苔是從牆頂長過去的，不是一塊磚一塊磚貼上去的。也不整片
+       換成苔色，底下的石色留三成：苔是「石頭的顏色變了」，不是一層漆。 */
+    vec2 cpMU = vSurfP.xz / ${MOSS.size.toFixed(2)};
+    float cpMv = textureGrad(uSurfTexA, cpMU, cpDx.xz / ${MOSS.size.toFixed(2)}, cpDy.xz / ${MOSS.size.toFixed(2)}).b;
+    float cpMw = max(fwidth(cpMv) * 0.7, 0.012);
+    float cpMoss = smoothstep(${MOSS.at.toFixed(2)} - cpMw, ${MOSS.at.toFixed(2)} + cpMw, cpMv)
+      * step(0.7, cpN.y) * (cpMi == ${SURF.stone} ? 1.0 : 0.0);
+    diffuseColor.rgb = mix(diffuseColor.rgb, uMoss * mix(0.8, 1.0, step(0.72, cpMv)), cpMoss * ${MOSS.mix.toFixed(2)});
+  }
+`;
+
 /**
  * 把五階調接到一顆 three 的 MeshBasicMaterial 上。
  *
  * 用 basic 而不是 toon／lambert，是因為這裡不需要 three 的燈——整個漫射
  * 項就是上面那五格，接在 `color_fragment` 之後（那時候 diffuseColor 已經
  * 是材質色 × 頂點色），霧與色彩管理仍然照 three 自己那一套走。
+ *
+ * @param {object} [o] surf：false 不上紋路；數字 = 整顆材質一種材料
+ *   （單色材質用，沒有 aSurf 屬性）；true／不給 = 讀頂點的 aSurf
  */
-function banded(m) {
+function banded(m, o = {}) {
+  const surf = o.surf === undefined ? true : o.surf;
+  const konst = typeof surf === 'number';
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uBand = U_BAND;
     sh.uniforms.uKeyDir = U_KEYDIR;
-    sh.vertexShader = sh.vertexShader
+    let vs = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vBandN;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vBandN = mat3(modelMatrix) * normal;');
-    sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\n${BAND_DECL}`)
-      .replace('#include <color_fragment>', `#include <color_fragment>\n${BAND_FRAG}`);
+    let fs = sh.fragmentShader
+      .replace('#include <common>', `#include <common>\n${BAND_DECL}`);
+    if (surf !== false) {
+      const T = surfTex();
+      sh.uniforms.uSurfTexA = T.a;
+      sh.uniforms.uSurfTexB = T.b;
+      sh.uniforms.uSurfA = SURF_U.a;
+      sh.uniforms.uSurfB = SURF_U.b;
+      sh.uniforms.uMoss = U_MOSS;
+      const def = konst ? `#define CP_SURF_CONST ${surf}\n` : '';
+      vs = vs
+        .replace('#include <common>', `${def}#include <common>\n${SURF_VERT_DECL}`)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>\n${SURF_VERT}`);
+      fs = fs
+        .replace('#include <common>', `#include <common>\n${SURF_FRAG_DECL}`)
+        .replace('#include <color_fragment>', `#include <color_fragment>\n${SURF_FRAG}\n${BAND_FRAG}`);
+    } else {
+      fs = fs.replace('#include <color_fragment>', `#include <color_fragment>\n${BAND_FRAG}`);
+    }
+    sh.vertexShader = vs;
+    sh.fragmentShader = fs;
   };
+  /* 開不開紋路、哪一種材料，是兩份不同的程式——three 用這個字串決定要
+     不要重編，不給的話兩顆材質會共用第一顆編出來的那一份。 */
+  m.customProgramCacheKey = () => `banded:${surf}`;
   return m;
 }
 
@@ -191,15 +311,36 @@ function banded(m) {
  *
  * 整個區塊的幾何最後會合併成極少數幾個 mesh（見 geom.js 的 merge），
  * 顏色靠頂點色帶著走，所以這裡不分材質——四階石材、苔、鐵、布全部用
- * 同一顆材質畫完，一個 draw call。
+ * 同一顆材質畫完，一個 draw call。材料的紋路也一樣：每個頂點帶著自己是
+ * 哪一種材料（aSurf），同一顆材質按頂點分。
+ *
+ * @param {object} [o] surf：false 關掉紋路（`?surf=0`，比效能用）
  */
-export const toonVC = () => banded(new THREE.MeshBasicMaterial({
+export const toonVC = (o = {}) => banded(new THREE.MeshBasicMaterial({
   color: 0xffffff,
   vertexColors: true,
-}));
+}), { surf: o.surf === false ? false : true });
 
-/** 單色的五階調材質（地面那一片、水面以外的道具）。 */
-export const toon = (color) => banded(new THREE.MeshBasicMaterial({ color }));
+/**
+ * 單色的五階調材質（地面那一片、水面以外的道具）。
+ * @param {number} color
+ * @param {number|false} [surf] 整片是哪一種材料（SURF 的編號），false = 素色
+ */
+export const toon = (color, surf = false) => banded(new THREE.MeshBasicMaterial({ color }), { surf });
+
+/* ── 顏色 → 材料 ──────────────────────────────────────────────────
+   零件只說「這塊是什麼顏色」，材料由顏色認：石材四階都是石、兩階木料
+   都是木……零件的呼叫端因此一行都不用改，而新加一個顏色時，它在這張表裡
+   找不到就是素色——不上紋是安全的那一邊。要例外的零件在 `add` 給 `surf`。 */
+export const SURF_OF = new Map([
+  [C.stoneLit, SURF.stone], [C.stone, SURF.stone], [C.stoneDark, SURF.stone], [C.stoneDeep, SURF.stone],
+  [C.granite, SURF.granite], [C.graniteDark, SURF.granite],
+  [C.wood, SURF.wood], [C.woodDark, SURF.wood],
+  [C.plaster, SURF.plaster], [C.plasterAlt, SURF.plaster],
+  [C.tile, SURF.tile], [C.tileDark, SURF.tile],
+  [C.iron, SURF.iron], [C.ironLit, SURF.iron],
+  [C.banner, SURF.cloth], [C.bannerAlt, SURF.cloth],
+]);
 
 /** 自發光：火焰。不受光，直接就是那個顏色。 */
 export const glow = (color) => new THREE.MeshBasicMaterial({ color });

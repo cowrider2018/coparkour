@@ -28,6 +28,8 @@
    ------------------------------------------------------------------ */
 
 import * as THREE from '../vendor/three.module.js';
+import { SURF_OF } from './palette.js';
+import { SURF, packSurf } from './surface.js';
 
 /* ── 隨機源 ──────────────────────────────────────────────────────
    mulberry32，跟 src/rng.js 同一支。碎石、苔、缺口全部由它決定，所以
@@ -63,10 +65,32 @@ const OTHER = [[1, 2], [0, 2], [0, 1]];
  * @param {number} h  y 全長
  * @param {number} d  z 全長
  * @param {number} ch 倒角寬度。會自動夾到最短邊的 1/3，所以薄板不會翻面。
+ * @param {number} [chip] 缺角的變體（0 = 完整）。見下面。
  */
-export function stone(w, h, d, ch = 0.05) {
+export function stone(w, h, d, ch = 0.05, chip = 0) {
   const e = [w / 2, h / 2, d / 2];
-  const c = Math.min(ch, Math.min(w, h, d) * 0.33);
+  const cmax = Math.min(w, h, d) * 0.33;
+  const c = Math.min(ch, cmax);
+  /* ── 缺角 ──────────────────────────────────────────────────────
+     每一個角各自的倒角寬度。完整的石頭八個角都是 c；缺角的變體挑幾個角
+     放大到 c 的兩三倍——那個角就被敲掉一塊，一道斜面切過去。
+
+     為什麼只動角：一個角的三個頂點各自在自己那一面上往內縮，而每一條
+     邊面的四個頂點是兩個角各出兩個，兩個角縮得不一樣多，那條邊面就從
+     長方形變成梯形。它仍然是平的（那四點在 x_a + x_b 與 x_k 兩個值上
+     成對相等，所以落在同一個平面上），所以法線還是平的、墨線照樣算，
+     外接盒也一點都沒變——碰撞、支撐、牆芯那些驗證完全不必知道有這件事。 */
+  const cc = new Float32Array(8).fill(c);
+  if (chip) {
+    const r = mulberry32(chip * 0x2c1b3c6d + 17);
+    let n = 0;
+    for (let i = 0; i < 8; i++) {
+      if (r() < 0.38) { cc[i] = Math.min(c * (2.2 + r() * 1.6), cmax); n++; }
+    }
+    // 一個角都沒敲到的變體跟完整的那塊一模一樣，那就至少敲一個。
+    if (!n) cc[Math.floor(r() * 8)] = Math.min(c * 2.8, cmax);
+  }
+  const ci = (s) => (s[0] > 0 ? 4 : 0) + (s[1] > 0 ? 2 : 0) + (s[2] > 0 ? 1 : 0);
   const V = [];                 // 24 個頂點
   const at = new Map();         // key → index
   // 位元編碼：軸 × 8 + 三個符號。字串相加會把 0/1 加成數字而撞在一起。
@@ -75,7 +99,8 @@ export function stone(w, h, d, ch = 0.05) {
   for (let a = 0; a < 3; a++) {
     for (const sx of [1, -1]) for (const sy of [1, -1]) for (const sz of [1, -1]) {
       const s = [sx, sy, sz];
-      const p = [0, 1, 2].map((i) => (i === a ? e[i] * s[i] : (e[i] - c) * s[i]));
+      const k = cc[ci(s)];
+      const p = [0, 1, 2].map((i) => (i === a ? e[i] * s[i] : (e[i] - k) * s[i]));
       at.set(key(a, sx, sy, sz), V.length);
       V.push(p);
     }
@@ -314,6 +339,53 @@ function edgesOf(g) {
 
 /* ── 合併器 ────────────────────────────────────────────────────── */
 
+/* ── 紋理方向 ────────────────────────────────────────────────────
+   一份幾何「自己的」三軸全長。擺進場景時乘上縮放、挑最長的那一軸轉到
+   世界——木紋順著木料、瓦沿著簷口、磚上的鑿痕順著磚長，都是從這裡來的
+   （見 surface.js 的「投影」）。 */
+const EXT_CACHE = new WeakMap();
+function extentOf(g) {
+  let e = EXT_CACHE.get(g);
+  if (!e) {
+    if (!g.boundingBox) g.computeBoundingBox();
+    const b = g.boundingBox;
+    e = [b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z];
+    EXT_CACHE.set(g, e);
+  }
+  return e;
+}
+
+/** 一個位置的雜湊，[0,1)。不吃亂數器——零件的亂數序列一個都不能多抽，
+    不然整片版面（哪根柱子斷、哪裡撒碎石）都會跟著換。 */
+export function hashAt(x, y, z, s = 0) {
+  let h = Math.imul(Math.round(x * 97), 0x27d4eb2d) ^ Math.imul(Math.round(y * 89), 0x165667b1)
+    ^ Math.imul(Math.round(z * 83), 0x9e3779b1) ^ Math.imul(s + 1, 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/* ── 烘進頂點色的那一層 ──────────────────────────────────────────
+   貼圖給的是「一塊之內」的紋路；「一塊與一塊之間」的差別烘在頂點色裡，
+   而且是逐塊一個數字，不是逐頂點——逐頂點的話一塊磚上會拉出一條連續的
+   漸層，那正是五階調花了整段注解在消的東西。
+
+     深淺   每一塊自己亮一點或暗一點（±7%），同一種石材的一面牆因此不是
+            四種顏色輪流出現，而是一片散開的色溫。
+     牆根   貼地的那一皮暗一階、第二皮再淡一點：雨水、泥濘、苔的根——
+            牆是從地面髒上來的。只給石與灰泥（木箱、地板不算）。 */
+const JITTER = {
+  [SURF.stone]: 0.14, [SURF.granite]: 0.08, [SURF.wood]: 0.14, [SURF.plaster]: 0.08, [SURF.tile]: 0.16,
+};
+const GRIME = { [SURF.stone]: true, [SURF.plaster]: true };
+function tintOf(sid, p) {
+  let k = 1;
+  const j = JITTER[sid];
+  if (j) k *= 1 + (hashAt(p[0], p[1], p[2], 3) - 0.5) * j;
+  if (GRIME[sid]) k *= p[1] < 0.5 ? 0.88 : p[1] < 1.0 ? 0.94 : 1;
+  return k;
+}
+
 const _m = new THREE.Matrix4();
 const _nm = new THREE.Matrix3();
 const _v = new THREE.Vector3();
@@ -386,6 +458,11 @@ export class Build {
     this.floors = [];        // 每一片鋪面的登記（給「鋪面有基座」那一項驗）
     this.portals = [];       // 感測區：走進去就被送到別的地方（見 `portal()`）
     this._c = new THREE.Color();
+    /* 每個頂點 4 個 int8：紋理方向與「材料 × 16 + 偏移」（見 surface.js）。
+       用型別陣列自己長，不用一般陣列——兩百萬個頂點，一般陣列的每一格是
+       8 個位元組。 */
+    this.sf = new Int8Array(1 << 20);
+    this.sfN = 0;
   }
 
   /**
@@ -393,6 +470,7 @@ export class Build {
    * @param {object} o
    *   p 位置 [x,y,z]／r 歐拉角 [x,y,z]／s 縮放（數字或 [x,y,z]）
    *   color 頂點色／ink 是否描邊（預設 true）
+   *   surf  材料（surface.js 的 SURF）。不給就照顏色認（palette.js 的 SURF_OF）
    *   solid 碰撞的種類：'floor'／'block'／'step'（true = 'block'）
    *   base  'block' 站在哪個高度上（預設 0）——盒子從這裡拉到頂
    *   round 圓的：登記成圓柱而不是方盒。軸取 AABB 的中心，半徑取 x／z
@@ -416,7 +494,10 @@ export class Build {
     const src = g.attributes.position.array;
     const sn = g.attributes.normal.array;
     this._c.set(o.color === undefined ? 0xffffff : o.color);
-    const cr = this._c.r, cg = this._c.g, cb = this._c.b;
+    const sid = o.surf !== undefined ? o.surf : (SURF_OF.get(o.color) || 0);
+    if (sid) this._c.multiplyScalar(tintOf(sid, p));
+    const cr = Math.min(1, this._c.r), cg = Math.min(1, this._c.g), cb = Math.min(1, this._c.b);
+    this._surf(g, s, sid, p, src.length / 3);
 
     let minx = Infinity, miny = Infinity, minz = Infinity;
     let maxx = -Infinity, maxy = -Infinity, maxz = -Infinity;
@@ -491,6 +572,29 @@ export class Build {
       this.colliders.push(c);
     }
     return this;
+  }
+
+  /** 一塊幾何的 aSurf：紋理方向（最長軸，乘過縮放、轉到世界）與材料。 */
+  _surf(g, s, sid, p, nv) {
+    const ext = extentOf(g);
+    const ex = ext[0] * Math.abs(s[0]), ey = ext[1] * Math.abs(s[1]), ez = ext[2] * Math.abs(s[2]);
+    // 差不多一樣長的話取 x：方塊（木箱、石板）的紋路就不會隨著一兩公釐亂跳。
+    const ax = ex >= ey * 0.98 && ex >= ez * 0.98 ? 0 : ey >= ez ? 1 : 2;
+    _v.set(ax === 0 ? 1 : 0, ax === 1 ? 1 : 0, ax === 2 ? 1 : 0).applyQuaternion(_q);
+    const gx = Math.round(_v.x * 127), gy = Math.round(_v.y * 127), gz = Math.round(_v.z * 127);
+    const gw = packSurf(sid, Math.floor(hashAt(p[0], p[1], p[2], 5) * 16));
+    if (this.sfN + nv * 4 > this.sf.length) {
+      let L = this.sf.length * 2;
+      while (L < this.sfN + nv * 4) L *= 2;
+      const grown = new Int8Array(L);
+      grown.set(this.sf.subarray(0, this.sfN));
+      this.sf = grown;
+    }
+    const F = this.sf;
+    for (let i = 0, k = this.sfN; i < nv; i++, k += 4) {
+      F[k] = gx; F[k + 1] = gy; F[k + 2] = gz; F[k + 3] = gw;
+    }
+    this.sfN += nv * 4;
   }
 
   /**
@@ -647,6 +751,7 @@ export class Build {
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nrm, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
+    g.setAttribute('aSurf', new THREE.Int8BufferAttribute(this.sf.slice(0, this.sfN), 4, true));
     g.computeBoundingSphere();
     const ink = new THREE.BufferGeometry();
     ink.setAttribute('position', new THREE.Float32BufferAttribute(this.ink, 3));
