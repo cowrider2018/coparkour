@@ -90,11 +90,9 @@ const head = (s) => console.log(`\n── ${s} ${'─'.repeat(Math.max(0, 56 - s
    放寬標準：每一段仍然是用真的物理走完的。 */
 const CENTERS = {
   courtyard: { y: 0, hx: 6.0, hz: 6.0 },
-  barracks: { y: 0, hx: 6.0, hz: 6.0 },
   throne: { y: 0, hx: 4.4, hz: 8.5 },
   cistern: { y: 0, hx: 6.0, hz: 6.0 },
   wallwalk: { y: 5.2, hx: 7.0, hz: 2.4 },
-  breach: { y: 5.2, hx: 3.5, hz: 2.4 },
   crypt: { y: 0, hx: 2.4, hz: 8.0 },
   alley: { y: 0, hx: 2.0, hz: 6.0 },
 };
@@ -881,21 +879,17 @@ head('門洞進得去也回得來');
    所以改驗一件仍然會壞、而且看不出來的事：**進得去也回得來**。拱洞後面
    剩下的那條縫只有幾十公分寬，而身體的半徑是 0.30；碰撞是逐盒推出的，
    兩個方向相反的推力（拱的墩柱與黑牆）有可能把身體夾在中間推來推去，
-   那時候畫面上什麼都沒發生，人就是走不動了。軍營的門洞是城門：走進去，
-   停在放下的鐵閘前面，再走回校場。 */
+   那時候畫面上什麼都沒發生，人就是走不動了。 */
 /* 每個房間的一個門洞，以及走到它那裡的轉折點。轉折點是必要的：驗證用的
    走法是朝目標直線走，而直線穿過拱廊的墩柱是走不過去的——真人也不會
    那樣走。中庭與水窖的座標都落在拱洞的正中間（拱廊的洞口每 4.05 公尺
    一個、環牆的門在每一段的中點 11.25°），不是隨手挑的。 */
 const HOLES = {
   courtyard: [[-12.6, 0], [-13.4, 0]],
-  barracks: [[0, 8], [0, 12.2]],
   throne: [[0, -13.4], [0, -14.6]],
   cistern: [[11.6, 2.3], [12.9, 2.6]],
-  // 城牆步道沒有門洞通到外面——走道本身就是整個場地。驗的是走進東塔的塔頂再回來。
-  wallwalk: [[12, 2.4], [12, 5.8]],
-  // 缺口那一座的門洞就是西段走道本身（缺口要跳，這裡的走法不跳）。
-  breach: [[-8, 0], [-12, 0]],
+  // 城牆步道沒有門洞通到外面——走道本身就是整個場地。驗的是走進西邊方塔的塔頂再回來。
+  wallwalk: [[-12, 2.4], [-12, 5.8]],
   // 墓室：走上南端那道樓梯，到鐵閘前的平台。
   crypt: [[0, -8.0], [0, -13.0]],
   // 窄巷：走出巷口，進廣場、繞到井的東邊。
@@ -933,7 +927,7 @@ head('整片走一遍：沒有鑽得進去的空心，也沒有回不來的地�
    要有淨空）兩種移動，用的是同一支 solveXZ／supportAt。然後問兩件事：
 
      空心     走得到的格子，頭頂 3 公尺內不准有砌體蓋著。蓋著的意思是
-              人鑽進了一個東西的底下——城牆平台（軍營的前身）的台體以前是空的，從樓梯
+              人鑽進了一個東西的底下——城牆平台的台體以前是空的，從樓梯
               旁的矮牆跳進第二折樓梯底下、穿過南牆缺口，整座露台的正下方
               都走得到，而畫面上看不出來，除非你真的走進去。底下本來就
               該是空的東西（水窖的懸臂石階）在碰撞盒上標 `open`，不算。
@@ -1025,24 +1019,9 @@ head('整片走一遍：沒有鑽得進去的空心，也沒有回不來的地�
     /* 圍著空氣牆的場地：走到哪、跳到哪，腳都不准低於出生的那個面。
        空氣牆漏一段的話，這一項就會找到從那裡跳下去之後的每一格地面。 */
     if (b.fenced) {
-      const floorY = typeof b.fenced === 'number' ? b.fenced : sp[1];
-      const low = queue.map((s) => s.split(',').map(Number)).filter(([, , y]) => y < floorY - 0.05);
+      const low = queue.map((s) => s.split(',').map(Number)).filter(([, , y]) => y < sp[1] - 0.05);
       ok(low.length === 0, `${b.name}：走得到的每一格都在牆頂上`,
         low.length ? `${low.length} 格掉下去了，例如 ${at([low[0][0] * G - ox, low[0][1] * G - oz, low[0][2]])}` : '');
-    }
-    /* 有城外的場地（軍營）：城外看得到、一格都走不到，牆頂也上不去。主牆的
-       西端穿進黑牆、副牆靠在黑牆上、城門的鐵閘放下——哪一處漏了，或者營地裡
-       有東西疊得夠高、搆得到牆頂，這兩項就會找到翻出去之後的每一格。 */
-    if (b.outside) {
-      const cells = queue.map((s) => s.split(',').map(Number));
-      const out = cells.filter(([, k]) => k * G - oz > b.outside.z);
-      ok(out.length === 0, `${b.name}：城外一格都走不到`,
-        out.length ? `${out.length} 格在城外，例如 ${at([out[0][0] * G - ox, out[0][1] * G - oz, out[0][2]])}`
-          : `走得到的最北到 z ${cells.reduce((m, [, k]) => Math.max(m, k * G - oz), -Infinity).toFixed(1)}`);
-      const up = cells.filter(([, , y]) => y > b.outside.top);
-      ok(up.length === 0, `${b.name}：牆上不去`,
-        up.length ? `${up.length} 格高過 ${b.outside.top} m，例如 ${at([up[0][0] * G - ox, up[0][1] * G - oz, up[0][2]])}`
-          : `走得到的最高 ${cells.reduce((m, [, , y]) => Math.max(m, y), -Infinity).toFixed(2)} m`);
     }
   }
 }
@@ -1081,40 +1060,6 @@ head('坑都有出口');
   }
 }
 
-head('城牆缺口：衝刺跳得過，走路跳不過');
-/* 淹水那一項只問相鄰的格子，跨不過四公尺的缺口，所以這一跳要另外驗：
-   用 main.js 同一套的垂直積分（重力、supportInfo 接住），從缺口邊上起跳，
-   看落在哪裡。衝刺跳不過就是這一座壞了；走路也跳得過，這一跳就沒有意義。 */
-{
-  const b = BLOCKS.find((q) => q.id === 'breach');
-  const [ox, oz] = b.origin;
-  const H = 5.2, G0 = 4.5, G1 = 9.0;
-  /* `at` 是起跳時身體中心在哪。腳底的支撐量的是半徑 0.255 的一圈，所以中心
-     過了邊緣 0.25 還踩得到——那是最有利的起跳點。 */
-  const leap = (speed, at) => {
-    const dt = 1 / 120;
-    const p = { x: ox + G0 - 2.0, y: H, z: oz, vy: 0, air: false, jumped: false };
-    for (let t = 0; t < 4; t += dt) {
-      if (!p.jumped && p.x >= ox + at) { p.vy = PHYS.jump; p.jumped = true; }
-      const [sx, sz] = solveXZ(COLS, p.x + speed * dt, p.z, p.y);
-      p.x = sx; p.z = sz;
-      const prevY = p.y;
-      p.vy -= PHYS.gravity * dt;
-      p.y += p.vy * dt;
-      const sup = supportAt(COLS, p.x, p.z, prevY);
-      if (p.y <= sup && p.vy <= 0) {
-        p.y = sup; p.vy = 0;
-        if (p.jumped) return { x: p.x - ox, y: p.y };
-      }
-    }
-    return { x: p.x - ox, y: p.y };
-  };
-  // 衝刺給一個不利的起跳（提早 0.3），走路給最有利的（邊緣外 0.25）。
-  const run = leap(PHYS.run, G0 - 0.3), walk = leap(PHYS.walk, G0 + 0.25);
-  ok(run.y > H - 0.05 && run.x > G1, '衝刺起跳（提早 0.3 m）落在對岸的走道上', `落在 x ${run.x.toFixed(1)}、y ${run.y.toFixed(2)}`);
-  ok(walk.y < H - 1, '走路起跳（踩到最邊緣）也掉進缺口', `落在 x ${walk.x.toFixed(1)}、y ${walk.y.toFixed(2)}`);
-}
-
 head('黑牆就是移動的上限');
 /* 黑牆是場地的邊界，而它跟障礙物走**同一套**阻擋邏輯（`walk.js` 的
    solveXZ，只差形狀是方或圓而不是盒子）——所以驗它的方式跟驗一道牆
@@ -1126,10 +1071,9 @@ head('黑牆就是移動的上限');
         地方」不一致，而消掉那個不一致就是這道牆存在的理由。
      3. 黑牆沒有切到任何幾何。切到的話畫面上是一面被削掉一半的牆，而
         牆上那層薄霧淡不掉一個切面。
-     4. 貼合。室內那三個房間與軍營的黑牆要貼在砌體的外皮上（差 1 公尺以內）；
-        城牆步道與缺口相反，它們要留出至少一公尺的牆外區域。這一項看不出來——
-        黑牆離牆面兩公尺或十公尺，站在房間中央看起來一模一樣，只有走到
-        牆邊才會發現外面多了一圈到不了的空地。
+     4. 貼合。黑牆要貼在砌體的外皮上（差 1 公尺以內）——城牆步道是那座切在
+        黑牆上的圓塔。這一項看不出來：黑牆離牆面兩公尺或十公尺，站在房間
+        中央看起來一模一樣，只有走到牆邊才會發現外面多了一圈到不了的空地。
 */
 const vol = (q) => (q.max[0] - q.min[0]) * (q.max[1] - q.min[1]) * (q.max[2] - q.min[2]);
 /* 每一塊幾何離「它自己那個場地」的邊界最近的距離（在裡面是正的）。
@@ -1164,8 +1108,7 @@ for (const a of R.arenas) {
   const name = blk.name;
   const spawn = R.spawns[a.id];
   let escaped = 0, tight = Infinity, dropped = 0;
-  // 圍著空氣牆的場地可以給一個高度：比它低才算掉下去（城牆缺口的坑底不算）。
-  const floorY = typeof blk.fenced === 'number' ? blk.fenced : spawn[1];
+  const floorY = spawn[1];               // 圍著空氣牆的場地：比出生的那個面低就是掉下去了
   for (let k = 0; k < 16; k++) {
     const ang = (k / 16) * Math.PI * 2;
     const far = 60;
@@ -1202,11 +1145,7 @@ for (const a of R.arenas) {
     if (arenaGap(a, cx, cz) < 0) continue;        // 別的場地的
     if (PART_GAP[k] < nearest) nearest = PART_GAP[k];
   }
-  if (a.hug) {
-    ok(nearest < 1.0, `${name}：黑牆貼在砌體的外皮上`, `離最近的砌體 ${nearest.toFixed(2)} m`);
-  } else {
-    ok(nearest > 1.0, `${name}：牆外那一圈留著`, `離最近的砌體 ${nearest.toFixed(2)} m`);
-  }
+  ok(nearest < 1.0, `${name}：黑牆貼在砌體的外皮上`, `離最近的砌體 ${nearest.toFixed(2)} m`);
 }
 {
   /* `pierce` 的幾何是故意穿過去的（城牆步道那段沒入黑霧的幕牆）：切面在
@@ -1345,8 +1284,8 @@ head('鏡頭的吊臂');
         /* 身體貼著黑牆的時候（離牆 0.30～0.35），樞紐自己就已經在吊臂的餘裕
            裡面：沿著牆面看出去的那幾個方向，吊臂收到零、鏡頭就在樞紐上，而
            「離牆 0.35」這件事沒有任何一個吊臂長度做得到。那時候要的是鏡頭
-           **不比樞紐更靠牆**。這一帶以前格點剛好都沒撒到；軍營的黑牆（半徑
-           25）一換上來，(9, 23) 這一格離牆 0.302 m。 */
+           **不比樞紐更靠牆**。格點撒不撒得到這一帶看場地的尺寸——半徑 25 的
+           圓，(9, 23) 那一格就離牆 0.302 m——撒到了不該因此變紅。 */
         const need = Math.min(MARGIN, own);
         // 站不住的地方不算（樞紐在砌體裡面的話，吊臂本來就沒有答案）
         const [sx2, sz2] = solveXZ(COLS, px, pz, 0);
