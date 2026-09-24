@@ -69,7 +69,7 @@ import {
 } from '../public/test-area/src/walk.js';
 import { VEIL, buildVeil, outline } from '../public/test-area/src/veil.js';
 import { toonVC, toon, inkLine, BAND_EDGE, BAND_KEY } from '../public/test-area/src/palette.js';
-import { SURF, SURF_DEF, TEX_N, surfacePixels } from '../public/test-area/src/surface.js';
+import { SURF, SURF_DEF, TEX_N, MOSS, surfacePixels, mossAt } from '../public/test-area/src/surface.js';
 import { stone } from '../public/test-area/src/geom.js';
 import { CAM, makeCam, updateCam } from '../public/test-area/src/camera.js';
 import { readFileSync } from 'node:fs';
@@ -345,6 +345,76 @@ head('缺角的石頭');
   ok(boxBad === 0, '缺角不改外接盒', `${boxBad}`);
   ok(flatBad === 0, '缺角之後每一個四邊形仍然是平的', `${flatBad}`);
   ok(same === 0, '每一種缺角的變體都真的缺了一塊', `${same} 個跟完整的一樣`);
+}
+
+head('每張圖的苔量');
+/* 名冊的 `moss` 管兩件事：石頭頂面的苔（逐頂點的門檻 aMoss）與苔叢。
+   兩件都要照那一張圖的苔量走，而且**苔量不准動到版面**——苔叢少長幾叢，
+   亂數照樣要抽完，不然後面每一根柱子斷在哪、碎石撒在哪全部換掉。所以把
+   每一張圖的苔量都調回 1 再砌一遍，兩遍的碰撞盒必須一模一樣。 */
+{
+  const bad = BLOCKS.filter((b) => b.moss !== undefined && !(b.moss >= 0 && b.moss <= 1));
+  ok(bad.length === 0, '每一張圖的苔量都在 0～1', bad.map((b) => b.id).join('、'));
+  ok(mossAt(1) === MOSS.at && mossAt(0) >= 1, '苔量 1 是預設門檻、0 是一塊都不長',
+    `1→${mossAt(1).toFixed(3)}、0→${mossAt(0).toFixed(3)}`);
+  let mono = true;
+  for (let k = 0.1; k <= 1.001; k += 0.1) if (!(mossAt(k) <= mossAt(k - 0.1) + 1e-9)) mono = false;
+  ok(mono, '苔量越多、門檻越低');
+
+  const Mo = R.geometry.attributes.aMoss;
+  ok(!!Mo && Mo.count === R.geometry.attributes.position.count && Mo.normalized, 'aMoss 的數量與頂點對得上');
+
+  /* 一個頂點屬於哪一張圖：看它落在哪一道黑牆裡面。 */
+  const blockOf = (x, z) => {
+    for (const a of R.arenas) if (arenaGap(a, x, z) > -0.3) return a.id;
+    return null;
+  };
+  const rate = Object.fromEntries(BLOCKS.map((b) => [b.id, b.moss ?? 1]));
+  const want = Object.fromEntries(BLOCKS.map((b) => [b.id, Math.round(mossAt(rate[b.id]) * 255)]));
+  const P = R.geometry.attributes.position.array, S = R.geometry.attributes.aSurf.array;
+  let wrong = 0, where = null;
+  for (let i = 0; i < Mo.count; i += 3) {             // 一個三角形取一個頂點
+    const id = blockOf(P[i * 3], P[i * 3 + 2]);
+    if (!id) continue;
+    const isStone = (S[i * 4 + 3] >> 4) === SURF.stone;
+    const exp = isStone ? want[id] : 255;
+    if (Mo.array[i] !== exp) { wrong++; where = where || id; }
+  }
+  ok(wrong === 0, '石頭頂面的苔門檻照它那一張圖的苔量給，其他材料一律不長', wrong ? `${wrong} 個，例如 ${where}` : '');
+
+  /* 苔叢：照那一張圖的苔量少長；苔量 0 的一叢都沒有。拿「全部調回 1」的
+     那一遍當分母。苔量是「每一叢長不長」的機率，所以叢少的圖本來就會偏：
+     容許的誤差照叢數給（2.5 個標準差，至少 15%）。一叢平均 3.5 塊幾何。 */
+  const saved = BLOCKS.map((b) => b.moss);
+  for (const b of BLOCKS) b.moss = 1;
+  const R1 = buildRuins({ record: true });
+  BLOCKS.forEach((b, i) => { b.moss = saved[i]; });
+  const tufts = (RR) => {
+    const n = {};
+    for (const q of RR.parts) {
+      if (q.tag !== 'moss') continue;
+      const id = blockOf((q.min[0] + q.max[0]) / 2, (q.min[2] + q.max[2]) / 2);
+      if (id) n[id] = (n[id] || 0) + 1;
+    }
+    return n;
+  };
+  const n0 = tufts(R), n1 = tufts(R1);
+  const off = [];
+  for (const b of BLOCKS) {
+    const k = rate[b.id], a = n0[b.id] || 0, full = n1[b.id] || 0;
+    const tol = Math.max(0.15, 2.5 * Math.sqrt((k * (1 - k)) / Math.max(1, full / 3.5)));
+    if (k === 0 ? a !== 0 : k === 1 ? a !== full : Math.abs(a / Math.max(full, 1) - k) > tol) {
+      off.push(`${b.id} ${a}/${full}（要 ${k}）`);
+    }
+  }
+  console.log('  苔叢：' + BLOCKS.map((b) => `${b.name} ${n0[b.id] || 0}/${n1[b.id] || 0}`).join('、'));
+  ok(off.length === 0, '苔叢照每一張圖的苔量長，苔量 0 的一叢都沒有', off.join('、'));
+  const same = R.colliders.length === R1.colliders.length
+    && R.colliders.every((c, i) => c.min.every((v, k) => v === R1.colliders[i].min[k])
+      && c.max.every((v, k) => v === R1.colliders[i].max[k]));
+  const flamesSame = R.flames.length === R1.flames.length
+    && R.flames.every((f, i) => f.x === R1.flames[i].x && f.z === R1.flames[i].z);
+  ok(same && flamesSame, '苔量不動版面（碰撞盒與火盆跟全開那一遍一模一樣）');
 }
 
 head('每塊石頭底下有東西頂著');

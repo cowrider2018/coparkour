@@ -193,8 +193,10 @@ const SURF_VERT_DECL = `
 varying vec3 vSurfP;
 varying vec3 vSurfG;
 varying vec2 vSurf;
+varying float vMossAt;
 #ifndef CP_SURF_CONST
 attribute vec4 aSurf;
+attribute float aMoss;
 #endif
 `;
 const SURF_VERT = `
@@ -202,7 +204,9 @@ const SURF_VERT = `
 #ifdef CP_SURF_CONST
   vSurfG = vec3(1.0, 0.0, 0.0);
   vSurf = vec2(float(CP_SURF_CONST), 0.0);
+  vMossAt = 2.0;
 #else
+  vMossAt = aMoss;
   vSurfG = mat3(modelMatrix) * aSurf.xyz;
   float cpSW = floor(aSurf.w * 127.0 + 0.5);
   vSurf = vec2(floor(cpSW / 16.0), mod(cpSW, 16.0));
@@ -217,6 +221,7 @@ uniform vec3 uMoss;
 varying vec3 vSurfP;
 varying vec3 vSurfG;
 varying vec2 vSurf;
+varying float vMossAt;
 `;
 /* 導數一律在分支之外取（dFdx／fwidth 在分支裡是未定義的），取樣用
    textureGrad 帶著顯式導數——一個面換到下一個面時投影的軸跳了，但世界
@@ -249,13 +254,14 @@ const SURF_FRAG = `
 
     /* 苔：只長在石頭朝上的面上，一大塊一大塊的，而且跨磚連續（不吃每塊
        的偏移）——苔是從牆頂長過去的，不是一塊磚一塊磚貼上去的。也不整片
-       換成苔色，底下的石色留三成：苔是「石頭的顏色變了」，不是一層漆。 */
+       換成苔色，底下的石色留三成：苔是「石頭的顏色變了」，不是一層漆。
+       門檻逐頂點給（aMoss）：每一張圖的苔量不一樣，見 surface.js 的 mossAt。 */
     vec2 cpMU = vSurfP.xz / ${MOSS.size.toFixed(2)};
     float cpMv = textureGrad(uSurfTexA, cpMU, cpDx.xz / ${MOSS.size.toFixed(2)}, cpDy.xz / ${MOSS.size.toFixed(2)}).b;
     float cpMw = max(fwidth(cpMv) * 0.7, 0.012);
-    float cpMoss = smoothstep(${MOSS.at.toFixed(2)} - cpMw, ${MOSS.at.toFixed(2)} + cpMw, cpMv)
+    float cpMoss = smoothstep(vMossAt - cpMw, vMossAt + cpMw, cpMv)
       * step(0.7, cpN.y) * (cpMi == ${SURF.stone} ? 1.0 : 0.0);
-    diffuseColor.rgb = mix(diffuseColor.rgb, uMoss * mix(0.8, 1.0, step(0.72, cpMv)), cpMoss * ${MOSS.mix.toFixed(2)});
+    diffuseColor.rgb = mix(diffuseColor.rgb, uMoss * mix(0.8, 1.0, step(vMossAt + 0.09, cpMv)), cpMoss * ${MOSS.mix.toFixed(2)});
   }
 `;
 

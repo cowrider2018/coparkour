@@ -142,22 +142,21 @@ export function flagstones(B, o) {
 
 /** 一小叢苔。三片扁石加兩三根草，只長在地上與石頭頂面。 */
 export function mossTuft(B, x, y, z, r) {
+  /* 長不長看那一張圖的苔量（B.mossRate），由位置決定。亂數照樣全部抽完——
+     不長的那一叢也要抽，不然後面每一個零件的亂數都往前錯一格，版面就變了。 */
+  const show = B.mossRate >= 1 || hashAt(x, y, z, 13) < B.mossRate;
   const n = 2 + Math.floor(r() * 3);
   for (let i = 0; i < n; i++) {
     /* 小一點、暗一點。第一版是 0.34 見方、一半用亮綠，畫出來像有人在
        地上潑了油漆——苔是「石縫的顏色變了」，不是一塊綠色的東西。 */
-    B.add(B.kit.brick(0.24, 0.04, 0.21, 0.015), {
-      p: [x + r.range(-0.22, 0.22), y + 0.02, z + r.range(-0.22, 0.22)],
-      r: [0, r() * Math.PI, 0],
-      color: r() < 0.28 ? C.moss : C.mossDark,
-      ink: false,
-    });
+    const p = [x + r.range(-0.22, 0.22), y + 0.02, z + r.range(-0.22, 0.22)];
+    const rot = [0, r() * Math.PI, 0];
+    const color = r() < 0.28 ? C.moss : C.mossDark;
+    if (show) B.add(B.kit.brick(0.24, 0.04, 0.21, 0.015), { p, r: rot, color, ink: false, tag: 'moss' });
   }
   if (r() < 0.6) {
-    B.add(B.kit.cone(0.06, 0.3, 5), {
-      p: [x, y + 0.15, z], r: [r.range(-0.3, 0.3), 0, r.range(-0.3, 0.3)],
-      color: C.moss, ink: false,
-    });
+    const rot = [r.range(-0.3, 0.3), 0, r.range(-0.3, 0.3)];
+    if (show) B.add(B.kit.cone(0.06, 0.3, 5), { p: [x, y + 0.15, z], r: rot, color: C.moss, ink: false, tag: 'moss' });
   }
 }
 
