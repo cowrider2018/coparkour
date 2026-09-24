@@ -33,7 +33,7 @@ import { arenaGap } from './walk.js';
 import {
   Kit, flagstones, wall, merlons, column, pointedArch, arcade, buttress, stair,
   knight, gargoyle, rubble, brazier, banner, chain, portcullis, deadTree, well,
-  mossTuft,
+  mossTuft, crate, barrel,
 } from './pieces.js';
 
 /** 區塊在世界裡的間距。中間那片空地是走廊，四個區塊互相看得到。 */
@@ -972,8 +972,46 @@ function house(B, seed, o) {
        +x 的斜率是 +tan a，而屋脊在這塊板的 −us·side 那一邊——兩個正負號
        就是從這裡來的。 */
     const tilt = side * o.us * th;
-    if (vx) B.add(B.kit.brick(D + 0.3, 0.16, slope, 0.03), { p: [x, y, z], r: [tilt, 0, 0], color: side < 0 ? C.tile : C.tileDark });
-    else B.add(B.kit.brick(slope, 0.16, D + 0.3, 0.03), { p: [x, y, z], r: [0, 0, -tilt], color: side < 0 ? C.tile : C.tileDark });
+    const tc = side < 0 ? C.tile : C.tileDark;
+    if (vx) B.add(B.kit.brick(D + 0.3, 0.16, slope, 0.03), { p: [x, y, z], r: [tilt, 0, 0], color: tc });
+    else B.add(B.kit.brick(slope, 0.16, D + 0.3, 0.03), { p: [x, y, z], r: [0, 0, -tilt], color: tc });
+    /* 瓦：斜板上一排一排疊上去，從簷口往屋脊。每一排比斜板多翹 5°——下緣
+       離開斜板 2 公分、上緣壓在斜板上，下一排再蓋住它的上緣。所以從側面看
+       屋面是一道一道的階，每一階底下一條影子；那就是「瓦」這件事在輪廓上
+       的全部證據，貼圖只負責一排裡面一片一片的縫。
+
+       旋轉只有一根軸（vx 繞 x、否則繞 z），所以斜板的座標可以直接寫：
+       b 是順著坡的那一軸、n 是斜板的法線。簷口在 b 的哪一端（ev）是從轉角
+       的正負號推出來的：繞 x 轉 θ 時局部 +z 的高度是 −z·sinθ，繞 z 轉 φ
+       時局部 +x 的高度是 x·sinφ。 */
+    const ang = vx ? tilt : -tilt;
+    const ev = Math.sign(tilt) || 1;              // 簷口在 b = ev·slope/2
+    const RW = 0.42, RP = 0.32, LIFT = 0.087;     // 一排多寬、排距、翹多少（5°）
+    const rows = Math.max(2, Math.ceil((slope - RW) / RP) + 1);
+    for (let i = 0; i < rows; i++) {
+      const b = ev * Math.max(slope / 2 - RW / 2 - i * RP, -(slope / 2 - RW / 2));
+      const n = 0.08 + 0.025 + (RW / 2) * LIFT;
+      const cs = Math.cos(ang), sn = Math.sin(ang);
+      if (vx) {
+        // 繞 x：(0, n, b) → (0, n·cos − b·sin, n·sin + b·cos)
+        B.add(B.kit.brick(D + 0.34, 0.05, RW, 0.015), {
+          p: [x, y + n * cs - b * sn, z + n * sn + b * cs], r: [ang - ev * LIFT, 0, 0], color: tc,
+        });
+      } else {
+        // 繞 z：(b, n, 0) → (b·cos − n·sin, b·sin + n·cos, 0)
+        B.add(B.kit.brick(RW, 0.05, D + 0.34, 0.015), {
+          p: [x + b * cs - n * sn, y + b * sn + n * cs, z], r: [0, 0, ang + ev * LIFT], color: tc,
+        });
+      }
+    }
+  }
+  /* 壓脊：一根轉了 45° 的方料，沿著屋脊壓住兩面瓦的上緣。 */
+  {
+    const [x, z] = at(0, D / 2);
+    const len = D + 0.4;
+    B.add(B.kit.brick(vx ? len : 0.2, 0.2, vx ? 0.2 : len, 0.02), {
+      p: [x, e + gh + 0.27, z], r: vx ? [Math.PI / 4, 0, 0] : [0, 0, Math.PI / 4], color: C.tileDark,
+    });
   }
   /* 屋頂的碰撞：一個從簷口到屋脊的盒子。人上不去，但鏡頭上得去——沒有
      它的話吊臂會從屋頂穿進房子裡面。 */
@@ -1012,9 +1050,30 @@ function house(B, seed, o) {
      門把。門板的正面在 v = RD − 0.06，比牆面深 12 公分——那一段陰影就是
      「這裡是一個洞」的全部證據。 */
   {
-    const [x, z] = at(du, RD - 0.02);
-    const [dw, dd] = size(DW - 0.08, 0.08);
-    B.add(B.kit.brick(dw, DH - 0.04, dd, 0.02), { p: [x, (DH - 0.04) / 2, z], color: C.wood });
+    /* 門板：四片直板，板縫 1.5 公分，縫後面是一片暗色的襯板——不然縫裡
+       看到的是牆洞底的灰泥。正面仍然在 RD − 0.06，跟以前那一整片同一個
+       深度。兩根橫檔把板子串起來，橫檔上各一條鐵帶，從門軸那一側釘過來。 */
+    const DWI = DW - 0.08, NP = 4, PW = DWI / NP;
+    {
+      const [x, z] = at(du, RD);
+      const [bw, bd] = size(DWI, 0.02);
+      B.add(B.kit.brick(bw, DH - 0.04, bd, 0.005), { p: [x, (DH - 0.04) / 2, z], color: C.woodDark, ink: false });
+    }
+    for (let i = 0; i < NP; i++) {
+      const [x, z] = at(du - DWI / 2 + PW * (i + 0.5), RD - 0.025);
+      const [pw, pd] = size(PW - 0.015, 0.07);
+      B.add(B.kit.brick(pw, DH - 0.04, pd, 0.012), { p: [x, (DH - 0.04) / 2, z], color: C.wood });
+    }
+    for (const ly of [0.45, 1.65]) {
+      const [x, z] = at(du, RD - 0.078);
+      const [lw, ld] = size(DWI - 0.1, 0.035);
+      B.add(B.kit.brick(lw, 0.14, ld, 0.01), { p: [x, ly, z], color: C.woodDark });
+      // 鐵帶從門軸那一側（離房子中線遠的那一邊）伸到門的三分之二。
+      const hinge = Math.sign(du) || 1, sl = DWI * 0.66;
+      const [sx2, sz2] = at(du + hinge * (DWI / 2 - sl / 2 - 0.02), RD - 0.1);
+      const [sw, sd] = size(sl, 0.012);
+      B.add(B.kit.brick(sw, 0.05, sd, 0.004), { p: [sx2, ly, sz2], color: C.iron, ink: false });
+    }
     for (const s of [-1, 1]) slab(du + s * (DW / 2 - 0.05) - 0.05, du + s * (DW / 2 - 0.05) + 0.05, 0.0, RD, 0, DH, C.woodDark);
     beam(du - 0.72, DH + 0.06, du + 0.72, DH + 0.06, 0.18);
     // 門把開在離門軸遠的那一側（離房子中線近的那一邊）。
@@ -1103,15 +1162,9 @@ function alley(B, flames, seed, A) {
   well(B, { x: 0, z: WZ, y: 0, r: 1.15, seed: seed + 3, open: true });
   B.portal(0, WZ, 1.15 * 0.78, -8.5, -3, 'spawn');
   for (const sx of [-1, 1]) brazier(B, { x: sx * 5.6, z: NZ - 1.2, y: 0, s: 0.9, seed: seed + 4 + sx }, flames);
-  const crate = (x, y, z, yaw) => B.add(B.kit.brick(0.9, 0.9, 0.9, 0.04), {
-    p: [x, y + 0.45, z], r: [0, yaw, 0], color: C.wood, solid: 'floor',
-  });
-  crate(-6.0, 0, 5.2, 0.0); crate(-6.0, 0.9, 5.2, 0.12); crate(-5.1, 0, 5.3, -0.1);
-  crate(6.1, 0, 6.6, 0.05);
-  for (const [bx, bz] of [[6.1, 5.3], [5.3, 5.2]]) {
-    B.add(B.kit.drum(0.38, 0.34, 1.0, 10), { p: [bx, 0.5, bz], color: C.woodDark, solid: 'floor', round: true });
-    B.add(B.kit.drum(0.39, 0.39, 0.06, 10), { p: [bx, 0.75, bz], color: C.iron, ink: false });
-  }
+  crate(B, -6.0, 0, 5.2, 0.0); crate(B, -6.0, 0.9, 5.2, 0.12); crate(B, -5.1, 0, 5.3, -0.1);
+  crate(B, 6.1, 0, 6.6, 0.05);
+  for (const [bx, bz] of [[6.1, 5.3], [5.3, 5.2]]) barrel(B, bx, 0, bz);
   for (let i = 0; i < 10; i++) mossTuft(B, r.range(-S + 0.3, S - 0.3), 0, r.range(-15, 3), r);
 
   // 出生點在巷子中段，面朝北（+z）：巷子的盡頭就是廣場。

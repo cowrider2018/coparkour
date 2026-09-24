@@ -18,7 +18,7 @@
    main.js 建成自己的 mesh：合併過的頂點沒有辦法逐幀縮放。
    ------------------------------------------------------------------ */
 
-import { stone, drum, spike, blob, ring, cloth, gablePrism, rng } from './geom.js';
+import { stone, drum, spike, blob, ring, cloth, gablePrism, rng, hashAt } from './geom.js';
 import { C } from './palette.js';
 import { BLOCK_TOP, TRIP } from './walk.js';
 
@@ -32,9 +32,10 @@ export class Kit {
     if (!g) { g = make(); this.m.set(k, g); }
     return g;
   }
-  brick(w, h, d, ch = 0.045) {
-    const q = (v) => Math.round(v * 50) / 50;
-    return this._get(`b${q(w)},${q(h)},${q(d)},${q(ch)}`, () => stone(q(w), q(h), q(d), ch));
+  /** @param {number} [v] 缺角的變體，0 = 完整（見 geom.js 的 stone）。 */
+  brick(w, h, d, ch = 0.045, v = 0) {
+    const q = (x) => Math.round(x * 50) / 50;
+    return this._get(`b${q(w)},${q(h)},${q(d)},${q(ch)},${v}`, () => stone(q(w), q(h), q(d), ch, v));
   }
   drum(rt, rb, h, seg = 10) {
     const q = (v) => Math.round(v * 50) / 50;
@@ -66,6 +67,15 @@ export class Kit {
    但整體要偏中階，不然一面牆看起來像馬賽克。 */
 const COURSE = [C.stone, C.stone, C.stoneLit, C.stoneDark, C.stone, C.stoneDeep];
 const stoneTone = (r) => COURSE[Math.floor(r() * COURSE.length)];
+
+/* 缺角：一塊砌石是完整的還是被敲掉一兩個角，由它的位置決定（三成完整、
+   其餘三種缺法）。用位置不用亂數器，是因為零件的亂數序列一個都不能多抽
+   ——多抽一個，後面哪根柱子斷、哪裡撒碎石就全部換掉了。 */
+const CHIPS = 3;
+const chipAt = (x, y, z) => {
+  const h = hashAt(x, y, z, 9);
+  return h < 0.3 ? 0 : 1 + Math.min(CHIPS - 1, Math.floor(((h - 0.3) / 0.7) * CHIPS));
+};
 
 /* ── 地板 ────────────────────────────────────────────────────────
    中央空地。這是唯一一片「必須乾淨」的區域：狗要在上面跑，所以石板是
@@ -109,7 +119,7 @@ export function flagstones(B, o) {
       if (r() < (o.ruin || 0.3) * q * q) continue;
       const gap = 0.06 + r() * 0.05;
       const th = 0.18 + r() * 0.05;
-      B.add(B.kit.brick(cell - gap, th, cell - gap, 0.05), {
+      B.add(B.kit.brick(cell - gap, th, cell - gap, 0.05, chipAt(cx, y, cz)), {
         p: [cx, y - th / 2, cz],
         r: [0, r() < 0.5 ? 0 : Math.PI / 2, 0],
         color: r() < 0.14 ? C.graniteDark : C.granite,
@@ -256,8 +266,9 @@ export function wall(B, o) {
       /* 磚縫只留 2 cm，倒角也收到 3.5 cm。第一版是 6 cm 縫加 5 cm 倒角，
          畫出來一面牆是一堆各自漂浮的方塊而不是砌體——那兩個數字加起來
          就是縫的視覺寬度，而砌體的縫必須比石頭薄一個數量級。 */
-      B.add(B.kit.brick(bl - 0.02, bh - 0.02, th + jut, 0.035), {
-        p: [x0 + dx * t + nrm[0] * wob, cy, z0 + dz * t + nrm[1] * wob],
+      const bx = x0 + dx * t + nrm[0] * wob, bz = z0 + dz * t + nrm[1] * wob;
+      B.add(B.kit.brick(bl - 0.02, bh - 0.02, th + jut, 0.035, chipAt(bx, cy, bz)), {
+        p: [bx, cy, bz],
         r: [0, yaw + r.range(-0.02, 0.02), 0],
         color: stoneTone(r),
       });
@@ -372,7 +383,7 @@ export function merlons(B, o) {
       if (base <= w.y0 + 0.02) continue;         // 這一段牆整段沒了
     }
     const h = (o.h || 0.9) * r.range(0.82, 1.0);
-    B.add(B.kit.brick(pitch * 0.62, h, (o.thick || 0.9) * 0.9, 0.06), {
+    B.add(B.kit.brick(pitch * 0.62, h, (o.thick || 0.9) * 0.9, 0.06, chipAt(x0 + dx * t, base, z0 + dz * t)), {
       p: [x0 + dx * t, base + h / 2, z0 + dz * t],
       r: [0, yaw, 0],
       color: r() < 0.3 ? C.stoneLit : C.stone,
@@ -494,7 +505,7 @@ export function pointedArch(B, o) {
          磚厚」——要把旋轉算進去。拱背上要砌東西的人靠這個數字，不能靠
          「頂點應該在哪」：拱的殘破是從頂點開始吃的。 */
       apex = Math.max(apex, y + ly + (th / 2) * Math.abs(Math.cos(roll)) + 0.2 * Math.abs(Math.sin(roll)));
-      B.add(B.kit.brick(0.4, th, depth, 0.05), {
+      B.add(B.kit.brick(0.4, th, depth, 0.05, chipAt(o.x + dir[0] * lx, y + ly, o.z + dir[1] * lx)), {
         p: [o.x + dir[0] * lx, y + ly, o.z + dir[1] * lx],
         r: [0, yaw, roll],
         color: stoneTone(r),
@@ -530,8 +541,9 @@ export function arcade(B, o) {
     // 墩柱：兩塊一皮的砌體，比牆厚。
     const cn = Math.ceil(h / 0.44);
     for (let c = 0; c < cn; c++) {
-      B.add(B.kit.brick(pier, 0.44 - 0.05, o.depth || 0.9, 0.05), {
-        p: at(t + r.range(-0.02, 0.02), (o.y || 0) + 0.44 * (c + 0.5), 0),
+      const q = at(t + r.range(-0.02, 0.02), (o.y || 0) + 0.44 * (c + 0.5), 0);
+      B.add(B.kit.brick(pier, 0.44 - 0.05, o.depth || 0.9, 0.05, chipAt(q[0], q[1], q[2])), {
+        p: q,
         r: [0, yaw, 0],
         color: stoneTone(r),
       });
@@ -806,7 +818,7 @@ export function rubble(B, o) {
     const sz = r.range(0.16, 0.42);
     if (r() < 0.45) {
       const th = sz * 0.8;
-      B.add(B.kit.brick(sz * 1.5, th, sz * 1.2, 0.05), {
+      B.add(B.kit.brick(sz * 1.5, th, sz * 1.2, 0.05, chipAt(x, y0, z)), {
         p: [x, y0 + TRIP[0] - th / 2 - 0.01, z],
         r: [r.range(-0.25, 0.25), r() * Math.PI, r.range(-0.25, 0.25)],
         color: stoneTone(r),
@@ -992,8 +1004,9 @@ export function well(B, o) {
     for (let i = 0; i < n; i++) {
       if (c === 1 && r() < 0.28) continue;              // 上皮缺幾塊
       const a = (i / n) * Math.PI * 2 + c * 0.13;
-      B.add(B.kit.brick(0.55, 0.34, 0.42, 0.05), {
-        p: [o.x + Math.cos(a) * R, y + 0.17 + c * 0.36, o.z + Math.sin(a) * R],
+      const wx = o.x + Math.cos(a) * R, wy = y + 0.17 + c * 0.36, wz = o.z + Math.sin(a) * R;
+      B.add(B.kit.brick(0.55, 0.34, 0.42, 0.05, chipAt(wx, wy, wz)), {
+        p: [wx, wy, wz],
         r: [0, -a, 0], color: stoneTone(r),
       });
     }
@@ -1009,6 +1022,9 @@ export function well(B, o) {
   chain(B, { from: [o.x + 0.1, y + 1.5, o.z], to: [o.x + 0.1, y + 0.9, o.z], n: 5, sag: 0 });
   B.hangs(true);
   B.add(B.kit.drum(0.2, 0.17, 0.3, 8), { p: [o.x + 0.1, y + 0.75, o.z], color: C.woodDark });
+  for (const [hy, hr] of [[0.66, 0.184], [0.84, 0.202]]) {
+    B.add(B.kit.drum(hr, hr, 0.035, 8), { p: [o.x + 0.1, y + hy, o.z], color: C.iron, ink: false });
+  }
   B.hangs(false);
   if (o.open) {
     /* 開著的井：井圈是一圈站得上去的石頭，中間是一個坑。井圈照石頭本身
@@ -1025,4 +1041,57 @@ export function well(B, o) {
     const wh = BLOCK_TOP + 0.1;
     B.round(o.x, o.z, R + 0.21, y, y + wh, { kind: 'block', base: y });
   }
+}
+
+/* ── 木箱與木桶 ──────────────────────────────────────────────────
+   木頭的形狀是一片一片的：木箱是一個暗色的箱芯，四面各釘三片橫板、四角
+   四根角柱、頂上三片蓋板；木桶是桶身加上下兩道鐵箍與一片桶蓋。一整塊
+   方的木頭上貼再好的木紋，看起來仍然是一塊木頭，不是一只箱子——板與板
+   之間那一道暗縫才是「這是釘起來的」。
+
+   碰撞跟以前的那一整塊一模一樣（邊長 s 的方盒，轉過 yaw 之後的外接盒），
+   所以跳上去、疊起來的高度一公分都沒變。板子凸出箱芯 3 公分，頂面剛好
+   落回 s——腳底下就是蓋板的頂面。 */
+
+/** 一只木箱：底面中心 (x, y, z)，邊長 s，繞 y 轉 yaw。 */
+export function crate(B, x, y, z, yaw, s = 0.9) {
+  const cs = Math.cos(yaw), sn = Math.sin(yaw);
+  const at = (lx, ly, lz) => [x + cs * lx + sn * lz, y + ly, z - sn * lx + cs * lz];
+  const T = 0.03;                           // 板厚
+  const core = s - 2 * T;
+  B.add(B.kit.brick(core, s - T, core, 0.02), { p: at(0, (s - T) / 2, 0), r: [0, yaw, 0], color: C.woodDark });
+  // 四面的橫板，每面三片。板在兩根角柱之間。
+  const ph = (s - T) / 3, pl = s - 0.16;
+  for (let f = 0; f < 4; f++) {
+    const a = yaw + (f * Math.PI) / 2;
+    const off = s / 2 - T / 2;
+    const fx = Math.sin(f * Math.PI / 2) * off, fz = Math.cos(f * Math.PI / 2) * off;
+    for (let i = 0; i < 3; i++) {
+      B.add(B.kit.brick(pl, ph - 0.025, T, 0.012), { p: at(fx, ph * (i + 0.5), fz), r: [0, a, 0], color: C.wood });
+    }
+  }
+  // 四根角柱，從地面到蓋板底下。
+  for (const [ux, uz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+    const k = s / 2 - 0.045;
+    B.add(B.kit.brick(0.09, s - T, 0.09, 0.015), { p: at(ux * k, (s - T) / 2, uz * k), r: [0, yaw, 0], color: C.woodDark });
+  }
+  // 頂上三片蓋板。
+  const tw = s / 3;
+  for (let i = 0; i < 3; i++) {
+    B.add(B.kit.brick(s - 0.02, T, tw - 0.022, 0.012), { p: at(0, s - T / 2, (i - 1) * tw), r: [0, yaw, 0], color: C.wood });
+  }
+  const hx = (s / 2) * (Math.abs(cs) + Math.abs(sn));
+  B.block(x, y + s / 2, z, hx * 2, s, hx * 2, { kind: 'floor', base: y });
+}
+
+/** 一只木桶：底面中心 (x, y, z)。桶身是 10 片的柱（每一片就是一片桶板）。 */
+export function barrel(B, x, y, z) {
+  B.add(B.kit.drum(0.38, 0.34, 1.0, 10), { p: [x, y + 0.5, z], color: C.woodDark, solid: 'floor', round: true });
+  // 兩道鐵箍：桶身是上寬下窄的，箍的半徑照它在那個高度的半徑再外放 1 公分。
+  for (const hy of [0.2, 0.8]) {
+    const hr = 0.34 + 0.04 * hy + 0.012;
+    B.add(B.kit.drum(hr, hr, 0.06, 10), { p: [x, y + hy, z], color: C.iron, ink: false });
+  }
+  // 桶蓋：比桶口內縮一點、低一點，桶口的那一圈邊就看得出來。
+  B.add(B.kit.drum(0.33, 0.33, 0.03, 10), { p: [x, y + 0.985, z], color: C.wood, ink: false });
 }

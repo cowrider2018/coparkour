@@ -68,7 +68,9 @@ import {
   slideDrift, slideAccel, arenaGap, boomLimit, BLOCK_TOP, TRIP, MOUNT,
 } from '../public/test-area/src/walk.js';
 import { VEIL, buildVeil, outline } from '../public/test-area/src/veil.js';
-import { toonVC, inkLine, BAND_EDGE, BAND_KEY } from '../public/test-area/src/palette.js';
+import { toonVC, toon, inkLine, BAND_EDGE, BAND_KEY } from '../public/test-area/src/palette.js';
+import { SURF, SURF_DEF, TEX_N, surfacePixels } from '../public/test-area/src/surface.js';
+import { stone } from '../public/test-area/src/geom.js';
 import { CAM, makeCam, updateCam } from '../public/test-area/src/camera.js';
 import { readFileSync } from 'node:fs';
 import { loadZoo } from '../public/test-area/src/critter.js';
@@ -210,6 +212,139 @@ head('五階調與輪廓判定接上了');
   ok(ink.vertexShader.includes('cameraPosition'), '視線是從表面指向鏡頭算的（透視）');
   ok(/vSil\.x \* vSil\.y > 0\.0\) discard/.test(ink.fragmentShader),
     '兩側同號的邊（內部轉折）會被丟掉');
+}
+
+head('表面紋路');
+/* 石紋、木紋那一層（surface.js）。它在畫面上壞掉的樣子全部是安靜的：
+   屬性少一截，後半段的地形就讀到零——整片變成「素色」，不會報錯；一塊
+   幾何的三個頂點材料不一樣，那個三角形上的紋路會在兩種材料之間抖；
+   貼圖不能拼接，每一塊石頭上都有一道筆直的接縫。所以逐項查。 */
+{
+  const S = R.geometry.attributes.aSurf;
+  const P = R.geometry.attributes.position;
+  ok(!!S && S.itemSize === 4 && S.normalized && S.array instanceof Int8Array,
+    '每個頂點帶著 aSurf（4 個正規化的 int8）');
+  ok(S && S.count === P.count, 'aSurf 的數量與頂點對得上', `${S ? S.count : 0} / ${P.count}`);
+
+  const A = S.array;
+  let badMat = 0, badG = 0, mixed = 0;
+  const byMat = new Array(8).fill(0);
+  for (let i = 0; i < S.count; i++) {
+    const w = A[i * 4 + 3];
+    if (w < 0 || w > 127) { badMat++; continue; }
+    const m = w >> 4;
+    byMat[m]++;
+    if (m) {
+      const L = Math.hypot(A[i * 4], A[i * 4 + 1], A[i * 4 + 2]) / 127;
+      if (Math.abs(L - 1) > 0.02) badG++;
+    }
+  }
+  /* 一個三角形的三個頂點必須是同一塊幾何的——材料、偏移、紋理方向全部
+     一樣。著色器靠的是「內插一個常數還是那個常數」。 */
+  for (let t = 0; t < S.count; t += 3) {
+    for (let k = 0; k < 4; k++) {
+      const a = A[t * 4 + k];
+      if (A[(t + 1) * 4 + k] !== a || A[(t + 2) * 4 + k] !== a) { mixed++; break; }
+    }
+  }
+  ok(badMat === 0, '材料編號都在 0～7、偏移都在 0～15', `${badMat}`);
+  ok(badG === 0, '上了紋的頂點，紋理方向都是單位長', `${badG}`);
+  ok(mixed === 0, '每個三角形的三個頂點是同一種材料、同一個偏移、同一個方向', `${mixed}`);
+  const name = Object.fromEntries(Object.entries(SURF).map(([k, v]) => [v, k]));
+  console.log('  ' + byMat.map((n, m) => `${name[m]} ${(n / S.count * 100).toFixed(1)}%`).join('、'));
+  const missing = [1, 2, 3, 4, 5, 6, 7].filter((m) => !byMat[m]).map((m) => name[m]);
+  ok(missing.length === 0, '七種材料全都有東西在用', missing.length ? `沒有：${missing.join('、')}` : '');
+  ok(byMat[SURF.stone] / S.count > 0.3, '石頭是這一頁的主角', `${(byMat[SURF.stone] / S.count * 100).toFixed(0)}%`);
+
+  /* 貼圖：每一個通道都要能拼接（跨接縫的那一步，不比貼圖內部最陡的
+     那一步陡），而且切得出三階——溝與凸都要有，也都不能蓋掉半張圖。 */
+  const t0 = Date.now();
+  const PX = surfacePixels();
+  const gen = Date.now() - t0;
+  ok(PX.length === 2 && PX.every((p) => p.length === TEX_N * TEX_N * 4), '兩張貼圖、各 TEX_N² 個 RGBA', `${TEX_N}²、${gen} ms`);
+  ok(gen < 1500, '開場算貼圖不會拖太久', `${gen} ms`);
+  const at = (p, c, i, j) => p[(j * TEX_N + i) * 4 + c];
+  const seamBad = [], bandBad = [];
+  for (let m = 1; m < SURF_DEF.length; m++) {
+    const d = SURF_DEF[m], p = PX[d.tex], c = d.ch;
+    let seam = 0, inner = 0, lo = 0, hi = 0;
+    for (let j = 0; j < TEX_N; j++) {
+      seam = Math.max(seam, Math.abs(at(p, c, 0, j) - at(p, c, TEX_N - 1, j)), Math.abs(at(p, c, j, 0) - at(p, c, j, TEX_N - 1)));
+      for (let i = 1; i < TEX_N; i++) {
+        inner = Math.max(inner, Math.abs(at(p, c, i, j) - at(p, c, i - 1, j)), Math.abs(at(p, c, j, i) - at(p, c, j, i - 1)));
+      }
+    }
+    for (let i = 0; i < TEX_N * TEX_N; i++) {
+      const v = p[i * 4 + c] / 255;
+      if (v < d.lo) lo++; if (v > d.hi) hi++;
+    }
+    lo /= TEX_N * TEX_N; hi /= TEX_N * TEX_N;
+    if (seam > inner) seamBad.push(`${name[m] || m} ${seam}>${inner}`);
+    if (lo < 0.03 || hi < 0.03 || lo > 0.4 || hi > 0.4) bandBad.push(`${name[m] || m} 溝${(lo * 100).toFixed(0)}% 凸${(hi * 100).toFixed(0)}%`);
+  }
+  ok(seamBad.length === 0, '每一個通道都能無縫拼接', seamBad.join('、'));
+  ok(bandBad.length === 0, '每一種材料都切得出溝與凸（各 3%～40%）', bandBad.join('、'));
+
+  /* 著色器：字串替換接上的，沒配到不會報錯。 */
+  const sh = () => ({
+    uniforms: {},
+    vertexShader: THREE.ShaderLib.basic.vertexShader,
+    fragmentShader: THREE.ShaderLib.basic.fragmentShader,
+  });
+  const on = sh(); toonVC().onBeforeCompile(on, null);
+  ok(!!on.uniforms.uSurfTexA && !!on.uniforms.uSurfTexB && on.uniforms.uSurfA.value.length === SURF_DEF.length,
+    '兩張貼圖與材料表接上了');
+  ok(on.vertexShader.includes('attribute vec4 aSurf;') && on.vertexShader.includes('vSurfP = (modelMatrix'),
+    '頂點著色器讀得到 aSurf，也送出世界座標');
+  ok((on.fragmentShader.match(/textureGrad\(/g) || []).length >= 3, '取樣帶著顯式導數（面與面的交界不會跳 mipmap 層級）');
+  const iS = on.fragmentShader.indexOf('diffuseColor.rgb *= cpK;'), iB = on.fragmentShader.indexOf('float cpD = dot(');
+  ok(iS > 0 && iB > iS, '紋路在五階調之前乘上去（紋路是材料的顏色，光照仍然只有五塊平調）');
+  const off = sh(); toonVC({ surf: false }).onBeforeCompile(off, null);
+  ok(!off.uniforms.uSurfTexA && !off.fragmentShader.includes('textureGrad') && off.fragmentShader.includes('cpTone = mix('),
+    '?surf=0 那一份：沒有紋路，五階調還在');
+  const dirt = sh(); toon(0x6a5844, SURF.dirt).onBeforeCompile(dirt, null);
+  /* 單色材質的幾何沒有 aSurf——宣告了卻沒有那個屬性，WebGL 會拿常數
+     (0,0,0,1) 餵它，材料就解成 0（素色）。所以那一行宣告必須包在
+     `#ifndef CP_SURF_CONST` 裡，而 define 必須在它前面。 */
+  const dv = dirt.vertexShader;
+  const iDef = dv.indexOf(`#define CP_SURF_CONST ${SURF.dirt}`);
+  const iAttr = dv.indexOf('attribute vec4 aSurf;');
+  ok(iDef >= 0 && iAttr > iDef && dv.lastIndexOf('#ifndef CP_SURF_CONST', iAttr) > iDef,
+    '單色材質（地面）用 define 指定材料，不讀頂點屬性');
+  ok(toonVC().customProgramCacheKey() !== toonVC({ surf: false }).customProgramCacheKey()
+    && toonVC().customProgramCacheKey() !== toon(0, SURF.dirt).customProgramCacheKey(),
+    '三種接法各自一份程式（不會共用第一顆編出來的）');
+}
+
+head('缺角的石頭');
+/* 缺角只動角上的三個頂點，所以它必須：外接盒一點都沒變（碰撞、支撐、
+   牆芯那些驗證都是照外接盒算的）；每一個四邊形仍然是平的（兩個三角形
+   同一個法線——不平的話那一面在分階著色下會斷成兩塊）；而且真的缺了。 */
+{
+  let boxBad = 0, flatBad = 0, same = 0;
+  const sizes = [[0.93, 0.42, 1.1, 0.035], [1.48, 0.2, 1.48, 0.05], [0.4, 0.42, 0.8, 0.05], [0.55, 0.34, 0.42, 0.05]];
+  for (const [w, h, d, ch] of sizes) {
+    const g0 = stone(w, h, d, ch, 0);
+    g0.computeBoundingBox();
+    for (let v = 1; v <= 3; v++) {
+      const g = stone(w, h, d, ch, v);
+      g.computeBoundingBox();
+      if (g.boundingBox.min.distanceTo(g0.boundingBox.min) > 1e-6 || g.boundingBox.max.distanceTo(g0.boundingBox.max) > 1e-6) boxBad++;
+      const p = g.attributes.position.array, q = g0.attributes.position.array;
+      let diff = 0;
+      for (let i = 0; i < p.length; i++) diff = Math.max(diff, Math.abs(p[i] - q[i]));
+      if (diff < 1e-4) same++;
+      const n = g.attributes.normal.array;
+      // 前 36 個三角形是 6 個面加 12 條邊，兩兩一組是同一個四邊形。
+      for (let t = 0; t < 36; t += 2) {
+        const a = t * 9, b = (t + 1) * 9;
+        if (n[a] * n[b] + n[a + 1] * n[b + 1] + n[a + 2] * n[b + 2] < 0.9999) flatBad++;
+      }
+    }
+  }
+  ok(boxBad === 0, '缺角不改外接盒', `${boxBad}`);
+  ok(flatBad === 0, '缺角之後每一個四邊形仍然是平的', `${flatBad}`);
+  ok(same === 0, '每一種缺角的變體都真的缺了一塊', `${same} 個跟完整的一樣`);
 }
 
 head('每塊石頭底下有東西頂著');
