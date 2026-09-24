@@ -178,6 +178,19 @@ export function ball(r, wseg = 10, hseg = 7) {
   return facet(new THREE.SphereGeometry(r, wseg, hseg));
 }
 
+/**
+ * 一頂圓頂：半徑 r、高 h 的半橢球，底圈在原點、往上長，底是開的。
+ *
+ * 形狀跟圓頂碰撞體（walk.js 的橢球冠，半軸 r 與 dome）是同一條曲線——
+ * 帳篷頂用它，於是站在帳篷頂上滑的時候，腳就貼在看得到的那一面上。錐形
+ * 的頂做不到這件事：橢球冠在半腰比錐面高出三四成，人會浮在布上面。
+ */
+export function cap(r, h, seg = 14) {
+  const g = new THREE.SphereGeometry(r, seg, 4, 0, Math.PI * 2, 0, Math.PI / 2);
+  g.scale(1, h / r, 1);
+  return facet(g);
+}
+
 /** 環（鎖鏈的一節）。 */
 export function ring(r, t) {
   return facet(new THREE.TorusGeometry(r, t, 5, 8));

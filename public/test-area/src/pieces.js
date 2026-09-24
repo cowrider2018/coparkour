@@ -18,7 +18,7 @@
    main.js 建成自己的 mesh：合併過的頂點沒有辦法逐幀縮放。
    ------------------------------------------------------------------ */
 
-import { stone, drum, spike, blob, ring, cloth, gablePrism, rng, hashAt } from './geom.js';
+import { stone, drum, spike, blob, ring, cloth, gablePrism, cap, rng, hashAt } from './geom.js';
 import { C } from './palette.js';
 import { BLOCK_TOP, TRIP } from './walk.js';
 
@@ -52,6 +52,10 @@ export class Kit {
   ring(r, t) {
     const q = (v) => Math.round(v * 100) / 100;
     return this._get(`r${q(r)},${q(t)}`, () => ring(q(r), q(t)));
+  }
+  cap(r, h, seg = 14) {
+    const q = (v) => Math.round(v * 50) / 50;
+    return this._get(`h${q(r)},${q(h)},${seg}`, () => cap(q(r), q(h), seg));
   }
   gable(w, h, d) {
     const q = (v) => Math.round(v * 50) / 50;
@@ -1093,4 +1097,305 @@ export function barrel(B, x, y, z) {
   }
   // 桶蓋：比桶口內縮一點、低一點，桶口的那一圈邊就看得出來。
   B.add(B.kit.drum(0.33, 0.33, 0.03, 10), { p: [x, y + 0.985, z], color: C.wood, ink: false });
+}
+
+/* ── 營地 ────────────────────────────────────────────────────────
+   城牆平台牆下那一片駐軍營地的零件：圓帳、武器架、練習假人、箭靶、
+   炊事的火、糧袋堆、柴堆、營前的軍旗。全部是布、木、稻草與鐵——石頭
+   留給牆，營地的東西一眼就要讀得出是「搬來的」而不是「砌的」。
+
+   碰撞照 DEVNOTES 的分法：
+     圓帳       圓柱加圓頂，'slide'。帳篷頂就是一片屋頂，跳上去會緩緩滑下來。
+     武器架     方盒 'block'，頂面拉過 MOUNT：一排槍尖不是一個踩得住的面，
+                而方盒沒有圓頂可以滑，所以乾脆讓人跳不上去。
+     假人、箭靶 圓柱加圓頂，'fall'。頂上是橫木、頭、一面立著的靶——一堆
+                做不出踩得住的面的形狀。
+     火         圓柱加圓頂，'fall'。設定上就危險。
+     糧袋、柴堆 'floor'：一層一層疊平的，本來就是給人爬的。
+
+   只影響外觀的變化（麻袋的歪斜、布的顏色）一律用 hashAt，不抽零件的亂數。
+   ------------------------------------------------------------------ */
+
+/** 把局部的一個方向（長在 local y 上的東西）轉成歐拉角：local +y 轉到 (tx, ty, tz)。 */
+const tilt = (tx, ty, tz) => {
+  const L = Math.hypot(tx, ty, tz);
+  return [Math.atan2(tz, ty), 0, -Math.asin(tx / L)];
+};
+
+/** 一根從 a 拉到 b 的桿子或繩子：截面 t×t，長在 local y 上。 */
+function rod(B, a, b, t, color, o = {}) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+  const L = Math.hypot(dx, dy, dz);
+  B.add(B.kit.brick(t, L, t, Math.min(0.02, t * 0.3)), {
+    p: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2],
+    r: tilt(dx, dy, dz), color, ...o,
+  });
+}
+
+/** 局部座標 → 世界座標。跟 crate 同一個慣例（local +x 在 (cos yaw, −sin yaw)）。 */
+const frame = (x, y, z, yaw) => {
+  const cs = Math.cos(yaw), sn = Math.sin(yaw);
+  return (lx, ly, lz) => [x + cs * lx + sn * lz, y + ly, z - sn * lx + cs * lz];
+};
+
+/**
+ * 圓帳：一圈帆布的帳身、一頂圓頂、簷口一圈垂下的尖齒、頂上一根帶三角旗的
+ * 旗桿、拉到地上的幾條營繩。門是帳身上一塊三角形的暗布，朝 `yaw` 開
+ * （門的朝向是 (sin yaw, cos yaw)）。
+ *
+ * 頂用 `cap`（半橢球），不用錐：碰撞的圓頂是橢球冠，錐形的頂在半腰比它低
+ * 三四成，站在上面滑的時候人會浮在布上。
+ *
+ * @param {object} o x, z, y, R 帳身半徑, h 帳身高, roof 頂高, yaw, color 頂與條紋的顏色
+ */
+export function pavilion(B, o) {
+  const y = o.y || 0, R = o.R, h = o.h || 1.5, roof = o.roof || 1.2;
+  const yaw = o.yaw || 0, col = o.color || C.banner;
+  const E = R + 0.18;                         // 簷口的半徑：頂比帳身往外放一點
+  const SEG = 16, step = (Math.PI * 2) / SEG;
+  const ap = R * Math.cos(step / 2);          // 一片帳身的中線離軸多遠
+  const chord = 2 * R * Math.sin(step / 2);
+
+  B.add(B.kit.drum(R, R, h, SEG), { p: [o.x, y + h / 2, o.z], color: C.canvas });
+  /* 門開在哪一片：離 yaw 最近的那一片的中線。CylinderGeometry 的第 i 片
+     從角度 i·step 開始，點在 (sin θ, cos θ)——跟這個檔案的 yaw 同一個方向。 */
+  const door = ((Math.round(yaw / step - 0.5) % SEG) + SEG) % SEG;
+  for (let i = 0; i < SEG; i++) {
+    const a = (i + 0.5) * step;
+    if (i === door) {
+      // 三角形的門洞：一片暗色的內襯，底邊貼地。
+      B.add(B.kit.gable(chord * 0.9, h * 0.9, 0.03), {
+        p: [o.x + Math.sin(a) * (ap + 0.02), y + 0.01, o.z + Math.cos(a) * (ap + 0.02)],
+        r: [0, a, 0], color: C.canvasDark,
+      });
+    } else if (i % 2 === 0) {
+      // 條紋：隔一片貼一條顏色。
+      B.add(B.kit.brick(chord * 0.98, h * 0.98, 0.02, 0.005), {
+        p: [o.x + Math.sin(a) * (ap + 0.012), y + h * 0.49 + 0.01, o.z + Math.cos(a) * (ap + 0.012)],
+        r: [0, a, 0], color: col, ink: false,
+      });
+    }
+  }
+  B.add(B.kit.cap(E, roof, SEG), { p: [o.x, y + h, o.z], color: col });
+
+  /* 簷口那一圈尖齒（倒過來的三角），跟頂一色、跟帆布一色輪流。它們掛在
+     簷口上，底下本來就是空的。 */
+  B.hangs(true);
+  const eap = E * Math.cos(step / 2), echord = 2 * E * Math.sin(step / 2);
+  for (let i = 0; i < SEG; i++) {
+    const a = (i + 0.5) * step;
+    B.add(B.kit.gable(echord * 0.96, 0.3, 0.02), {
+      p: [o.x + Math.sin(a) * eap, y + h + 0.02, o.z + Math.cos(a) * eap],
+      r: [0, a, Math.PI], color: i % 2 ? C.canvas : col, ink: false,
+    });
+  }
+  B.hangs(false);
+
+  // 頂上的旗桿與三角旗。旗往 +x 飄：整片營地吹的是同一陣風。
+  const top = y + h + roof;
+  B.add(B.kit.drum(0.035, 0.05, 0.75, 6), { p: [o.x, top - 0.1 + 0.375, o.z], color: C.woodDark });
+  B.add(B.kit.blob(0.07), { p: [o.x, top + 0.7, o.z], color: C.gold, ink: false });
+  B.hangs(true);
+  B.add(B.kit.cloth(0.62, 0.3, 0.06, 0.12), {
+    p: [o.x + 0.08 + 0.31, top + 0.45, o.z], color: o.pennant || C.bannerAlt, ink: false, tag: 'cloth',
+  });
+  B.hangs(false);
+
+  /* 營繩：從簷口拉到地上的木樁。避開門口那一片——繩子橫在門前，人就是
+     從繩子中間穿進去的。樁壓進地裡只露 8 公分（絆腳那一段以下）。 */
+  for (let k = 0; k < 8; k++) {
+    const a = (k + 0.5) * (Math.PI / 4);
+    let off = Math.abs(a - yaw) % (Math.PI * 2);
+    if (off > Math.PI) off = Math.PI * 2 - off;
+    if (off < 0.45) continue;
+    const s = Math.sin(a), c = Math.cos(a);
+    const stake = [o.x + s * (E + 0.95), y + 0.03, o.z + c * (E + 0.95)];
+    rod(B, stake, [o.x + s * (E - 0.04), y + h - 0.02, o.z + c * (E - 0.04)], 0.025, C.rope, { ink: false });
+    B.add(B.kit.brick(0.06, 0.08, 0.06, 0.015), { p: [stake[0], y + 0.04, stake[2]], color: C.woodDark, ink: false });
+  }
+
+  B.round(o.x, o.z, E, y, y + h, { kind: 'block', base: y, dome: roof, slip: 'slide' });
+  return { E, reach: E + 0.95 };
+}
+
+/**
+ * 武器架：兩根柱、上下兩道橫木，一排靠著上橫木的長槍，前面靠著兩面圓盾。
+ * 架子沿 local x、正面朝 local +z（世界的 (sin yaw, cos yaw)）。
+ */
+export function weaponRack(B, o) {
+  const yaw = o.yaw || 0, y = o.y || 0, at = frame(o.x, y, o.z, yaw);
+  for (const sx of [-1, 1]) {
+    B.add(B.kit.brick(0.12, 1.7, 0.12, 0.02), { p: at(sx * 1.1, 0.85, 0), r: [0, yaw, 0], color: C.woodDark });
+    B.add(B.kit.brick(0.12, 0.08, 0.72, 0.015), { p: at(sx * 1.1, 0.04, 0), r: [0, yaw, 0], color: C.woodDark });
+  }
+  B.add(B.kit.brick(2.44, 0.1, 0.12, 0.02), { p: at(0, 1.6, 0), r: [0, yaw, 0], color: C.wood });
+  B.add(B.kit.brick(2.44, 0.08, 0.1, 0.02), { p: at(0, 0.45, 0), r: [0, yaw, 0], color: C.wood });
+  /* 長槍：槍尾在前面的地上，槍身靠在上橫木的**前緣**上（在 1.6 的高度離架心
+     8.6 公分，橫木前緣在 6 公分），槍頭過了橫木半公尺多。 */
+  for (let i = 0; i < 6; i++) {
+    const lx = -0.9 + i * 0.36;
+    const a = at(lx, 0, 0.3), b = at(lx, 2.24, 0);
+    rod(B, a, b, 0.045, C.wood);
+    const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L = Math.hypot(...d);
+    B.add(B.kit.cone(0.05, 0.24, 4), {
+      p: [b[0] + d[0] / L * 0.11, b[1] + d[1] / L * 0.11, b[2] + d[2] / L * 0.11],
+      r: tilt(...d), color: C.ironLit, ink: false,
+    });
+  }
+  // 兩面圓盾，面朝前、往後靠 15°，下緣著地。
+  const lean = 0.27, sc = Math.cos(yaw), ss = Math.sin(yaw);
+  const nrm = [ss * Math.cos(lean), Math.sin(lean), sc * Math.cos(lean)];
+  for (const [lx, color] of [[-0.55, C.banner], [0.6, C.bannerAlt]]) {
+    const c = at(lx, 0.36 * Math.cos(lean) + 0.03, 0.44);
+    B.add(B.kit.drum(0.36, 0.36, 0.05, 12), { p: c, r: tilt(...nrm), color });
+    B.add(B.kit.blob(0.07), { p: [c[0] + nrm[0] * 0.04, c[1] + nrm[1] * 0.04, c[2] + nrm[2] * 0.04], color: C.ironLit, ink: false });
+  }
+  const hx = 1.26 * Math.abs(sc) + 0.5 * Math.abs(ss), hz = 1.26 * Math.abs(ss) + 0.5 * Math.abs(sc);
+  const m = at(0, 0, 0.1);
+  B.block(m[0], y + 1.15, m[2], hx * 2, 2.3, hz * 2, { kind: 'block', base: y });
+}
+
+/** 練習假人：一根柱、一根橫木當手臂、一捆稻草的身體、麻袋頭上扣一頂破鐵盔。 */
+export function dummy(B, o) {
+  const yaw = o.yaw || 0, y = o.y || 0, at = frame(o.x, y, o.z, yaw);
+  B.add(B.kit.drum(0.07, 0.08, 1.9, 6), { p: at(0, 0.95, 0), color: C.wood });
+  B.add(B.kit.brick(0.9, 0.08, 0.12, 0.02), { p: at(0, 0.04, 0), r: [0, yaw, 0], color: C.woodDark });
+  B.add(B.kit.brick(0.12, 0.08, 0.9, 0.02), { p: at(0, 0.04, 0), r: [0, yaw, 0], color: C.woodDark });
+  B.add(B.kit.drum(0.24, 0.28, 0.7, 8), { p: at(0, 1.15, 0), color: C.straw });
+  for (const [by, br] of [[0.9, 0.285], [1.35, 0.262]]) {
+    B.add(B.kit.drum(br, br, 0.05, 8), { p: at(0, by, 0), color: C.rope, ink: false });
+  }
+  B.add(B.kit.brick(1.2, 0.09, 0.09, 0.02), { p: at(0, 1.38, 0), r: [0, yaw, 0], color: C.wood });
+  // 手臂兩頭纏的稻草：壓扁一點、坐在橫木上，底不比橫木低。
+  for (const sx of [-1, 1]) B.add(B.kit.blob(0.1), { p: at(sx * 0.55, 1.4, 0), s: [1, 0.8, 1], color: C.straw });
+  B.add(B.kit.blob(0.19, 1), { p: at(0, 1.72, 0), s: [1, 1.1, 1], color: C.sack });
+  B.add(B.kit.cap(0.21, 0.15, 10), { p: at(0, 1.8, 0), r: [0.12, 0, 0.1], color: C.ironLit });
+  B.round(o.x, o.z, 0.34, y, y + 1.5, { kind: 'block', base: y, dome: 0.45, slip: 'fall' });
+}
+
+/** 箭靶：三腳的木架、一面往後仰的稻草靶、畫上去的三圈與靶心、幾支插著的箭。 */
+export function archeryTarget(B, o) {
+  const yaw = o.yaw || 0, y = o.y || 0, at = frame(o.x, y, o.z, yaw);
+  // 三隻腳都在靶的背面：前兩隻斜斜往後靠，後一隻從後面撐上來。
+  for (const sx of [-1, 1]) rod(B, at(sx * 0.5, 0, 0.25), at(sx * 0.34, 1.7, -0.3), 0.07, C.woodDark);
+  rod(B, at(0, 0, -0.75), at(0, 1.62, -0.26), 0.07, C.woodDark);
+  const lean = 0.2, sc = Math.cos(yaw), ss = Math.sin(yaw);
+  const n = [ss * Math.cos(lean), Math.sin(lean), sc * Math.cos(lean)];
+  const c = at(0, 1.15, 0.02);
+  const on = (d) => [c[0] + n[0] * d, c[1] + n[1] * d, c[2] + n[2] * d];
+  B.add(B.kit.drum(0.62, 0.62, 0.22, 14), { p: c, r: tilt(...n), color: C.straw });
+  for (const [rr, d, color] of [[0.5, 0.115, C.banner], [0.34, 0.125, C.canvas], [0.18, 0.135, C.banner], [0.07, 0.145, C.gold]]) {
+    B.add(B.kit.drum(rr, rr, 0.02, 14), { p: on(d), r: tilt(...n), color, ink: false });
+  }
+  // 插著的箭：箭身從靶面斜斜地伸出來。
+  for (const [ox, oy, k] of [[0.16, 0.1, 0.9], [-0.22, -0.18, 1.1], [0.05, 0.3, 0.8]]) {
+    const p = at(ox, 1.15 + oy, 0.02);
+    const d = [n[0] + sc * 0.12 * k, n[1] - 0.1 * k, n[2] - ss * 0.12 * k];
+    const L = Math.hypot(...d);
+    const a = [p[0] + n[0] * 0.1, p[1] + n[1] * 0.1, p[2] + n[2] * 0.1];
+    rod(B, a, [a[0] + d[0] / L * 0.55, a[1] + d[1] / L * 0.55, a[2] + d[2] / L * 0.55], 0.02, C.wood, { ink: false });
+  }
+  const m = at(0, 0, -0.1);
+  B.round(m[0], m[2], 0.72, y, y + 1.15, { kind: 'block', base: y, dome: 0.65, slip: 'fall' });
+}
+
+/**
+ * 炊事的火：一圈壓進地裡的石頭、幾根燒黑的柴、三腳架吊著一口鍋，火在鍋底下。
+ * 火焰跟火盆一樣回報給 `flames`，由 main.js 建成會抖的錐。
+ */
+export function campfire(B, o, flames) {
+  const y = o.y || 0;
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2;
+    const sx = o.x + Math.cos(a) * 0.62, sz = o.z + Math.sin(a) * 0.62;
+    B.add(B.kit.blob(0.17), {
+      p: [sx, y - 0.01, sz], r: [0, a, 0], s: [1.2, 0.5, 1],
+      color: hashAt(sx, y, sz, 21) < 0.5 ? C.stoneDark : C.stone, ink: false,
+    });
+  }
+  for (let i = 0; i < 4; i++) {
+    B.add(B.kit.drum(0.06, 0.06, 0.6, 6), {
+      p: [o.x, y + 0.02, o.z], r: [0, i * 0.8 + 0.3, Math.PI / 2], color: i % 2 ? C.woodDark : C.stoneDeep, ink: false,
+    });
+  }
+  const apex = [o.x, y + 1.78, o.z];
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2 + 0.5;
+    rod(B, [o.x + Math.cos(a) * 0.86, y, o.z + Math.sin(a) * 0.86],
+      [apex[0] - Math.cos(a) * 0.06, apex[1], apex[2] - Math.sin(a) * 0.06], 0.07, C.wood);
+  }
+  chain(B, { from: [o.x, y + 1.72, o.z], to: [o.x, y + 1.06, o.z], n: 5, sag: 0 });
+  B.hangs(true);                     // 鍋吊在鏈子上
+  B.add(B.kit.drum(0.36, 0.26, 0.4, 10), { p: [o.x, y + 0.82, o.z], color: C.iron });
+  B.add(B.kit.drum(0.39, 0.39, 0.05, 10), { p: [o.x, y + 1.03, o.z], color: C.ironLit, ink: false });
+  B.add(B.kit.drum(0.33, 0.33, 0.02, 10), { p: [o.x, y + 1.02, o.z], color: C.woodDark, ink: false });
+  B.hangs(false);
+  if (flames) flames.push({ x: o.x, y: y + 0.02, z: o.z, s: 0.85 });
+  B.round(o.x, o.z, 1.0, y, y + 1.1, { kind: 'block', base: y, dome: 0.65, slip: 'fall' });
+}
+
+/**
+ * 糧袋堆：一層一層疊平的麻袋。`layers` 是每一層幾袋 [x 向, z 向]，由下往上，
+ * 上一層放在下一層的正中間。每一層是一個 'floor'（頂面 0.4 的倍數），所以
+ * 疊三層就是一道爬得上去的三級台階。只收正交的擺法（`turn` 轉 90°）——轉斜了，
+ * 每一層的外接盒會比那一層胖出一圈看不見的地板。
+ */
+export function sackStack(B, o) {
+  const y = o.y || 0, turn = !!o.turn;
+  const PX = 0.78, PZ = 0.58, LH = 0.4;
+  o.layers.forEach(([nx, nz], k) => {
+    for (let i = 0; i < nx; i++) {
+      for (let j = 0; j < nz; j++) {
+        const lx = (i - (nx - 1) / 2) * PX, lz = (j - (nz - 1) / 2) * PZ;
+        const x = o.x + (turn ? lz : lx), z = o.z + (turn ? lx : lz), sy = y + k * LH + 0.2;
+        const h = hashAt(x, sy, z, 23);
+        B.add(B.kit.blob(0.3, 1), {
+          p: [x, sy, z], r: [0, (turn ? Math.PI / 2 : 0) + (h - 0.5) * 0.3, 0], s: [1.3, 0.68, 0.98],
+          color: h < 0.3 ? C.canvas : C.sack,
+        });
+      }
+    }
+    const w = nx * PX, d = nz * PZ, top = (k + 1) * LH;
+    B.block(o.x, y + top / 2, o.z, turn ? d : w, top, turn ? w : d, { kind: 'floor', base: y });
+  });
+}
+
+/** 柴堆：四根樁夾著碼齊的劈柴。柴沿 x（`turn` 則沿 z）。頂面 0.94，跳得上去。 */
+export function woodpile(B, o) {
+  const y = o.y || 0, yaw = o.turn ? Math.PI / 2 : 0, at = frame(o.x, y, o.z, yaw);
+  for (let k = 0; k < 4; k++) {
+    const n = k % 2 ? 4 : 5;
+    for (let i = 0; i < n; i++) {
+      const lz = (i - (n - 1) / 2) * 0.26;
+      const p = at(hashAt(o.x + i, y + k, o.z, 25) * 0.1 - 0.05, 0.13 + k * 0.225, lz);
+      B.add(B.kit.drum(0.13, 0.13, 1.5, 7), { p, r: [0, yaw, Math.PI / 2], color: (i + k) % 3 ? C.wood : C.woodDark });
+    }
+  }
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    B.add(B.kit.brick(0.1, 1.1, 0.1, 0.02), { p: at(sx * 0.8, 0.55, sz * 0.7), r: [0, yaw, 0], color: C.woodDark });
+  }
+  const w = o.turn ? 1.5 : 1.7, d = o.turn ? 1.7 : 1.5;
+  B.block(o.x, y + 0.47, o.z, w, 0.94, d, { kind: 'floor', base: y });
+}
+
+/** 一根橫放的原木當凳子，沿 x（`turn` 則沿 z）。頂面 0.4。 */
+export function logSeat(B, x, z, turn = false, len = 1.6) {
+  B.add(B.kit.drum(0.2, 0.2, len, 8), { p: [x, 0.2, z], r: [0, turn ? Math.PI / 2 : 0, Math.PI / 2], color: C.wood });
+  B.block(x, 0.2, z, turn ? 0.4 : len, 0.4, turn ? len : 0.4, { kind: 'floor', base: 0 });
+}
+
+/**
+ * 營前的軍旗：兩根高柱夾著一面大旗。旗面朝 local +z，柱子在旗的兩側——
+ * 一根柱子立在旗後面的話，布的波浪會跟柱子撞在一起。旗的下擺在 1.6 公尺，
+ * 狗從旗底下走得過去。
+ */
+export function standard(B, o) {
+  const yaw = o.yaw || 0, at = frame(o.x, 0, o.z, yaw);
+  for (const sx of [-1, 1]) {
+    const p = at(sx * 1.0, 0, 0);
+    B.add(B.kit.drum(0.07, 0.09, 4.4, 6), { p: [p[0], 2.2, p[2]], color: C.woodDark });
+    B.add(B.kit.blob(0.1), { p: [p[0], 4.47, p[2]], color: C.gold, ink: false });
+    B.round(p[0], p[2], 0.12, 0, 4.4, { kind: 'block', base: 0 });
+  }
+  banner(B, { x: o.x, y: 4.2, z: o.z, yaw, s: 1.0, color: o.color || C.banner });
 }
