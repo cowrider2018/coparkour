@@ -61,6 +61,14 @@ export const C = {
   plasterAlt: 0xc7b089,
   tileDark: 0x6e3222,
   bone: 0xd9ccaa,
+  /* 營地：帳篷的帆布兩階（亮的是帳身，暗的是門洞裡的內襯）、麻袋、稻草、
+     繩。帆布比抹灰冷一點、灰一點——城牆底下那一排帳篷要讀得出是布，
+     不是一排矮房子。 */
+  canvas: 0xcfc4a4,
+  canvasDark: 0x5a4c38,
+  sack: 0xa98d62,
+  straw: 0xcaa75a,
+  rope: 0x8f7652,
   /* 火與水。火是自發光，水是一片平的半透明。 */
   flame: 0xffb43c,
   flameCore: 0xfff0c0,
@@ -346,6 +354,8 @@ export const SURF_OF = new Map([
   [C.tile, SURF.tile], [C.tileDark, SURF.tile],
   [C.iron, SURF.iron], [C.ironLit, SURF.iron],
   [C.banner, SURF.cloth], [C.bannerAlt, SURF.cloth],
+  // 帆布、麻袋、稻草都是編出來的，走布紋。繩太細，紋路看不到，留素色。
+  [C.canvas, SURF.cloth], [C.canvasDark, SURF.cloth], [C.sack, SURF.cloth], [C.straw, SURF.cloth],
 ]);
 
 /** 自發光：火焰。不受光，直接就是那個顏色。 */
