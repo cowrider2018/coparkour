@@ -60,11 +60,18 @@ console.log('1. 站位');
 {
   const len = ARENA.z1 - ARENA.z0;
   ok(near(SPAWN.player.z, ARENA.z0 + len * 2 / 3), `玩家在中線 2/3（z = ${SPAWN.player.z.toFixed(2)}）`);
-  ok(near(SPAWN.monster.z, ARENA.z0 + len / 3), `怪物在中線 1/3（z = ${SPAWN.monster.z.toFixed(2)}）`);
-  ok(near(SPAWN.player.x, (ARENA.x0 + ARENA.x1) / 2) && near(SPAWN.monster.x, SPAWN.player.x), '兩個都在中線上');
+  const [boss, ...minions] = SPAWN.monsters;
+  ok(boss.kind === 'boss' && near(boss.z, ARENA.z0 + len / 3), `BOSS 在中線 1/3（z = ${boss.z.toFixed(2)}）`);
+  ok(near(SPAWN.player.x, (ARENA.x0 + ARENA.x1) / 2) && near(boss.x, SPAWN.player.x), '玩家與 BOSS 都在中線上');
+  ok(minions.length === 2 && minions.every((s) => s.kind === 'minion' && near(s.z, boss.z) && near(Math.abs(s.x - boss.x), 4))
+    && minions[0].x !== minions[1].x, '兩隻小怪在 BOSS 左右各 4 公尺');
   const cz = (ARENA.z0 + ARENA.z1) / 2;
   ok(Math.cos(SPAWN.player.yaw) * (cz - SPAWN.player.z) > 0, '玩家面向中心');
-  ok(Math.cos(SPAWN.monster.yaw) * (cz - SPAWN.monster.z) > 0, '怪物面向中心');
+  const cx = (ARENA.x0 + ARENA.x1) / 2;
+  ok(SPAWN.monsters.every((s) => {
+    const d = Math.hypot(cx - s.x, cz - s.z);
+    return near(Math.sin(s.yaw), (cx - s.x) / d) && near(Math.cos(s.yaw), (cz - s.z) / d);
+  }), '三隻怪物都面向中心');
   ok(near(REACH, 2.5 * DOG_H) && near(DOG_H, PHYS.height), `長度是 2.5 個狗高（${REACH.toFixed(2)} m）`);
 }
 
@@ -76,7 +83,7 @@ console.log('2. 追與咬');
   let t = 0;
   while (!bites(p, m) && t < 10) { monsterStep(m, DT, p); t += DT; }
   ok(bites(p, m), `站著不動 ${t.toFixed(2)} 秒後被咬`);
-  const gap = SPAWN.player.z - SPAWN.monster.z - PHYS.radius * 2;
+  const gap = SPAWN.player.z - SPAWN.monsters[0].z - PHYS.radius * 2;
   ok(t < gap / 3 + 0.5, '追的速度對得上（沒有卡住、沒有繞遠路）');
   ok(!touching(body(0, 0), body(0, 0, PHYS.height + 0.01)), '腳底高過對方頭頂就碰不到');
   // 黑牆擋得住怪物：往牆外追一個不存在的目標。
@@ -332,8 +339,13 @@ console.log('9. 打一整套');
 /* ── 10. 名冊與血 ────────────────────────────────────────────── */
 console.log('10. 名冊與血');
 {
-  const m = makeMonster('hound');
-  ok(m.kind === 'hound' && KINDS.hound.hp === 10 && m.hp === 10, '綠狗登記在名冊裡，血 10，生出來是滿的');
+  ok(KINDS.minion.hp === 4 && KINDS.boss.hp === 20, '名冊裡兩類：小怪血 4、BOSS 血 20');
+  ok(SPAWN.monsters.map((s) => makeMonster(s)).every((q) => q.hp === KINDS[q.kind].hp), '每一隻生出來是自己那一類的滿血');
+  const mm = makeMonster(SPAWN.monsters[1]);
+  hurt(mm, DAMAGE.slash);
+  ok(hurt(mm, DAMAGE.rise) && mm.deaths === 1 && mm.hp === 4, '小怪：第一段加第二段剛好打死，在重生點重生');
+  const m = makeMonster(SPAWN.monsters[0]);
+  m.hp = 10;                                  // 下面照 10 血的算術走
   ok(DAMAGE.slash === 1 && DAMAGE.rise === 3 && DAMAGE.slam === 2, '三段各扣 1、3、2');
   hurt(m, DAMAGE.slash); hurt(m, DAMAGE.rise); hurt(m, DAMAGE.slam);
   ok(m.hp === 4 && m.deaths === 0, `一整套扣 6，剩 ${m.hp}`);
@@ -343,17 +355,17 @@ console.log('10. 名冊與血');
   hurt(m, DAMAGE.rise);
   ok(m.hp === 1 && m.air, '還剩 1、正被擊退在空中');
   const died = hurt(m, DAMAGE.slash);
-  ok(died && m.deaths === 1 && m.hp === 10, '扣到 0：死了一次，血滿著重生');
+  ok(died && m.deaths === 1 && m.hp === KINDS.boss.hp, '扣到 0：死了一次，血滿著重生');
   ok(near(m.x, m.spawn.x) && near(m.z, m.spawn.z) && m.y === 0 && !m.air && m.vx === 0 && m.vz === 0 && m.vy === 0,
     '重生在牠自己的重生點，站在地上、不帶死前的擊退');
   ok(m.gauge === 0 && !broken(m), '重生之後破防歸零');
-  const own = makeMonster('hound', { x: -5, z: 6, yaw: 1 });
+  const own = makeMonster({ kind: 'boss', x: -5, z: 6, yaw: 1 });
   own.hp = 1;
   hurt(own, 1);
   ok(near(own.x, -5) && near(own.z, 6), '每一隻回到的是自己的重生點');
   hurt(m, 3);
   placeMonster(m);
-  ok(m.hp === 10, '回到站位血也補滿');
+  ok(m.hp === KINDS.boss.hp, '回到站位血也補滿');
 }
 
 /* ── 11. 破防門檻 ────────────────────────────────────────────── */
@@ -492,7 +504,7 @@ console.log('12. 破防攻擊');
     }
     ok(got.join(' ') === 'slash rise break' && launchedY > 0.3,
       `第一段 → 第二段 → 破防攻擊（${got.join(' → ')}），在 ${launchedY.toFixed(2)} 公尺高的空中發動`);
-    ok(n.hp === KINDS.hound.hp - DAMAGE.slash - DAMAGE.rise - DAMAGE.break && !bit, `扣 1 + 3 + 5，剩 ${n.hp}，沒被咬`);
+    ok(n.hp === KINDS.boss.hp - DAMAGE.slash - DAMAGE.rise - DAMAGE.break && !bit, `扣 1 + 3 + 5，剩 ${n.hp}，沒被咬`);
   }
 
   // 在空中被定住的怪物：放開之後帶著水平速度落下，不被往上挑。

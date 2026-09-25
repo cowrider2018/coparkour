@@ -11,7 +11,8 @@
 
    ── 站位 ────────────────────────────────────────────────────────
    「中線」是穿過場地中心、沿著 z 軸的那一條。玩家站在它的 2/3、面向
-   中心（−z），怪物站在 1/3、也面向中心——兩個隔著場地中心對望。
+   中心（−z）。BOSS 站在中線的 1/3，兩隻小怪站在同一條橫線上、BOSS 的
+   左右兩側各 4 公尺，三隻都面向場地中心——隔著中心跟玩家對望。
 
    ── 怪物 ────────────────────────────────────────────────────────
    一直追著玩家跑。身體跟玩家一樣大（同一個 PHYS 的圓柱），碰到玩家
@@ -67,10 +68,22 @@ export const ARENA = { id: 'arena', shape: 'rect', x0: -12, x1: 12, z0: -12, z1:
 /** 中線上第 u 個比例的那一點（u = 0 在 z0 那一端）。 */
 export const onMidline = (u) => ARENA.z0 + (ARENA.z1 - ARENA.z0) * u;
 
-/** 站位：玩家在中線 2/3、怪物在 1/3，都面向中心。yaw 是 atan2(x, z) 那一種。 */
+/** 面向場地中心的 yaw（atan2(x, z) 那一種）。 */
+const faceCentre = (x, z) => Math.atan2((ARENA.x0 + ARENA.x1) / 2 - x, (ARENA.z0 + ARENA.z1) / 2 - z);
+
+/**
+ * 站位：玩家在中線 2/3；怪物一隻一筆，帶著牠是哪一類（KINDS 的鍵）——BOSS 在
+ * 中線 1/3，兩隻小怪在同一條橫線上、左右各 4 公尺。全部面向中心。
+ * yaw 是 atan2(x, z) 那一種。
+ */
+const MID_X = (ARENA.x0 + ARENA.x1) / 2;
 export const SPAWN = {
-  player: { x: (ARENA.x0 + ARENA.x1) / 2, z: onMidline(2 / 3), yaw: Math.PI },
-  monster: { x: (ARENA.x0 + ARENA.x1) / 2, z: onMidline(1 / 3), yaw: 0 },
+  player: { x: MID_X, z: onMidline(2 / 3), yaw: Math.PI },
+  monsters: [
+    { kind: 'boss', x: MID_X, z: onMidline(1 / 3), yaw: faceCentre(MID_X, onMidline(1 / 3)) },
+    { kind: 'minion', x: MID_X - 4, z: onMidline(1 / 3), yaw: faceCentre(MID_X - 4, onMidline(1 / 3)) },
+    { kind: 'minion', x: MID_X + 4, z: onMidline(1 / 3), yaw: faceCentre(MID_X + 4, onMidline(1 / 3)) },
+  ],
 };
 
 /**
@@ -88,15 +101,19 @@ export const COLS = [{
  * 怪物就是多一筆，規則不動。每一隻怪物身上帶的是牠自己的「狀態」（位置、速度、
  * 挨了幾下…），數值一律回頭查這一張，用 `m.kind` 認類別。
  *
- *   hound  綠狗（現在唯一的一類）。血 10。腳程 3.4：走路是 PHYS.walk（4），
- *          所以放開手就會被追上。
+ *   minion  小怪（綠色）。血 4——第一段加第二段剛好打死，破不了防。
+ *   boss    BOSS（紫色）。血 20。
+ *
+ * 兩類的腳程都是 3.4：走路是 PHYS.walk（4），所以放開手就會被追上。身體也
+ * 一樣大（同一個 PHYS 的圓柱），差的只有血與顏色（顏色在 monster.js）。
  *
  * `breakAt` 是破防門檻。現在每一類都是 BREAK_AT，但它是逐類登記的——哪天某一類
  * 要比較硬，改那一筆就好。
  */
 export const BREAK_AT = 8;
 export const KINDS = {
-  hound: { name: '綠狗', hp: 10, speed: 3.4, breakAt: BREAK_AT },
+  minion: { name: '小怪', hp: 4, speed: 3.4, breakAt: BREAK_AT },
+  boss: { name: 'BOSS', hp: 20, speed: 3.4, breakAt: BREAK_AT },
 };
 
 /** 破防之後的窗口多長（秒）：亮圓從淡圓的大小縮到消失的時間。 */
@@ -154,12 +171,12 @@ export const KNOCK_SCALE = {
 };
 
 /**
- * 一隻站在站位上的怪物。`kind` 是 KINDS 的鍵，`spawn` 是牠自己的站位
- * （{x, z, yaw}），回到站位的時候回這裡。
+ * 一隻站在站位上的怪物。`spawn` 是牠自己的站位（{kind, x, z, yaw}，SPAWN.monsters
+ * 的一筆）：牠是哪一類看它，回到站位、死了重生都回這裡。
  */
-export function makeMonster(kind = 'hound', spawn = SPAWN.monster) {
+export function makeMonster(spawn = SPAWN.monsters[0]) {
   const m = {
-    kind,
+    kind: spawn.kind,
     spawn,
     x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, grounded: true, aimX: 0, aimZ: 1,
     /* 被擊退、還沒落地。這段時間牠不追人，碰到玩家也不算數。 */

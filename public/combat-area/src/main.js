@@ -85,10 +85,11 @@ const player = {
 };
 
 /* 怪物：每一隻是「狀態」（combat.js 的 makeMonster）加上「外觀」（monster.js）。
-   現在只有一隻綠狗，但下面每一條規則都是對這張清單逐隻做的。 */
-const foes = [{ m: makeMonster('hound', SPAWN.monster) }];
+   站位表裡有幾筆就有幾隻（一隻 BOSS、兩隻小怪），下面每一條規則都是對這張
+   清單逐隻做的。 */
+const foes = SPAWN.monsters.map((s) => ({ m: makeMonster(s) }));
 for (const f of foes) {
-  f.critter = makeMonsterCritter(zoo);
+  f.critter = makeMonsterCritter(zoo, f.m.kind);
   f.breakFx = breakFx();
   scene.add(f.critter.root, f.breakFx.node);
 }
