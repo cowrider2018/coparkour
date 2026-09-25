@@ -27,7 +27,7 @@
     10. 名冊與血    每一類怪物的數值登記在 KINDS；三段各扣 1、3、2；扣到 0 就死，
                     在牠自己的重生點重生（血滿、破防歸零、擊退與定住都清掉）；
                     回到站位血也補滿。
-    11. 破防門檻    傷害累積到 4 就破防、開 0.5 秒的窗口；窗口裡不再累積；
+    11. 破防門檻    傷害累積到 8 就破防、開 0.5 秒的窗口；窗口裡不再累積；
                     錯過就歸零重算。
     12. 破防攻擊    選最近的破防目標；按下去窗口用掉、累積歸零；朝頭頂飛過去、
                     碰到之後牠轉一圈、玩家繞牠 360°、扣 5、往反方向跳離，同一
@@ -359,14 +359,18 @@ console.log('10. 名冊與血');
 /* ── 11. 破防門檻 ────────────────────────────────────────────── */
 console.log('11. 破防門檻');
 {
-  ok(BREAK_AT === 4 && Object.values(KINDS).every((k) => k.breakAt === BREAK_AT), '每一類的破防門檻都是 4');
-  const m = makeMonster('hound');
+  ok(BREAK_AT === 8 && Object.values(KINDS).every((k) => k.breakAt === BREAK_AT), '每一類的破防門檻都是 8');
+  const m = makeMonster();
+  m.hp = 99;                                  // 這一項只看累積，別讓牠中途死掉重生
+  hurt(m, DAMAGE.slash); hurt(m, DAMAGE.rise); hurt(m, DAMAGE.slam);
+  ok(!broken(m) && m.gauge === 6, '一整套三段：累積 6，還沒破防');
   hurt(m, DAMAGE.slash);
-  ok(!broken(m) && m.gauge === 1, '第一段：累積 1，還沒破防');
+  ok(!broken(m) && m.gauge === 7, '再一個第一段：累積 7，還沒破防');
   hurt(m, DAMAGE.rise);
-  ok(broken(m) && near(m.breakT, BREAK_WINDOW), `第二段：累積 4，破防，窗口 ${BREAK_WINDOW} 秒`);
+  ok(broken(m) && near(m.breakT, BREAK_WINDOW), `再一個第二段：累積 10，破防，窗口 ${BREAK_WINDOW} 秒`);
+  const g = m.gauge;
   hurt(m, DAMAGE.slam);
-  ok(m.gauge === 4, '窗口裡再挨一下不累積');
+  ok(m.gauge === g, '窗口裡再挨一下不累積');
   const far = { x: 0, z: 100 };
   let t = 0;
   while (broken(m)) { monsterStep(m, DT, far); t += DT; }
@@ -447,11 +451,13 @@ console.log('12. 破防攻擊');
   ok(!bitten, '整招沒被咬（突進、迴旋、跳離都無敵）');
   ok(!m.held, '跳離之後怪物被放開');
 
-  // 接在連段後面：站著等怪物過來、第一段自動、視窗裡按第二段——破防發生在第二段
-  // 的空中，窗口裡再按一次跳，在空中發動破防攻擊。
+  // 接在連段後面：牠身上已經累積了 4（上一輪打的），站著等牠過來、第一段自動、
+  // 視窗裡按第二段——累積到 8、破防發生在第二段的空中，窗口裡再按一次跳，在空中
+  // 發動破防攻擊。
   {
     const q = { x: 0, y: 0, z: SPAWN.player.z, vx: 0, vy: 0, vz: 0, grounded: true, aimX: 0, aimZ: -1 };
     const n = makeMonster();
+    n.gauge = BREAK_AT - DAMAGE.slash - DAMAGE.rise;
     const k = makeCombo();
     const reach = { slash: inSlash, rise: (u, v) => inFan(u, v, k.tip), slam: inRing };
     let tt = 0, p2 = false, p3 = false, brokeAt = -1, launchedY = -1, bit = false, over = false;
