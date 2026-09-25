@@ -464,6 +464,50 @@ export function portalAt(portals, x, y, z, doors = {}) {
   return null;
 }
 
+/* ── 傳送點前的反推 ──────────────────────────────────────────────
+   感測區開在牆腳（沒入黑霧的路）與門洞裡，而那些地方本來是隨手就碰得到的：
+   貼著黑牆走、在門口停一下，不該一不小心就被送走。所以感測區外面一個狗身長
+   （`zone`）以內，有一股把身體推離感測區的力：
+
+     走進去   照樣走得進去，只是慢——走路 4 在最裡面剩 1.5，衝刺 8 剩 5.5。
+     停下來   沒有人推的身體被推回那一圈外面，停在安全的地方。
+
+   它是一個**速度**（跟 'slide' 的緩滑一樣加在位移上），不是加速度：操控的速度
+   每一幀都會被 `steer` 拉回想要的速率，一個比 `PHYS.accel` 小的反向加速度
+   會被整個抵銷，大過它又會把人擋死。越靠近越大，貼著感測區是 `max`，到那一圈
+   的外緣是 0，所以停下來的身體是慢慢滑到外緣、不會被彈出去。
+
+   只推開著的感測區（門關著就沒有東西可以誤觸），不推單向的：窄巷的井是掉下去
+   的、水窖殘階頂是爬上去的，都不是貼著牆就會誤觸的地方。 */
+export const REPEL = { zone: 1.0, max: 2.5 };
+
+/** 身體中心到一個感測區的水平距離（在裡面是 0），與從感測區指向身體的方向。 */
+export function portalGap(p, x, z) {
+  if (p.shape === 'box') {
+    const cx = Math.min(Math.max(x, p.x0), p.x1), cz = Math.min(Math.max(z, p.z0), p.z1);
+    const dx = x - cx, dz = z - cz, d = Math.hypot(dx, dz);
+    return d > 1e-9 ? [d, dx / d, dz / d] : [0, 0, 0];
+  }
+  const dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz);
+  return d > p.r ? [d - p.r, dx / d, dz / d] : [0, 0, 0];
+}
+
+/**
+ * 腳在 (x, y, z) 的身體被附近的感測區推開的速度（x／z，公尺每秒），加在位移上。
+ * `doors` 跟 `portalAt` 同一份：門關著的感測區不推。
+ */
+export function portalDrift(portals, x, y, z, doors = {}) {
+  let vx = 0, vz = 0;
+  for (const p of portals) {
+    if (p.oneWay || (p.door && !doors[p.door]) || y < p.y0 || y > p.y1) continue;
+    const [d, nx, nz] = portalGap(p, x, z);
+    if (d <= 0 || d >= REPEL.zone) continue;
+    const v = REPEL.max * (1 - d / REPEL.zone);
+    vx += nx * v; vz += nz * v;
+  }
+  return [vx, vz];
+}
+
 /**
  * 站在 (x, z)、腳原本在 fromY 的話，會踩在多高的地方。
  *
