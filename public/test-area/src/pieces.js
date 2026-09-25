@@ -971,6 +971,35 @@ export function banner(B, o) {
   B.hangs(false);
 }
 
+/**
+ * 一堆塌下來的亂石，堵住一個門洞：堆滿 [x0, x1] × [z0, z1]，靠 z0 那一邊高 h、
+ * 往 z1 斜下來，兩側比中間低一點。一皮一皮往上疊，每一皮在那一點的堆高以下才放。
+ *
+ * 只畫、不登記碰撞：堵住門洞的碰撞由呼叫端登記（它屬於一組門，清掉就沒了）。
+ * 每一塊轉過之後的水平外接都收在那個範圍裡，所以呼叫端的一個碰撞盒蓋得住整堆。
+ */
+export function rubbleHeap(B, o) {
+  const r = rng(o.seed);
+  const { x0, x1, z0, z1, h } = o;
+  const top = (x, z) => h * Math.sqrt(Math.max(0, (z1 - z) / (z1 - z0)))
+    * (1 - 0.2 * Math.abs((2 * x - x0 - x1) / (x1 - x0)));
+  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+  for (let y = 0.18; y < h; y += 0.34) {
+    for (let x = x0; x < x1; x += 0.62) {
+      for (let z = z0; z < z1; z += 0.58) {
+        const sx = r.range(0.45, 0.8), sy = r.range(0.28, 0.46), sz = r.range(0.4, 0.7);
+        const px = x + r.range(0, 0.62), pz = z + r.range(0, 0.58);
+        const tilt = [r.range(-0.35, 0.35), r() * Math.PI, r.range(-0.35, 0.35)];
+        const tone = stoneTone(r);
+        const ext = Math.hypot(sx, sz) / 2 + 0.12;       // 轉過、傾斜之後的水平外接半徑
+        const cx = clamp(px, x0 + ext, x1 - ext), cz = clamp(pz, z0 + ext, z1 - ext);
+        if (y > top(cx, cz)) continue;
+        B.add(B.kit.brick(sx, sy, sz, 0.05, chipAt(cx, y, cz)), { p: [cx, y, cz], r: tilt, color: tone });
+      }
+    }
+  }
+}
+
 /** 垂下來的鎖鏈。兩點之間掛一串環，中間鬆。 */
 export function chain(B, o) {
   B.hangs(true);

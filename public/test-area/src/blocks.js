@@ -31,6 +31,7 @@
 
      中庭東拱洞 ⇄ 兵營的小路  中庭那頭是拱洞（一組門，路標），兵營那頭沒入黑霧
      中庭西拱洞 ⇄ 窄巷南端    同上
+     中庭門樓   ⇄ 王座廳正門  兩頭各一道鐵閘，各是各的一組門
      塔腳的門   ⇄ 牆頂的門    同一個區塊裡；屬於一組門，門關著就不通
      窄巷的井   → 水窖        單向
 
@@ -44,7 +45,7 @@ import { C } from './palette.js';
 import { arenaGap, PHYS } from './walk.js';
 import {
   Kit, flagstones, wall, merlons, column, pointedArch, arcade, stair,
-  knight, gargoyle, rubble, brazier, banner, chain, portcullis, deadTree, well,
+  knight, gargoyle, rubble, rubbleHeap, brazier, banner, chain, portcullis, deadTree, well,
   mossTuft, crate, barrel,
   pavilion, weaponRack, dummy, archeryTarget, campfire, sackStack, woodpile, logSeat, standard,
 } from './pieces.js';
@@ -84,6 +85,25 @@ function restsOn(segs, x, z) {
   return best;
 }
 
+/* ── 可以開關的鐵閘 ──────────────────────────────────────────────
+   關著是放下的鐵閘，有碰撞（屬於那一組門：門開著碰撞就不存在）；開著是同一面
+   閘升起來，柵條收進門洞頂上的石頭裡（`ceil`）。兩種狀態各自一塊（`detach`），
+   執行時只換看得到的那一塊。`face` 是門面的法線，指向走過來的人那一邊。 */
+function grate(B, o) {
+  const { group, face, lift, ceil, hole, ...at } = o;
+  B.detach({ door: group, open: false, face }, () => portcullis(B, { ...at, door: group }));
+  // `hole`：開著的時候洞裡看得進去，驗證拿這個盒子量有沒有磚插進門洞（見 verify 的「門」）。
+  B.detach({ door: group, open: true, face, ...(hole ? { hole } : {}) },
+    () => portcullis(B, { ...at, lift, ceil, solid: false }));
+}
+
+/** 尖拱的內緣：沿拱面離中線 t 那一點的拱底有多高（`pointedArch` 同一組數）。
+    拱腳以外就是起拱線。升起的鐵閘裁到這裡，看起來是收進了拱石的槽裡。 */
+function intrados({ y, span, rise, thick }) {
+  const half = span / 2, e = (rise * rise - half * half) / (2 * half), ri = half + e - thick / 2;
+  return (t) => y + Math.sqrt(Math.max(0, ri * ri - (Math.abs(t) + e) ** 2));
+}
+
 /* ── 一、崩塌中庭 ─────────────────────────────────────────────────
    最正統的那一個：一個被兩排拱廊夾住的方形中庭，北面一座門樓。
    斷柱排成一圈但半徑 8.5——圓心那 14×14 完全是空的，那圈柱子的作用是
@@ -106,9 +126,9 @@ function courtyard(B, flames, seed, A) {
      （那已經是黑牆外面）。畫一個永遠看不到的東西不如不畫。 */
   wall(B, { from: [-13, 13], to: [13, 13], h: 4.6, thick: 1.0, ruin: 0.55, seed: seed + 40 });
 
-  /* 北面的門樓：兩座墩、一道尖拱、一面鐵閘。拱是走得過去的（12 寬的
-     開口只放閘，閘本身有碰撞，所以門是關著的——它是背景，不是路）。
-     出入口是兩側拱廊正中那兩個拱洞（見這一支的最後面）。 */
+  /* 北面的門樓：兩座墩、一道尖拱、一面鐵閘。鐵閘放下來的時候有碰撞；升起來
+     就走得進門洞，走到底是王座廳。另外兩條路是兩側拱廊正中那兩個拱洞——三條
+     是同一組門（見這一支的最後面）。 */
   const gateW = [
     wall(B, { from: [-13, -13], to: [-2.4, -13], h: 6.4, thick: 1.2, ruin: 0.28, seed: seed + 60 }),
     wall(B, { from: [2.4, -13], to: [13, -13], h: 6.4, thick: 1.2, ruin: 0.3, seed: seed + 61 }),
@@ -116,8 +136,11 @@ function courtyard(B, flames, seed, A) {
   /* 門樓的拱是完整的（ruin 0）。整片廢墟裡至少要有一道拱是完好的，
      不然「尖拱」這個形狀在畫面上從來沒有被說完整——而那正好是這一路
      造型語言最好認的一筆。缺口留給別的拱。 */
-  pointedArch(B, { x: 0, z: -13, y: 3.6, span: 5.0, rise: 3.6, yaw: 0, thick: 0.55, depth: 1.3, ruin: 0, seed: seed + 62 });
-  portcullis(B, { x: 0, z: -13, y: 0, w: 4.4, h: 3.4, yaw: 0 });
+  const ARCH = { y: 3.6, span: 5.0, rise: 3.6, thick: 0.55 };
+  pointedArch(B, { x: 0, z: -13, ...ARCH, yaw: 0, depth: 1.3, ruin: 0, seed: seed + 62 });
+  /* 門樓的鐵閘是一扇門（`gates`，跟兩側的拱洞同一組）：升起來的時候尖刺停在
+     兩公尺多，柵條收進拱裡；走進門洞就到王座廳。 */
+  grate(B, { x: 0, z: -13, y: 0, w: 4.4, h: 3.4, yaw: 0, lift: 2.3, ceil: intrados(ARCH), group: 'gates', face: [0, 1] });
   /* 垛口分兩段，各自坐在自己那一段牆的頂上（`on`）。以前是一整排坐在
      一個給定的 6.4 上，而牆頂是起伏的——所以牆低下去的地方那幾個垛是
      浮在空中的。門洞上方沒有垛，那裡是拱。 */
@@ -167,6 +190,15 @@ function courtyard(B, flames, seed, A) {
     const a = r() * Math.PI * 2, rad = r.range(6.5, 12);
     mossTuft(B, Math.cos(a) * rad, 0, Math.sin(a) * rad, r);
   }
+
+  /* 門樓：鐵閘升起來，走進門洞就到王座廳的正門。感測區從門樓牆的內皮往裡 0.5
+     起、到黑牆。門前半公尺有一顆大石（碎石撒出來的），進門要從它旁邊繞過去；
+     到達點在大石的中庭那一側、面朝中庭。路標浮在升起的鐵閘前面。 */
+  B.portalBox(-2.4, A.z0, 2.4, -12.9, -0.5, 3, 'throne.gate', {
+    door: 'gates', mouth: { x: 0, y: 0, z: -12.4, n: [0, 1] },
+  });
+  B.arrive('gate', 0, 0, -9.4, 0);
+  B.sign(0, 3.0, -12.1, '王座廳', { door: 'gates' });
 
   /* 兩側拱廊正中那個拱洞（z = 0）通到別的區塊：東邊是城牆步道兵營的那條小路，
      西邊是窄巷的南端，兩頭一一對應——從東邊出去，從城牆回來也回到東邊。
@@ -262,6 +294,20 @@ function throne(B, flames, seed, A) {
   // 南端：塌掉的正門，兩塊倒下的柱頭當踏腳石。
   wall(B, { from: [-7.6, -14.4], to: [-2.6, -14.4], h: 5.0, thick: 1.1, ruin: 0.6, seed: seed + 150 });
   wall(B, { from: [2.6, -14.4], to: [7.6, -14.4], h: 5.0, thick: 1.1, ruin: 0.6, seed: seed + 151 });
+  /* 正門是一扇「門」（`gate`，按 O），只是門扇是一堆亂石。關著：塌下來的石頭把
+     兩段殘牆之間那個缺口整個堵住，從牆後的黑牆一路堆到牆的內皮前 0.3，後面高
+     2.6、往廳裡斜下來；碰撞是一整塊跳不上去的盒子（屬於這一組門）。開著：清走了，
+     什麼都沒有，缺口就是原本的樣子。開著走進缺口，從牆的內皮往裡 0.5 起就回中庭
+     的門樓；到達點在門內、面朝王座。 */
+  const FACE = -14.4 + 0.55, HEAP = { x0: -2.7, x1: 2.7, z0: A.z0 + 0.02, z1: FACE + 0.3, h: 2.6 };
+  B.detach({ door: 'gate', open: false, face: [0, 1] }, () => rubbleHeap(B, { ...HEAP, seed: seed + 170 }));
+  B.detach({ door: 'gate', open: true, face: [0, 1] }, () => {});
+  B.block(0, HEAP.h / 2, (HEAP.z0 + HEAP.z1) / 2, HEAP.x1 - HEAP.x0, HEAP.h, HEAP.z1 - HEAP.z0 + 0.04,
+    { kind: 'block', base: 0, door: 'gate' });
+  B.portalBox(-2.6, A.z0, 2.6, FACE - 0.5, -0.5, 3, 'courtyard.gate', {
+    door: 'gate', mouth: { x: 0, y: 0, z: FACE, n: [0, 1] },
+  });
+  B.arrive('gate', 0, 0, -11.4, 0);
   /* 倒下的柱頭。以前是躺在地上的（頂面 0.7）——那正好是「跳一下站得
      上去、站上去只有半公尺」的高度，也就是房間裡跑起來最不該有的東西。
      現在改成斜靠在側牆上：頂面 1.7，是繞得過去的障礙物，剪影也比躺著
@@ -1435,6 +1481,8 @@ export const BLOCKS = [
     room: { y: 0, cz: -1.5, hx: 6.9, hz: 12.0 },
     // 牆面：兩側 8.05、南端 14.95、北端（王座背後那道）18.95。
     arena: { shape: 'rect', x0: -8.3, x1: 8.3, z0: -15.2, z1: 19.2, lid: 14.0 },
+    // 正門的鐵閘，一開始放下。
+    doors: { gate: false },
   },
   {
     id: 'cistern', name: '圓塔水窖', hint: '環形拱廊、貼牆殘階、垂鏈',
