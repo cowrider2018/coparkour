@@ -551,6 +551,8 @@ head('牆身之內不透光');
       const core = w.coreAt(u), surf = w.surfaceAt(u);
       if (surf > w.y0 + w.course * 0.5) thinMax = Math.max(thinMax, (surf - core) / w.course);
       for (let y = w.y0 + 0.06; y < core - 0.02; y += 0.1) {
+        // 門洞（`hole`）裡本來就是空的。
+        if (w.hole && u > w.hole.u[0] && u < w.hole.u[1] && y > w.hole.y[0] && y < w.hole.y[1]) continue;
         cells++;
         if (!solidAt(x, y, z)) leaks++;
       }

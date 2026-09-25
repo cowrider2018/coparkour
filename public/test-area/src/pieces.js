@@ -265,6 +265,22 @@ export function wall(B, o) {
   const flush = o.flush || {};
   const flushed = (end, y) => !!end && y > end[0] && y < end[1];
 
+  /* 門洞（`hole`）：沿牆 s 在 [s0, s1]（離牆中點，from → to 為正）、絕對高度在
+     [y0, y1] 的那一塊不砌——外皮的磚、牆芯與碰撞都扣掉它。高度要對齊整皮。
+     洞裡的磚照樣抽過它的亂數才丟掉，所以洞以外的每一塊磚都跟沒開洞的時候一模一樣。
+     `carve` 把一塊 [a0, a1] × [b0, b1] 扣掉洞，回傳剩下的幾塊；沒碰到洞就回傳 null。 */
+  const hole = o.hole;
+  const carve = (a0, a1, b0, b1) => {
+    if (!hole || a1 <= hole.s[0] || a0 >= hole.s[1] || b1 <= hole.y[0] || b0 >= hole.y[1]) return null;
+    const out = [];
+    if (a0 < hole.s[0]) out.push([a0, hole.s[0], b0, b1]);
+    if (a1 > hole.s[1]) out.push([hole.s[1], a1, b0, b1]);
+    const m0 = Math.max(a0, hole.s[0]), m1 = Math.min(a1, hole.s[1]);
+    if (b0 < hole.y[0]) out.push([m0, m1, b0, hole.y[0]]);
+    if (b1 > hole.y[1]) out.push([m0, m1, hole.y[1], b1]);
+    return out;
+  };
+
   for (let c = 0; c < courses; c++) {
     const rel = bh * (c + 0.5);            // 離牆底多高——不是絕對 y
     const cy = y0 + rel;
@@ -279,16 +295,21 @@ export function wall(B, o) {
       const wob = r.range(-0.02, 0.02);                    // 砌歪的那一點點
       const s0 = flushed(flush.from, cy) ? Math.max(s - bl / 2, -len / 2) : s - bl / 2;
       const s1 = flushed(flush.to, cy) ? Math.min(s + bl / 2, len / 2) : s + bl / 2;
-      const tc = (s0 + s1) / 2 / len + 0.5;
+      const spin = r.range(-0.02, 0.02), tone = stoneTone(r);
       /* 磚縫只留 2 cm，倒角也收到 3.5 cm。第一版是 6 cm 縫加 5 cm 倒角，
          畫出來一面牆是一堆各自漂浮的方塊而不是砌體——那兩個數字加起來
          就是縫的視覺寬度，而砌體的縫必須比石頭薄一個數量級。 */
-      const bx = x0 + dx * tc + nrm[0] * wob, bz = z0 + dz * tc + nrm[1] * wob;
-      B.add(B.kit.brick(s1 - s0 - 0.02, bh - 0.02, th + jut, 0.035, chipAt(bx, cy, bz)), {
-        p: [bx, cy, bz],
-        r: [0, yaw + r.range(-0.02, 0.02), 0],
-        color: stoneTone(r),
-      });
+      const cut = carve(s0, s1, cy - bh / 2, cy + bh / 2);
+      for (const [a0, a1, b0, b1] of cut || [[s0, s1, cy - bh / 2, cy + bh / 2]]) {
+        if (cut && (a1 - a0 < 0.1 || b1 - b0 < 0.1)) continue;   // 洞邊裁剩的碎片不砌
+        const tc = (a0 + a1) / 2 / len + 0.5, yc = (b0 + b1) / 2;
+        const bx = x0 + dx * tc + nrm[0] * wob, bz = z0 + dz * tc + nrm[1] * wob;
+        B.add(B.kit.brick(a1 - a0 - 0.02, b1 - b0 - 0.02, th + jut, 0.035, chipAt(bx, yc, bz)), {
+          p: [bx, yc, bz],
+          r: [0, yaw + spin, 0],
+          color: tone,
+        });
+      }
     }
   }
 
@@ -314,12 +335,16 @@ export function wall(B, o) {
     const hc = Math.floor(lo / bh) * bh;
     coreParts.push([(s0 + len / 2) / len, (s1 + len / 2) / len, hc]);
     if (hc < bh * 0.9) return;              // 這一段是豁口，芯也不能有
-    const t = (s0 + s1) / 2 / len + 0.5;
-    B.add(B.kit.brick(s1 - s0 + 0.03, hc, th * 0.55, 0.02), {
-      p: [x0 + dx * t, y0 + hc / 2, z0 + dz * t],
-      r: [0, yaw, 0],
-      color: C.stoneDeep, ink: false,
-    });
+    // 碰到門洞的那一段扣掉洞，剩下的幾塊不往洞裡多伸那 3 公分。
+    const cut = carve(s0, s1, y0, y0 + hc);
+    for (const [a0, a1, b0, b1] of cut || [[s0, s1, y0, y0 + hc]]) {
+      const t = (a0 + a1) / 2 / len + 0.5;
+      B.add(B.kit.brick(a1 - a0 + (cut ? 0 : 0.03), b1 - b0, th * 0.55, 0.02), {
+        p: [x0 + dx * t, (b0 + b1) / 2, z0 + dz * t],
+        r: [0, yaw, 0],
+        color: C.stoneDeep, ink: false,
+      });
+    }
   };
   {
     const n0 = Math.max(1, Math.round(len / 1.0));
@@ -350,15 +375,30 @@ export function wall(B, o) {
       hi = Math.max(hi, skyline((i / parts + (k / 4) / parts - 0.5) * len));
     }
     if (hi <= 0) continue;                 // 豁口：不登記
-    const w = Math.abs(dir[0]) * sub + Math.abs(nrm[0]) * th;
-    const d = Math.abs(dir[1]) * sub + Math.abs(nrm[1]) * th;
-    B.block(x0 + dx * t, y0 + hi / 2, z0 + dz * t, Math.max(w, 0.3), hi, Math.max(d, 0.3),
-      { kind: 'shell', base: y0 });
+    const cut = carve((i / parts - 0.5) * len, ((i + 1) / parts - 0.5) * len, y0, y0 + hi);
+    if (!cut) {
+      const w = Math.abs(dir[0]) * sub + Math.abs(nrm[0]) * th;
+      const d = Math.abs(dir[1]) * sub + Math.abs(nrm[1]) * th;
+      B.block(x0 + dx * t, y0 + hi / 2, z0 + dz * t, Math.max(w, 0.3), hi, Math.max(d, 0.3),
+        { kind: 'shell', base: y0 });
+      continue;
+    }
+    for (const [a0, a1, b0, b1] of cut) {                 // 碰到門洞的那一段扣掉洞
+      const tm = (a0 + a1) / 2 / len + 0.5, L = a1 - a0;
+      const w = Math.abs(dir[0]) * L + Math.abs(nrm[0]) * th;
+      const d = Math.abs(dir[1]) * L + Math.abs(nrm[1]) * th;
+      // 洞頂上那一段底下就是門洞，本來就是空的（`open`），驗證不把洞裡當成鑽進去的空心。
+      B.block(x0 + dx * tm, (b0 + b1) / 2, z0 + dz * tm, Math.max(w, 0.3), b1 - b0, Math.max(d, 0.3),
+        { kind: 'shell', base: y0, open: b0 >= hole.y[1] - 1e-9 });
+    }
   }
 
   /* 登記這道牆。verify 拿它去掃「牆身之內有沒有看得穿的格子」——那一項
      守的是牆芯有沒有漏掉一段，而那是看不出來的。 */
-  B.walls.push({ from: [x0, z0], to: [x1, z1], y0, thick: th, h: top, course: bh, surfaceAt, coreAt });
+  B.walls.push({
+    from: [x0, z0], to: [x1, z1], y0, thick: th, h: top, course: bh, surfaceAt, coreAt,
+    ...(hole ? { hole: { u: hole.s.map((v) => v / len + 0.5), y: hole.y } } : {}),
+  });
 
   /** 世界上某一點投影到這道牆上之後，牆頂在多高。垛口與獸像用。 */
   const topAtPoint = (px, pz) => {
