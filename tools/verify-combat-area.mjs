@@ -12,13 +12,25 @@
      4. 第一段範圍  120° 水平扇形、身高中間、長 2.5 個狗高——邊上擦到身體就算。
      5. 第一段自動  站著不動、怪物走過來，第一段自己出手、打中、把牠挑起來，
                     而且不會一幀接一幀地連發。
+     6. 第二段範圍  圓心在腳下的直立 90° 扇形：下緣指向上一次第一段扇形正中
+                    那條半徑的末端（不是現在的面向），往上越過頭頂，長 2.5 個
+                    狗高；偏離那個面就掃不到。
+     7. 第三段範圍  360°、身高中間、長 2.5 個狗高。
+     8. 連段的時間  第二段只在第一段收招後 0.25～0.75 秒按得出來，太早是普通
+                    的跳；第三段只在第二段收招後、落地前按得出來，無敵到落地，
+                    落地才打。
+     9. 打一整套    用真的物理跑一次：等怪物走過來、第一段自動、往前追、
+                    視窗裡按跳、第二段之後停手、空中再按跳——三段都中、
+                    一次都沒被咬。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test-area/src/walk.js';
 import {
-  ARENA, SPAWN, DOG_H, REACH, SWING, REST, KNOCK,
-  makeMonster, monsterStep, touching, bites, knock, inSlash, makeCombo, comboStep,
+  ARENA, SPAWN, DOG_H, REACH, SWING, REST, KNOCK, FAN, WINDOW,
+  makeMonster, monsterStep, touching, bites, knock, inSlash, inFan, inRing, slashTip, fanFrame,
+  makeCombo, comboStep, invulnerable, cueing,
 } from '../public/combat-area/src/combat.js';
+import { steer } from '../public/test-area/src/walk.js';
 
 let fails = 0;
 const ok = (cond, msg) => {
@@ -155,6 +167,140 @@ console.log('5. 第一段自動');
   const c3 = makeCombo();
   ok(!comboStep(c3, DT, { pressed: false, grounded: false, near: true }).start, '在空中不自動出手');
   ok(comboStep(c3, DT, { pressed: true, grounded: true, near: false }).jump, '沒有招的時候按跳就是跳');
+}
+
+/* ── 6. 第二段範圍 ───────────────────────────────────────────── */
+console.log('6. 第二段範圍');
+{
+  const deg = (r) => (r * 180) / Math.PI;
+  const p = body(0, 0, 0, [0, 1]);
+  const tip = slashTip(p);                    // 在原地出的第一段：(0, 身高/2, REACH)
+  ok(near(tip.x, 0) && near(tip.y, PHYS.height / 2) && near(tip.z, REACH), '末端點是面向上 REACH 遠、身高中間那麼高');
+  const fr = fanFrame(p, tip);
+  ok(near(Math.tan(fr.a0), (PHYS.height / 2) / REACH) && near(fr.a1 - fr.a0, Math.PI / 2) && fr.a1 > Math.PI / 2,
+    `原地出招：下緣仰角 ${deg(fr.a0).toFixed(1)}°，往上 90° 越過頭頂（到 ${deg(fr.a1).toFixed(1)}°）`);
+  ok(near(FAN.r, REACH), `長度是 REACH（${FAN.r.toFixed(2)} m），不是那條線的長度`);
+  ok(inFan(p, body(0, 2.0), tip), '正前方 2 公尺、站在地上：中');
+  ok(inFan(p, body(0, 1.2, 1.0), tip), '正前方 1.2 公尺、離地 1 公尺：中');
+  ok(inFan(p, body(0, -0.2, 1.4), tip), '頭頂正上方稍微偏後：中（扇形越過頭頂）');
+  ok(!inFan(p, body(0, -1.5, 0), tip), '背後的地上：不中');
+  ok(!inFan(p, body(0, 2.2, 1.6), tip), '正前方 2.2 公尺、離地 1.6（整隻在半徑外）：不中');
+  ok(inFan(p, body(0.29, 2.0), tip), '偏離那個面 0.29 公尺（身體還跨在面上）：中');
+  ok(!inFan(p, body(0.31, 2.0), tip), '偏離那個面 0.31 公尺：不中——扇形是一片平面');
+  ok(!inFan(p, body(0, REACH + PHYS.radius + 0.05, 0), tip), '身體的前緣在 REACH 外：不中');
+  // 方向跟著末端點，不跟著現在的面向。
+  const turned = body(0, 0, 0, [1, 0]);
+  ok(inFan(turned, body(0, 2.0), tip) && !inFan(turned, body(2.0, 0), tip), '轉身面向 +x 之後，扇形還是指著末端點（+z）');
+  // 往前走近了：那條線變陡。
+  const closer = body(0, 1.0, 0, [0, 1]);
+  const fc = fanFrame(closer, tip);
+  ok(near(Math.tan(fc.a0), (PHYS.height / 2) / (REACH - 1.0)), `往前走 1 公尺：下緣仰角變成 ${deg(fc.a0).toFixed(1)}°`);
+  // 跳起來、腳高過末端點：下緣往前下方指著它。
+  const high = body(0, 0, 1.0, [0, 1]);
+  const fh = fanFrame(high, tip);
+  ok(fh.a0 < 0 && inFan(high, body(0, 2.0), tip), `腳在 1 公尺高：下緣往下 ${deg(-fh.a0).toFixed(1)}°，前方地上的怪物：中`);
+  ok(!inFan(body(0, 0, 2.5, [0, 1]), body(0, 1.0), tip), '腳在 2.5 公尺高、怪物在前方 1 公尺的地上（低於下緣）：不中');
+}
+
+/* ── 7. 第三段範圍 ───────────────────────────────────────────── */
+console.log('7. 第三段範圍');
+{
+  const p = body(0, 0, 0, [0, 1]);
+  let all = true;
+  for (let a = 0; a < 360; a += 15) {
+    const r = (a * Math.PI) / 180;
+    if (!inRing(p, body(Math.sin(r) * 2.3, Math.cos(r) * 2.3))) all = false;
+  }
+  ok(all, '每一個方向 2.3 公尺：中');
+  ok(inRing(p, body(REACH + PHYS.radius - 0.01, 0)) && !inRing(p, body(REACH + PHYS.radius + 0.01, 0)), '邊界在身體的前緣碰到 REACH');
+  ok(!inRing(p, body(1, 0, PHYS.height / 2 + 0.01)), '怪物的腳高過身高中間：不中');
+}
+
+/* ── 8. 連段的時間 ───────────────────────────────────────────── */
+console.log('8. 連段的時間');
+{
+  const idle = { pressed: false, grounded: true, near: false };
+  /** 出一次第一段，收招之後再過 wait 秒按跳。回傳按下那一幀的結果。 */
+  const pressAfterSlash = (wait) => {
+    const c = makeCombo();
+    comboStep(c, DT, { pressed: false, grounded: true, near: true });
+    while (c.phase === 'slash') comboStep(c, DT, idle);
+    for (let t = c.t; t + DT / 2 < wait; t += DT) comboStep(c, DT, idle);
+    const out = comboStep(c, DT, { pressed: true, grounded: true, near: false });
+    return { out, phase: c.phase };
+  };
+  const early = pressAfterSlash(0.15);
+  ok(early.out.jump && !early.out.start && early.phase === 'idle', '收招後 0.15 秒按：普通的跳，連段斷了');
+  for (const w of [WINDOW[0] + 0.02, 0.5, WINDOW[1] - 0.03]) {
+    const r = pressAfterSlash(w);
+    ok(r.out.start === 2 && r.out.jump && r.phase === 'rise', `收招後 ${w.toFixed(2)} 秒按：第二段，而且跳起來`);
+  }
+  const late = pressAfterSlash(0.85);
+  ok(!late.out.start && late.out.jump, '收招後 0.85 秒按：視窗關了，普通的跳');
+
+  // 第二段之後：rise 裡按不算，air 裡按是第三段；無敵到落地，落地才打。
+  const c = makeCombo();
+  comboStep(c, DT, { pressed: false, grounded: true, near: true });
+  while (c.phase === 'slash') comboStep(c, DT, idle);
+  for (let i = 0; i < 20; i++) comboStep(c, DT, idle);
+  comboStep(c, DT, { pressed: true, grounded: true, near: false });
+  ok(c.phase === 'rise', '進了第二段');
+  const midRise = comboStep(c, DT, { pressed: true, grounded: false, near: false });
+  ok(!midRise.jump && !midRise.start, '第二段還亮著的時候按：不算');
+  ok(!cueing(c), '第二段還亮著的時候提示圈不亮');
+  while (c.phase === 'rise') comboStep(c, DT, { pressed: false, grounded: false, near: false });
+  ok(c.phase === 'air' && cueing(c), '第二段收招、人在空中：提示圈亮');
+  const third = comboStep(c, DT, { pressed: true, grounded: false, near: false });
+  ok(third.start === 3 && third.jump && invulnerable(c), '空中按跳：第三段，二段跳，無敵');
+  let again = false;
+  for (let i = 0; i < 30; i++) {
+    if (comboStep(c, DT, { pressed: i === 5, grounded: false, near: false }).jump) again = true;
+  }
+  ok(c.phase === 'leap' && invulnerable(c) && !again, '落地之前一直無敵，再按也不會三段跳');
+  comboStep(c, DT, idle);
+  ok(c.phase === 'slam' && !invulnerable(c), '落地：打第三段那一圈，無敵結束');
+  while (c.phase === 'slam') comboStep(c, DT, idle);
+  ok(c.phase === 'idle', '第三段收招回到待機');
+  // 第二段之後沒按、直接落地：連段結束。
+  const d = makeCombo();
+  d.phase = 'air';
+  comboStep(d, DT, idle);
+  ok(d.phase === 'idle', '第二段之後沒按就落地：回到待機');
+}
+
+/* ── 9. 打一整套 ─────────────────────────────────────────────── */
+console.log('9. 打一整套');
+{
+  const p = { x: 0, y: 0, z: SPAWN.player.z, vx: 0, vy: 0, vz: 0, grounded: true, aimX: 0, aimZ: -1 };
+  const m = makeMonster();
+  const c = makeCombo();
+  const reach = { slash: inSlash, rise: (q, n) => inFan(q, n, c.tip), slam: inRing };
+  const hits = [];
+  let t = 0, run = false, press2 = false, press3 = false, bitten = false, shielded = 0;
+  while (t < 8) {
+    let pressed = false;
+    // 視窗打開之後 0.125 秒按第二段；第二段收招之後 0.05 秒按第三段。
+    if (c.phase === 'rest' && !press2 && c.t >= WINDOW[0] + 0.125) { pressed = true; press2 = true; }
+    if (c.phase === 'air' && !press3 && c.t >= 0.05) { pressed = true; press3 = true; }
+    const act = comboStep(c, DT, { pressed, grounded: p.grounded, near: inSlash(p, m) });
+    // 第一段出手之後往前追（被擊退的怪物飛出去了），第二段收招之後停手。
+    if (act.start === 1) { run = true; c.tip = slashTip(p); }
+    if (c.phase === 'air') run = false;
+    if (act.jump) { p.vy = PHYS.jump; p.grounded = false; }
+    [p.vx, p.vz] = steer(p.vx, p.vz, p.aimX, p.aimZ, run ? PHYS.run : 0, DT);
+    p.x += p.vx * DT; p.z += p.vz * DT;
+    p.vy -= PHYS.gravity * DT; p.y += p.vy * DT;
+    if (p.y <= 0 && p.vy <= 0) { p.y = 0; p.vy = 0; p.grounded = true; } else p.grounded = false;
+    monsterStep(m, DT, p);
+    const r = reach[c.phase];
+    if (r && !c.hit && r(p, m)) { knock(m, p.x, p.z, p.aimX, p.aimZ); c.hit = true; hits.push(c.phase); }
+    if (bites(p, m) && invulnerable(c)) shielded++;
+    if (bites(p, m) && !invulnerable(c)) { bitten = true; break; }
+    t += DT;
+    if (press3 && c.phase === 'idle') break;
+  }
+  ok(hits.join(' ') === 'slash rise slam', `三段依序打中（${hits.join(' → ') || '沒有'}）`);
+  ok(!bitten, `一次都沒被咬${shielded ? `（第三段的無敵擋掉了 ${shielded} 幀）` : ''}`);
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

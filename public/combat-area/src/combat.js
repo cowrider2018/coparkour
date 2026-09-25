@@ -28,6 +28,13 @@
    的定義就是「打得到」——在背後的怪物不會讓玩家對著空氣揮一下。
 
      第一段  面向的 120° 水平扇形，高度在玩家身高的中間。
+     第二段  第一段收招後 0.25～0.75 秒內按跳：跳起來，同時打一片直立的
+             90° 扇形。圓心在玩家腳下，下緣是「腳下 → 上一次第一段扇形正中
+             那條半徑的末端」那一條線，往上掃 90° 越過頭頂。方向跟著那個
+             末端點走，不是跟著玩家現在的面向。
+     第三段  第二段收招之後、落地之前再按跳：把垂直速度換成一次新的起跳
+             （二段跳），一直到落地都是無敵的；落地那一下打一圈 360°，
+             高度在身高中間。
    ------------------------------------------------------------------ */
 
 import { PHYS, solveXZ, steer } from '../../test-area/src/walk.js';
@@ -171,6 +178,42 @@ const atWaist = (p, m) => {
 };
 
 /**
+ * 第二段那片直立扇形：半徑 REACH，從下緣往上掃 sweep。沒有厚度——判定就是
+ * 那一片平面。下緣在哪由 fanFrame 算。
+ */
+export const FAN = { r: REACH, sweep: Math.PI / 2 };
+
+/**
+ * 第一段扇形正中那條半徑的末端：面向的方向上 REACH 遠、身高中間那麼高。
+ * 第一段出手的那一刻記下來（世界座標），第二段的扇形就指著它。
+ */
+export function slashTip(p) {
+  return { x: p.x + p.aimX * REACH, y: p.y + PHYS.height / 2, z: p.z + p.aimZ * REACH };
+}
+
+/**
+ * 第二段的扇形這一幀擺在哪裡。
+ *
+ * 下緣是「玩家現在的腳下 → tip（上一次第一段的末端點）」那一條線，所以
+ * 扇形立在包含這條線的那個鉛直面上：水平方向 (dirX, dirZ) 是腳下指向 tip，
+ * a0 是那條線的仰角，往上 sweep 到 a1。玩家跳起來、腳高過那一點之後 a0
+ * 是負的——下緣往前下方指著那一點。
+ *
+ * 長度不是那條線的長度，一律是 REACH。
+ *
+ * tip 正好在腳的正上下方（水平上沒有方向可言）的時候，用玩家的面向。
+ *
+ * @returns {{dirX:number, dirZ:number, a0:number, a1:number}}
+ */
+export function fanFrame(p, tip) {
+  const hx = tip.x - p.x, hz = tip.z - p.z;
+  const hd = Math.hypot(hx, hz);
+  const [dirX, dirZ] = hd > 1e-6 ? [hx / hd, hz / hd] : [p.aimX, p.aimZ];
+  const a0 = Math.atan2(tip.y - p.y, Math.max(hd, 1e-6));
+  return { dirX, dirZ, a0, a1: a0 + FAN.sweep };
+}
+
+/**
  * 第一段：面向的 120° 水平扇形，高度在玩家身高的中間，長 REACH。
  *
  * @param {object} p 玩家（x, y, z, aimX, aimZ）
@@ -189,6 +232,57 @@ export function inSlash(p, m) {
   return off <= SLASH_HALF + Math.asin(Math.min(1, r / d));
 }
 
+/** 鉛直面上的一點（前 f、上 u，從腳下量）在不在 [a0, a1] 那片扇形裡。 */
+function inFanAt(f, u, a0, a1) {
+  const rho = Math.hypot(f, u);
+  if (rho > FAN.r) return false;
+  if (rho < 1e-9) return true;
+  const th = Math.atan2(u, f);
+  return th >= a0 && th <= a1;
+}
+
+/**
+ * 第二段：圓心在腳下、立在指向 tip 的那個鉛直面上的 90° 扇形（見 fanFrame）。
+ *
+ * 扇形是一片沒有厚度的平面，打不打得到是「這片平面切不切得到怪物的身體」：
+ * 怪物的中心要在那個面左右一個身體半徑（0.3 公尺）以內，再偏就整隻在面的
+ * 一側、掃不到。
+ *
+ * 怪物那根圓柱被這個鉛直面切出一個長方形（寬 2√(r² − s²)，s 是牠偏離
+ * 那個面多遠；高一個身高）。長方形與扇形重疊就算中：長方形上取一片格點
+ * 看有沒有落在扇形裡，再沿扇形的兩條直邊看有沒有穿過長方形——後者是給
+ * 「扇形的邊從格點之間切過去」那種擦邊用的。
+ */
+export function inFan(p, m, tip) {
+  const { dirX, dirZ, a0, a1 } = fanFrame(p, tip);
+  const r = PHYS.radius;
+  const dx = m.x - p.x, dz = m.z - p.z;
+  const s = dz * dirX - dx * dirZ;                   // 偏離鉛直面多遠
+  if (Math.abs(s) >= r) return false;
+  const f = dx * dirX + dz * dirZ;                   // 在面上往前多遠
+  const w = Math.sqrt(r * r - s * s);
+  const f0 = f - w, f1 = f + w;
+  const u0 = m.y - p.y, u1 = u0 + PHYS.height;
+  for (let i = 0; i <= 4; i++) {
+    for (let j = 0; j <= 6; j++) {
+      if (inFanAt(f0 + ((f1 - f0) * i) / 4, u0 + ((u1 - u0) * j) / 6, a0, a1)) return true;
+    }
+  }
+  for (const a of [a0, a1]) {
+    for (let k = 0; k <= 32; k++) {
+      const q = (FAN.r * k) / 32;
+      const qf = Math.cos(a) * q, qu = Math.sin(a) * q;
+      if (qf >= f0 && qf <= f1 && qu >= u0 && qu <= u1) return true;
+    }
+  }
+  return false;
+}
+
+/** 第三段：落地那一下，以玩家為中心的 360°，高度在身高中間，長 REACH。 */
+export function inRing(p, m) {
+  return atWaist(p, m) && Math.hypot(m.x - p.x, m.z - p.z) <= REACH + PHYS.radius;
+}
+
 /* ── 連段 ────────────────────────────────────────────────────────
    一個小狀態機，只管「現在在哪一段、這一段開始多久了」。打不打得到由
    上面那幾支範圍判斷，擊退由 knock——這裡不碰任何身體。
@@ -196,18 +290,36 @@ export function inSlash(p, m) {
      idle   沒有招。站在地上、怪物進了第一段的範圍 → 出第一段。
             按跳就是普通的跳。
      slash  第一段，亮 SWING 秒。
-     rest   第一段收招之後的那段時間。結束了才回 idle，第一段才能再自動
-            出手——不然怪物被挑起來的那一瞬間還在扇形裡，第一段會一幀
-            接一幀地連發。
+     rest   第一段收招之後的那段時間。在 WINDOW 裡按跳 → 第二段。
+            太早按是普通的跳，連段就斷了（回 idle）。時間到了沒按也回
+            idle，第一段才能再自動出手——rest 同時是第一段的冷卻，不然
+            怪物被挑起來的那一瞬間還在扇形裡，第一段會一幀接一幀地連發。
+     rise   第二段：起跳的同時出手，亮 SWING 秒。這段時間按跳不算。
+     air    第二段收招之後、落地之前。按跳 → 第三段。落地了就回 idle。
+     leap   第三段的二段跳。無敵，一直到落地。
+     slam   第三段落地那一下，亮 SWING 秒，之後回 idle。
    ------------------------------------------------------------------ */
 
-/** 第一段收招之後多久才能再出第一段（秒）。 */
-export const REST = 0.5;
+/** 第一段收招之後，第二段的按鍵視窗（秒，從收招那一刻量）。 */
+export const WINDOW = [0.25, 0.75];
 
-/** `hit`：這一段已經打中過了（每一段對同一隻怪物只算一下）。 */
+/** 第一段收招之後多久才能再出第一段（秒）——就是視窗關上的那一刻。 */
+export const REST = WINDOW[1];
+
+/**
+ * `hit`：這一段已經打中過了（每一段對同一隻怪物只算一下）。
+ * `tip`：上一次第一段的末端點（slashTip），第二段指著它。出第一段的時候
+ * 由呼叫端記下——狀態機不碰身體。
+ */
 export function makeCombo() {
-  return { phase: 'idle', t: 0, hit: false };
+  return { phase: 'idle', t: 0, hit: false, tip: null };
 }
+
+/** 現在是不是無敵：第三段起跳之後、落地之前。 */
+export const invulnerable = (c) => c.phase === 'leap';
+
+/** 現在按跳會不會接下一段（給畫面提示用）。 */
+export const cueing = (c) => (c.phase === 'rest' && c.t >= WINDOW[0] && c.t <= WINDOW[1]) || c.phase === 'air';
 
 /**
  * 連段的一幀。
@@ -219,16 +331,44 @@ export function makeCombo() {
  *   grounded  玩家站在地上
  *   near      怪物在第一段的範圍裡（inSlash）
  * @returns {{jump: boolean, start: number}}
- *   jump   玩家這一幀要起跳（普通的跳）
- *   start  這一幀開始的是第幾段（0 = 沒有）
+ *   jump   玩家這一幀要起跳：垂直速度換成一次新的起跳（普通的跳、第二段、
+ *          第三段的二段跳都是這一個）
+ *   start  這一幀開始的是第幾段（0 = 沒有）。第三段的 start 在起跳那一幀，
+ *          落地那一下是 phase 進了 'slam'。
  */
 export function comboStep(c, dt, { pressed, grounded, near }) {
   const out = { jump: false, start: 0 };
   c.t += dt;
   const go = (phase) => { c.phase = phase; c.t = 0; c.hit = false; };
-  if (c.phase === 'slash' && c.t >= SWING) go('rest');
-  if (c.phase === 'rest' && c.t >= REST) go('idle');
-  if (c.phase === 'idle' && grounded && near) { go('slash'); out.start = 1; }
-  if (pressed && grounded && !out.start) out.jump = true;
+  let used = false;                       // 這一下按跳已經被連段吃掉了
+  switch (c.phase) {
+    case 'slash':
+      if (c.t >= SWING) go('rest');
+      break;
+    case 'rest':
+      if (pressed && grounded && c.t >= WINDOW[0] && c.t <= WINDOW[1]) {
+        go('rise'); out.start = 2; out.jump = true; used = true;
+      } else if (pressed) go('idle');     // 太早：普通的跳，連段斷了
+      else if (c.t >= REST) go('idle');
+      break;
+    case 'rise':
+      if (c.t >= SWING) go(grounded ? 'idle' : 'air');
+      used = pressed;
+      break;
+    case 'air':
+      if (grounded) go('idle');
+      else if (pressed) { go('leap'); out.start = 3; out.jump = true; used = true; }
+      break;
+    case 'leap':
+      if (grounded) go('slam');
+      break;
+    case 'slam':
+      if (c.t >= SWING) go('idle');
+      break;
+    default:
+      break;
+  }
+  if (c.phase === 'idle' && grounded && near && !pressed) { go('slash'); out.start = 1; }
+  if (pressed && grounded && !used) out.jump = true;
   return out;
 }

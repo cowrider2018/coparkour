@@ -11,7 +11,7 @@
      黑牆      1（牆、頂、霧殼、牆腳漸層是同一個 mesh）
      動物      3（皮毛、臉、翻面的墨線外殼）
      怪物      3（同上，另一份幾何）
-     攻擊範圍  出招的那 0.2 秒 1
+     攻擊範圍  出招的那 0.2 秒 1；提示圈亮著的時候 1
    ------------------------------------------------------------------ */
 
 import * as THREE from '../../test-area/vendor/three.module.js';
@@ -26,10 +26,10 @@ import { buildVeil } from '../../test-area/src/veil.js';
 import { lookInfo } from '../../src/cat/looks.js';
 import {
   ARENA, COLS, SPAWN, SWING, makeMonster, placeMonster, monsterStep, bites, knock,
-  inSlash, makeCombo, comboStep,
+  inSlash, inFan, inRing, slashTip, fanFrame, makeCombo, comboStep, invulnerable, cueing,
 } from './combat.js';
 import { makeMonsterCritter } from './monster.js';
-import { slashFx, showFx } from './fx.js';
+import { slashFx, fanFx, ringFx, cueFx, showFx } from './fx.js';
 
 const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -92,8 +92,11 @@ let deaths = 0;
 
 /* 連段的狀態與每一段的高亮。 */
 const combo = makeCombo();
-const fxSlash = slashFx();
-scene.add(fxSlash.node);
+const fxSlash = slashFx(), fxFan = fanFx(), fxRing = ringFx(), fxCue = cueFx();
+scene.add(fxSlash.node, fxFan.node, fxRing.node, fxCue.node);
+
+/** 這一幀在哪一段，它的範圍打不打得到怪物。第二段指著上一次第一段的末端點。 */
+const REACHES = { slash: inSlash, rise: (p, m) => inFan(p, m, combo.tip), slam: inRing };
 
 const cam = makeCam(0, 0);
 
@@ -215,6 +218,11 @@ function speedFor(mag) {
   return PHYS.walk + (PHYS.run - PHYS.walk) * ((mag - 0.72) / 0.28);
 }
 
+/** 右上那一行小字：現在在連段的哪裡。 */
+const PHASE_NAME = {
+  idle: '待機', slash: '第一段', rest: '第一段收招', rise: '第二段', air: '第二段之後', leap: '第三段起跳', slam: '第三段落地',
+};
+
 /* ── 主迴圈 ──────────────────────────────────────────────────── */
 let last = performance.now();
 let fpsAcc = 0, fpsN = 0, hudAcc = 0;
@@ -253,6 +261,7 @@ function frame(now) {
   const act = comboStep(combo, dt, {
     pressed, grounded: player.grounded, near: inSlash(player, monster),
   });
+  if (act.start === 1) combo.tip = slashTip(player);
   if (act.jump) {
     player.vy = PHYS.jump;
     player.grounded = false;
@@ -277,12 +286,14 @@ function frame(now) {
   /* 怪物追人（或是被擊退、在空中飛）。然後才判打中：兩個身體都走完這一幀
      了，範圍是對著畫面上的位置判的。 */
   monsterStep(monster, dt, player);
-  if (combo.phase === 'slash' && !combo.hit && inSlash(player, monster)) {
+  const reach = REACHES[combo.phase];
+  if (reach && !combo.hit && reach(player, monster)) {
     knock(monster, player.x, player.z, player.aimX, player.aimZ);
     combo.hit = true;
   }
-  // 碰到玩家，玩家就死，雙方回到站位。被擊退、還沒落地的怪物不算。
-  if (bites(player, monster)) {
+  /* 碰到玩家，玩家就死，雙方回到站位。被擊退、還沒落地的怪物不算；第三段
+     起跳之後、落地之前的玩家也不算。 */
+  if (bites(player, monster) && !invulnerable(combo)) {
     deaths++;
     resetStance();
     hud.flash('被咬到了');
@@ -303,8 +314,18 @@ function frame(now) {
   });
 
   // 攻擊範圍的高亮：跟著玩家的腳與面向走。
-  showFx(fxSlash, combo.phase === 'slash' ? combo.t : Infinity, SWING,
-    player.x, player.y, player.z, Math.atan2(player.aimX, player.aimZ));
+  {
+    const yaw = Math.atan2(player.aimX, player.aimZ);
+    const lit = (phase) => (combo.phase === phase ? combo.t : Infinity);
+    showFx(fxSlash, lit('slash'), SWING, player.x, player.y, player.z, yaw);
+    if (combo.tip) {
+      const fr = fanFrame(player, combo.tip);
+      showFx(fxFan, lit('rise'), SWING, player.x, player.y, player.z, Math.atan2(fr.dirX, fr.dirZ), fr.a0);
+    }
+    showFx(fxRing, lit('slam'), SWING, player.x, player.y, player.z, yaw);
+    // 提示圈不淡：亮著就是「現在按」。
+    showFx(fxCue, cueing(combo) ? 0 : Infinity, 1, player.x, 0, player.z, 0);
+  }
 
   // 相機
   {
@@ -320,6 +341,7 @@ function frame(now) {
   let line = null;
   if (hudAcc > 0.25) {
     line = `${Math.round(fpsN / fpsAcc)} fps ・ 被咬 ${deaths} 次 ・ 打中 ${monster.hits} 下 ・ `
+      + `${PHASE_NAME[combo.phase]}${invulnerable(combo) ? '（無敵）' : ''} ・ `
       + `x ${player.x.toFixed(1)} y ${player.y.toFixed(1)} z ${player.z.toFixed(1)}`;
     fpsAcc = 0; fpsN = 0; hudAcc = 0;
   }

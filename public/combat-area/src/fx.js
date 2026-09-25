@@ -13,7 +13,7 @@
 
 import * as THREE from '../../test-area/vendor/three.module.js';
 import { PHYS } from '../../test-area/src/walk.js';
-import { REACH, SLASH_HALF } from './combat.js';
+import { REACH, FAN, SLASH_HALF } from './combat.js';
 
 const SEG = 32;
 
@@ -29,16 +29,35 @@ function fan(o, at, a0, a1) {
   return g;
 }
 
-function glowMesh(geometry, color) {
+/**
+ * 半透明的一片，外加（給了的話）一圈同色的邊線。邊線是給正對著邊看的時候
+ * 用的：一片平面側過來看不見，一條線側過來還是一條線。
+ */
+function glowMesh(geometry, color, edge = null, tilted = false) {
   const m = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
     color, transparent: true, opacity: 0, side: THREE.DoubleSide,
     depthWrite: false, fog: false,
   }));
   m.renderOrder = 3;
+  /* 要仰俯的那一片多包一層：外層轉 yaw、內層繞自己的 x 軸仰俯，順序才是
+     「先抬起來、再轉過去」。 */
   const node = new THREE.Group();
-  node.add(m);
+  const body = tilted ? new THREE.Group() : node;
+  if (tilted) node.add(body);
+  body.add(m);
+  const mats = [m.material];
+  if (edge) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(edge, 3));
+    const line = new THREE.LineLoop(g, new THREE.LineBasicMaterial({
+      color, transparent: true, opacity: 0, depthWrite: false, fog: false,
+    }));
+    line.renderOrder = 3;
+    body.add(line);
+    mats.push(line.material);
+  }
   node.visible = false;
-  return { node, mat: m.material };
+  return { node, mats, tilt: tilted ? body : null };
 }
 
 /** 第一段：面向的 120° 水平扇形，在身高的中間。 */
@@ -48,13 +67,50 @@ export function slashFx() {
 }
 
 /**
- * 亮起、淡掉。`t` 是這一段開始了多久，`life` 是它亮多久。
- * 過了 life 就收起來。
+ * 第二段：圓心在腳下的直立 90° 扇形（見 combat.js 的 FAN 與 fanFrame）。
+ *
+ * 幾何是下緣水平、往上掃 90° 的那一片；下緣的仰角每幀不同（腳下指向上一次
+ * 第一段的末端點），由 showFx 的 pitch 抬起來。
+ *
+ * 一片沒有厚度的平面，跟判定一樣。那個鉛直面通常就是鏡頭看出去的方向，從
+ * 玩家正後方看平面本身看不見，所以多描一圈邊線——側著看它是一條亮線。
  */
-export function showFx(f, t, life, x, y, z, yaw) {
+export function fanFx() {
+  const at = (a) => [0, Math.sin(a) * FAN.r, Math.cos(a) * FAN.r];
+  const edge = [0, 0, 0];
+  for (let i = 0; i <= SEG; i++) edge.push(...at((FAN.sweep * i) / SEG));
+  return glowMesh(fan([0, 0, 0], at, 0, FAN.sweep), 0xff8a3d, edge, true);
+}
+
+/** 第三段：落地那一下，以玩家為中心的 360° 圓盤，在身高的中間。 */
+export function ringFx() {
+  const y = PHYS.height / 2;
+  return glowMesh(fan([0, y, 0], (a) => [Math.sin(a) * REACH, y, Math.cos(a) * REACH], 0, Math.PI * 2), 0xff4d4d);
+}
+
+/**
+ * 提示圈：腳下一圈細環，亮著的時候按跳會接下一段（第一段收招後的視窗、
+ * 第二段之後的空中）。這不是招式的一部分，是試打場給人抓節奏用的。
+ */
+export function cueFx() {
+  const g = new THREE.RingGeometry(0.42, 0.52, 40);
+  g.rotateX(-Math.PI / 2);
+  g.translate(0, 0.03, 0);
+  return glowMesh(g, 0x7fe0ff);
+}
+
+/**
+ * 亮起、淡掉。`t` 是這一段開始了多久，`life` 是它亮多久。
+ * 過了 life 就收起來。`pitch` 只有會仰俯的那一片（第二段）用：下緣的仰角。
+ */
+export function showFx(f, t, life, x, y, z, yaw, pitch = 0) {
   if (t >= life) { f.node.visible = false; return; }
   f.node.visible = true;
   f.node.position.set(x, y, z);
   f.node.rotation.y = yaw;
-  f.mat.opacity = 0.55 * (1 - t / life);
+  /* 繞 x 軸轉 −pitch 把 +Z 抬到仰角 pitch：Rx(θ)·(0,0,1) = (0, −sin θ, cos θ)。 */
+  if (f.tilt) f.tilt.rotation.x = -pitch;
+  const k = 1 - t / life;
+  f.mats[0].opacity = 0.55 * k;
+  for (let i = 1; i < f.mats.length; i++) f.mats[i].opacity = k;
 }
