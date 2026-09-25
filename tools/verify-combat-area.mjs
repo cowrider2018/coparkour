@@ -42,14 +42,14 @@
                     倒數裡橫移一步就躲得掉。跳砸：倒數 1.5 秒、最後 0.6 秒起跳、
                     落在鎖定的點上打半徑 2.5 狗高的一圈，走出圈外或跳起來就躲得過。
                     扇形：倒數 1 秒、朝鎖定的方向打 60°、4 狗高長的一片。三招都
-                    挑得到。
+                    挑得到。倒數中打不退、傷害減半無條件捨去，破防攻擊打斷得了。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test-area/src/walk.js';
 import {
   MODES, DEFAULT_MODE, ARENA, SPAWN, DOG_H, REACH, SWING, REST, KNOCK, KNOCK_SCALE, FAN, WINDOW, KINDS, DAMAGE, hurt, placeMonster,
   BREAK_AT, BREAK_WINDOW, broken,
-  BREAK_ATK, breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate,
+  BREAK_ATK, breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, armored,
   makeMonster, monsterStep, touching, bites, knock, inSlash, inFan, inRing, slashTip, fanFrame,
   makeCombo, comboStep, invulnerable, cueing,
 } from '../public/combat-area/src/combat.js';
@@ -644,14 +644,33 @@ console.log('15. BOSS 放招');
     && !shotHits({ x: 0, y: SKILL.orb.radius, z: 0, r: SKILL.orb.radius }, body(PHYS.radius + SKILL.orb.radius + 0.01, 0)),
     '球碰到身體的邊就算');
 
-  // 打斷：倒數中被擊退，這一招取消、不發射。
+  // 倒數中被打：打不退，球照樣射出去。
   const wi = makeWorld();
   const bi = bossAt(0, -4);
   bi.castT = 0;
   bossStep(bi, DT, p, wi, () => 0);
+  const bx = bi.x, bz = bi.z;
   knock(bi, 0, 0, 0, -1);
-  for (let i = 0; i < 90; i++) { bossStep(bi, DT, p, wi, () => 0); monsterStep(bi, DT, p); }
-  ok(!wi.shots.length, '倒數中被擊退：這一招取消，沒有球');
+  ok(armored(bi) && !bi.air && bi.vx === 0 && bi.vz === 0 && bi.vy === 0 && bi.hits === 1, '倒數中被打：算打中，但打不退');
+  for (let i = 0; i < 90; i++) { bossStep(bi, DT, p, wi, () => 0); if (wi.shots.length) break; monsterStep(bi, DT, p); }
+  ok(wi.shots.length === 1 && near(bi.x, bx) && near(bi.z, bz), '倒數照走，球照樣射出去，牠沒挪一步');
+  // 倒數中的傷害：減半、無條件捨去；破防累積的是實際扣掉的。
+  const ba = bossAt(0, -4);
+  ba.castT = 0;
+  bossStep(ba, DT, p, makeWorld(), () => 0.5);
+  const hp1 = ba.hp;
+  const took = [DAMAGE.slash, DAMAGE.slam, DAMAGE.rise, DAMAGE.break].map((d) => { const h = ba.hp; hurt(ba, d); return h - ba.hp; });
+  ok(took.join() === '0,1,1,2' && hp1 - ba.hp === 4 && ba.gauge === 4, `倒數中挨 1、2、3、5：實際扣 ${took.join('、')}，破防累積 ${ba.gauge}`);
+  // 破防攻擊打斷得了：被定住的那一刻起這一招就取消。
+  const wh = makeWorld();
+  const bh = bossAt(0, -4);
+  bh.castT = 0;
+  bossStep(bh, DT, p, wh, () => 0);
+  bh.held = true;
+  bossStep(bh, DT, p, wh, () => 0);
+  bh.held = false;
+  for (let i = 0; i < 90; i++) bossStep(bh, DT, p, wh, () => 0);
+  ok(!wh.shots.length, '倒數中被破防攻擊定住：這一招取消，沒有球');
 
   // 跳砸：挑 leap（亂數給 0.5 → 第二招）。
   ok(near(SKILL.leap.radius, 2.5 * DOG_H) && SKILL.leap.windup === 1.5, '跳砸：範圍半徑 2.5 狗高、倒數 1.5 秒');
@@ -683,18 +702,18 @@ console.log('15. BOSS 放招');
   ok(!strikeHits(out.st, out.q), '倒數裡走出圈外 3 公尺：躲過');
   ok(!strikeHits(L.st, body(0, 3, PHYS.height + 0.01)) && strikeHits(L.st, body(0, 3, PHYS.height - 0.01)),
     `跳起來、腳高過一個狗高（${PHYS.height} m）：躲過；低一點就中`);
-  // 起跳之後被擊退：取消，不砸。
+  // 起跳之後被打：飛行也算倒數，打不退，照樣砸在鎖定的點上。
   const wk = makeWorld();
   const bk = bossAt(0, -4);
   bk.castT = 0;
-  let hitK = null;
-  for (let i = 0; i < 150; i++) {
+  let hitK = null, knocked = false;
+  for (let i = 0; i < 150 && !hitK; i++) {
     const r = bossStep(bk, DT, p, wk, () => 0.5);
     if (r) hitK = r;
-    if (bk.cast && bk.y > 0.3 && !bk.air) knock(bk, 0, 4, 0, -1);
+    if (bk.cast && bk.y > 0.3 && !knocked) { knock(bk, 0, 4, 0, -1); knocked = true; }
     monsterStep(bk, DT, p);
   }
-  ok(!hitK, '飛到一半被擊退：這一招取消，沒砸下來');
+  ok(knocked && hitK && near(hitK.x, p.x) && near(hitK.z, p.z), '飛到一半被打：打不退，照樣砸在鎖定的點上');
 
   // 扇形：挑 cone（亂數給 0.99 → 第三招）。
   ok(near(SKILL.cone.radius, 4 * DOG_H) && near(SKILL.cone.half * 2, Math.PI / 3) && SKILL.cone.windup === 1,

@@ -247,15 +247,25 @@ export function resetBreak(m) {
 }
 
 /**
+ * 放招的倒數期間（skills.js 的 m.cast 還在）：不會被擊退，受到的傷害減半。
+ * 倒數就是預告亮著的那一整段，跳砸最後那 0.6 秒的飛行也算在內。
+ */
+export const armored = (m) => !!m.cast;
+
+/**
  * 扣血，並累積破防。扣到 0 就死：記一次，當場回到牠自己的重生點重生——
  * placeMonster 把位置、速度、血、破防、被定住全部重設，所以死前的擊退或迴旋
  * 不會帶到重生之後。玩家不動。
  *
  * 破防窗口開著的時候不累積——門檻已經到了，窗口用掉或錯過之後才從 0 重算。
  *
+ * 放招倒數中（armored）傷害減半、無條件捨去（血是整數）：1 → 0、2 → 1、3 → 1、
+ * 5 → 2。破防累積的是**實際扣掉**的那一份。
+ *
  * @returns {boolean} 這一下把牠打死了
  */
 export function hurt(m, dmg) {
+  if (armored(m)) dmg = Math.floor(dmg / 2);
   if (!broken(m)) {
     m.gauge += dmg;
     if (m.gauge >= kindOf(m).breakAt) m.breakT = BREAK_WINDOW;
@@ -357,8 +367,12 @@ export const bites = (p, m) => !m.air && touching(p, m);
  *
  * 正好疊在出手點上（沒有「遠離」可言）的時候，往 (awayX, awayZ) 推，
  * 呼叫端給的是玩家面向的方向。`scale` 是這一段的倍率（KNOCK_SCALE）。
+ *
+ * 放招倒數中（armored）不會被擊退：這一下照樣算打中，速度一點都不動。
  */
 export function knock(m, fromX, fromZ, awayX, awayZ, scale = KNOCK_SCALE.rise) {
+  m.hits++;
+  if (armored(m)) return;
   let dx = m.x - fromX, dz = m.z - fromZ;
   const d = Math.hypot(dx, dz);
   if (d > 1e-6) { dx /= d; dz /= d; } else { dx = awayX; dz = awayZ; }
@@ -368,7 +382,6 @@ export function knock(m, fromX, fromZ, awayX, awayZ, scale = KNOCK_SCALE.rise) {
   m.slide = false;
   m.air = true;
   m.grounded = false;
-  m.hits++;
 }
 
 /* ── 攻擊範圍 ────────────────────────────────────────────────────
