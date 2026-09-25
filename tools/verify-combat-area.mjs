@@ -24,11 +24,13 @@
      9. 打一整套    用真的物理跑：站著等怪物走過來、第一段自動、視窗裡按跳、
                     空中再按跳——在視窗的前段、中段、後段按都要三段都中、
                     整套打完之前一次都沒被咬。
+    10. 名冊與血    每一類怪物的數值登記在 KINDS；三段各扣 1、3、2；扣到 0 記一次
+                    擊倒、血補滿（試打場不死）；回到站位血也補滿。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test-area/src/walk.js';
 import {
-  ARENA, SPAWN, DOG_H, REACH, SWING, REST, KNOCK, KNOCK_SCALE, FAN, WINDOW,
+  ARENA, SPAWN, DOG_H, REACH, SWING, REST, KNOCK, KNOCK_SCALE, FAN, WINDOW, KINDS, DAMAGE, hurt, placeMonster,
   makeMonster, monsterStep, touching, bites, knock, inSlash, inFan, inRing, slashTip, fanFrame,
   makeCombo, comboStep, invulnerable, cueing,
 } from '../public/combat-area/src/combat.js';
@@ -316,6 +318,21 @@ console.log('9. 打一整套');
       `收招後 ${at.toFixed(2)} 秒按：${r.hits.join(' → ') || '沒有'}${r.bitten ? '，被咬了' : '，沒被咬'}`
       + `${r.shielded ? `（第三段的無敵擋掉了 ${r.shielded} 幀）` : ''}`);
   }
+}
+
+/* ── 10. 名冊與血 ────────────────────────────────────────────── */
+console.log('10. 名冊與血');
+{
+  const m = makeMonster('hound');
+  ok(m.kind === 'hound' && KINDS.hound.hp === 10 && m.hp === 10, '綠狗登記在名冊裡，血 10，生出來是滿的');
+  ok(DAMAGE.slash === 1 && DAMAGE.rise === 3 && DAMAGE.slam === 2, '三段各扣 1、3、2');
+  hurt(m, DAMAGE.slash); hurt(m, DAMAGE.rise); hurt(m, DAMAGE.slam);
+  ok(m.hp === 4 && m.kos === 0, `一整套扣 6，剩 ${m.hp}`);
+  const ko = hurt(m, DAMAGE.rise) | hurt(m, DAMAGE.rise);
+  ok(ko && m.kos === 1 && m.hp === 10, '扣到 0：記一次擊倒、血補滿');
+  hurt(m, 3);
+  placeMonster(m);
+  ok(m.hp === 10, '回到站位血也補滿');
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

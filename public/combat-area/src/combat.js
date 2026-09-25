@@ -17,8 +17,9 @@
    一直追著玩家跑。身體跟玩家一樣大（同一個 PHYS 的圓柱），碰到玩家
    玩家就死，雙方回到站位。追的速度比玩家走路慢：走得掉、但不能發呆。
 
-   在試打場裡怪物打不死，只會被擊退：水平往遠離玩家的方向、垂直往上，
-   兩份動能一起給。飛在空中（被擊退、還沒落地）的怪物碰到玩家不算數。
+   每一下都會扣血（各段的傷害見 DAMAGE）。在試打場裡怪物打不死：血扣到 0
+   就記一次「擊倒」、血補滿，繼續打。被打中還會被擊退：水平往遠離玩家的方向、
+   垂直往上，兩份動能一起給。飛在空中（被擊退、還沒落地）的怪物碰到玩家不算數。
    空中再挨一下就再擊退一次——每一下都是把速度**換成**擊退的那一份，
    不是疊上去，所以連打是一直被挑在空中，而不是越飛越快。
 
@@ -69,12 +70,15 @@ export const COLS = [{
  * 怪物就是多一筆，規則不動。每一隻怪物身上帶的是牠自己的「狀態」（位置、速度、
  * 挨了幾下…），數值一律回頭查這一張，用 `m.kind` 認類別。
  *
- *   hound  綠狗（現在唯一的一類）。腳程 3.4：走路是 PHYS.walk（4），所以放開
- *          手就會被追上。
+ *   hound  綠狗（現在唯一的一類）。血 10。腳程 3.4：走路是 PHYS.walk（4），
+ *          所以放開手就會被追上。
  */
 export const KINDS = {
-  hound: { name: '綠狗', speed: 3.4 },
+  hound: { name: '綠狗', hp: 10, speed: 3.4 },
 };
+
+/** 每一段打中一下扣幾點血。這是招式的數值，不是怪物的，所以不在 KINDS 裡。 */
+export const DAMAGE = { slash: 1, rise: 3, slam: 2 };
 
 /** 一隻怪物的那一類數值。 */
 export const kindOf = (m) => KINDS[m.kind];
@@ -118,6 +122,10 @@ export function makeMonster(kind = 'hound') {
     air: false,
     /** 挨了幾下。 */
     hits: 0,
+    /** 剩多少血。 */
+    hp: 0,
+    /** 被擊倒過幾次（試打場裡血扣到 0 就補滿，見 hurt）。 */
+    kos: 0,
   };
   placeMonster(m);
   return m;
@@ -130,7 +138,21 @@ export function placeMonster(m) {
   m.vx = m.vy = m.vz = 0;
   m.grounded = true;
   m.air = false;
+  m.hp = kindOf(m).hp;
   m.aimX = Math.sin(s.yaw); m.aimZ = Math.cos(s.yaw);
+}
+
+/**
+ * 扣血。試打場裡打不死：扣到 0 就記一次擊倒、血補滿。
+ *
+ * @returns {boolean} 這一下把牠擊倒了
+ */
+export function hurt(m, dmg) {
+  m.hp -= dmg;
+  if (m.hp > 0) return false;
+  m.kos++;
+  m.hp = kindOf(m).hp;
+  return true;
 }
 
 /**

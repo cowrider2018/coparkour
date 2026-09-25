@@ -25,7 +25,7 @@ import { CAM, makeCam, snapCam, updateCam } from '../../test-area/src/camera.js'
 import { buildVeil } from '../../test-area/src/veil.js';
 import { lookInfo } from '../../src/cat/looks.js';
 import {
-  ARENA, COLS, SPAWN, SWING, KNOCK_SCALE, makeMonster, placeMonster, monsterStep, bites, knock,
+  ARENA, COLS, SPAWN, SWING, KNOCK_SCALE, DAMAGE, KINDS, hurt, makeMonster, placeMonster, monsterStep, bites, knock,
   inSlash, inFan, inRing, slashTip, fanFrame, makeCombo, comboStep, invulnerable, cueing,
 } from './combat.js';
 import { makeMonsterCritter } from './monster.js';
@@ -296,6 +296,7 @@ function frame(now) {
     if (reach && !combo.hit.has(m) && reach(player, m)) {
       knock(m, player.x, player.z, player.aimX, player.aimZ, KNOCK_SCALE[combo.phase]);
       combo.hit.add(m);
+      if (hurt(m, DAMAGE[combo.phase])) hud.flash(`擊倒${KINDS[m.kind].name}（試打場不死，血補滿）`);
     }
   }
   /* 碰到玩家，玩家就死，雙方回到站位。被擊退、還沒落地的怪物不算；第三段
@@ -349,7 +350,9 @@ function frame(now) {
   fpsAcc += dt; fpsN++; hudAcc += dt;
   let line = null;
   if (hudAcc > 0.25) {
-    line = `${Math.round(fpsN / fpsAcc)} fps ・ 被咬 ${deaths} 次 ・ 打中 ${foes.reduce((n, f) => n + f.m.hits, 0)} 下 ・ `
+    const foeLine = foes.map(({ m }) => `${KINDS[m.kind].name} 血 ${m.hp}/${KINDS[m.kind].hp}`
+      + `${m.kos ? `（擊倒 ${m.kos}）` : ''}`).join(' ・ ');
+    line = `${Math.round(fpsN / fpsAcc)} fps ・ 被咬 ${deaths} 次 ・ ${foeLine} ・ `
       + `${PHASE_NAME[combo.phase]}${invulnerable(combo) ? '（無敵）' : ''} ・ `
       + `x ${player.x.toFixed(1)} y ${player.y.toFixed(1)} z ${player.z.toFixed(1)}`;
     fpsAcc = 0; fpsN = 0; hudAcc = 0;
