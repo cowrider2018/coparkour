@@ -134,6 +134,9 @@
   }
   /* 標題、帽子、地形的提示都固定；會捲的只有表格與統計。 */
   .panel h2, #hat-row, #terrain, #terrain-hint, #keys, #stats { flex: 0 0 auto; }
+  /* 規則說明很長，面板裝不下的時候只有它自己捲。 */
+  #rules { flex: 1 1 auto; min-height: 0; overflow-y: auto; touch-action: pan-y;
+    font-size: 9px; color: var(--muted); line-height: 1.4; }
   #looks { flex: 1 1 auto; }
   body.pad-land #creatures { left: calc(var(--sa-l) + 8px); }
   body.pad-land #terrains { right: calc(var(--sa-r) + 8px); }
@@ -286,13 +289,14 @@
 </section>
 
 <section class="panel" id="terrains">
-  <h2>試打</h2>
+  <h2>陣容</h2>
   <div id="terrain"></div>
-  <div id="terrain-hint">兩隻綠色小怪（血 4）和一隻紫色 BOSS（血 20）會一直追過來，被碰到就全部回到站位重來。第一、二、三擊各扣 1、3、2；血扣光就死，在牠的重生點重生（你留在原地）。累積 8 點傷害會破防（牠身上出現一圈縮小的亮圓），亮圓消失前按跳（在空中也可以）是破防攻擊，扣 5。靠近到打得到就會自動出第一擊；腳下的藍圈亮著的時候按跳接下一擊（第一擊後 0.25～0.75 秒是第二擊，第二擊之後落地前是第三擊）。</div>
+  <div id="terrain-hint"></div>
+  <div id="rules">綠色小怪（血 4）與紫色 BOSS（血 20）會一直追過來，被碰到就全部回到站位重來。第一、二、三擊各扣 1、3、2；血扣光就死，在牠的重生點重生（你留在原地）。累積 8 點傷害會破防（牠身上出現一圈縮小的亮圓），亮圓消失前按跳（在空中也可以）是破防攻擊，扣 5。靠近到打得到就會自動出第一擊；腳下的藍圈亮著的時候按跳接下一擊（第一擊後 0.25～0.75 秒是第二擊，第二擊之後落地前是第三擊）。</div>
   <div id="keys">
     <kbd>WASD</kbd>移動 <kbd>⇧</kbd>衝刺 <kbd>空白</kbd>跳／連段<br />
     <kbd>拖曳</kbd>轉視角 <kbd>滾輪</kbd>縮放<br />
-    <kbd>R</kbd>重新站位 <kbd>H</kbd>帽子 <kbd>C</kbd>毛色 <kbd>X</kbd>換動物
+    <kbd>R</kbd>重新站位 <kbd>1</kbd>–<kbd>3</kbd>陣容 <kbd>H</kbd>帽子 <kbd>C</kbd>毛色 <kbd>X</kbd>換動物
   </div>
   <div id="stats"></div>
 </section>

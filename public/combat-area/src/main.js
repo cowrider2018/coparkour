@@ -26,7 +26,7 @@ import { CAM, makeCam, snapCam, updateCam } from '../../test-area/src/camera.js'
 import { buildVeil } from '../../test-area/src/veil.js';
 import { lookInfo } from '../../src/cat/looks.js';
 import {
-  ARENA, COLS, SPAWN, SWING, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster,
+  ARENA, COLS, SPAWN, MODES, DEFAULT_MODE, SWING, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster,
   breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, placeMonster, monsterStep, bites, knock,
   inSlash, inFan, inRing, slashTip, fanFrame, makeCombo, comboStep, invulnerable, cueing,
 } from './combat.js';
@@ -84,15 +84,26 @@ const player = {
   aimX: 0, aimZ: -1,
 };
 
-/* 怪物：每一隻是「狀態」（combat.js 的 makeMonster）加上「外觀」（monster.js）。
-   站位表裡有幾筆就有幾隻（一隻 BOSS、兩隻小怪），下面每一條規則都是對這張
-   清單逐隻做的。 */
-const foes = SPAWN.monsters.map((s) => ({ m: makeMonster(s) }));
-for (const f of foes) {
-  f.critter = makeMonsterCritter(zoo, f.m.kind);
-  f.breakFx = breakFx();
-  scene.add(f.critter.root, f.breakFx.node);
+/* 怪物：每一隻是「狀態」（combat.js 的 makeMonster）加上「外觀」（monster.js 的
+   Critter 與破防的兩圈）。場上有哪幾隻由陣容決定（setMode），下面每一條規則都是
+   對 foes 這張清單逐隻做的。
+
+   外觀是每一類一個池子，換陣容的時候借用、多的藏起來：一隻 Critter 是一份自己的
+   幾何，來回切陣容不該每次重建。 */
+let foes = [];
+const looks = { pool: new Map(), inkPx: null };
+function lookFor(kind, i) {
+  if (!looks.pool.has(kind)) looks.pool.set(kind, []);
+  const list = looks.pool.get(kind);
+  while (list.length <= i) {
+    const slot = { critter: makeMonsterCritter(zoo, kind), breakFx: breakFx() };
+    if (looks.inkPx) slot.critter.setInkPx(...looks.inkPx);
+    scene.add(slot.critter.root, slot.breakFx.node);
+    list.push(slot);
+  }
+  return list[i];
 }
+let mode = DEFAULT_MODE;
 
 /** 被咬過幾次。 */
 let deaths = 0;
@@ -123,6 +134,25 @@ function resetStance() {
   Object.assign(combo, makeCombo());
 }
 
+/** 換陣容：借好每一隻的外觀、藏起用不到的，全部回到站位。 */
+function setMode(id) {
+  const md = MODES.find((x) => x.id === id);
+  if (!md) return;
+  mode = id;
+  for (const list of looks.pool.values()) {
+    for (const s of list) { s.critter.root.visible = false; s.breakFx.node.visible = false; }
+  }
+  const used = new Map();
+  foes = md.monsters.map((s) => {
+    const i = used.get(s.kind) || 0;
+    used.set(s.kind, i + 1);
+    const slot = lookFor(s.kind, i);
+    slot.critter.root.visible = true;
+    return { m: makeMonster(s), ...slot };
+  });
+  resetStance();
+}
+
 /* ── 外觀 ────────────────────────────────────────────────────── */
 function setLook(look) {
   if (!zoo.setLook(look)) return;
@@ -150,8 +180,12 @@ function toggleHat() {
 }
 
 /* ── HUD ─────────────────────────────────────────────────────────
-   試玩場那一份。沒有區塊可以選，所以右邊那塊面板的按鈕列是空的。 */
-const hud = new Hud({ zoo, blocks: [], onLook: setLook, onBlock: () => {}, onHat: toggleHat });
+   試玩場那一份。右邊那塊面板在試玩場是選地形，這裡借它選陣容：同一種按鈕、
+   同一個「選中」的樣子、同一組數字鍵。 */
+const hud = new Hud({
+  zoo, blocks: MODES, onLook: setLook, onHat: toggleHat,
+  onBlock: (id) => { setMode(id); hud.flash(MODES.find((x) => x.id === id).name); hud.paint({ block: id }); },
+});
 
 /* ── 螢幕上的操作與指標路由：照試玩場 ─────────────────────────── */
 const pad = new Pad(document.getElementById('pad'));
@@ -215,6 +249,7 @@ addEventListener('keydown', (e) => {
   if (k === 'c') cycleSkin(e.shiftKey ? -1 : 1);
   if (k === 'x') cycleModel(e.shiftKey ? -1 : 1);
   if (k === 'r') { resetStance(); hud.flash('重新站位'); }
+  if (k >= '1' && k <= '9' && MODES[+k - 1]) hud.o.onBlock(MODES[+k - 1].id);
   if ([' ', 'w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
 });
 addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
@@ -410,14 +445,21 @@ function resize() {
   document.body.classList.toggle('pad-port', pad.portrait);
   hud.fit(pad.portrait ? 999 : pad.rail);
   zoo.setInkPx(2.0, h * dpr);
-  for (const f of foes) f.critter.setInkPx(2.0, h * dpr);
+  looks.inkPx = [2.0, h * dpr];
+  for (const list of looks.pool.values()) for (const s of list) s.critter.setInkPx(...looks.inkPx);
 }
 addEventListener('resize', resize);
 resize();
 
 document.getElementById('boot').remove();
-resetStance();
+setMode(DEFAULT_MODE);
+hud.paint({ block: DEFAULT_MODE });
 requestAnimationFrame(frame);
 
-// 給主控台一個把手，方便手動看東西。
-window.combatArea = { scene, camera, renderer, zoo, player, foes, monster: foes[0].m, combo, cam, pad, hud, resetStance };
+// 給主控台一個把手，方便手動看東西。foes 會隨陣容換掉，所以是 getter。
+window.combatArea = {
+  scene, camera, renderer, zoo, player, combo, cam, pad, hud, resetStance, setMode,
+  get foes() { return foes; },
+  get monster() { return foes[0].m; },
+  get mode() { return mode; },
+};

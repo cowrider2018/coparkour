@@ -11,8 +11,12 @@
 
    ── 站位 ────────────────────────────────────────────────────────
    「中線」是穿過場地中心、沿著 z 軸的那一條。玩家站在它的 2/3、面向
-   中心（−z）。BOSS 站在中線的 1/3，兩隻小怪站在同一條橫線上、BOSS 的
-   左右兩側各 4 公尺，三隻都面向場地中心——隔著中心跟玩家對望。
+   中心（−z）。怪物排在中線 1/3 的那條橫線上，面向場地中心——隔著中心跟
+   玩家對望。排哪幾隻由「陣容」決定（MODES）：
+
+     3 小怪          中線上一隻、左右各 4 公尺一隻。
+     1 BOSS          中線上。
+     2 小怪 + 1 BOSS BOSS 在中線上，小怪在左右各 4 公尺（預設）。
 
    ── 怪物 ────────────────────────────────────────────────────────
    一直追著玩家跑。身體跟玩家一樣大（同一個 PHYS 的圓柱），碰到玩家
@@ -71,19 +75,34 @@ export const onMidline = (u) => ARENA.z0 + (ARENA.z1 - ARENA.z0) * u;
 /** 面向場地中心的 yaw（atan2(x, z) 那一種）。 */
 const faceCentre = (x, z) => Math.atan2((ARENA.x0 + ARENA.x1) / 2 - x, (ARENA.z0 + ARENA.z1) / 2 - z);
 
-/**
- * 站位：玩家在中線 2/3；怪物一隻一筆，帶著牠是哪一類（KINDS 的鍵）——BOSS 在
- * 中線 1/3，兩隻小怪在同一條橫線上、左右各 4 公尺。全部面向中心。
- * yaw 是 atan2(x, z) 那一種。
- */
 const MID_X = (ARENA.x0 + ARENA.x1) / 2;
+
+/** 怪物的一個站位：中線 1/3 那條橫線上、離中線 dx 公尺，面向中心。 */
+const post = (kind, dx) => {
+  const x = MID_X + dx, z = onMidline(1 / 3);
+  return { kind, x, z, yaw: faceCentre(x, z) };
+};
+
+/**
+ * 陣容：右邊那塊面板上選的。每一種是一張怪物站位的清單，一隻一筆，帶著牠是
+ * 哪一類（KINDS 的鍵）。順序就是面板上的順序（數字鍵 1～3）。
+ */
+export const MODES = [
+  { id: 'minions', name: '3 小怪', hint: '三隻綠色小怪。', monsters: [post('minion', -4), post('minion', 0), post('minion', 4)] },
+  { id: 'boss', name: '1 BOSS', hint: '一隻紫色 BOSS。', monsters: [post('boss', 0)] },
+  { id: 'mixed', name: '2 小怪 + 1 BOSS', hint: '紫色 BOSS 在中間，兩隻綠色小怪在左右。', monsters: [post('boss', 0), post('minion', -4), post('minion', 4)] },
+];
+
+/** 一開始是哪一個陣容。 */
+export const DEFAULT_MODE = 'mixed';
+
+/**
+ * 站位：玩家在中線 2/3；`monsters` 是預設陣容的那一張（離線驗證拿它當標準
+ * 陣容用）。yaw 是 atan2(x, z) 那一種。
+ */
 export const SPAWN = {
   player: { x: MID_X, z: onMidline(2 / 3), yaw: Math.PI },
-  monsters: [
-    { kind: 'boss', x: MID_X, z: onMidline(1 / 3), yaw: faceCentre(MID_X, onMidline(1 / 3)) },
-    { kind: 'minion', x: MID_X - 4, z: onMidline(1 / 3), yaw: faceCentre(MID_X - 4, onMidline(1 / 3)) },
-    { kind: 'minion', x: MID_X + 4, z: onMidline(1 / 3), yaw: faceCentre(MID_X + 4, onMidline(1 / 3)) },
-  ],
+  monsters: MODES.find((md) => md.id === DEFAULT_MODE).monsters,
 };
 
 /**
