@@ -17,8 +17,8 @@
    一直追著玩家跑。身體跟玩家一樣大（同一個 PHYS 的圓柱），碰到玩家
    玩家就死，雙方回到站位。追的速度比玩家走路慢：走得掉、但不能發呆。
 
-   每一下都會扣血（各段的傷害見 DAMAGE）。在試打場裡怪物打不死：血扣到 0
-   就記一次「擊倒」、血補滿，繼續打。被打中還會被擊退：水平往遠離玩家的方向、
+   每一下都會扣血（各段的傷害見 DAMAGE）。血扣到 0 就死，當場在牠自己的
+   重生點重生（血滿、破防歸零），玩家留在原地。被打中還會被擊退：水平往遠離玩家的方向、
    垂直往上，兩份動能一起給。
 
    ── 破防 ────────────────────────────────────────────────────────
@@ -159,8 +159,8 @@ export function makeMonster(kind = 'hound', spawn = SPAWN.monster) {
     hits: 0,
     /** 剩多少血。 */
     hp: 0,
-    /** 被擊倒過幾次（試打場裡血扣到 0 就補滿，見 hurt）。 */
-    kos: 0,
+    /** 死過幾次（死了就在重生點重生，見 hurt）。 */
+    deaths: 0,
     /** 離破防還累積了多少傷害。 */
     gauge: 0,
     /** 破防窗口還剩幾秒（0 = 沒有破防）。 */
@@ -196,11 +196,13 @@ export function resetBreak(m) {
 }
 
 /**
- * 扣血，並累積破防。試打場裡打不死：扣到 0 就記一次擊倒、血補滿。
+ * 扣血，並累積破防。扣到 0 就死：記一次，當場回到牠自己的重生點重生——
+ * placeMonster 把位置、速度、血、破防、被定住全部重設，所以死前的擊退或迴旋
+ * 不會帶到重生之後。玩家不動。
  *
  * 破防窗口開著的時候不累積——門檻已經到了，窗口用掉或錯過之後才從 0 重算。
  *
- * @returns {boolean} 這一下把牠擊倒了
+ * @returns {boolean} 這一下把牠打死了
  */
 export function hurt(m, dmg) {
   if (!broken(m)) {
@@ -209,8 +211,8 @@ export function hurt(m, dmg) {
   }
   m.hp -= dmg;
   if (m.hp > 0) return false;
-  m.kos++;
-  m.hp = kindOf(m).hp;
+  m.deaths++;
+  placeMonster(m);
   return true;
 }
 
@@ -586,7 +588,7 @@ export function latch(c, p, m) {
  * 繞 y 軸轉 a：(x, z) → (x cos a + z sin a, −x sin a + z cos a)，跟 three 的
  * rotation.y 同一個方向，所以怪物的朝向加 a 與玩家繞的方向是一致的。
  *
- * @returns {{done: boolean, ko: boolean}} done 這一幀轉完了；ko 那一下把牠擊倒了
+ * @returns {{done: boolean, died: boolean}} done 這一幀轉完了；died 那一下把牠打死了
  */
 export function spinStep(c, p, m) {
   const k = Math.min(1, c.t / BREAK_ATK.spin);
@@ -598,8 +600,8 @@ export function spinStep(c, p, m) {
   const rl = Math.hypot(rx, rz);
   if (rl > 0.05) { p.aimX = -rx / rl; p.aimZ = -rz / rl; }   // 一直面向牠
   m.aimX = Math.sin(c.yaw0 + a); m.aimZ = Math.cos(c.yaw0 + a);
-  if (k < 1) return { done: false, ko: false };
-  const ko = hurt(m, DAMAGE.break);
+  if (k < 1) return { done: false, died: false };
+  const died = hurt(m, DAMAGE.break);
   m.held = false;
   if (m.y > 0) { m.air = true; m.grounded = false; }         // 在空中被定住的：放開就往下掉
   c.phase = 'vault';
@@ -607,5 +609,5 @@ export function spinStep(c, p, m) {
   p.vx = -c.dashX * BREAK_ATK.off.h;
   p.vz = -c.dashZ * BREAK_ATK.off.h;
   p.vy = BREAK_ATK.off.v;
-  return { done: true, ko };
+  return { done: true, died };
 }

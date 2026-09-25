@@ -24,8 +24,9 @@
      9. 打一整套    用真的物理跑：站著等怪物走過來、第一段自動、視窗裡按跳、
                     空中再按跳——在視窗的前段、中段、後段按都要三段都中、
                     整套打完之前一次都沒被咬。
-    10. 名冊與血    每一類怪物的數值登記在 KINDS；三段各扣 1、3、2；扣到 0 記一次
-                    擊倒、血補滿（試打場不死）；回到站位血也補滿。
+    10. 名冊與血    每一類怪物的數值登記在 KINDS；三段各扣 1、3、2；扣到 0 就死，
+                    在牠自己的重生點重生（血滿、破防歸零、擊退與定住都清掉）；
+                    回到站位血也補滿。
     11. 破防門檻    傷害累積到 4 就破防、開 0.5 秒的窗口；窗口裡不再累積；
                     錯過就歸零重算。
     12. 破防攻擊    選最近的破防目標；按下去窗口用掉、累積歸零；朝頭頂飛過去、
@@ -334,9 +335,21 @@ console.log('10. 名冊與血');
   ok(m.kind === 'hound' && KINDS.hound.hp === 10 && m.hp === 10, '綠狗登記在名冊裡，血 10，生出來是滿的');
   ok(DAMAGE.slash === 1 && DAMAGE.rise === 3 && DAMAGE.slam === 2, '三段各扣 1、3、2');
   hurt(m, DAMAGE.slash); hurt(m, DAMAGE.rise); hurt(m, DAMAGE.slam);
-  ok(m.hp === 4 && m.kos === 0, `一整套扣 6，剩 ${m.hp}`);
-  const ko = hurt(m, DAMAGE.rise) | hurt(m, DAMAGE.rise);
-  ok(ko && m.kos === 1 && m.hp === 10, '扣到 0：記一次擊倒、血補滿');
+  ok(m.hp === 4 && m.deaths === 0, `一整套扣 6，剩 ${m.hp}`);
+  // 在別的地方、被擊退在空中、還帶著一點破防累積的時候被打死。
+  m.x = 3; m.z = 5;
+  knock(m, 3, 7, 0, -1);
+  hurt(m, DAMAGE.rise);
+  ok(m.hp === 1 && m.air, '還剩 1、正被擊退在空中');
+  const died = hurt(m, DAMAGE.slash);
+  ok(died && m.deaths === 1 && m.hp === 10, '扣到 0：死了一次，血滿著重生');
+  ok(near(m.x, m.spawn.x) && near(m.z, m.spawn.z) && m.y === 0 && !m.air && m.vx === 0 && m.vz === 0 && m.vy === 0,
+    '重生在牠自己的重生點，站在地上、不帶死前的擊退');
+  ok(m.gauge === 0 && !broken(m), '重生之後破防歸零');
+  const own = makeMonster('hound', { x: -5, z: 6, yaw: 1 });
+  own.hp = 1;
+  hurt(own, 1);
+  ok(near(own.x, -5) && near(own.z, 6), '每一隻回到的是自己的重生點');
   hurt(m, 3);
   placeMonster(m);
   ok(m.hp === 10, '回到站位血也補滿');
@@ -420,7 +433,7 @@ console.log('12. 破防攻擊');
   ok(Math.abs(Math.abs(yawTurn) - Math.PI * 2) < 0.05, `迴旋：牠原地轉了 ${(Math.abs(yawTurn) * 180 / Math.PI).toFixed(0)}°`);
   ok(Math.abs(Math.abs(orbit) - Math.PI * 2) < 0.05 && Math.sign(orbit) === Math.sign(yawTurn),
     `玩家繞著牠轉了 ${(Math.abs(orbit) * 180 / Math.PI).toFixed(0)}°，跟牠同一個方向`);
-  ok(hp0 - m.hp === DAMAGE.break || m.kos > 0, `扣 ${DAMAGE.break}（${hp0} → ${m.hp}）`);
+  ok(hp0 - m.hp === DAMAGE.break, `扣 ${DAMAGE.break}（${hp0} → ${m.hp}）`);
   ok(vault && near(vault[0], -vault[3] * BREAK_ATK.off.h) && near(vault[1], -vault[4] * BREAK_ATK.off.h) && near(vault[2], BREAK_ATK.off.v),
     `跳離：往突進的反方向 ${BREAK_ATK.off.h} m/s、往上 ${BREAK_ATK.off.v.toFixed(1)} m/s`);
   ok(landedAt > 0, `跳離之後落地、回到待機（離牠 ${Math.hypot(p.x - m.x, p.z - m.z).toFixed(1)} 公尺——牠一直在追）`);

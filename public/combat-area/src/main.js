@@ -309,14 +309,14 @@ function frame(now) {
   if (combo.phase === 'dash' && breakContact(player, combo.target)) latch(combo, player, combo.target);
   if (combo.phase === 'spin') {
     const r = spinStep(combo, player, combo.target);
-    if (r.ko) hud.flash(`擊倒${KINDS[combo.target.kind].name}（試打場不死，血補滿）`);
+    if (r.died) hud.flash(`打死${KINDS[combo.target.kind].name}，牠在重生點重生`);
   }
   const reach = REACHES[combo.phase];
   for (const { m } of foes) {
     if (reach && !combo.hit.has(m) && reach(player, m)) {
       knock(m, player.x, player.z, player.aimX, player.aimZ, KNOCK_SCALE[combo.phase]);
       combo.hit.add(m);
-      if (hurt(m, DAMAGE[combo.phase])) hud.flash(`擊倒${KINDS[m.kind].name}（試打場不死，血補滿）`);
+      if (hurt(m, DAMAGE[combo.phase])) hud.flash(`打死${KINDS[m.kind].name}，牠在重生點重生`);
     }
   }
   /* 碰到玩家，玩家就死，雙方回到站位。被擊退、還沒落地的怪物不算；第三段
@@ -376,7 +376,7 @@ function frame(now) {
   let line = null;
   if (hudAcc > 0.25) {
     const foeLine = foes.map(({ m }) => `${KINDS[m.kind].name} 血 ${m.hp}/${KINDS[m.kind].hp}`
-      + `${m.kos ? `（擊倒 ${m.kos}）` : ''} 破防 ${m.breakT > 0 ? '中' : `${m.gauge}/${KINDS[m.kind].breakAt}`}`).join(' ・ ');
+      + `${m.deaths ? `（打死 ${m.deaths}）` : ''} 破防 ${m.breakT > 0 ? '中' : `${m.gauge}/${KINDS[m.kind].breakAt}`}`).join(' ・ ');
     line = `${Math.round(fpsN / fpsAcc)} fps ・ 被咬 ${deaths} 次 ・ ${foeLine} ・ `
       + `${PHASE_NAME[combo.phase]}${invulnerable(combo) ? '（無敵）' : ''} ・ `
       + `x ${player.x.toFixed(1)} y ${player.y.toFixed(1)} z ${player.z.toFixed(1)}`;
