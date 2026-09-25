@@ -25,7 +25,7 @@ import { CAM, makeCam, snapCam, updateCam } from '../../test-area/src/camera.js'
 import { buildVeil } from '../../test-area/src/veil.js';
 import { lookInfo } from '../../src/cat/looks.js';
 import {
-  ARENA, COLS, SPAWN, SWING, makeMonster, placeMonster, monsterStep, bites, knock,
+  ARENA, COLS, SPAWN, SWING, KNOCK_SCALE, makeMonster, placeMonster, monsterStep, bites, knock,
   inSlash, inFan, inRing, slashTip, fanFrame, makeCombo, comboStep, invulnerable, cueing,
 } from './combat.js';
 import { makeMonsterCritter } from './monster.js';
@@ -288,7 +288,7 @@ function frame(now) {
   monsterStep(monster, dt, player);
   const reach = REACHES[combo.phase];
   if (reach && !combo.hit && reach(player, monster)) {
-    knock(monster, player.x, player.z, player.aimX, player.aimZ);
+    knock(monster, player.x, player.z, player.aimX, player.aimZ, KNOCK_SCALE[combo.phase]);
     combo.hit = true;
   }
   /* 碰到玩家，玩家就死，雙方回到站位。被擊退、還沒落地的怪物不算；第三段

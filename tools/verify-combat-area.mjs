@@ -8,10 +8,12 @@
 
      1. 站位       玩家在中線 2/3、怪物在 1/3，都面向中心。
      2. 追與咬     站著不動會被追上；碰到就咬。
-     3. 擊退       水平遠離、垂直往上；落地前碰到不算；空中再挨一下再擊退一次。
+     3. 擊退       水平遠離、垂直往上；落地前碰到不算；空中再挨一下再擊退一次；
+                    每一段照自己的倍率。
      4. 第一段範圍  120° 水平扇形、身高中間、長 2.5 個狗高——邊上擦到身體就算。
      5. 第一段自動  站著不動、怪物走過來，第一段自己出手、打中、把牠挑起來，
-                    而且不會一幀接一幀地連發。
+                    而且不會一幀接一幀地連發。只靠第一段擋不住牠——挑得很低、
+                    冷卻又長——所以這一項只量「幾秒後被咬」，不要求不被咬。
      6. 第二段範圍  圓心在腳下的直立 90° 扇形：下緣指向上一次第一段扇形正中
                     那條半徑的末端（不是現在的面向），往上越過頭頂，長 2.5 個
                     狗高；偏離那個面就掃不到。
@@ -19,14 +21,14 @@
      8. 連段的時間  第二段只在第一段收招後 0.25～0.75 秒按得出來，太早是普通
                     的跳；第三段只在第二段收招後、落地前按得出來，無敵到落地，
                     落地才打。
-     9. 打一整套    用真的物理跑一次：等怪物走過來、第一段自動、往前追、
-                    視窗裡按跳、第二段之後停手、空中再按跳——三段都中、
-                    一次都沒被咬。
+     9. 打一整套    用真的物理跑：站著等怪物走過來、第一段自動、視窗裡按跳、
+                    空中再按跳——在視窗的前段、中段、後段按都要三段都中、
+                    整套打完之前一次都沒被咬。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test-area/src/walk.js';
 import {
-  ARENA, SPAWN, DOG_H, REACH, SWING, REST, KNOCK, FAN, WINDOW,
+  ARENA, SPAWN, DOG_H, REACH, SWING, REST, KNOCK, KNOCK_SCALE, FAN, WINDOW,
   makeMonster, monsterStep, touching, bites, knock, inSlash, inFan, inRing, slashTip, fanFrame,
   makeCombo, comboStep, invulnerable, cueing,
 } from '../public/combat-area/src/combat.js';
@@ -109,6 +111,14 @@ console.log('3. 擊退');
   s.x = 1; s.z = 1;
   knock(s, 1, 1, 1, 0);
   ok(near(s.vx, KNOCK.h) && near(s.vz, 0), '疊在出手點上就往面向推');
+  // 每一段的倍率：第一段水平 0.7、垂直 0.5；第三段水平 0.5、垂直 2。
+  const want = { slash: [0.7, 0.5], rise: [1, 1], slam: [0.5, 2] };
+  for (const [stage, [h, v]] of Object.entries(want)) {
+    const k = makeMonster();
+    k.x = 0; k.z = 2;
+    knock(k, 0, 4, 0, -1, KNOCK_SCALE[stage]);
+    ok(near(k.vz, -KNOCK.h * h) && near(k.vy, KNOCK.v * v), `${stage}：水平 ${h} 倍（${(KNOCK.h * h).toFixed(1)} m/s）、垂直 ${v} 倍（${(KNOCK.v * v).toFixed(1)} m/s）`);
+  }
 }
 
 /* ── 4. 第一段範圍 ───────────────────────────────────────────── */
@@ -140,19 +150,19 @@ console.log('5. 第一段自動');
   let t = 0, starts = 0, bitten = false, firstAt = -1, jumped = false;
   const slashLen = [];
   let slashT = 0;
-  while (t < 12) {
+  while (t < 12 && !bitten) {
     const act = comboStep(c, DT, { pressed: false, grounded: true, near: inSlash(p, m) });
     if (act.jump) jumped = true;
     if (act.start === 1) { starts++; if (firstAt < 0) firstAt = t; if (slashT) slashLen.push(slashT); slashT = 0; }
     if (c.phase === 'slash') slashT += DT;
     monsterStep(m, DT, p);
-    if (c.phase === 'slash' && !c.hit && inSlash(p, m)) { knock(m, p.x, p.z, p.aimX, p.aimZ); c.hit = true; }
+    if (c.phase === 'slash' && !c.hit && inSlash(p, m)) { knock(m, p.x, p.z, p.aimX, p.aimZ, KNOCK_SCALE.slash); c.hit = true; }
     if (bites(p, m)) bitten = true;
     t += DT;
   }
   ok(firstAt > 0, `怪物走進範圍就自動出手（第 ${firstAt.toFixed(2)} 秒）`);
-  ok(m.hits === starts && starts >= 3, `每一下都打中（出手 ${starts} 次、打中 ${m.hits} 下）`);
-  ok(!bitten, '站著不動、一直自動打，12 秒都沒被咬到');
+  ok(m.hits === starts && starts >= 1, `每一下都打中（出手 ${starts} 次、打中 ${m.hits} 下）`);
+  console.log(`   ·  只靠第一段：${bitten ? `第 ${t.toFixed(2)} 秒被咬` : '12 秒都沒被咬'}`);
   ok(!jumped, '沒按跳就不跳');
   ok(slashLen.every((s) => Math.abs(s - SWING) < 2 * DT), `每一下亮 ${SWING} 秒`);
   // 不會連發：收招之後 REST 秒內，怪物就算還在範圍裡也不出手。
@@ -271,36 +281,41 @@ console.log('8. 連段的時間');
 /* ── 9. 打一整套 ─────────────────────────────────────────────── */
 console.log('9. 打一整套');
 {
-  const p = { x: 0, y: 0, z: SPAWN.player.z, vx: 0, vy: 0, vz: 0, grounded: true, aimX: 0, aimZ: -1 };
-  const m = makeMonster();
-  const c = makeCombo();
-  const reach = { slash: inSlash, rise: (q, n) => inFan(q, n, c.tip), slam: inRing };
-  const hits = [];
-  let t = 0, run = false, press2 = false, press3 = false, bitten = false, shielded = 0;
-  while (t < 8) {
-    let pressed = false;
-    // 視窗打開之後 0.125 秒按第二段；第二段收招之後 0.05 秒按第三段。
-    if (c.phase === 'rest' && !press2 && c.t >= WINDOW[0] + 0.125) { pressed = true; press2 = true; }
-    if (c.phase === 'air' && !press3 && c.t >= 0.05) { pressed = true; press3 = true; }
-    const act = comboStep(c, DT, { pressed, grounded: p.grounded, near: inSlash(p, m) });
-    // 第一段出手之後往前追（被擊退的怪物飛出去了），第二段收招之後停手。
-    if (act.start === 1) { run = true; c.tip = slashTip(p); }
-    if (c.phase === 'air') run = false;
-    if (act.jump) { p.vy = PHYS.jump; p.grounded = false; }
-    [p.vx, p.vz] = steer(p.vx, p.vz, p.aimX, p.aimZ, run ? PHYS.run : 0, DT);
-    p.x += p.vx * DT; p.z += p.vz * DT;
-    p.vy -= PHYS.gravity * DT; p.y += p.vy * DT;
-    if (p.y <= 0 && p.vy <= 0) { p.y = 0; p.vy = 0; p.grounded = true; } else p.grounded = false;
-    monsterStep(m, DT, p);
-    const r = reach[c.phase];
-    if (r && !c.hit && r(p, m)) { knock(m, p.x, p.z, p.aimX, p.aimZ); c.hit = true; hits.push(c.phase); }
-    if (bites(p, m) && invulnerable(c)) shielded++;
-    if (bites(p, m) && !invulnerable(c)) { bitten = true; break; }
-    t += DT;
-    if (press3 && c.phase === 'idle') break;
+  /** 站著不動，第一段收招後 at 秒按第二段，第二段收招後 0.05 秒按第三段。 */
+  const chain = (at) => {
+    const p = { x: 0, y: 0, z: SPAWN.player.z, vx: 0, vy: 0, vz: 0, grounded: true, aimX: 0, aimZ: -1 };
+    const m = makeMonster();
+    const c = makeCombo();
+    const reach = { slash: inSlash, rise: (q, n) => inFan(q, n, c.tip), slam: inRing };
+    const hits = [];
+    let t = 0, press2 = false, press3 = false, bitten = false, shielded = 0;
+    while (t < 8) {
+      let pressed = false;
+      if (c.phase === 'rest' && !press2 && c.t >= at) { pressed = true; press2 = true; }
+      if (c.phase === 'air' && !press3 && c.t >= 0.05) { pressed = true; press3 = true; }
+      const act = comboStep(c, DT, { pressed, grounded: p.grounded, near: inSlash(p, m) });
+      if (act.start === 1) c.tip = slashTip(p);
+      if (act.jump) { p.vy = PHYS.jump; p.grounded = false; }
+      [p.vx, p.vz] = steer(p.vx, p.vz, p.aimX, p.aimZ, 0, DT);
+      p.x += p.vx * DT; p.z += p.vz * DT;
+      p.vy -= PHYS.gravity * DT; p.y += p.vy * DT;
+      if (p.y <= 0 && p.vy <= 0) { p.y = 0; p.vy = 0; p.grounded = true; } else p.grounded = false;
+      monsterStep(m, DT, p);
+      const r = reach[c.phase];
+      if (r && !c.hit && r(p, m)) { knock(m, p.x, p.z, p.aimX, p.aimZ, KNOCK_SCALE[c.phase]); c.hit = true; hits.push(c.phase); }
+      if (bites(p, m) && invulnerable(c)) shielded++;
+      if (bites(p, m) && !invulnerable(c)) { bitten = true; break; }
+      t += DT;
+      if (press3 && c.phase === 'idle') break;
+    }
+    return { hits, bitten, shielded };
+  };
+  for (const at of [WINDOW[0] + 0.02, 0.45, 0.7]) {
+    const r = chain(at);
+    ok(r.hits.join(' ') === 'slash rise slam' && !r.bitten,
+      `收招後 ${at.toFixed(2)} 秒按：${r.hits.join(' → ') || '沒有'}${r.bitten ? '，被咬了' : '，沒被咬'}`
+      + `${r.shielded ? `（第三段的無敵擋掉了 ${r.shielded} 幀）` : ''}`);
   }
-  ok(hits.join(' ') === 'slash rise slam', `三段依序打中（${hits.join(' → ') || '沒有'}）`);
-  ok(!bitten, `一次都沒被咬${shielded ? `（第三段的無敵擋掉了 ${shielded} 幀）` : ''}`);
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

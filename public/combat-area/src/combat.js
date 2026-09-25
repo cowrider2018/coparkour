@@ -77,12 +77,25 @@ export const SLASH_HALF = Math.PI / 3;
 export const SWING = 0.2;
 
 /**
- * 擊退：水平（遠離玩家）與垂直的初速，公尺每秒。
- *
- * 垂直大、水平小，因為後面兩段是往上打的：7.0 在重力 22 底下飛 0.64 秒、
- * 最高 1.1 公尺，水平只帶走 1.3 公尺——怪物還在下一段搆得到的地方。
+ * 擊退的基準：水平（遠離玩家）與垂直的初速，公尺每秒。第二段就是這一份；
+ * 7.0 在重力 22 底下飛 0.64 秒、最高 1.1 公尺，水平帶走 1.3 公尺。
  */
 export const KNOCK = { h: 2.0, v: 7.0 };
+
+/**
+ * 每一段給基準的幾倍（h 水平、v 垂直）。
+ *
+ *   第一段  水平 0.7、垂直 0.5：1.4 m/s、3.5 m/s，飛 0.32 秒、只離地 0.28——
+ *           挑一下，不是打飛。
+ *   第二段  1 倍。
+ *   第三段  水平 0.5、垂直 2：1 m/s、14 m/s，飛 1.27 秒、最高 4.5 公尺——
+ *           幾乎是往正上方砸上去。
+ */
+export const KNOCK_SCALE = {
+  slash: { h: 0.7, v: 0.5 },
+  rise: { h: 1, v: 1 },
+  slam: { h: 0.5, v: 2 },
+};
 
 /** 一隻站在站位上的怪物。 */
 export function makeMonster() {
@@ -152,15 +165,15 @@ export const bites = (p, m) => !m.air && touching(p, m);
  * 換掉而不是加上去——理由見檔頭。
  *
  * 正好疊在出手點上（沒有「遠離」可言）的時候，往 (awayX, awayZ) 推，
- * 呼叫端給的是玩家面向的方向。
+ * 呼叫端給的是玩家面向的方向。`scale` 是這一段的倍率（KNOCK_SCALE）。
  */
-export function knock(m, fromX, fromZ, awayX, awayZ) {
+export function knock(m, fromX, fromZ, awayX, awayZ, scale = KNOCK_SCALE.rise) {
   let dx = m.x - fromX, dz = m.z - fromZ;
   const d = Math.hypot(dx, dz);
   if (d > 1e-6) { dx /= d; dz /= d; } else { dx = awayX; dz = awayZ; }
-  m.vx = dx * KNOCK.h;
-  m.vz = dz * KNOCK.h;
-  m.vy = KNOCK.v;
+  m.vx = dx * KNOCK.h * scale.h;
+  m.vz = dz * KNOCK.h * scale.h;
+  m.vy = KNOCK.v * scale.v;
   m.air = true;
   m.grounded = false;
   m.hits++;
