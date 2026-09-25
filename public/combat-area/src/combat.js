@@ -24,7 +24,17 @@
    ── 破防 ────────────────────────────────────────────────────────
    每一隻怪物各自累積受到的傷害，累積到破防門檻（一律 BREAK_AT = 4）就「破防」：
    開一個 BREAK_WINDOW 秒的窗口，畫面上是一圈淡色的圓與一圈從同樣大小縮到
-   消失的亮圓。窗口裡累積不再增加；窗口過了沒用上（錯過），累積歸零重新算。飛在空中（被擊退、還沒落地）的怪物碰到玩家不算數。
+   消失的亮圓。窗口裡累積不再增加；窗口過了沒用上（錯過），累積歸零重新算。
+
+   窗口開著、玩家站在地上時按跳，就是破防攻擊（用掉窗口，累積一樣歸零）：
+
+     突進  朝目標的頭頂飛過去（一次給足水平與垂直速度，照拋物線走）。有好幾隻
+           破防中的時候，選最近的那一隻。
+     迴旋  碰到牠的那一刻，記下玩家相對於牠的位置；牠原地轉一圈，玩家保持那個
+           相對位置繞著牠轉 360°。
+     跳離  轉完扣 5 點血，玩家往突進的反方向、往上跳下來。
+
+   從按下去到跳離之後落地，玩家都是無敵的——整招都貼在怪物身上。飛在空中（被擊退、還沒落地）的怪物碰到玩家不算數。
    空中再挨一下就再擊退一次——每一下都是把速度**換成**擊退的那一份，
    不是疊上去，所以連打是一直被挑在空中，而不是越飛越快。
 
@@ -90,7 +100,16 @@ export const KINDS = {
 export const BREAK_WINDOW = 0.5;
 
 /** 每一段打中一下扣幾點血。這是招式的數值，不是怪物的，所以不在 KINDS 裡。 */
-export const DAMAGE = { slash: 1, rise: 3, slam: 2 };
+export const DAMAGE = { slash: 1, rise: 3, slam: 2, break: 5 };
+
+/**
+ * 破防攻擊的數值。
+ *
+ *   flight  突進花多久飛到頭頂（秒）。速度由它反推，所以不管目標多遠都是這麼久。
+ *   spin    迴旋一圈多久（秒）。
+ *   off     跳離：水平（突進的反方向）與垂直的速度。垂直是一次普通的跳。
+ */
+export const BREAK_ATK = { flight: 0.35, spin: 0.6, off: { h: 5, v: PHYS.jump } };
 
 /** 一隻怪物的那一類數值。 */
 export const kindOf = (m) => KINDS[m.kind];
@@ -142,6 +161,8 @@ export function makeMonster(kind = 'hound') {
     gauge: 0,
     /** 破防窗口還剩幾秒（0 = 沒有破防）。 */
     breakT: 0,
+    /** 被破防攻擊定住（迴旋中）：不動、不受重力。 */
+    held: false,
   };
   placeMonster(m);
   return m;
@@ -157,6 +178,7 @@ export function placeMonster(m) {
   m.hp = kindOf(m).hp;
   m.gauge = 0;
   m.breakT = 0;
+  m.held = false;
   m.aimX = Math.sin(s.yaw); m.aimZ = Math.cos(s.yaw);
 }
 
@@ -201,6 +223,7 @@ export function monsterStep(m, dt, target) {
     m.breakT -= dt;
     if (m.breakT <= 0) resetBreak(m);
   }
+  if (m.held) return;                     // 破防攻擊的迴旋：定在原地
   if (m.air) {
     m.vy -= PHYS.gravity * dt;
     m.y += m.vy * dt;
@@ -384,6 +407,13 @@ export function inRing(p, m) {
      air    第二段收招之後、落地之前。按跳 → 第三段。落地了就回 idle。
      leap   第三段的二段跳。無敵，一直到落地。
      slam   第三段落地那一下，亮 SWING 秒，之後回 idle。
+
+   破防攻擊蓋過上面每一個階段：有怪物破防中、玩家站在地上、按了跳，不管
+   現在在哪一段都直接進突進。
+
+     dash   突進。碰到目標 → spin（由 latch 切）；沒碰到就落地 → idle（揮空）。
+     spin   迴旋。轉完 → vault（由 spinStep 切）。
+     vault  跳離，落地 → idle。
    ------------------------------------------------------------------ */
 
 /** 第一段收招之後，第二段的按鍵視窗（秒，從收招那一刻量）。 */
@@ -401,8 +431,14 @@ export function makeCombo() {
   return { phase: 'idle', t: 0, hit: new Set(), tip: null };
 }
 
-/** 現在是不是無敵：第三段起跳之後、落地之前。 */
-export const invulnerable = (c) => c.phase === 'leap';
+/** 破防攻擊的三個階段。 */
+const BREAKING = new Set(['dash', 'spin', 'vault']);
+
+/** 玩家現在在破防攻擊裡（突進、迴旋、跳離）：速度與位置由這一招接管。 */
+export const breaking = (c) => BREAKING.has(c.phase);
+
+/** 現在是不是無敵：第三段起跳之後、落地之前；破防攻擊從突進到跳離落地。 */
+export const invulnerable = (c) => c.phase === 'leap' || breaking(c);
 
 /** 現在按跳會不會接下一段（給畫面提示用）。 */
 export const cueing = (c) => (c.phase === 'rest' && c.t >= WINDOW[0] && c.t <= WINDOW[1]) || c.phase === 'air';
@@ -416,17 +452,24 @@ export const cueing = (c) => (c.phase === 'rest' && c.t >= WINDOW[0] && c.t <= W
  *   pressed   這一幀按了跳
  *   grounded  玩家站在地上
  *   near      有怪物在第一段的範圍裡（inSlash）
- * @returns {{jump: boolean, start: number}}
+ *   breakable 有怪物破防中（breakTarget 找得到）
+ * @returns {{jump: boolean, start: number, brk: boolean}}
  *   jump   玩家這一幀要起跳：垂直速度換成一次新的起跳（普通的跳、第二段、
  *          第三段的二段跳都是這一個）
  *   start  這一幀開始的是第幾段（0 = 沒有）。第三段的 start 在起跳那一幀，
  *          落地那一下是 phase 進了 'slam'。
+ *   brk    這一幀發動破防攻擊（phase 進了 'dash'）。速度與目標由呼叫端接著
+ *          叫 startBreak 給。
  */
-export function comboStep(c, dt, { pressed, grounded, near }) {
-  const out = { jump: false, start: 0 };
+export function comboStep(c, dt, { pressed, grounded, near, breakable = false }) {
+  const out = { jump: false, start: 0, brk: false };
   c.t += dt;
   const go = (phase) => { c.phase = phase; c.t = 0; c.hit = new Set(); };
   let used = false;                       // 這一下按跳已經被連段吃掉了
+  if (pressed && grounded && breakable && !breaking(c)) {
+    go('dash'); out.brk = true;
+    return out;
+  }
   switch (c.phase) {
     case 'slash':
       if (c.t >= SWING) go('rest');
@@ -451,10 +494,114 @@ export function comboStep(c, dt, { pressed, grounded, near }) {
     case 'slam':
       if (c.t >= SWING) go('idle');
       break;
+    case 'dash':
+    case 'vault':
+      // 起跳那一幀還算站在地上，所以過了一點時間才認落地。
+      if (grounded && c.t > 0.05) go('idle');
+      used = pressed;
+      break;
+    case 'spin':
+      used = pressed;
+      break;
     default:
       break;
   }
   if (c.phase === 'idle' && grounded && near && !pressed) { go('slash'); out.start = 1; }
   if (pressed && grounded && !used) out.jump = true;
   return out;
+}
+
+/* ── 破防攻擊 ────────────────────────────────────────────────────── */
+
+/** 身體的中間，選目標量距離用。 */
+const waist = (b) => [b.x, b.y + PHYS.height / 2, b.z];
+
+/**
+ * 破防攻擊要打哪一隻：破防中的怪物裡最近的那一隻（量身體中間到身體中間）。
+ * 沒有就是 null。
+ */
+export function breakTarget(p, monsters) {
+  const [px, py, pz] = waist(p);
+  let best = null, bd = Infinity;
+  for (const m of monsters) {
+    if (!broken(m)) continue;
+    const [mx, my, mz] = waist(m);
+    const d = Math.hypot(mx - px, my - py, mz - pz);
+    if (d < bd) { bd = d; best = m; }
+  }
+  return best;
+}
+
+/**
+ * 發動破防攻擊：用掉目標的窗口（累積歸零），給玩家一次飛向牠頭頂的速度。
+ *
+ * 速度是照拋物線反推的：BREAK_ATK.flight 秒後腳正好落在頭頂上。頭頂取的是
+ * 牠**那時候**會在的地方——照牠現在的速度往前推（被擊退在空中的話連重力一起
+ * 算，落地就停在地上）。追過來的怪物是迎著玩家跑的，照現在的位置瞄會飛過頭。
+ */
+export function startBreak(c, p, m) {
+  resetBreak(m);
+  const T = BREAK_ATK.flight, g = PHYS.gravity;
+  const tx = m.x + m.vx * T, tz = m.z + m.vz * T;
+  const ty = (m.air ? Math.max(0, m.y + m.vy * T - 0.5 * g * T * T) : m.y) + PHYS.height;
+  const hx = tx - p.x, hz = tz - p.z, hd = Math.hypot(hx, hz);
+  c.target = m;
+  [c.dashX, c.dashZ] = hd > 1e-6 ? [hx / hd, hz / hd] : [p.aimX, p.aimZ];
+  p.vx = hx / T;
+  p.vz = hz / T;
+  p.vy = (ty - p.y + 0.5 * g * T * T) / T;
+  p.grounded = false;
+  p.aimX = c.dashX; p.aimZ = c.dashZ;
+}
+
+/**
+ * 突進碰到目標了嗎：水平上兩個身體相交，垂直上玩家的腳最高可以在牠頭頂上方
+ * 0.3 公尺（瞄的就是頭頂，差一點點不該算沒碰到）。
+ */
+export function breakContact(p, m) {
+  if (Math.hypot(p.x - m.x, p.z - m.z) >= PHYS.radius * 2) return false;
+  return p.y <= m.y + PHYS.height + 0.3 && p.y + PHYS.height > m.y;
+}
+
+/** 碰到了：記下相對位置，把怪物定住，進迴旋。 */
+export function latch(c, p, m) {
+  c.phase = 'spin';
+  c.t = 0;
+  c.off = [p.x - m.x, p.y - m.y, p.z - m.z];
+  c.yaw0 = Math.atan2(m.aimX, m.aimZ);
+  m.held = true;
+  m.vx = m.vy = m.vz = 0;
+  p.vx = p.vy = p.vz = 0;
+  p.grounded = false;
+}
+
+/**
+ * 迴旋的一幀：怪物原地轉、玩家保持相對位置繞著牠轉，角度是 2π × 進度。
+ * 轉完就扣血、放開怪物、讓玩家往突進的反方向跳離。
+ *
+ * 繞 y 軸轉 a：(x, z) → (x cos a + z sin a, −x sin a + z cos a)，跟 three 的
+ * rotation.y 同一個方向，所以怪物的朝向加 a 與玩家繞的方向是一致的。
+ *
+ * @returns {{done: boolean, ko: boolean}} done 這一幀轉完了；ko 那一下把牠擊倒了
+ */
+export function spinStep(c, p, m) {
+  const k = Math.min(1, c.t / BREAK_ATK.spin);
+  const a = Math.PI * 2 * k;
+  const [ox, oy, oz] = c.off;
+  const rx = ox * Math.cos(a) + oz * Math.sin(a);
+  const rz = -ox * Math.sin(a) + oz * Math.cos(a);
+  p.x = m.x + rx; p.y = m.y + oy; p.z = m.z + rz;
+  const rl = Math.hypot(rx, rz);
+  if (rl > 0.05) { p.aimX = -rx / rl; p.aimZ = -rz / rl; }   // 一直面向牠
+  m.aimX = Math.sin(c.yaw0 + a); m.aimZ = Math.cos(c.yaw0 + a);
+  if (k < 1) return { done: false, ko: false };
+  const ko = hurt(m, DAMAGE.break);
+  m.held = false;
+  if (m.y > 0) { m.air = true; m.grounded = false; }         // 在空中被定住的：放開就往下掉
+  c.phase = 'vault';
+  c.t = 0;
+  p.vx = -c.dashX * BREAK_ATK.off.h;
+  p.vz = -c.dashZ * BREAK_ATK.off.h;
+  p.vy = BREAK_ATK.off.v;
+  return { done: true, ko };
 }

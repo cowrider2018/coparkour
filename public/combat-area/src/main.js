@@ -26,7 +26,8 @@ import { CAM, makeCam, snapCam, updateCam } from '../../test-area/src/camera.js'
 import { buildVeil } from '../../test-area/src/veil.js';
 import { lookInfo } from '../../src/cat/looks.js';
 import {
-  ARENA, COLS, SPAWN, SWING, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster, placeMonster, monsterStep, bites, knock,
+  ARENA, COLS, SPAWN, SWING, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster,
+  breaking, breakTarget, startBreak, breakContact, latch, spinStep, placeMonster, monsterStep, bites, knock,
   inSlash, inFan, inRing, slashTip, fanFrame, makeCombo, comboStep, invulnerable, cueing,
 } from './combat.js';
 import { makeMonsterCritter } from './monster.js';
@@ -228,6 +229,7 @@ function speedFor(mag) {
 /** 右上那一行小字：現在在連段的哪裡。 */
 const PHASE_NAME = {
   idle: '待機', slash: '第一段', rest: '第一段收招', rise: '第二段', air: '第二段之後', leap: '第三段起跳', slam: '第三段落地',
+  dash: '破防突進', spin: '破防迴旋', vault: '破防跳離',
 };
 
 /* ── 主迴圈 ──────────────────────────────────────────────────── */
@@ -253,46 +255,62 @@ function frame(now) {
   let mag = Math.hypot(ix, iz);
   if (mag > 1) { ix /= mag; iz /= mag; mag = 1; }
 
-  const fwdX = Math.sin(cam.yaw), fwdZ = Math.cos(cam.yaw);
-  const rgtX = -fwdZ, rgtZ = fwdX;
-  if (mag > 1e-4) {
-    player.aimX = (fwdX * iz + rgtX * ix) / mag;
-    player.aimZ = (fwdZ * iz + rgtZ * ix) / mag;
-  }
-  [player.vx, player.vz] = steer(player.vx, player.vz, player.aimX, player.aimZ, speedFor(mag), dt);
-
-  /* 連段決定這一下跳是什麼：普通的跳，或是某一段的出手。站不站在地上
-     看的是上一幀的結果，跟試玩場判斷能不能跳是同一個時間點。 */
+  /* 連段決定這一下跳是什麼：普通的跳、某一段的出手，或是破防攻擊。站不站在
+     地上看的是上一幀的結果，跟試玩場判斷能不能跳是同一個時間點。擺在操控
+     之前，因為破防攻擊一發動就接管速度。 */
   const pressed = pad.takeJump() || jumpQueued;
   jumpQueued = false;
+  const target = player.grounded ? breakTarget(player, foes.map((f) => f.m)) : null;
   const act = comboStep(combo, dt, {
     pressed, grounded: player.grounded, near: foes.some((f) => inSlash(player, f.m)),
+    breakable: !!target,
   });
   if (act.start === 1) combo.tip = slashTip(player);
+  if (act.brk) startBreak(combo, player, target);
   if (act.jump) {
     player.vy = PHYS.jump;
     player.grounded = false;
   }
 
-  // 水平：只有黑牆擋。
-  [player.x, player.z] = solveXZ(COLS, player.x + player.vx * dt, player.z + player.vz * dt, player.y);
+  /* 操控。破防攻擊裡不操控：突進與跳離是拋物線，迴旋的位置由 spinStep 擺——
+     steer 會把速度投影到搖桿的方向上，那一投影就把突進的速度吃掉了。 */
+  const fwdX = Math.sin(cam.yaw), fwdZ = Math.cos(cam.yaw);
+  const rgtX = -fwdZ, rgtZ = fwdX;
+  if (!breaking(combo)) {
+    if (mag > 1e-4) {
+      player.aimX = (fwdX * iz + rgtX * ix) / mag;
+      player.aimZ = (fwdZ * iz + rgtZ * ix) / mag;
+    }
+    [player.vx, player.vz] = steer(player.vx, player.vz, player.aimX, player.aimZ, speedFor(mag), dt);
+  }
 
-  // 垂直
-  const prevY = player.y;
-  player.vy -= PHYS.gravity * dt;
-  player.y += player.vy * dt;
-  const sup = supportInfo(COLS, player.x, player.z, prevY);
-  if (player.y <= sup.y && player.vy <= 0) {
-    player.y = sup.y;
-    player.vy = 0;
-    player.grounded = true;
-  } else {
-    player.grounded = false;
+  if (combo.phase !== 'spin') {
+    // 水平：只有黑牆擋。
+    [player.x, player.z] = solveXZ(COLS, player.x + player.vx * dt, player.z + player.vz * dt, player.y);
+
+    // 垂直
+    const prevY = player.y;
+    player.vy -= PHYS.gravity * dt;
+    player.y += player.vy * dt;
+    const sup = supportInfo(COLS, player.x, player.z, prevY);
+    if (player.y <= sup.y && player.vy <= 0) {
+      player.y = sup.y;
+      player.vy = 0;
+      player.grounded = true;
+    } else {
+      player.grounded = false;
+    }
   }
 
   /* 怪物追人（或是被擊退、在空中飛）。然後才判打中：兩個身體都走完這一幀
      了，範圍是對著畫面上的位置判的。 */
   for (const { m } of foes) monsterStep(m, dt, player);
+  // 破防攻擊：突進碰到目標就定住牠、進迴旋；迴旋轉完就扣血、跳離。
+  if (combo.phase === 'dash' && breakContact(player, combo.target)) latch(combo, player, combo.target);
+  if (combo.phase === 'spin') {
+    const r = spinStep(combo, player, combo.target);
+    if (r.ko) hud.flash(`擊倒${KINDS[combo.target.kind].name}（試打場不死，血補滿）`);
+  }
   const reach = REACHES[combo.phase];
   for (const { m } of foes) {
     if (reach && !combo.hit.has(m) && reach(player, m)) {
