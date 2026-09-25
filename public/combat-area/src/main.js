@@ -34,6 +34,7 @@ import {
 import { makeMonsterCritter } from './monster.js';
 import {
   slashFx, fanFx, ringFx, cueFx, showFx, breakFx, showBreak, laneFx, showLane, orbMesh, circleFx, showCircle,
+  coneFx, showCone,
 } from './fx.js';
 import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from './skills.js';
 
@@ -102,10 +103,10 @@ function lookFor(kind, i) {
   while (list.length <= i) {
     const slot = {
       critter: makeMonsterCritter(zoo, kind), breakFx: breakFx(),
-      lane: laneFx(SKILL.orb.radius), circle: circleFx(SKILL.leap.radius),
+      lane: laneFx(SKILL.orb.radius), circle: circleFx(SKILL.leap.radius), cone: coneFx(SKILL.cone.radius, SKILL.cone.half),
     };
     if (looks.inkPx) slot.critter.setInkPx(...looks.inkPx);
-    scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node);
+    scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node, slot.cone.node);
     list.push(slot);
   }
   return list[i];
@@ -164,7 +165,7 @@ function setMode(id) {
   if (!md) return;
   mode = id;
   for (const list of looks.pool.values()) {
-    for (const s of list) { s.critter.root.visible = false; s.breakFx.node.visible = false; s.lane.node.visible = false; s.circle.node.visible = false; }
+    for (const s of list) { s.critter.root.visible = false; s.breakFx.node.visible = false; s.lane.node.visible = false; s.circle.node.visible = false; s.cone.node.visible = false; }
   }
   const used = new Map();
   foes = md.monsters.map((s) => {
@@ -435,12 +436,13 @@ function frame(now) {
   }
 
   // BOSS 的預告與飛著的球。
-  for (const { m, lane, circle } of foes) {
+  for (const { m, lane, circle, cone } of foes) {
     const c = m.cast;
-    const orb = !!c && c.skill === 'orb', leap = !!c && c.skill === 'leap';
+    const orb = !!c && c.skill === 'orb', leap = !!c && c.skill === 'leap', fan = !!c && c.skill === 'cone';
     showLane(lane, orb, orb ? Math.min(1, c.t / SKILL.orb.windup) : 0, m.x, m.z,
       orb ? Math.atan2(c.dirX, c.dirZ) : 0, orb ? laneLength(m.x, m.z, c.dirX, c.dirZ) : 0);
     showCircle(circle, leap, leap ? Math.min(1, c.t / SKILL.leap.windup) : 0, leap ? c.tx : 0, leap ? c.tz : 0);
+    showCone(cone, fan, fan ? Math.min(1, c.t / SKILL.cone.windup) : 0, m.x, m.z, fan ? Math.atan2(c.dirX, c.dirZ) : 0);
   }
   syncOrbs();
 

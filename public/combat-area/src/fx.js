@@ -189,6 +189,27 @@ export function showCircle(f, on, frac, x, z) {
   f.bright.scale.setScalar(Math.max(1e-3, frac));
 }
 
+/** 扇形的預告：淺色的整片 60° 扇形與一片從圓心往外長的亮色扇形，貼在地上。 */
+export function coneFx(radius, half) {
+  const at = (a) => [Math.sin(a) * radius, 0.03, Math.cos(a) * radius];
+  const g = () => fan([0, 0.03, 0], at, -half, half);
+  const node = new THREE.Group();
+  const pale = decal(g(), 0.2), bright = decal(g(), 0.45);
+  node.add(pale, bright);
+  node.visible = false;
+  return { node, pale, bright };
+}
+
+/** 擺扇形的預告。frac 是倒數走了幾成（0 → 1），亮色的半徑就是那幾成。 */
+export function showCone(f, on, frac, x, z, yaw) {
+  f.node.visible = on;
+  if (!on) return;
+  f.node.position.set(x, 0, z);
+  f.node.rotation.y = yaw;
+  const k = Math.max(1e-3, frac);
+  f.bright.scale.set(k, 1, k);
+}
+
 /** 一顆球的外觀：跟石頭同一套分階著色（palette.js 的 toon），才看得出是一顆球而不是一片圓。 */
 const ORB_MAT = toon(0xff4fd8);
 export function orbMesh(radius) {

@@ -41,6 +41,8 @@
                     狗高、每秒 6 公尺、直線、碰到黑牆消失，站著不動會被打中、
                     倒數裡橫移一步就躲得掉。跳砸：倒數 1.5 秒、最後 0.6 秒起跳、
                     落在鎖定的點上打半徑 2.5 狗高的一圈，走出圈外或跳起來就躲得過。
+                    扇形：倒數 1 秒、朝鎖定的方向打 60°、4 狗高長的一片。三招都
+                    挑得到。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test-area/src/walk.js';
@@ -651,7 +653,7 @@ console.log('15. BOSS 放招');
   for (let i = 0; i < 90; i++) { bossStep(bi, DT, p, wi, () => 0); monsterStep(bi, DT, p); }
   ok(!wi.shots.length, '倒數中被擊退：這一招取消，沒有球');
 
-  // 跳砸：挑 leap（亂數給 0.99 → 第二招）。
+  // 跳砸：挑 leap（亂數給 0.5 → 第二招）。
   ok(near(SKILL.leap.radius, 2.5 * DOG_H) && SKILL.leap.windup === 1.5, '跳砸：範圍半徑 2.5 狗高、倒數 1.5 秒');
   const leap = (move) => {
     const wl = makeWorld();
@@ -660,7 +662,7 @@ console.log('15. BOSS 放招');
     b.castT = 0;
     let st = null, at = -1, tookOff = -1, peak = 0, tt = 0;
     while (tt < 2 && !st) {
-      st = bossStep(b, DT, q, wl, () => 0.99);
+      st = bossStep(b, DT, q, wl, () => 0.5);
       if (tookOff < 0 && b.y > 0) tookOff = tt;
       peak = Math.max(peak, b.y);
       if (move) move(q, b);
@@ -687,12 +689,48 @@ console.log('15. BOSS 放招');
   bk.castT = 0;
   let hitK = null;
   for (let i = 0; i < 150; i++) {
-    const r = bossStep(bk, DT, p, wk, () => 0.99);
+    const r = bossStep(bk, DT, p, wk, () => 0.5);
     if (r) hitK = r;
     if (bk.cast && bk.y > 0.3 && !bk.air) knock(bk, 0, 4, 0, -1);
     monsterStep(bk, DT, p);
   }
   ok(!hitK, '飛到一半被擊退：這一招取消，沒砸下來');
+
+  // 扇形：挑 cone（亂數給 0.99 → 第三招）。
+  ok(near(SKILL.cone.radius, 4 * DOG_H) && near(SKILL.cone.half * 2, Math.PI / 3) && SKILL.cone.windup === 1,
+    '扇形：60°、長 4 狗高、倒數 1 秒');
+  const wc = makeWorld();
+  const bc = bossAt(0, 0);
+  const qc = body(0, 2);
+  bc.castT = 0;
+  let sc = null, atc = -1, moved = false, tc = 0;
+  while (tc < 2 && !sc) {
+    sc = bossStep(bc, DT, qc, wc, () => 0.99);
+    if (bc.cast && bc.cast.t > 0.3) qc.x = 0.4;                  // 開始之後才動：方向已經鎖定了
+    const x0 = bc.x, z0 = bc.z, casting = !!bc.cast;
+    monsterStep(bc, DT, qc);
+    if (casting && (bc.x !== x0 || bc.z !== z0)) moved = true;
+    if (sc) atc = tc;
+    tc += DT;
+  }
+  ok(sc && sc.shape === 'cone' && near(sc.dirX, 0) && near(sc.dirZ, 1) && Math.abs(atc - SKILL.cone.windup) < 2 * DT && !moved,
+    `第 ${atc.toFixed(2)} 秒打下去，方向是開始那一刻鎖定的，放的時候站著不動`);
+  const ang = (deg, d, y = 0) => body(Math.sin(deg * Math.PI / 180) * d, Math.cos(deg * Math.PI / 180) * d, y);
+  ok(strikeHits(sc, ang(0, 3)) && strikeHits(sc, ang(29, 3)), '正前方 3 公尺、偏 29°：中');
+  ok(!strikeHits(sc, ang(40, 3)) && !strikeHits(sc, ang(180, 1.5)), '偏 40°、背後：不中');
+  ok(strikeHits(sc, ang(0, SKILL.cone.radius + PHYS.radius - 0.01)) && !strikeHits(sc, ang(0, SKILL.cone.radius + PHYS.radius + 0.01)),
+    '長度的邊界在身體碰到扇形的弧');
+  ok(!strikeHits(sc, ang(0, 3, PHYS.height + 0.01)), '跳起來、腳高過一個狗高：躲過');
+
+  // 三招都挑得到。
+  const picked = new Set();
+  for (const r of [0, 0.34, 0.5, 0.67, 0.99]) {
+    const b = bossAt(0, -4);
+    b.castT = 0;
+    bossStep(b, DT, p, makeWorld(), () => r);
+    picked.add(b.cast.skill);
+  }
+  ok(['orb', 'leap', 'cone'].every((k) => picked.has(k)), `亂數涵蓋三招：${[...picked].join('、')}`);
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

@@ -133,7 +133,7 @@ export const COLS = [{
 export const BREAK_AT = 8;
 export const KINDS = {
   minion: { name: '小怪', hp: 4, speed: 3.4, breakAt: BREAK_AT },
-  boss: { name: 'BOSS', hp: 20, speed: 4, breakAt: BREAK_AT, skills: ['orb', 'leap'], every: 3 },
+  boss: { name: 'BOSS', hp: 20, speed: 4, breakAt: BREAK_AT, skills: ['orb', 'leap', 'cone'], every: 3 },
 };
 
 /** 破防之後的窗口多長（秒）：亮圓從淡圓的大小縮到消失的時間。 */

@@ -17,8 +17,10 @@
      leap  目標點上兩個圓倒數 1.5 秒：淺色的是範圍（半徑 2.5 個狗高），亮色的
            從中心長到邊。最後 0.6 秒 BOSS 起跳、照拋物線飛過去，倒數到 0 的那一
            刻落在目標點上，打那一整圈。
+     cone  站在原地朝鎖定的方向倒數 1 秒：淺色的 60° 扇形（長 4 個狗高）是範圍，
+           亮色的扇形從 BOSS 腳下往外長，長滿的那一刻打那一整片。
 
-   範圍攻擊（leap 的那一圈）打的是地面上一個狗高以內：玩家的腳比那還高——
+   範圍攻擊（leap 的那一圈、cone 的那一片）打的是地面上一個狗高以內：玩家的腳比那還高——
    跳起來了——就躲得過。
 
    碰到就死：跟被咬一樣，玩家死、全部回到站位。玩家無敵的時候（第三段、破防
@@ -32,6 +34,7 @@ import { ARENA, DOG_H, kindOf } from './combat.js';
 export const SKILL = {
   orb: { windup: 0.75, radius: 0.75 * DOG_H, speed: 6 },
   leap: { windup: 1.5, air: 0.6, radius: 2.5 * DOG_H },
+  cone: { windup: 1, radius: 4 * DOG_H, half: Math.PI / 6 },
 };
 
 /** 範圍攻擊打得到的高度：腳在這以下才算（一個狗高）。 */
@@ -87,6 +90,13 @@ const CAST = {
     m.cast = null;
     return { shape: 'circle', x: c.tx, z: c.tz, r: S.radius };
   },
+
+  cone(m) {
+    const c = m.cast, S = SKILL.cone;
+    if (c.t < S.windup) return null;
+    m.cast = null;
+    return { shape: 'cone', x: m.x, z: m.z, dirX: c.dirX, dirZ: c.dirZ, r: S.radius, half: S.half };
+  },
 };
 
 /**
@@ -97,7 +107,12 @@ export function strikeHits(st, p) {
   if (p.y >= REACH_UP) return false;
   const d = Math.hypot(p.x - st.x, p.z - st.z);
   if (st.shape === 'circle') return d <= st.r + PHYS.radius;
-  return false;
+  // 扇形：跟第一段同一種判法——半徑加身體，角度加上身體在那個距離張開的角度。
+  if (d > st.r + PHYS.radius) return false;
+  if (d <= PHYS.radius) return true;
+  const cos = ((p.x - st.x) * st.dirX + (p.z - st.z) * st.dirZ) / d;
+  const off = Math.acos(Math.max(-1, Math.min(1, cos)));
+  return off <= st.half + Math.asin(Math.min(1, PHYS.radius / d));
 }
 
 /**
