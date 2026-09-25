@@ -152,10 +152,53 @@ const signs = ruins.signs.map((s) => {
   return { node, door: s.door, y: s.y, phase: s.x * 0.37 + s.z * 0.23 };
 });
 
+/* ── 傳送範圍（P）────────────────────────────────────────────────
+   每一個感測區的觸發範圍畫成一個線框：方的是一個盒子，圓的是上下兩圈加四根直線。
+   亮金色是現在走進去會被送走的（沒有門，或門開著），暗灰色是門關著的。線框不吃
+   深度，隔著牆也看得到——這是調傳送點用的，不是遊戲的一部分，所以一開始關著。 */
+const portalLines = (() => {
+  const group = new THREE.Group();
+  group.visible = false;
+  scene.add(group);
+  const lit = new THREE.LineBasicMaterial({ color: 0xf2c14e, depthTest: false, fog: false });
+  const dim = new THREE.LineBasicMaterial({ color: 0x6b655c, depthTest: false, fog: false });
+  const items = ruins.portals.map((p) => {
+    const v = [];
+    const seg = (a, b) => v.push(...a, ...b);
+    if (p.shape === 'box') {
+      const xs = [p.x0, p.x1], zs = [p.z0, p.z1];
+      for (const y of [p.y0, p.y1]) {
+        seg([p.x0, y, p.z0], [p.x1, y, p.z0]); seg([p.x1, y, p.z0], [p.x1, y, p.z1]);
+        seg([p.x1, y, p.z1], [p.x0, y, p.z1]); seg([p.x0, y, p.z1], [p.x0, y, p.z0]);
+      }
+      for (const x of xs) for (const z of zs) seg([x, p.y0, z], [x, p.y1, z]);
+    } else {
+      const N = 32, at = (k, y) => [p.x + Math.cos((k / N) * Math.PI * 2) * p.r, y, p.z + Math.sin((k / N) * Math.PI * 2) * p.r];
+      for (const y of [p.y0, p.y1]) for (let k = 0; k < N; k++) seg(at(k, y), at(k + 1, y));
+      for (let k = 0; k < N; k += N / 4) seg(at(k, p.y0), at(k, p.y1));
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+    const line = new THREE.LineSegments(g, lit);
+    line.renderOrder = 2;
+    group.add(line);
+    return { line, door: p.door };
+  });
+  const paint = () => { for (const it of items) it.line.material = !it.door || doors[it.door] ? lit : dim; };
+  return { group, paint };
+})();
+
 function setDoor(group, open) {
   doors[group] = open;
   for (const m of doorMeshes) if (m.door === group) m.node.visible = m.open === open;
   for (const s of signs) if (s.door === group) s.node.visible = open;
+  portalLines.paint();
+}
+
+/** P：傳送範圍的線框，開或關。 */
+function togglePortalLines() {
+  portalLines.group.visible = !portalLines.group.visible;
+  hud.flash(portalLines.group.visible ? '顯示傳送範圍' : '隱藏傳送範圍');
 }
 for (const g of Object.keys(doors)) setDoor(g, doors[g]);
 
@@ -396,6 +439,7 @@ addEventListener('keydown', (e) => {
   if (k === 'x') cycleModel(e.shiftKey ? -1 : 1);
   if (k === 'r') goto(player.block);
   if (k === 'o') toggleDoors();
+  if (k === 'p') togglePortalLines();
   if (k >= '1' && k <= '9' && BLOCKS[+k - 1]) goto(BLOCKS[+k - 1].id);
   if ([' ', 'w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
 });
@@ -628,4 +672,4 @@ goto('courtyard');
 requestAnimationFrame(frame);
 
 // 給主控台一個把手，方便手動看東西（這頁沒有存檔，改了重載就回原樣）。
-window.testArea = { scene, camera, renderer, zoo, player, ruins, cam, pad, hud, goto, warp, setLook, doors, setDoor };
+window.testArea = { scene, camera, renderer, zoo, player, ruins, cam, pad, hud, goto, warp, setLook, doors, setDoor, togglePortalLines };
