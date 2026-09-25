@@ -12,6 +12,7 @@
      動物      3（皮毛、臉、翻面的墨線外殼）
      怪物      3（同上，另一份幾何）
      攻擊範圍  出招的那 0.2 秒 1；提示圈亮著的時候 1
+     破防      破防中的每一隻 2（淡圓 + 亮圓）
    ------------------------------------------------------------------ */
 
 import * as THREE from '../../test-area/vendor/three.module.js';
@@ -25,11 +26,11 @@ import { CAM, makeCam, snapCam, updateCam } from '../../test-area/src/camera.js'
 import { buildVeil } from '../../test-area/src/veil.js';
 import { lookInfo } from '../../src/cat/looks.js';
 import {
-  ARENA, COLS, SPAWN, SWING, KNOCK_SCALE, DAMAGE, KINDS, hurt, makeMonster, placeMonster, monsterStep, bites, knock,
+  ARENA, COLS, SPAWN, SWING, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster, placeMonster, monsterStep, bites, knock,
   inSlash, inFan, inRing, slashTip, fanFrame, makeCombo, comboStep, invulnerable, cueing,
 } from './combat.js';
 import { makeMonsterCritter } from './monster.js';
-import { slashFx, fanFx, ringFx, cueFx, showFx } from './fx.js';
+import { slashFx, fanFx, ringFx, cueFx, showFx, breakFx, showBreak } from './fx.js';
 
 const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -87,7 +88,8 @@ const player = {
 const foes = [{ m: makeMonster('hound'), spawn: SPAWN.monster }];
 for (const f of foes) {
   f.critter = makeMonsterCritter(zoo);
-  scene.add(f.critter.root);
+  f.breakFx = breakFx();
+  scene.add(f.critter.root, f.breakFx.node);
 }
 
 /** 被咬過幾次。 */
@@ -344,6 +346,11 @@ function frame(now) {
     camera.lookAt(rig.look[0], rig.look[1], rig.look[2]);
   }
 
+  // 破防的兩圈：套在怪物身體的中間，正對這一幀的鏡頭。
+  for (const { m, breakFx: bf } of foes) {
+    showBreak(bf, m.breakT / BREAK_WINDOW, m.x, m.y + PHYS.height / 2, m.z, camera.quaternion);
+  }
+
   renderer.render(scene, camera);
   pad.draw();
 
@@ -351,7 +358,7 @@ function frame(now) {
   let line = null;
   if (hudAcc > 0.25) {
     const foeLine = foes.map(({ m }) => `${KINDS[m.kind].name} 血 ${m.hp}/${KINDS[m.kind].hp}`
-      + `${m.kos ? `（擊倒 ${m.kos}）` : ''}`).join(' ・ ');
+      + `${m.kos ? `（擊倒 ${m.kos}）` : ''} 破防 ${m.breakT > 0 ? '中' : `${m.gauge}/${KINDS[m.kind].breakAt}`}`).join(' ・ ');
     line = `${Math.round(fpsN / fpsAcc)} fps ・ 被咬 ${deaths} 次 ・ ${foeLine} ・ `
       + `${PHASE_NAME[combo.phase]}${invulnerable(combo) ? '（無敵）' : ''} ・ `
       + `x ${player.x.toFixed(1)} y ${player.y.toFixed(1)} z ${player.z.toFixed(1)}`;

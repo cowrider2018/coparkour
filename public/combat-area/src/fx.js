@@ -100,6 +100,40 @@ export function cueFx() {
 }
 
 /**
+ * 破防的兩圈：一圈淡色的圓（窗口開著就一直在）與一圈亮圓（從淡圓的大小縮到
+ * 消失，縮完就是窗口關了）。套在怪物身上、永遠正對鏡頭，所以不管牠在地上還是
+ * 被挑在空中、鏡頭從哪個方向看，都是一個正圓。不吃深度：怪物的身體擋不住它。
+ */
+export const BREAK_R = 0.9;
+export function breakFx() {
+  const ring = (r0, r1, color, opacity) => {
+    const m = new THREE.Mesh(new THREE.RingGeometry(r0, r1, 48), new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity, side: THREE.DoubleSide,
+      depthTest: false, depthWrite: false, fog: false,
+    }));
+    m.renderOrder = 4;
+    return m;
+  };
+  const node = new THREE.Group();
+  const bright = ring(BREAK_R - 0.07, BREAK_R + 0.03, 0xf2c14e, 1);
+  node.add(ring(BREAK_R - 0.03, BREAK_R + 0.03, 0xfff4dc, 0.35), bright);
+  node.visible = false;
+  return { node, bright };
+}
+
+/**
+ * 擺破防的兩圈。`frac` 是窗口還剩幾成（1 → 0），0 以下就收起來。
+ * `quat` 是鏡頭的朝向，讓那兩圈正對鏡頭。
+ */
+export function showBreak(f, frac, x, y, z, quat) {
+  if (frac <= 0) { f.node.visible = false; return; }
+  f.node.visible = true;
+  f.node.position.set(x, y, z);
+  f.node.quaternion.copy(quat);
+  f.bright.scale.setScalar(frac);
+}
+
+/**
  * 亮起、淡掉。`t` 是這一段開始了多久，`life` 是它亮多久。
  * 過了 life 就收起來。`pitch` 只有會仰俯的那一片（第二段）用：下緣的仰角。
  */

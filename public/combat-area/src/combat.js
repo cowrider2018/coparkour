@@ -19,7 +19,12 @@
 
    每一下都會扣血（各段的傷害見 DAMAGE）。在試打場裡怪物打不死：血扣到 0
    就記一次「擊倒」、血補滿，繼續打。被打中還會被擊退：水平往遠離玩家的方向、
-   垂直往上，兩份動能一起給。飛在空中（被擊退、還沒落地）的怪物碰到玩家不算數。
+   垂直往上，兩份動能一起給。
+
+   ── 破防 ────────────────────────────────────────────────────────
+   每一隻怪物各自累積受到的傷害，累積到破防門檻（一律 BREAK_AT = 4）就「破防」：
+   開一個 BREAK_WINDOW 秒的窗口，畫面上是一圈淡色的圓與一圈從同樣大小縮到
+   消失的亮圓。窗口裡累積不再增加；窗口過了沒用上（錯過），累積歸零重新算。飛在空中（被擊退、還沒落地）的怪物碰到玩家不算數。
    空中再挨一下就再擊退一次——每一下都是把速度**換成**擊退的那一份，
    不是疊上去，所以連打是一直被挑在空中，而不是越飛越快。
 
@@ -72,10 +77,17 @@ export const COLS = [{
  *
  *   hound  綠狗（現在唯一的一類）。血 10。腳程 3.4：走路是 PHYS.walk（4），
  *          所以放開手就會被追上。
+ *
+ * `breakAt` 是破防門檻。現在每一類都是 BREAK_AT，但它是逐類登記的——哪天某一類
+ * 要比較硬，改那一筆就好。
  */
+export const BREAK_AT = 4;
 export const KINDS = {
-  hound: { name: '綠狗', hp: 10, speed: 3.4 },
+  hound: { name: '綠狗', hp: 10, speed: 3.4, breakAt: BREAK_AT },
 };
+
+/** 破防之後的窗口多長（秒）：亮圓從淡圓的大小縮到消失的時間。 */
+export const BREAK_WINDOW = 0.5;
 
 /** 每一段打中一下扣幾點血。這是招式的數值，不是怪物的，所以不在 KINDS 裡。 */
 export const DAMAGE = { slash: 1, rise: 3, slam: 2 };
@@ -126,6 +138,10 @@ export function makeMonster(kind = 'hound') {
     hp: 0,
     /** 被擊倒過幾次（試打場裡血扣到 0 就補滿，見 hurt）。 */
     kos: 0,
+    /** 離破防還累積了多少傷害。 */
+    gauge: 0,
+    /** 破防窗口還剩幾秒（0 = 沒有破防）。 */
+    breakT: 0,
   };
   placeMonster(m);
   return m;
@@ -139,15 +155,32 @@ export function placeMonster(m) {
   m.grounded = true;
   m.air = false;
   m.hp = kindOf(m).hp;
+  m.gauge = 0;
+  m.breakT = 0;
   m.aimX = Math.sin(s.yaw); m.aimZ = Math.cos(s.yaw);
 }
 
+/** 這隻怪物現在是不是破防中（窗口還開著）。 */
+export const broken = (m) => m.breakT > 0;
+
+/** 破防的累積歸零（窗口用掉或錯過都是這一支）。 */
+export function resetBreak(m) {
+  m.gauge = 0;
+  m.breakT = 0;
+}
+
 /**
- * 扣血。試打場裡打不死：扣到 0 就記一次擊倒、血補滿。
+ * 扣血，並累積破防。試打場裡打不死：扣到 0 就記一次擊倒、血補滿。
+ *
+ * 破防窗口開著的時候不累積——門檻已經到了，窗口用掉或錯過之後才從 0 重算。
  *
  * @returns {boolean} 這一下把牠擊倒了
  */
 export function hurt(m, dmg) {
+  if (!broken(m)) {
+    m.gauge += dmg;
+    if (m.gauge >= kindOf(m).breakAt) m.breakT = BREAK_WINDOW;
+  }
   m.hp -= dmg;
   if (m.hp > 0) return false;
   m.kos++;
@@ -163,6 +196,11 @@ export function hurt(m, dmg) {
  * 東西：轉向不欠帳，加速量照 PHYS。
  */
 export function monsterStep(m, dt, target) {
+  // 破防窗口：時間到了還沒用上就是錯過，累積歸零。
+  if (broken(m)) {
+    m.breakT -= dt;
+    if (m.breakT <= 0) resetBreak(m);
+  }
   if (m.air) {
     m.vy -= PHYS.gravity * dt;
     m.y += m.vy * dt;

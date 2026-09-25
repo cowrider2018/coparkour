@@ -26,11 +26,14 @@
                     整套打完之前一次都沒被咬。
     10. 名冊與血    每一類怪物的數值登記在 KINDS；三段各扣 1、3、2；扣到 0 記一次
                     擊倒、血補滿（試打場不死）；回到站位血也補滿。
+    11. 破防門檻    傷害累積到 4 就破防、開 0.5 秒的窗口；窗口裡不再累積；
+                    錯過就歸零重算。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test-area/src/walk.js';
 import {
   ARENA, SPAWN, DOG_H, REACH, SWING, REST, KNOCK, KNOCK_SCALE, FAN, WINDOW, KINDS, DAMAGE, hurt, placeMonster,
+  BREAK_AT, BREAK_WINDOW, broken,
   makeMonster, monsterStep, touching, bites, knock, inSlash, inFan, inRing, slashTip, fanFrame,
   makeCombo, comboStep, invulnerable, cueing,
 } from '../public/combat-area/src/combat.js';
@@ -333,6 +336,25 @@ console.log('10. 名冊與血');
   hurt(m, 3);
   placeMonster(m);
   ok(m.hp === 10, '回到站位血也補滿');
+}
+
+/* ── 11. 破防門檻 ────────────────────────────────────────────── */
+console.log('11. 破防門檻');
+{
+  ok(BREAK_AT === 4 && Object.values(KINDS).every((k) => k.breakAt === BREAK_AT), '每一類的破防門檻都是 4');
+  const m = makeMonster('hound');
+  hurt(m, DAMAGE.slash);
+  ok(!broken(m) && m.gauge === 1, '第一段：累積 1，還沒破防');
+  hurt(m, DAMAGE.rise);
+  ok(broken(m) && near(m.breakT, BREAK_WINDOW), `第二段：累積 4，破防，窗口 ${BREAK_WINDOW} 秒`);
+  hurt(m, DAMAGE.slam);
+  ok(m.gauge === 4, '窗口裡再挨一下不累積');
+  const far = { x: 0, z: 100 };
+  let t = 0;
+  while (broken(m)) { monsterStep(m, DT, far); t += DT; }
+  ok(Math.abs(t - BREAK_WINDOW) < 2 * DT && m.gauge === 0, `${t.toFixed(2)} 秒沒用上：錯過，累積歸零`);
+  hurt(m, DAMAGE.slam);
+  ok(m.gauge === 2 && !broken(m), '錯過之後從 0 重算');
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');
