@@ -64,8 +64,20 @@ export const COLS = [{
   min: [ARENA.x0, -2, ARENA.z0], max: [ARENA.x1, 30, ARENA.z1], base: -2,
 }];
 
-/** 怪物的腳程。走路是 PHYS.walk（4），所以放開手就會被追上。 */
-export const MONSTER = { speed: 3.4 };
+/**
+ * 怪物的名冊：每一類怪物一筆數值，住在這裡而不是散在各支函式裡——之後多一類
+ * 怪物就是多一筆，規則不動。每一隻怪物身上帶的是牠自己的「狀態」（位置、速度、
+ * 挨了幾下…），數值一律回頭查這一張，用 `m.kind` 認類別。
+ *
+ *   hound  綠狗（現在唯一的一類）。腳程 3.4：走路是 PHYS.walk（4），所以放開
+ *          手就會被追上。
+ */
+export const KINDS = {
+  hound: { name: '綠狗', speed: 3.4 },
+};
+
+/** 一隻怪物的那一類數值。 */
+export const kindOf = (m) => KINDS[m.kind];
 
 /** 攻擊的長度：2.5 個狗高。每一段都一樣，差的只有角度。 */
 export const REACH = 2.5 * DOG_H;
@@ -97,9 +109,10 @@ export const KNOCK_SCALE = {
   slam: { h: 0.5, v: 2 },
 };
 
-/** 一隻站在站位上的怪物。 */
-export function makeMonster() {
+/** 一隻站在站位上的怪物。`kind` 是 KINDS 的鍵。 */
+export function makeMonster(kind = 'hound') {
   const m = {
+    kind,
     x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, grounded: true, aimX: 0, aimZ: 1,
     /* 被擊退、還沒落地。這段時間牠不追人，碰到玩家也不算數。 */
     air: false,
@@ -144,7 +157,7 @@ export function monsterStep(m, dt, target) {
   const dx = target.x - m.x, dz = target.z - m.z;
   const d = Math.hypot(dx, dz);
   if (d > 1e-6) { m.aimX = dx / d; m.aimZ = dz / d; }
-  [m.vx, m.vz] = steer(m.vx, m.vz, m.aimX, m.aimZ, MONSTER.speed, dt);
+  [m.vx, m.vz] = steer(m.vx, m.vz, m.aimX, m.aimZ, kindOf(m).speed, dt);
   [m.x, m.z] = solveXZ(COLS, m.x + m.vx * dt, m.z + m.vz * dt, m.y);
 }
 
@@ -320,12 +333,12 @@ export const WINDOW = [0.25, 0.75];
 export const REST = WINDOW[1];
 
 /**
- * `hit`：這一段已經打中過了（每一段對同一隻怪物只算一下）。
+ * `hit`：這一段已經打中過的怪物（每一段對同一隻怪物只算一下，不同隻各算各的）。
  * `tip`：上一次第一段的末端點（slashTip），第二段指著它。出第一段的時候
  * 由呼叫端記下——狀態機不碰身體。
  */
 export function makeCombo() {
-  return { phase: 'idle', t: 0, hit: false, tip: null };
+  return { phase: 'idle', t: 0, hit: new Set(), tip: null };
 }
 
 /** 現在是不是無敵：第三段起跳之後、落地之前。 */
@@ -342,7 +355,7 @@ export const cueing = (c) => (c.phase === 'rest' && c.t >= WINDOW[0] && c.t <= W
  * @param {object} io
  *   pressed   這一幀按了跳
  *   grounded  玩家站在地上
- *   near      怪物在第一段的範圍裡（inSlash）
+ *   near      有怪物在第一段的範圍裡（inSlash）
  * @returns {{jump: boolean, start: number}}
  *   jump   玩家這一幀要起跳：垂直速度換成一次新的起跳（普通的跳、第二段、
  *          第三段的二段跳都是這一個）
@@ -352,7 +365,7 @@ export const cueing = (c) => (c.phase === 'rest' && c.t >= WINDOW[0] && c.t <= W
 export function comboStep(c, dt, { pressed, grounded, near }) {
   const out = { jump: false, start: 0 };
   c.t += dt;
-  const go = (phase) => { c.phase = phase; c.t = 0; c.hit = false; };
+  const go = (phase) => { c.phase = phase; c.t = 0; c.hit = new Set(); };
   let used = false;                       // 這一下按跳已經被連段吃掉了
   switch (c.phase) {
     case 'slash':

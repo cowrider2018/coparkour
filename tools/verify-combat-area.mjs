@@ -156,7 +156,7 @@ console.log('5. 第一段自動');
     if (act.start === 1) { starts++; if (firstAt < 0) firstAt = t; if (slashT) slashLen.push(slashT); slashT = 0; }
     if (c.phase === 'slash') slashT += DT;
     monsterStep(m, DT, p);
-    if (c.phase === 'slash' && !c.hit && inSlash(p, m)) { knock(m, p.x, p.z, p.aimX, p.aimZ, KNOCK_SCALE.slash); c.hit = true; }
+    if (c.phase === 'slash' && !c.hit.has(m) && inSlash(p, m)) { knock(m, p.x, p.z, p.aimX, p.aimZ, KNOCK_SCALE.slash); c.hit.add(m); }
     if (bites(p, m)) bitten = true;
     t += DT;
   }
@@ -302,7 +302,7 @@ console.log('9. 打一整套');
       if (p.y <= 0 && p.vy <= 0) { p.y = 0; p.vy = 0; p.grounded = true; } else p.grounded = false;
       monsterStep(m, DT, p);
       const r = reach[c.phase];
-      if (r && !c.hit && r(p, m)) { knock(m, p.x, p.z, p.aimX, p.aimZ, KNOCK_SCALE[c.phase]); c.hit = true; hits.push(c.phase); }
+      if (r && !c.hit.has(m) && r(p, m)) { knock(m, p.x, p.z, p.aimX, p.aimZ, KNOCK_SCALE[c.phase]); c.hit.add(m); hits.push(c.phase); }
       if (bites(p, m) && invulnerable(c)) shielded++;
       if (bites(p, m) && !invulnerable(c)) { bitten = true; break; }
       t += DT;

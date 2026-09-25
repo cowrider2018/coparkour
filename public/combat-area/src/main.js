@@ -82,10 +82,13 @@ const player = {
   aimX: 0, aimZ: -1,
 };
 
-/* 怪物：綠色、紅眼睛的立耳犬，借玩家那個 Zoo 讀好的資料。 */
-const monster = makeMonster();
-const beast = makeMonsterCritter(zoo);
-scene.add(beast.root);
+/* 怪物：每一隻是「狀態」（combat.js 的 makeMonster）加上「外觀」（monster.js）。
+   現在只有一隻綠狗，但下面每一條規則都是對這張清單逐隻做的。 */
+const foes = [{ m: makeMonster('hound'), spawn: SPAWN.monster }];
+for (const f of foes) {
+  f.critter = makeMonsterCritter(zoo);
+  scene.add(f.critter.root);
+}
 
 /** 被咬過幾次。 */
 let deaths = 0;
@@ -109,8 +112,10 @@ function resetStance() {
   player.aimX = Math.sin(s.yaw); player.aimZ = Math.cos(s.yaw);
   cam.yaw = s.yaw;
   snapCam(cam, player.x, player.z);
-  placeMonster(monster);
-  beast.setFacing(SPAWN.monster.yaw);
+  for (const f of foes) {
+    placeMonster(f.m);
+    f.critter.setFacing(f.spawn.yaw);
+  }
   Object.assign(combo, makeCombo());
 }
 
@@ -259,7 +264,7 @@ function frame(now) {
   const pressed = pad.takeJump() || jumpQueued;
   jumpQueued = false;
   const act = comboStep(combo, dt, {
-    pressed, grounded: player.grounded, near: inSlash(player, monster),
+    pressed, grounded: player.grounded, near: foes.some((f) => inSlash(player, f.m)),
   });
   if (act.start === 1) combo.tip = slashTip(player);
   if (act.jump) {
@@ -285,15 +290,17 @@ function frame(now) {
 
   /* 怪物追人（或是被擊退、在空中飛）。然後才判打中：兩個身體都走完這一幀
      了，範圍是對著畫面上的位置判的。 */
-  monsterStep(monster, dt, player);
+  for (const { m } of foes) monsterStep(m, dt, player);
   const reach = REACHES[combo.phase];
-  if (reach && !combo.hit && reach(player, monster)) {
-    knock(monster, player.x, player.z, player.aimX, player.aimZ, KNOCK_SCALE[combo.phase]);
-    combo.hit = true;
+  for (const { m } of foes) {
+    if (reach && !combo.hit.has(m) && reach(player, m)) {
+      knock(m, player.x, player.z, player.aimX, player.aimZ, KNOCK_SCALE[combo.phase]);
+      combo.hit.add(m);
+    }
   }
   /* 碰到玩家，玩家就死，雙方回到站位。被擊退、還沒落地的怪物不算；第三段
      起跳之後、落地之前的玩家也不算。 */
-  if (bites(player, monster) && !invulnerable(combo)) {
+  if (foes.some((f) => bites(player, f.m)) && !invulnerable(combo)) {
     deaths++;
     resetStance();
     hud.flash('被咬到了');
@@ -306,12 +313,14 @@ function frame(now) {
   zoo.update(dt, {
     speed: Math.hypot(player.vx, player.vz), grounded: player.grounded, vy: player.vy, viewYaw,
   });
-  beast.root.position.set(monster.x, monster.y, monster.z);
-  beast.setFacing(Math.atan2(monster.aimX, monster.aimZ));
-  beast.update(dt, {
-    speed: Math.hypot(monster.vx, monster.vz), grounded: monster.grounded, vy: monster.vy,
-    viewYaw: Math.atan2(camera.position.x - monster.x, camera.position.z - monster.z),
-  });
+  for (const { m, critter } of foes) {
+    critter.root.position.set(m.x, m.y, m.z);
+    critter.setFacing(Math.atan2(m.aimX, m.aimZ));
+    critter.update(dt, {
+      speed: Math.hypot(m.vx, m.vz), grounded: m.grounded, vy: m.vy,
+      viewYaw: Math.atan2(camera.position.x - m.x, camera.position.z - m.z),
+    });
+  }
 
   // 攻擊範圍的高亮：跟著玩家的腳與面向走。
   {
@@ -340,7 +349,7 @@ function frame(now) {
   fpsAcc += dt; fpsN++; hudAcc += dt;
   let line = null;
   if (hudAcc > 0.25) {
-    line = `${Math.round(fpsN / fpsAcc)} fps ・ 被咬 ${deaths} 次 ・ 打中 ${monster.hits} 下 ・ `
+    line = `${Math.round(fpsN / fpsAcc)} fps ・ 被咬 ${deaths} 次 ・ 打中 ${foes.reduce((n, f) => n + f.m.hits, 0)} 下 ・ `
       + `${PHASE_NAME[combo.phase]}${invulnerable(combo) ? '（無敵）' : ''} ・ `
       + `x ${player.x.toFixed(1)} y ${player.y.toFixed(1)} z ${player.z.toFixed(1)}`;
     fpsAcc = 0; fpsN = 0; hudAcc = 0;
@@ -371,7 +380,7 @@ function resize() {
   document.body.classList.toggle('pad-port', pad.portrait);
   hud.fit(pad.portrait ? 999 : pad.rail);
   zoo.setInkPx(2.0, h * dpr);
-  beast.setInkPx(2.0, h * dpr);
+  for (const f of foes) f.critter.setInkPx(2.0, h * dpr);
 }
 addEventListener('resize', resize);
 resize();
@@ -381,4 +390,4 @@ resetStance();
 requestAnimationFrame(frame);
 
 // 給主控台一個把手，方便手動看東西。
-window.combatArea = { scene, camera, renderer, zoo, player, monster, beast, combo, cam, pad, hud, resetStance };
+window.combatArea = { scene, camera, renderer, zoo, player, foes, monster: foes[0].m, combo, cam, pad, hud, resetStance };
