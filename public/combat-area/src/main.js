@@ -11,6 +11,7 @@
      黑牆      1（牆、頂、霧殼、牆腳漸層是同一個 mesh）
      動物      3（皮毛、臉、翻面的墨線外殼）
      怪物      3（同上，另一份幾何）
+     攻擊範圍  出招的那 0.2 秒 1
    ------------------------------------------------------------------ */
 
 import * as THREE from '../../test-area/vendor/three.module.js';
@@ -23,8 +24,12 @@ import { PHYS, solveXZ, supportInfo, steer } from '../../test-area/src/walk.js';
 import { CAM, makeCam, snapCam, updateCam } from '../../test-area/src/camera.js';
 import { buildVeil } from '../../test-area/src/veil.js';
 import { lookInfo } from '../../src/cat/looks.js';
-import { ARENA, COLS, SPAWN, makeMonster, placeMonster, monsterStep, touching } from './combat.js';
+import {
+  ARENA, COLS, SPAWN, SWING, makeMonster, placeMonster, monsterStep, bites, knock,
+  inSlash, makeCombo, comboStep,
+} from './combat.js';
 import { makeMonsterCritter } from './monster.js';
+import { slashFx, showFx } from './fx.js';
 
 const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -85,6 +90,11 @@ scene.add(beast.root);
 /** 被咬過幾次。 */
 let deaths = 0;
 
+/* 連段的狀態與每一段的高亮。 */
+const combo = makeCombo();
+const fxSlash = slashFx();
+scene.add(fxSlash.node);
+
 const cam = makeCam(0, 0);
 
 /** 回到站位：玩家在中線 2/3、怪物在 1/3，都面向中心，鏡頭在玩家背後。 */
@@ -98,6 +108,7 @@ function resetStance() {
   snapCam(cam, player.x, player.z);
   placeMonster(monster);
   beast.setFacing(SPAWN.monster.yaw);
+  Object.assign(combo, makeCombo());
 }
 
 /* ── 外觀 ────────────────────────────────────────────────────── */
@@ -235,9 +246,14 @@ function frame(now) {
   }
   [player.vx, player.vz] = steer(player.vx, player.vz, player.aimX, player.aimZ, speedFor(mag), dt);
 
+  /* 連段決定這一下跳是什麼：普通的跳，或是某一段的出手。站不站在地上
+     看的是上一幀的結果，跟試玩場判斷能不能跳是同一個時間點。 */
   const pressed = pad.takeJump() || jumpQueued;
   jumpQueued = false;
-  if (pressed && player.grounded) {
+  const act = comboStep(combo, dt, {
+    pressed, grounded: player.grounded, near: inSlash(player, monster),
+  });
+  if (act.jump) {
     player.vy = PHYS.jump;
     player.grounded = false;
   }
@@ -258,9 +274,15 @@ function frame(now) {
     player.grounded = false;
   }
 
-  // 怪物追人；碰到玩家，玩家就死，雙方回到站位。
+  /* 怪物追人（或是被擊退、在空中飛）。然後才判打中：兩個身體都走完這一幀
+     了，範圍是對著畫面上的位置判的。 */
   monsterStep(monster, dt, player);
-  if (touching(player, monster)) {
+  if (combo.phase === 'slash' && !combo.hit && inSlash(player, monster)) {
+    knock(monster, player.x, player.z, player.aimX, player.aimZ);
+    combo.hit = true;
+  }
+  // 碰到玩家，玩家就死，雙方回到站位。被擊退、還沒落地的怪物不算。
+  if (bites(player, monster)) {
     deaths++;
     resetStance();
     hud.flash('被咬到了');
@@ -280,6 +302,10 @@ function frame(now) {
     viewYaw: Math.atan2(camera.position.x - monster.x, camera.position.z - monster.z),
   });
 
+  // 攻擊範圍的高亮：跟著玩家的腳與面向走。
+  showFx(fxSlash, combo.phase === 'slash' ? combo.t : Infinity, SWING,
+    player.x, player.y, player.z, Math.atan2(player.aimX, player.aimZ));
+
   // 相機
   {
     const rig = updateCam(cam, dt, player, ARENA, COLS);
@@ -293,7 +319,7 @@ function frame(now) {
   fpsAcc += dt; fpsN++; hudAcc += dt;
   let line = null;
   if (hudAcc > 0.25) {
-    line = `${Math.round(fpsN / fpsAcc)} fps ・ 被咬 ${deaths} 次 ・ `
+    line = `${Math.round(fpsN / fpsAcc)} fps ・ 被咬 ${deaths} 次 ・ 打中 ${monster.hits} 下 ・ `
       + `x ${player.x.toFixed(1)} y ${player.y.toFixed(1)} z ${player.z.toFixed(1)}`;
     fpsAcc = 0; fpsN = 0; hudAcc = 0;
   }
@@ -333,4 +359,4 @@ resetStance();
 requestAnimationFrame(frame);
 
 // 給主控台一個把手，方便手動看東西。
-window.combatArea = { scene, camera, renderer, zoo, player, monster, beast, cam, pad, hud, resetStance };
+window.combatArea = { scene, camera, renderer, zoo, player, monster, beast, combo, cam, pad, hud, resetStance };
