@@ -3,12 +3,14 @@
 
    試玩場（/test-area/）的 main.js 拿掉地形之後剩下的東西：一塊黑牆圍起來
    的空地、那隻動物、第三人稱鏡頭、手把。走路、跳、鏡頭、手把的規則都
-   不在這裡，是直接 import 試玩場那幾支——這一頁只多了戰鬥（combat.js）。
+   不在這裡，是直接 import 試玩場那幾支——這一頁只多了戰鬥（combat.js）
+   與一隻怪物（monster.js）。
 
    ── 場景一共幾個 draw call ───────────────────────────────────────
      地面      1
      黑牆      1（牆、頂、霧殼、牆腳漸層是同一個 mesh）
      動物      3（皮毛、臉、翻面的墨線外殼）
+     怪物      3（同上，另一份幾何）
    ------------------------------------------------------------------ */
 
 import * as THREE from '../../test-area/vendor/three.module.js';
@@ -21,7 +23,8 @@ import { PHYS, solveXZ, supportInfo, steer } from '../../test-area/src/walk.js';
 import { CAM, makeCam, snapCam, updateCam } from '../../test-area/src/camera.js';
 import { buildVeil } from '../../test-area/src/veil.js';
 import { lookInfo } from '../../src/cat/looks.js';
-import { ARENA, COLS, SPAWN } from './combat.js';
+import { ARENA, COLS, SPAWN, makeMonster, placeMonster, monsterStep, touching } from './combat.js';
+import { makeMonsterCritter } from './monster.js';
 
 const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -74,9 +77,17 @@ const player = {
   aimX: 0, aimZ: -1,
 };
 
+/* 怪物：綠色、紅眼睛的立耳犬，借玩家那個 Zoo 讀好的資料。 */
+const monster = makeMonster();
+const beast = makeMonsterCritter(zoo);
+scene.add(beast.root);
+
+/** 被咬過幾次。 */
+let deaths = 0;
+
 const cam = makeCam(0, 0);
 
-/** 回到站位：玩家在中線 2/3、面向中心，鏡頭在牠背後。 */
+/** 回到站位：玩家在中線 2/3、怪物在 1/3，都面向中心，鏡頭在玩家背後。 */
 function resetStance() {
   const s = SPAWN.player;
   player.x = s.x; player.y = 0; player.z = s.z;
@@ -85,6 +96,8 @@ function resetStance() {
   player.aimX = Math.sin(s.yaw); player.aimZ = Math.cos(s.yaw);
   cam.yaw = s.yaw;
   snapCam(cam, player.x, player.z);
+  placeMonster(monster);
+  beast.setFacing(SPAWN.monster.yaw);
 }
 
 /* ── 外觀 ────────────────────────────────────────────────────── */
@@ -245,12 +258,26 @@ function frame(now) {
     player.grounded = false;
   }
 
+  // 怪物追人；碰到玩家，玩家就死，雙方回到站位。
+  monsterStep(monster, dt, player);
+  if (touching(player, monster)) {
+    deaths++;
+    resetStance();
+    hud.flash('被咬到了');
+  }
+
   // 動物
   zoo.root.position.set(player.x, player.y, player.z);
   zoo.setFacing(Math.atan2(player.aimX, player.aimZ));
   const viewYaw = Math.atan2(camera.position.x - player.x, camera.position.z - player.z);
   zoo.update(dt, {
     speed: Math.hypot(player.vx, player.vz), grounded: player.grounded, vy: player.vy, viewYaw,
+  });
+  beast.root.position.set(monster.x, monster.y, monster.z);
+  beast.setFacing(Math.atan2(monster.aimX, monster.aimZ));
+  beast.update(dt, {
+    speed: Math.hypot(monster.vx, monster.vz), grounded: monster.grounded, vy: monster.vy,
+    viewYaw: Math.atan2(camera.position.x - monster.x, camera.position.z - monster.z),
   });
 
   // 相機
@@ -266,7 +293,8 @@ function frame(now) {
   fpsAcc += dt; fpsN++; hudAcc += dt;
   let line = null;
   if (hudAcc > 0.25) {
-    line = `${Math.round(fpsN / fpsAcc)} fps ・ x ${player.x.toFixed(1)} y ${player.y.toFixed(1)} z ${player.z.toFixed(1)}`;
+    line = `${Math.round(fpsN / fpsAcc)} fps ・ 被咬 ${deaths} 次 ・ `
+      + `x ${player.x.toFixed(1)} y ${player.y.toFixed(1)} z ${player.z.toFixed(1)}`;
     fpsAcc = 0; fpsN = 0; hudAcc = 0;
   }
   hud.tick(dt, line);
@@ -295,6 +323,7 @@ function resize() {
   document.body.classList.toggle('pad-port', pad.portrait);
   hud.fit(pad.portrait ? 999 : pad.rail);
   zoo.setInkPx(2.0, h * dpr);
+  beast.setInkPx(2.0, h * dpr);
 }
 addEventListener('resize', resize);
 resize();
@@ -304,4 +333,4 @@ resetStance();
 requestAnimationFrame(frame);
 
 // 給主控台一個把手，方便手動看東西。
-window.combatArea = { scene, camera, renderer, zoo, player, cam, pad, hud, resetStance };
+window.combatArea = { scene, camera, renderer, zoo, player, monster, beast, cam, pad, hud, resetStance };
