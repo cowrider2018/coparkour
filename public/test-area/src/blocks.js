@@ -743,11 +743,11 @@ function wallwalk(B, flames, seed, A) {
     || laneGap(lane, x, z) < 0.4);
   wasteland(B, r, seed, A, { T, TC, TW, TZ, TX, RT });
 
-  /* 小路沒入黑霧的那一截：一塊橫過路面的感測區，從黑牆往裡 1.4 公尺，送到中庭
-     的東拱洞前。身體走得到黑牆前 0.3，所以一路走到底一定會碰到它；路以外的
-     黑牆腳不送人。
-     回來的到達點在路上、離這一塊兩公尺多，面朝城門。 */
-  B.portalBox(-PATH, -A.r, PATH, -A.r + 1.4, -0.5, 3, 'courtyard.east');
+  /* 小路沒入黑霧的那一截：一塊橫過路面的感測區，送到中庭的東拱洞前。從黑牆往裡
+     0.5，跟門洞的觸發深度一樣：身體走得到黑牆前 0.3，所以要一路走到黑牆腳下、
+     鼻子伸進霧裡才會碰到它；路以外的黑牆腳不送人。
+     回來的到達點在路上、離黑牆 3.4，面朝城門。 */
+  B.portalBox(-PATH, -A.r, PATH, -A.r + 0.5, -0.5, 3, 'courtyard.east');
   B.arrive('fog', 0, 0, -A.r + 3.4, 0);
   // 出生點在兵營中間的路上，面朝北（+z）：城門與牆頂的走道在正前方。
   return { spawn: [0, 0, -9], yaw: 0 };
@@ -1467,9 +1467,9 @@ function alley(B, flames, seed, A) {
   B.portal(0, WZ, 1.15 * 0.78, -8.5, -3, 'cistern.well', { oneWay: true });
   /* 從水窖的殘階爬上來的地方：井的南邊、離井心 2.4，面朝井。 */
   B.arrive('stair', 0, 0, WZ - 2.4, 0);
-  /* 巷子南端沒入黑霧的那一截：一塊橫過巷子的感測區，從黑牆往裡 1.4 公尺，
-     送到中庭的西拱洞前。回來的到達點在巷子裡、離這一塊兩公尺，面朝廣場。 */
-  B.portalBox(-S, A.z0, S, A.z0 + 1.4, -0.5, 3, 'courtyard.west');
+  /* 巷子南端沒入黑霧的那一截：一塊橫過巷子的感測區，從黑牆往裡 0.5（跟城牆那條
+     小路一樣），送到中庭的西拱洞前。回來的到達點在巷子裡、離黑牆 3.4，面朝廣場。 */
+  B.portalBox(-S, A.z0, S, A.z0 + 0.5, -0.5, 3, 'courtyard.west');
   B.arrive('fog', 0, 0, A.z0 + 3.4, 0);
   for (const sx of [-1, 1]) brazier(B, { x: sx * 5.6, z: NZ - 1.2, y: 0, s: 0.9, seed: seed + 4 + sx }, flames);
   crate(B, -6.0, 0, 5.2, 0.0); crate(B, -6.0, 0.9, 5.2, 0.12); crate(B, -5.1, 0, 5.3, -0.1);
