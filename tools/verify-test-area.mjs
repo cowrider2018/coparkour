@@ -1186,7 +1186,9 @@ head('傳送點');
      2. 不在任何一個感測區裡——不然一落地就又被送走，兩邊來回彈。門全部
         開著的時候問：那是感測區最多的時候。掉下來的到達點，整段落下都問。
      3. 不是單向的（井）就要有回程：目的地那個區塊裡有一個感測區把人送回這一個
-        旁邊，而且從到達點用真的物理走得進它（門全部開著）。 */
+        旁邊，而且從到達點用真的物理走得進它（門全部開著）。回程跟去程屬於同一
+        扇門（blocks.js 的 `DOORS` 是按通道登記的）：兩頭各是各的門，就可能只開
+        一頭——走得過去、走不回來。 */
 {
   const ALL = Object.fromEntries(Object.keys(R.doors).map((g) => [g, true]));
   const centerOf = (p) => (p.shape === 'box' ? [(p.x0 + p.x1) / 2, (p.z0 + p.z1) / 2] : [p.x, p.z]);
@@ -1225,15 +1227,15 @@ head('傳送點');
     for (let y = sup; y <= d.y + 0.25 && !bounce; y += 0.1) bounce = portalAt(R.portals, d.x, y, d.z, ALL);
     ok(!bounce, `${label}：到達點不在任何感測區裡`, bounce ? `落在 ${bounce.block} → ${bounce.to} 那一塊裡` : '');
     if (p.oneWay) continue;
-    /* 回程：目的地那個區塊裡送回這個區塊的感測區裡，落點離這一塊最近的那一個。
-       兩頭可以各有各的門（中庭的鐵閘與王座廳的鐵閘是兩組，各自在自己的區塊裡
-       按 O），所以不要求同一組門；走回去的時候門全部開著。 */
+    /* 回程：目的地那個區塊裡送回這個區塊的感測區裡，落點離這一塊最近的那一個。 */
     const [px, pz] = centerOf(p);
     const far = (q) => Math.hypot(q.dest.x - px, q.dest.z - pz);
     const back = R.portals.filter((q) => q.block === d.block && q.dest.block === p.block)
       .sort((a, b) => far(a) - far(b)).find((q) => far(q) < 8);
     ok(!!back, `${label}：有回程`, back ? `${back.block} → ${back.to}` : '目的地那一邊沒有送回這裡的感測區');
     if (!back) continue;
+    ok(back.door === p.door, `${label}：回程跟去程是同一扇門`,
+      back.door === p.door ? (p.door ?? '都沒有門') : `去程 ${p.door ?? '沒有門'}、回程 ${back.door ?? '沒有門'}`);
     const res = walkInto([d.x, sup, d.z], centerOf(back), ALL);
     ok(res.gate === back, `${label}：從到達點走得進回程的那一塊`,
       res.gate === back ? `${res.t.toFixed(1)} 秒`
