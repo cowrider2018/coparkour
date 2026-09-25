@@ -169,6 +169,26 @@ export function showLane(f, on, frac, x, z, yaw, len) {
   f.bright.scale.z = Math.max(1e-3, len * frac);
 }
 
+/** 跳砸的預告：目標點上一片淺色的圓（整個範圍）與一片從中心長到邊的亮色圓。 */
+export function circleFx(radius) {
+  const g = new THREE.CircleGeometry(radius, 48);
+  g.rotateX(-Math.PI / 2);
+  g.translate(0, 0.03, 0);
+  const node = new THREE.Group();
+  const pale = decal(g, 0.2), bright = decal(g, 0.45);
+  node.add(pale, bright);
+  node.visible = false;
+  return { node, pale, bright };
+}
+
+/** 擺跳砸的預告。frac 是倒數走了幾成（0 → 1）。 */
+export function showCircle(f, on, frac, x, z) {
+  f.node.visible = on;
+  if (!on) return;
+  f.node.position.set(x, 0, z);
+  f.bright.scale.setScalar(Math.max(1e-3, frac));
+}
+
 /** 一顆球的外觀：跟石頭同一套分階著色（palette.js 的 toon），才看得出是一顆球而不是一片圓。 */
 const ORB_MAT = toon(0xff4fd8);
 export function orbMesh(radius) {

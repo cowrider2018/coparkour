@@ -32,8 +32,10 @@ import {
   inSlash, inFan, inRing, slashTip, fanFrame, makeCombo, comboStep, invulnerable, cueing,
 } from './combat.js';
 import { makeMonsterCritter } from './monster.js';
-import { slashFx, fanFx, ringFx, cueFx, showFx, breakFx, showBreak, laneFx, showLane, orbMesh } from './fx.js';
-import { SKILL, makeWorld, bossStep, shotsStep, shotHits, laneLength } from './skills.js';
+import {
+  slashFx, fanFx, ringFx, cueFx, showFx, breakFx, showBreak, laneFx, showLane, orbMesh, circleFx, showCircle,
+} from './fx.js';
+import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from './skills.js';
 
 const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -98,9 +100,12 @@ function lookFor(kind, i) {
   if (!looks.pool.has(kind)) looks.pool.set(kind, []);
   const list = looks.pool.get(kind);
   while (list.length <= i) {
-    const slot = { critter: makeMonsterCritter(zoo, kind), breakFx: breakFx(), lane: laneFx(SKILL.orb.radius) };
+    const slot = {
+      critter: makeMonsterCritter(zoo, kind), breakFx: breakFx(),
+      lane: laneFx(SKILL.orb.radius), circle: circleFx(SKILL.leap.radius),
+    };
     if (looks.inkPx) slot.critter.setInkPx(...looks.inkPx);
-    scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node);
+    scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node);
     list.push(slot);
   }
   return list[i];
@@ -159,7 +164,7 @@ function setMode(id) {
   if (!md) return;
   mode = id;
   for (const list of looks.pool.values()) {
-    for (const s of list) { s.critter.root.visible = false; s.breakFx.node.visible = false; s.lane.node.visible = false; }
+    for (const s of list) { s.critter.root.visible = false; s.breakFx.node.visible = false; s.lane.node.visible = false; s.circle.node.visible = false; }
   }
   const used = new Map();
   foes = md.monsters.map((s) => {
@@ -360,7 +365,7 @@ function frame(now) {
   /* 怪物追人（或是被擊退、在空中飛）。然後才判打中：兩個身體都走完這一幀
      了，範圍是對著畫面上的位置判的。 */
   // BOSS 先決定這一幀在不在放招（放招中 monsterStep 讓牠站著），球往前飛。
-  for (const { m } of foes) bossStep(m, dt, player, world);
+  const strikes = foes.map(({ m }) => bossStep(m, dt, player, world)).filter(Boolean);
   shotsStep(world, dt);
   for (const { m } of foes) monsterStep(m, dt, player);
   separate(foes.map((f) => f.m));
@@ -384,10 +389,11 @@ function frame(now) {
   if (!invulnerable(combo)) {
     const bitten = foes.some((f) => bites(player, f.m));
     const shot = world.shots.some((s) => shotHits(s, player));
-    if (bitten || shot) {
+    const struck = strikes.some((st) => strikeHits(st, player));
+    if (bitten || shot || struck) {
       deaths++;
       resetStance();
-      hud.flash(bitten ? '被咬到了' : '被球打中了');
+      hud.flash(bitten ? '被咬到了' : shot ? '被球打中了' : '被 BOSS 的招打中了');
     }
   }
 
@@ -429,11 +435,12 @@ function frame(now) {
   }
 
   // BOSS 的預告與飛著的球。
-  for (const { m, lane } of foes) {
+  for (const { m, lane, circle } of foes) {
     const c = m.cast;
-    const on = !!c && c.skill === 'orb';
-    showLane(lane, on, on ? Math.min(1, c.t / SKILL.orb.windup) : 0, m.x, m.z,
-      on ? Math.atan2(c.dirX, c.dirZ) : 0, on ? laneLength(m.x, m.z, c.dirX, c.dirZ) : 0);
+    const orb = !!c && c.skill === 'orb', leap = !!c && c.skill === 'leap';
+    showLane(lane, orb, orb ? Math.min(1, c.t / SKILL.orb.windup) : 0, m.x, m.z,
+      orb ? Math.atan2(c.dirX, c.dirZ) : 0, orb ? laneLength(m.x, m.z, c.dirX, c.dirZ) : 0);
+    showCircle(circle, leap, leap ? Math.min(1, c.t / SKILL.leap.windup) : 0, leap ? c.tx : 0, leap ? c.tz : 0);
   }
   syncOrbs();
 

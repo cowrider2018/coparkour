@@ -39,7 +39,8 @@
     15. BOSS 放招   腳程 4；每 3 秒挑一招，挑的那一刻鎖定玩家的位置，放招中站著
                     不動；被擊退、定住、推開就打斷。球：倒數 0.75 秒、半徑 0.75
                     狗高、每秒 6 公尺、直線、碰到黑牆消失，站著不動會被打中、
-                    倒數裡橫移一步就躲得掉。
+                    倒數裡橫移一步就躲得掉。跳砸：倒數 1.5 秒、最後 0.6 秒起跳、
+                    落在鎖定的點上打半徑 2.5 狗高的一圈，走出圈外或跳起來就躲得過。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test-area/src/walk.js';
@@ -50,7 +51,7 @@ import {
   makeMonster, monsterStep, touching, bites, knock, inSlash, inFan, inRing, slashTip, fanFrame,
   makeCombo, comboStep, invulnerable, cueing,
 } from '../public/combat-area/src/combat.js';
-import { SKILL, makeWorld, bossStep, shotsStep, shotHits, laneLength } from '../public/combat-area/src/skills.js';
+import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from '../public/combat-area/src/skills.js';
 import { steer } from '../public/test-area/src/walk.js';
 
 let fails = 0;
@@ -649,6 +650,49 @@ console.log('15. BOSS 放招');
   knock(bi, 0, 0, 0, -1);
   for (let i = 0; i < 90; i++) { bossStep(bi, DT, p, wi, () => 0); monsterStep(bi, DT, p); }
   ok(!wi.shots.length, '倒數中被擊退：這一招取消，沒有球');
+
+  // 跳砸：挑 leap（亂數給 0.99 → 第二招）。
+  ok(near(SKILL.leap.radius, 2.5 * DOG_H) && SKILL.leap.windup === 1.5, '跳砸：範圍半徑 2.5 狗高、倒數 1.5 秒');
+  const leap = (move) => {
+    const wl = makeWorld();
+    const b = bossAt(0, -4);
+    const q = body(0, 3);
+    b.castT = 0;
+    let st = null, at = -1, tookOff = -1, peak = 0, tt = 0;
+    while (tt < 2 && !st) {
+      st = bossStep(b, DT, q, wl, () => 0.99);
+      if (tookOff < 0 && b.y > 0) tookOff = tt;
+      peak = Math.max(peak, b.y);
+      if (move) move(q, b);
+      if (st) at = tt;
+      tt += DT;
+    }
+    return { st, at, tookOff, peak, b, q };
+  };
+  const L = leap(null);
+  ok(L.st && L.st.shape === 'circle' && near(L.st.x, 0) && near(L.st.z, 3), '打在開始那一刻鎖定的點上');
+  ok(Math.abs(L.at - SKILL.leap.windup) < 2 * DT && Math.abs(L.tookOff - (SKILL.leap.windup - SKILL.leap.air)) < 2 * DT,
+    `第 ${L.tookOff.toFixed(2)} 秒起跳、第 ${L.at.toFixed(2)} 秒落地打下去，最高 ${L.peak.toFixed(2)} 公尺`);
+  ok(near(L.b.x, 0) && near(L.b.z, 3) && L.b.y === 0 && !L.b.cast, 'BOSS 落在目標點上，放完了');
+  ok(strikeHits(L.st, L.q), '站著不動：被砸到');
+  ok(strikeHits(L.st, body(SKILL.leap.radius + PHYS.radius - 0.01, 3)) && !strikeHits(L.st, body(SKILL.leap.radius + PHYS.radius + 0.01, 3)),
+    '邊界在身體碰到圈的邊');
+  const out = leap((q, b) => { if (b.cast && b.cast.t > 0.2) q.x = 3; });
+  ok(!strikeHits(out.st, out.q), '倒數裡走出圈外 3 公尺：躲過');
+  ok(!strikeHits(L.st, body(0, 3, PHYS.height + 0.01)) && strikeHits(L.st, body(0, 3, PHYS.height - 0.01)),
+    `跳起來、腳高過一個狗高（${PHYS.height} m）：躲過；低一點就中`);
+  // 起跳之後被擊退：取消，不砸。
+  const wk = makeWorld();
+  const bk = bossAt(0, -4);
+  bk.castT = 0;
+  let hitK = null;
+  for (let i = 0; i < 150; i++) {
+    const r = bossStep(bk, DT, p, wk, () => 0.99);
+    if (r) hitK = r;
+    if (bk.cast && bk.y > 0.3 && !bk.air) knock(bk, 0, 4, 0, -1);
+    monsterStep(bk, DT, p);
+  }
+  ok(!hitK, '飛到一半被擊退：這一招取消，沒砸下來');
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');
