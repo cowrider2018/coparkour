@@ -18,18 +18,19 @@
      圓塔水窖   環形拱廊、貼牆的殘階、垂下的鎖鏈、牆頭的獸像
      城牆步道   完好的幕牆，一頭沒入黑霧、一頭收進切著黑牆的圓塔。牆下城內
                 那一側是兵營（帳篷、武器架、假人、箭靶、糧袋、炊事的火），走得到；
-                一條小路從城門往南沒入黑霧，通到窄巷。牆頂的走道由圓塔的兩扇門
+                一條小路從城門往南沒入黑霧，通到中庭。牆頂的走道由圓塔的兩扇門
                 上下（塔腳一扇、牆頂一扇），門關著就上不去；上去之後空氣牆擋住
                 牆外的落差。城外是碎石與枯樹的荒地，只看得到、走不到
      地下墓室   壓低的拱肋墓室、兩排石棺、壁龕裡的頭骨、燭火
-     城內窄巷   木構的連棟屋夾出一條巷子，一頭沒入黑霧（通到兵營）、一頭是
+     城內窄巷   木構的連棟屋夾出一條巷子，一頭沒入黑霧（通到中庭）、一頭是
                 小廣場；廣場上那口井是開的，掉下去就到水窖
 
    ── 區塊之間怎麼走 ───────────────────────────────────────────────
    區塊互相看不到（每一個都封了頂），所以區塊之間的路是**感測區**：走進去
    就被送到另一個區塊的一個到達點（見 geom.js 的 `portal`／`arrive`）。
 
-     兵營的小路 ⇄ 窄巷南端    兩頭都是沒入黑霧的那一截
+     中庭東拱洞 ⇄ 兵營的小路  中庭那頭是拱洞（一組門，路標），兵營那頭沒入黑霧
+     中庭西拱洞 ⇄ 窄巷南端    同上
      塔腳的門   ⇄ 牆頂的門    同一個區塊裡；屬於一組門，門關著就不通
      窄巷的井   → 水窖        單向
 
@@ -107,7 +108,7 @@ function courtyard(B, flames, seed, A) {
 
   /* 北面的門樓：兩座墩、一道尖拱、一面鐵閘。拱是走得過去的（12 寬的
      開口只放閘，閘本身有碰撞，所以門是關著的——它是背景，不是路）。
-     真正的出入口在東南與西北兩個缺角。 */
+     出入口是兩側拱廊正中那兩個拱洞（見這一支的最後面）。 */
   const gateW = [
     wall(B, { from: [-13, -13], to: [-2.4, -13], h: 6.4, thick: 1.2, ruin: 0.28, seed: seed + 60 }),
     wall(B, { from: [2.4, -13], to: [13, -13], h: 6.4, thick: 1.2, ruin: 0.3, seed: seed + 61 }),
@@ -165,6 +166,23 @@ function courtyard(B, flames, seed, A) {
   for (let i = 0; i < 16; i++) {
     const a = r() * Math.PI * 2, rad = r.range(6.5, 12);
     mossTuft(B, Math.cos(a) * rad, 0, Math.sin(a) * rad, r);
+  }
+
+  /* 兩側拱廊正中那個拱洞（z = 0）通到別的區塊：東邊是城牆步道兵營的那條小路，
+     西邊是窄巷的南端，兩頭一一對應——從東邊出去，從城牆回來也回到東邊。
+     其餘四個拱洞照舊走到黑牆為止。
+
+     這兩扇沒有門扇，開著關著拱洞都一樣；看得出能不能走的只有拱洞前那塊
+     懸浮的路標（`sign`）。路標跟感測區是同一組門（`gates`，按 O），看得到就是
+     走進去會被送走。感測區從拱廊內皮往裡 0.5 起、到黑牆：墩柱之間的拱洞
+     淨寬 3.1，狗整隻走進拱洞才被送走。到達點在拱洞前 1.5 公尺、面朝中庭。 */
+  const FACE = 12.5;                                   // 拱廊的內皮（x = ±13、深 1.0）
+  for (const [sx, to, name, text] of [[1, 'wallwalk.fog', 'east', '城牆步道'], [-1, 'alley.fog', 'west', '城內窄巷']]) {
+    B.portalBox(sx * (FACE + 0.5), -1.55, sx * A.x1, 1.55, -0.5, 3, to, {
+      door: 'gates', mouth: { x: sx * FACE, y: 0, z: 0, n: [-sx, 0] },
+    });
+    B.arrive(name, sx * (FACE - 1.5), 0, 0, -sx * Math.PI / 2);
+    B.sign(sx * (FACE - 0.2), 3.2, 0, text, { door: 'gates' });
   }
   return { spawn: [0, 0, 3.5] };
 }
@@ -573,7 +591,7 @@ function laneGap(l, x, z) {
 
    城門洞從兵營那一側走得進去，走到放下的鐵閘為止。城外的荒地一格都走
    不到，是造景。城門的路一路往南鋪進黑霧，但在營地中間斷開（見 `gate`）；
-   走進黑霧就到窄巷。 */
+   走進黑霧就到中庭的東拱洞。 */
 function wallwalk(B, flames, seed, A) {
   const r = rng(seed);
   const H = 5.2;                 // 走道面
@@ -636,10 +654,11 @@ function wallwalk(B, flames, seed, A) {
     || laneGap(lane, x, z) < 0.4);
   wasteland(B, r, seed, A, { T, TC, TW, TZ, TX, RT });
 
-  /* 小路沒入黑霧的那一截：一塊橫過路面的感測區，從黑牆往裡 1.4 公尺。身體
-     走得到黑牆前 0.3，所以一路走到底一定會碰到它；路以外的黑牆腳不送人。
+  /* 小路沒入黑霧的那一截：一塊橫過路面的感測區，從黑牆往裡 1.4 公尺，送到中庭
+     的東拱洞前。身體走得到黑牆前 0.3，所以一路走到底一定會碰到它；路以外的
+     黑牆腳不送人。
      回來的到達點在路上、離這一塊兩公尺多，面朝城門。 */
-  B.portalBox(-PATH, -A.r, PATH, -A.r + 1.4, -0.5, 3, 'alley.fog');
+  B.portalBox(-PATH, -A.r, PATH, -A.r + 1.4, -0.5, 3, 'courtyard.east');
   B.arrive('fog', 0, 0, -A.r + 3.4, 0);
   // 出生點在兵營中間的路上，面朝北（+z）：城門與牆頂的走道在正前方。
   return { spawn: [0, 0, -9], yaw: 0 };
@@ -1343,8 +1362,8 @@ function alley(B, flames, seed, A) {
   well(B, { x: 0, z: WZ, y: 0, r: 1.15, seed: seed + 3, open: true });
   B.portal(0, WZ, 1.15 * 0.78, -8.5, -3, 'cistern.well', { oneWay: true });
   /* 巷子南端沒入黑霧的那一截：一塊橫過巷子的感測區，從黑牆往裡 1.4 公尺，
-     送到兵營那條小路。回來的到達點在巷子裡、離這一塊兩公尺，面朝廣場。 */
-  B.portalBox(-S, A.z0, S, A.z0 + 1.4, -0.5, 3, 'wallwalk.fog');
+     送到中庭的西拱洞前。回來的到達點在巷子裡、離這一塊兩公尺，面朝廣場。 */
+  B.portalBox(-S, A.z0, S, A.z0 + 1.4, -0.5, 3, 'courtyard.west');
   B.arrive('fog', 0, 0, A.z0 + 3.4, 0);
   for (const sx of [-1, 1]) brazier(B, { x: sx * 5.6, z: NZ - 1.2, y: 0, s: 0.9, seed: seed + 4 + sx }, flames);
   crate(B, -6.0, 0, 5.2, 0.0); crate(B, -6.0, 0.9, 5.2, 0.12); crate(B, -5.1, 0, 5.3, -0.1);
@@ -1407,6 +1426,8 @@ export const BLOCKS = [
     room: { y: 0, hx: 12.4, hz: 12.4 },
     // 牆面：南牆 13.5、門樓 13.6、兩側拱廊 13.5。砌體最高 7.4。
     arena: { shape: 'rect', x0: -13.8, x1: 13.8, z0: -13.8, z1: 13.8, lid: 12.0 },
+    // 通到別的區塊的幾扇門，一開始關著。
+    doors: { gates: false },
   },
   {
     id: 'throne', name: '王座廳', hint: '兩列柱、斜插的穹稜、台座與王座',
@@ -1481,7 +1502,7 @@ export const BLOCKS = [
  * 門是例外：兩種狀態的門扇各自一塊（`pieces`），執行時換看得到的那一塊。
  *
  * @returns {{geometry, ink, colliders, flames, spawns, arenas, portals, arrivals,
- *   doors, pieces, tris, inkLines}} `doors` 是每一組門一開始的狀態（組名 → 開著嗎）。
+ *   doors, pieces, signs, tris, inkLines}} `doors` 是每一組門一開始的狀態（組名 → 開著嗎）。
  */
 export function buildRuins(opts = {}) {
   const B = new Build(new Kit(), opts);
@@ -1491,7 +1512,7 @@ export function buildRuins(opts = {}) {
   const doors = {};
   _colCursor = _inkCursor = _flameCursor = 0;   // 同一個行程裡砌第二遍也要對
   _partCursor = _wallCursor = _floorCursor = _portalCursor = 0;
-  _arriveCursor = _pieceCursor = 0;
+  _arriveCursor = _pieceCursor = _signCursor = 0;
 
   for (const b of BLOCKS) {
     const [ox, oz] = b.origin;
@@ -1547,7 +1568,7 @@ export function buildRuins(opts = {}) {
    記著——比重算一次整個區塊便宜，也不必讓每個零件都去接一個 offset。 */
 let _colCursor = 0, _inkCursor = 0, _flameCursor = 0;
 let _partCursor = 0, _wallCursor = 0, _floorCursor = 0, _portalCursor = 0;
-let _arriveCursor = 0, _pieceCursor = 0;
+let _arriveCursor = 0, _pieceCursor = 0, _signCursor = 0;
 function shift(B, fromPos, ox, oz, flames, id) {
   for (let i = fromPos; i < B.pos.length; i += 3) { B.pos[i] += ox; B.pos[i + 2] += oz; }
   for (let i = _inkCursor; i < B.ink.length; i += 3) { B.ink[i] += ox; B.ink[i + 2] += oz; }
@@ -1613,4 +1634,11 @@ function shift(B, fromPos, ox, oz, flames, id) {
     q.block = id;
   }
   _pieceCursor = B.pieces.length;
+  for (let i = _signCursor; i < B.signs.length; i++) {
+    const s = B.signs[i];
+    s.x += ox; s.z += oz;
+    if (s.door) s.door = own(s.door);
+    s.block = id;
+  }
+  _signCursor = B.signs.length;
 }

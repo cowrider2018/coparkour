@@ -111,9 +111,51 @@ const doorMeshes = ruins.pieces.map((q) => {
   scene.add(g);
   return { node: g, door: q.door, open: q.open };
 });
+/* ── 路標 ────────────────────────────────────────────────────────
+   懸浮在門口的一行字（blocks.js 的 `sign`），一張永遠朝著鏡頭的字卡。屬於
+   一組門：那一組門開著才看得到——沒有門扇的門就靠它說「這裡走得過去」。
+   字是金色（跟面板的 accent2 同一個）描一圈深褐，不吃霧：黑牆前面的拱洞
+   是全場最暗的地方，路標要在那裡讀得出來。 */
+const SIGN_H = 0.55;                 // 字卡高幾公尺（字高約六成）
+function signSprite(text) {
+  const px = 72, pad = px * 0.5;
+  const font = `600 ${px}px system-ui, "Noto Sans TC", sans-serif`;
+  const c = document.createElement('canvas');
+  let g = c.getContext('2d');
+  g.font = font;
+  c.width = Math.ceil(g.measureText(text).width + pad * 2);
+  c.height = Math.round(px * 1.6);
+  g = c.getContext('2d');            // 改了尺寸，畫布的狀態全部重設
+  g.font = font;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.lineJoin = 'round';
+  g.lineWidth = px * 0.2;
+  g.strokeStyle = '#1e1810';
+  g.strokeText(text, c.width / 2, c.height / 2);
+  g.fillStyle = '#f2c14e';
+  g.fillText(text, c.width / 2, c.height / 2);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, fog: false }));
+  sp.scale.set(SIGN_H * (c.width / c.height), SIGN_H, 1);
+  /* 排在所有半透明的東西之後畫。黑牆與黑霧是同一個 mesh、原點在世界的原點，
+     three 照原點的遠近排半透明物件，於是它常常排在路標後面畫——路標不寫深度，
+     後畫的那一片黑就整個蓋上來，只剩被鐵閘柵條擋住的那幾條縫露得出字。 */
+  sp.renderOrder = 1;
+  return sp;
+}
+const signs = ruins.signs.map((s) => {
+  const node = signSprite(s.text);
+  node.position.set(s.x, s.y, s.z);
+  scene.add(node);
+  return { node, door: s.door, y: s.y, phase: s.x * 0.37 + s.z * 0.23 };
+});
+
 function setDoor(group, open) {
   doors[group] = open;
   for (const m of doorMeshes) if (m.door === group) m.node.visible = m.open === open;
+  for (const s of signs) if (s.door === group) s.node.visible = open;
 }
 for (const g of Object.keys(doors)) setDoor(g, doors[g]);
 
@@ -513,6 +555,9 @@ function frame(now) {
     f.outer.rotation.y = t * 1.4;
     f.outer.position.y = (w - 1) * 0.2;
   }
+
+  // 路標浮著：上下晃五公分，兩秒多一個來回，每一塊的相位不同。
+  for (const sg of signs) sg.node.position.y = sg.y + Math.sin(now / 1000 * 2.6 + sg.phase) * 0.05;
 
   // 相機。規則在 camera.js，這裡只把算出來的兩個點交給 three。
   {
