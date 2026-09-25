@@ -36,6 +36,10 @@
     13. 怪物不疊    三隻追同一個站著不動的人，身體一直不重疊、不出牆。
     14. 陣容        三種陣容：3 小怪、1 BOSS、2 小怪 + 1 BOSS，預設是最後一種；
                     每一隻都在中線 1/3 那條橫線上、面向中心，不疊在一起。
+    15. BOSS 放招   腳程 4；每 3 秒挑一招，挑的那一刻鎖定玩家的位置，放招中站著
+                    不動；被擊退、定住、推開就打斷。球：倒數 0.75 秒、半徑 0.75
+                    狗高、每秒 6 公尺、直線、碰到黑牆消失，站著不動會被打中、
+                    倒數裡橫移一步就躲得掉。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test-area/src/walk.js';
@@ -46,6 +50,7 @@ import {
   makeMonster, monsterStep, touching, bites, knock, inSlash, inFan, inRing, slashTip, fanFrame,
   makeCombo, comboStep, invulnerable, cueing,
 } from '../public/combat-area/src/combat.js';
+import { SKILL, makeWorld, bossStep, shotsStep, shotHits, laneLength } from '../public/combat-area/src/skills.js';
 import { steer } from '../public/test-area/src/walk.js';
 
 let fails = 0;
@@ -577,6 +582,73 @@ console.log('14. 陣容');
     && near(Math.sin(s.yaw), (cx - s.x) / Math.hypot(cx - s.x, cz - s.z))
     && md.monsters.every((o, j) => j === i || Math.hypot(o.x - s.x, o.z - s.z) >= PHYS.radius * 2)));
   ok(good, '每一種陣容：都在中線 1/3 那條橫線上、面向中心、不疊在一起');
+}
+
+/* ── 15. BOSS 放招 ───────────────────────────────────────────── */
+console.log('15. BOSS 放招');
+{
+  const bossAt = (x, z) => { const m = makeMonster({ kind: 'boss', x, z, yaw: 0 }); return m; };
+  ok(KINDS.boss.speed === 4 && KINDS.boss.every === 3 && KINDS.boss.skills.includes('orb') && !KINDS.minion.skills,
+    'BOSS 腳程 4、每 3 秒放一招；小怪沒有技能');
+  ok(near(SKILL.orb.radius, 0.75 * DOG_H) && SKILL.orb.speed === 6 && SKILL.orb.windup === 0.75, '球：半徑 0.75 狗高、每秒 6 公尺、倒數 0.75 秒');
+
+  // 循環：3 秒才放第一招；放招中站著不動；下一招是 3 秒之後。
+  const w = makeWorld();
+  const m = bossAt(0, -4);
+  const p = body(0, 4);
+  const starts = [];
+  let still = true, t = 0;
+  while (t < 6.6) {
+    const was = m.cast;
+    bossStep(m, DT, p, w, () => 0);
+    if (m.cast && !was) starts.push(t);
+    const x0 = m.x, z0 = m.z;
+    monsterStep(m, DT, p);
+    if (m.cast && (m.x !== x0 || m.z !== z0)) still = false;
+    t += DT;
+  }
+  ok(starts.length === 2 && Math.abs(starts[0] - 3) < 2 * DT && Math.abs(starts[1] - 6) < 2 * DT,
+    `第 ${starts.map((x) => x.toFixed(2)).join('、')} 秒各放一招`);
+  ok(still, '放招的時候站著不動');
+
+  // 球：鎖定開始那一刻的位置；站著不動會被打中；倒數裡橫移一步就躲掉。
+  const fire = (dodge) => {
+    const wb = makeWorld();
+    const b = bossAt(0, -4);
+    const q = body(0, 4);
+    b.castT = 0;
+    let hit = false, fired = -1, tt = 0, gone = -1;
+    while (tt < 4) {
+      bossStep(b, DT, q, wb, () => 0);
+      if (dodge && b.cast && b.cast.t > 0.3) q.x = 1.2;           // 倒數到一半往旁邊跨一步
+      shotsStep(wb, DT);
+      if (fired < 0 && wb.shots.length) fired = tt;
+      if (wb.shots.some((sh) => shotHits(sh, q))) hit = true;
+      if (fired >= 0 && gone < 0 && !wb.shots.length) gone = tt;
+      tt += DT;
+    }
+    return { hit, fired, gone };
+  };
+  const stay = fire(false), side = fire(true);
+  ok(Math.abs(stay.fired - SKILL.orb.windup) < 2 * DT, `倒數 ${stay.fired.toFixed(2)} 秒後發射`);
+  ok(stay.hit, '站著不動：被打中');
+  ok(!side.hit, '倒數裡往旁邊跨 1.2 公尺：打不到（方向在開始那一刻就鎖定了）');
+  // 從身體前緣（離中心 PHYS.radius + r）出發，球面碰到牆（離牆 r）就消失。
+  const travel = laneLength(0, -4, 0, 1) - (PHYS.radius + SKILL.orb.radius) - SKILL.orb.radius;
+  ok(side.gone > 0 && Math.abs(side.gone - side.fired - travel / SKILL.orb.speed) < 2 * DT,
+    `沒打中的球直線飛到黑牆才消失（飛了 ${(side.gone - side.fired).toFixed(2)} 秒）`);
+  ok(shotHits({ x: 0, y: SKILL.orb.radius, z: 0, r: SKILL.orb.radius }, body(PHYS.radius + SKILL.orb.radius - 0.01, 0))
+    && !shotHits({ x: 0, y: SKILL.orb.radius, z: 0, r: SKILL.orb.radius }, body(PHYS.radius + SKILL.orb.radius + 0.01, 0)),
+    '球碰到身體的邊就算');
+
+  // 打斷：倒數中被擊退，這一招取消、不發射。
+  const wi = makeWorld();
+  const bi = bossAt(0, -4);
+  bi.castT = 0;
+  bossStep(bi, DT, p, wi, () => 0);
+  knock(bi, 0, 0, 0, -1);
+  for (let i = 0; i < 90; i++) { bossStep(bi, DT, p, wi, () => 0); monsterStep(bi, DT, p); }
+  ok(!wi.shots.length, '倒數中被擊退：這一招取消，沒有球');
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

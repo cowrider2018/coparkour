@@ -13,6 +13,7 @@
      怪物      3（同上，另一份幾何）
      攻擊範圍  出招的那 0.2 秒 1；提示圈亮著的時候 1
      破防      破防中的每一隻 2（淡圓 + 亮圓）
+     BOSS 技能 預告 2（淺色 + 亮色）；飛著的球每顆 1
    ------------------------------------------------------------------ */
 
 import * as THREE from '../../test-area/vendor/three.module.js';
@@ -31,7 +32,8 @@ import {
   inSlash, inFan, inRing, slashTip, fanFrame, makeCombo, comboStep, invulnerable, cueing,
 } from './combat.js';
 import { makeMonsterCritter } from './monster.js';
-import { slashFx, fanFx, ringFx, cueFx, showFx, breakFx, showBreak } from './fx.js';
+import { slashFx, fanFx, ringFx, cueFx, showFx, breakFx, showBreak, laneFx, showLane, orbMesh } from './fx.js';
+import { SKILL, makeWorld, bossStep, shotsStep, shotHits, laneLength } from './skills.js';
 
 const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -96,14 +98,30 @@ function lookFor(kind, i) {
   if (!looks.pool.has(kind)) looks.pool.set(kind, []);
   const list = looks.pool.get(kind);
   while (list.length <= i) {
-    const slot = { critter: makeMonsterCritter(zoo, kind), breakFx: breakFx() };
+    const slot = { critter: makeMonsterCritter(zoo, kind), breakFx: breakFx(), lane: laneFx(SKILL.orb.radius) };
     if (looks.inkPx) slot.critter.setInkPx(...looks.inkPx);
-    scene.add(slot.critter.root, slot.breakFx.node);
+    scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node);
     list.push(slot);
   }
   return list[i];
 }
 let mode = DEFAULT_MODE;
+
+/* BOSS 放出來的球。規則在 skills.js，這裡只有外觀：一顆球一個 mesh，不夠就多做。 */
+const world = makeWorld();
+const orbs = [];
+function syncOrbs() {
+  while (orbs.length < world.shots.length) {
+    const o = orbMesh(SKILL.orb.radius);
+    scene.add(o);
+    orbs.push(o);
+  }
+  orbs.forEach((o, i) => {
+    const s = world.shots[i];
+    o.visible = !!s;
+    if (s) o.position.set(s.x, s.y, s.z);
+  });
+}
 
 /** 被咬過幾次。 */
 let deaths = 0;
@@ -132,6 +150,7 @@ function resetStance() {
     f.critter.setFacing(f.m.spawn.yaw);
   }
   Object.assign(combo, makeCombo());
+  world.shots.length = 0;
 }
 
 /** 換陣容：借好每一隻的外觀、藏起用不到的，全部回到站位。 */
@@ -140,7 +159,7 @@ function setMode(id) {
   if (!md) return;
   mode = id;
   for (const list of looks.pool.values()) {
-    for (const s of list) { s.critter.root.visible = false; s.breakFx.node.visible = false; }
+    for (const s of list) { s.critter.root.visible = false; s.breakFx.node.visible = false; s.lane.node.visible = false; }
   }
   const used = new Map();
   foes = md.monsters.map((s) => {
@@ -340,6 +359,9 @@ function frame(now) {
 
   /* 怪物追人（或是被擊退、在空中飛）。然後才判打中：兩個身體都走完這一幀
      了，範圍是對著畫面上的位置判的。 */
+  // BOSS 先決定這一幀在不在放招（放招中 monsterStep 讓牠站著），球往前飛。
+  for (const { m } of foes) bossStep(m, dt, player, world);
+  shotsStep(world, dt);
   for (const { m } of foes) monsterStep(m, dt, player);
   separate(foes.map((f) => f.m));
   // 破防攻擊：突進碰到目標就定住牠、進迴旋；迴旋轉完就扣血、跳離。
@@ -358,10 +380,15 @@ function frame(now) {
   }
   /* 碰到玩家，玩家就死，雙方回到站位。被擊退、還沒落地的怪物不算；第三段
      起跳之後、落地之前的玩家也不算。 */
-  if (foes.some((f) => bites(player, f.m)) && !invulnerable(combo)) {
-    deaths++;
-    resetStance();
-    hud.flash('被咬到了');
+  /* BOSS 的技能也是碰到就死，規則跟被咬一樣（無敵的時候不算）。 */
+  if (!invulnerable(combo)) {
+    const bitten = foes.some((f) => bites(player, f.m));
+    const shot = world.shots.some((s) => shotHits(s, player));
+    if (bitten || shot) {
+      deaths++;
+      resetStance();
+      hud.flash(bitten ? '被咬到了' : '被球打中了');
+    }
   }
 
   // 動物
@@ -400,6 +427,15 @@ function frame(now) {
     camera.position.set(rig.pos[0], rig.pos[1], rig.pos[2]);
     camera.lookAt(rig.look[0], rig.look[1], rig.look[2]);
   }
+
+  // BOSS 的預告與飛著的球。
+  for (const { m, lane } of foes) {
+    const c = m.cast;
+    const on = !!c && c.skill === 'orb';
+    showLane(lane, on, on ? Math.min(1, c.t / SKILL.orb.windup) : 0, m.x, m.z,
+      on ? Math.atan2(c.dirX, c.dirZ) : 0, on ? laneLength(m.x, m.z, c.dirX, c.dirZ) : 0);
+  }
+  syncOrbs();
 
   // 破防的兩圈：套在怪物身體的中間，正對這一幀的鏡頭。
   for (const { m, breakFx: bf } of foes) {

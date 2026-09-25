@@ -13,6 +13,7 @@
 
 import * as THREE from '../../test-area/vendor/three.module.js';
 import { PHYS } from '../../test-area/src/walk.js';
+import { toon } from '../../test-area/src/palette.js';
 import { REACH, FAN, SLASH_HALF } from './combat.js';
 
 const SEG = 32;
@@ -131,6 +132,49 @@ export function showBreak(f, frac, x, y, z, quat) {
   f.node.position.set(x, y, z);
   f.node.quaternion.copy(quat);
   f.bright.scale.setScalar(frac);
+}
+
+/* ── BOSS 技能的預告 ──────────────────────────────────────────────
+   一律「淺色的範圍 + 亮色往外長」：淺色是會被打到的整塊地方，亮色長滿的那一刻
+   就是打下來的那一刻。貼在地上（y = 0.03），不吃霧，比攻擊範圍的高亮晚畫。 */
+const DANGER = 0xff4a3d;
+const decal = (geometry, opacity) => {
+  const m = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+    color: DANGER, transparent: true, opacity, side: THREE.DoubleSide,
+    depthWrite: false, fog: false,
+  }));
+  m.renderOrder = 2;
+  return m;
+};
+
+/** 球的預告：一條從 BOSS 往目標延伸到黑牆的帶子，寬就是球的直徑。 */
+export function laneFx(radius) {
+  const g = new THREE.PlaneGeometry(radius * 2, 1);
+  g.rotateX(-Math.PI / 2);
+  g.translate(0, 0.03, 0.5);              // 從原點往 +Z 長 1，縮放 z 就是長度
+  const node = new THREE.Group();
+  const pale = decal(g, 0.2), bright = decal(g, 0.45);
+  node.add(pale, bright);
+  node.visible = false;
+  return { node, pale, bright };
+}
+
+/** 擺球的預告。frac 是倒數走了幾成（0 → 1），len 是帶子多長。 */
+export function showLane(f, on, frac, x, z, yaw, len) {
+  f.node.visible = on;
+  if (!on) return;
+  f.node.position.set(x, 0, z);
+  f.node.rotation.y = yaw;
+  f.pale.scale.z = len;
+  f.bright.scale.z = Math.max(1e-3, len * frac);
+}
+
+/** 一顆球的外觀：跟石頭同一套分階著色（palette.js 的 toon），才看得出是一顆球而不是一片圓。 */
+const ORB_MAT = toon(0xff4fd8);
+export function orbMesh(radius) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(radius, 24, 16), ORB_MAT);
+  m.visible = false;
+  return m;
 }
 
 /**

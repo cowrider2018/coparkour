@@ -120,11 +120,12 @@ export const COLS = [{
  * 怪物就是多一筆，規則不動。每一隻怪物身上帶的是牠自己的「狀態」（位置、速度、
  * 挨了幾下…），數值一律回頭查這一張，用 `m.kind` 認類別。
  *
- *   minion  小怪（綠色）。血 4——第一段加第二段剛好打死，破不了防。
- *   boss    BOSS（紫色）。血 20。
+ *   minion  小怪（綠色）。血 4——第一段加第二段剛好打死，破不了防。腳程 3.4：
+ *           走路是 PHYS.walk（4），所以放開手就會被追上。
+ *   boss    BOSS（紫色）。血 20。腳程 4。不會一直追：每 `every` 秒從 `skills`
+ *           裡隨機放一招（規則在 skills.js），放招的時候站著不動。
  *
- * 兩類的腳程都是 3.4：走路是 PHYS.walk（4），所以放開手就會被追上。身體也
- * 一樣大（同一個 PHYS 的圓柱），差的只有血與顏色（顏色在 monster.js）。
+ * 身體一樣大（同一個 PHYS 的圓柱），顏色在 monster.js。
  *
  * `breakAt` 是破防門檻。現在每一類都是 BREAK_AT，但它是逐類登記的——哪天某一類
  * 要比較硬，改那一筆就好。
@@ -132,7 +133,7 @@ export const COLS = [{
 export const BREAK_AT = 8;
 export const KINDS = {
   minion: { name: '小怪', hp: 4, speed: 3.4, breakAt: BREAK_AT },
-  boss: { name: 'BOSS', hp: 20, speed: 3.4, breakAt: BREAK_AT },
+  boss: { name: 'BOSS', hp: 20, speed: 4, breakAt: BREAK_AT, skills: ['orb'], every: 3 },
 };
 
 /** 破防之後的窗口多長（秒）：亮圓從淡圓的大小縮到消失的時間。 */
@@ -231,6 +232,8 @@ export function placeMonster(m) {
   m.breakT = 0;
   m.held = false;
   m.slide = false;
+  m.cast = null;                          // 放到一半的招（skills.js）
+  m.castT = kindOf(m).every || 0;         // 離下一招還有幾秒
   m.aimX = Math.sin(s.yaw); m.aimZ = Math.cos(s.yaw);
 }
 
@@ -301,6 +304,7 @@ export function monsterStep(m, dt, target) {
     }
     return;
   }
+  if (m.cast) { m.vx = 0; m.vz = 0; return; }  // 放招中（skills.js）：站著不動
   const dx = target.x - m.x, dz = target.z - m.z;
   const d = Math.hypot(dx, dz);
   if (d > 1e-6) { m.aimX = dx / d; m.aimZ = dz / d; }
