@@ -32,6 +32,7 @@
      中庭東拱洞 ⇄ 兵營的小路  中庭那頭是拱洞（一組門，路標），兵營那頭沒入黑霧
      中庭西拱洞 ⇄ 窄巷南端    同上
      中庭門樓   ⇄ 王座廳正門  兩頭各一道鐵閘，各是各的一組門
+     水窖南門   ⇄ 墓室的鐵閘  同上；水窖另外兩個門洞的閘是封死的
      塔腳的門   ⇄ 牆頂的門    同一個區塊裡；屬於一組門，門關著就不通
      窄巷的井   → 水窖        單向
 
@@ -380,10 +381,42 @@ function cistern(B, flames, seed, A) {
       wall(B, { from, to: lerp(t), h: 6.0, thick: 1.1, ruin: 0.3, seed: seed + 10 + i });
       wall(B, { from: lerp(1 - t), to, h: 6.0, thick: 1.1, ruin: 0.3, seed: seed + 30 + i });
       const c = lerp(0.5);
-      pointedArch(B, {
-        x: c[0], z: c[1], y: 3.2, span: 3.0, rise: 2.4,
-        yaw: -mid + Math.PI / 2, thick: 0.45, depth: 1.1, ruin: 0.15, seed: seed + 50 + i,
-      });
+      const ARCH = { y: 3.2, span: 3.0, rise: 2.4, thick: 0.45 };
+      pointedArch(B, { x: c[0], z: c[1], ...ARCH, yaw: -mid + Math.PI / 2, depth: 1.1, ruin: 0.15, seed: seed + 50 + i });
+      /* 每一個門洞都有一道鐵閘。朝南那一個（從井掉下來，一落地正前方就是它）是
+         一扇門（`gate`，按 O）：升起來走進去就到墓室。另外兩個的閘是封死的，
+         跟門洞裡的石頭一起砌進合併的那一份。 */
+      /* 閘落在牆心，跟拱同一個面。 */
+      const n = [Math.cos(mid), Math.sin(mid)];                // 往牆外
+      const bars = { x: c[0], z: c[1], y: 0, w: 2.0, h: ARCH.y, yaw: -mid + Math.PI / 2 };
+      if (Math.sin(mid) < -0.9) {
+        const face = R * Math.cos(Math.PI / segs) - 0.55;       // 門洞內皮離圓心多遠
+        grate(B, { ...bars, lift: 2.2, ceil: intrados(ARCH), group: 'gate', face: [-n[0], -n[1]] });
+        /* 感測區是圓的（門面是斜的，方的蓋不準）：圓心在黑牆上，半徑讓它從門洞
+           內皮往裡 0.5 起算；身體在門洞裡能走到離中線 0.8，那裡也蓋得到。 */
+        B.portal(n[0] * A.r, n[1] * A.r, A.r - face - 0.5, -0.5, 3, 'crypt.gate', {
+          door: 'gate', mouth: { x: n[0] * face, y: 0, z: n[1] * face, n: [-n[0], -n[1]] },
+        });
+        B.arrive('gate', n[0] * (face - 1.6), 0, n[1] * (face - 1.6), Math.atan2(-n[0], -n[1]));
+      } else {
+        portcullis(B, bars);
+      }
+      /* 閘後面到黑牆那一段填實：只登記碰撞、不畫，也不擋鏡頭（空氣牆）。閘在牆心，
+         閘與黑牆之間是一個塞得下狗的口袋——殘階上跳得上比較矮的幾段牆頭，沿牆頭
+         走到門洞上方就掉得進去，而且出不來。朝南那一道是門：門開著，那一段就是走
+         進去的路，所以它屬於那一組門。斜的，所以跟閘的碰撞一樣切成幾段。 */
+      {
+        const r0 = R * Math.cos(Math.PI / segs) + 0.15, D = A.r + 0.2 - r0;
+        const tx = Math.cos(bars.yaw), tz = -Math.sin(bars.yaw);
+        const W = 2.4, k = 6, L = W / k;
+        const door = Math.sin(mid) < -0.9 ? 'gate' : undefined;
+        for (let j = 0; j < k; j++) {
+          const t = ((j + 0.5) / k - 0.5) * W;
+          const cx = n[0] * (r0 + D / 2) + tx * t, cz = n[1] * (r0 + D / 2) + tz * t;
+          const ex = (Math.abs(tx) * L + Math.abs(n[0]) * D) / 2, ez = (Math.abs(tz) * L + Math.abs(n[1]) * D) / 2;
+          B.air(cx - ex, cz - ez, cx + ex, cz + ez, 0, A.lid, { door });
+        }
+      }
     } else {
       const w = wall(B, { from, to, h: 6.0, thick: 1.1, ruin: r.range(0.25, 0.6), seed: seed + 10 + i });
       ring[i] = w;
@@ -1042,8 +1075,8 @@ function camp(B, flames, lane) {
 }
 
 /* ── 五、地下墓室 ─────────────────────────────────────────────────
-   一間壓低的墓室。從南端一道樓梯頂上的鐵閘前進來（那是來時的路，閘是
-   關的），往下走進兩排石棺之間的走道；北端兩級台階上去是一座大墓。
+   一間壓低的墓室。從南端一道樓梯頂上的鐵閘進來（那是來時的路，通回水窖
+   的南門；閘是一扇門），往下走進兩排石棺之間的走道；北端兩級台階上去是一座大墓。
 
    頂是黑的，但不是空的：七道橫跨整間的尖拱肋從兩側的壁柱起拱，拱與拱
    之間是黑牆封的頂——所以抬頭看到的是「肋」而不是「天」，黑色讀起來是
@@ -1057,7 +1090,9 @@ function crypt(B, flames, seed, A) {
   const IX = X - 0.45, IZ = Z - 0.45;    // 牆的內皮
   const WH = 6.0;
   flagstones(B, { x: 0, z: 0, w: 2 * IX, d: 2 * IZ, y: 0, seed: seed + 1, ruin: 0.22, cell: 1.5 });
-  wall(B, { from: [-X, -Z], to: [X, -Z], h: WH, thick: 0.9, ruin: 0.08, seed: seed + 2 });
+  /* 南牆在南端樓梯頂上開一個門洞（見南端那一段）：寬 2.6、高度對齊整皮（2.2～4.84）。 */
+  const DOOR = { s: [-1.3, 1.3], y: [2.2, 4.84] };
+  wall(B, { from: [-X, -Z], to: [X, -Z], h: WH, thick: 0.9, ruin: 0.08, seed: seed + 2, hole: DOOR });
   wall(B, { from: [-X, Z], to: [X, Z], h: WH, thick: 0.9, ruin: 0.08, seed: seed + 3 });
   wall(B, { from: [-X, -Z], to: [-X, Z], h: WH, thick: 0.9, ruin: 0.08, seed: seed + 4 });
   wall(B, { from: [X, -Z], to: [X, Z], h: WH, thick: 0.9, ruin: 0.08, seed: seed + 5 });
@@ -1121,7 +1156,7 @@ function crypt(B, flames, seed, A) {
   B.block(0, 1.27, 12.3, 1.9, 1.34, 3.0, { kind: 'floor', base: 0.6 });   // 0.6～1.94，到石蓋的頂
   for (const side of [-1, 1]) brazier(B, { x: side * 2.0, z: 13.1, y: 0.6, s: 0.8, seed: seed + 50 + side }, flames);
 
-  // ── 南端：來時的路。一道樓梯上到一塊平台，平台後面是關著的鐵閘 ──
+  // ── 南端：來時的路。一道樓梯上到一塊平台，平台後面是穿過南牆、通回水窖的門洞 ──
   /* 從 −8.4 起、往南七級：最後一級停在 −12.74，平台就有 1.2 公尺深——扣掉
      鐵閘的 0.3，還站得下一隻狗。 */
   const up = stair(B, { x: 0, z: -8.4, y: 0, yaw: Math.PI, steps: 7, rise: 0.3, run: 0.62, w: 3.0, seed: seed + 60 });
@@ -1131,9 +1166,22 @@ function crypt(B, flames, seed, A) {
   B.add(B.kit.brick(3.0, up.top - 0.3, LD * 0.96, 0.04), {
     p: [0, (up.top - 0.3) / 2, LZ], color: C.stoneDeep, ink: false, solid: 'shell', base: 0,
   });
-  // 閘後面是一片黑：通道往外面去，這裡看不到它通到哪。
-  B.add(B.kit.brick(2.6, 2.8, 0.06, 0.01), { p: [0, up.top + 1.4, -IZ + 0.03], color: 0x161310, ink: false });
-  portcullis(B, { x: 0, z: -IZ + 0.15, y: up.top, w: 2.4, h: 2.6, yaw: 0 });
+  /* 門洞穿過南牆，洞後面就是黑牆：通道往外面去，這裡看不到它通到哪。門檻是
+     洞底那一皮磚的頂（2.2，比平台高 0.1）。鐵閘是一扇門（`gate`，按 O），落在
+     牆厚的正中；升起來收進洞頂上的牆裡。感測區從牆的內皮往裡 0.5 起、一路到
+     黑牆，跟其他鐵閘一樣：狗整隻走進門洞、走進磚後的那片黑才被送走。到達點在
+     樓梯腳下、面朝北：從水窖過來的人背對著來時的樓梯，鏡頭落在樓梯上方（跟
+     出生點同一個理由，見下面）。 */
+  const SILL = DOOR.y[0];
+  grate(B, {
+    x: 0, z: -Z, y: SILL, w: 2.4, h: 2.6, yaw: 0, lift: 1.9, ceil: () => DOOR.y[1],
+    group: 'gate', face: [0, 1],
+    hole: [[DOOR.s[0], SILL, -Z - 0.45], [DOOR.s[1], DOOR.y[1], -Z + 0.45]],
+  });
+  B.portalBox(DOOR.s[0], A.z0, DOOR.s[1], -IZ - 0.5, SILL - 0.5, SILL + 2.5, 'cistern.gate', {
+    door: 'gate', mouth: { x: 0, y: SILL, z: -IZ, n: [0, 1] },
+  });
+  B.arrive('gate', 0, 0, -7.0, 0);
 
   /* 出生點在走道南段，面朝北（+z）。不是鐵閘前的平台：那裡背後貼著牆，
      鏡頭的吊臂一伸就撞牆，縮到角色的頭裡面。站在這裡，鏡頭落在樓梯上方，
@@ -1485,7 +1533,7 @@ export const BLOCKS = [
     doors: { gate: false },
   },
   {
-    id: 'cistern', name: '圓塔水窖', hint: '環形拱廊、貼牆殘階、垂鏈',
+    id: 'cistern', name: '圓塔水窖', hint: '環形拱廊、鐵閘、貼牆殘階、垂鏈',
     origin: [PITCH, PITCH], build: cistern, seed: 0x7a8b, moss: 0,
     // 9.9 而不是 10.5：貼牆那道殘階的第一級（頂面 0.33）伸進來到 10.35，
     // 而樓梯是房間之間的垂直交通，不算房間的地板。
@@ -1496,6 +1544,10 @@ export const BLOCKS = [
        下狗，而且再也走不回來。13.75 讓那條縫只剩 0.45，比身體窄，站在牆頭
        往外走會先被黑牆擋住，不會掉下去。 */
     arena: { shape: 'circle', x: 0, z: 0, r: 13.75, lid: 12.0 },
+    // 朝南那道鐵閘，一開始放下。
+    doors: { gate: false },
+    // 三個門洞都有鐵閘：從地上走到底停在環牆或閘上，走不到黑牆。
+    sealed: true,
   },
   {
     id: 'wallwalk', name: '城牆步道', hint: '牆下的兵營、圓塔上下兩扇門、牆頂的走道',
@@ -1524,8 +1576,10 @@ export const BLOCKS = [
     id: 'crypt', name: '地下墓室', hint: '拱肋、石棺、壁龕與燭火',
     origin: [0, 3 * PITCH], build: crypt, seed: 0xc3d4, moss: 0,
     room: { y: 0, hx: 2.6, hz: 8.2 },
+    // 南端那道鐵閘，一開始放下。
+    doors: { gate: false },
     /* 牆面：兩側 8.05、兩端 14.85。封頂壓在拱頂上方一公尺多（拱頂約 7.1）。
-       `sealed`：四面都是牆，沒有一個門洞通到黑牆——走到底停在牆上，
+       `sealed`：四面都是牆，唯一通到黑牆的門洞在南端樓梯頂、關著鐵閘——走到底停在牆上，
        不是停在黑牆上，所以驗證不驗「走到底貼在黑牆上」。 */
     arena: { shape: 'rect', x0: -8.3, x1: 8.3, z0: -15.1, z1: 15.1, lid: 8.4 },
     sealed: true,
