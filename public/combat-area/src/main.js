@@ -86,7 +86,7 @@ const player = {
 
 /* 怪物：每一隻是「狀態」（combat.js 的 makeMonster）加上「外觀」（monster.js）。
    現在只有一隻綠狗，但下面每一條規則都是對這張清單逐隻做的。 */
-const foes = [{ m: makeMonster('hound'), spawn: SPAWN.monster }];
+const foes = [{ m: makeMonster('hound', SPAWN.monster) }];
 for (const f of foes) {
   f.critter = makeMonsterCritter(zoo);
   f.breakFx = breakFx();
@@ -117,7 +117,7 @@ function resetStance() {
   snapCam(cam, player.x, player.z);
   for (const f of foes) {
     placeMonster(f.m);
-    f.critter.setFacing(f.spawn.yaw);
+    f.critter.setFacing(f.m.spawn.yaw);
   }
   Object.assign(combo, makeCombo());
 }

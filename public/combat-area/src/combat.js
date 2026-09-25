@@ -144,10 +144,14 @@ export const KNOCK_SCALE = {
   slam: { h: 0.5, v: 2 },
 };
 
-/** 一隻站在站位上的怪物。`kind` 是 KINDS 的鍵。 */
-export function makeMonster(kind = 'hound') {
+/**
+ * 一隻站在站位上的怪物。`kind` 是 KINDS 的鍵，`spawn` 是牠自己的站位
+ * （{x, z, yaw}），回到站位的時候回這裡。
+ */
+export function makeMonster(kind = 'hound', spawn = SPAWN.monster) {
   const m = {
     kind,
+    spawn,
     x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, grounded: true, aimX: 0, aimZ: 1,
     /* 被擊退、還沒落地。這段時間牠不追人，碰到玩家也不算數。 */
     air: false,
@@ -168,9 +172,9 @@ export function makeMonster(kind = 'hound') {
   return m;
 }
 
-/** 怪物回到站位（中線 1/3，面向中心）。 */
+/** 怪物回到牠自己的站位。 */
 export function placeMonster(m) {
-  const s = SPAWN.monster;
+  const s = m.spawn;
   m.x = s.x; m.y = 0; m.z = s.z;
   m.vx = m.vy = m.vz = 0;
   m.grounded = true;
