@@ -365,7 +365,8 @@ export function nearXZ(b, x, z, pad) {
  * 而是這兩步的順序造成的結果。
  *
  * `doors` 是門的狀態（門的組名 → 開著嗎），跟 `portalAt` 同一份：圓柱上屬於
- * 某一組門的缺口，那一組門開著才存在。沒給就是全部關著。
+ * 某一組門的缺口，那一組門開著才存在；屬於某一組門的盒子（放下的鐵閘），那一組
+ * 門開著就不存在。沒給就是全部關著。
  *
  * @returns {[number, number]} 推出後的 x, z
  */
@@ -405,6 +406,7 @@ export function solveXZ(cols, x0, z0, feetY, doors = {}) {
       continue;
     }
     if (b.min[1] >= headY) continue;              // 從底下鑽得過去
+    if (b.door && doors[b.door]) continue;        // 鐵閘升起來了
     if (b.shape === 'circle') {
       /* 圓柱上開的門洞（`notch`）：那一組門開著、身體的中心在洞口那一塊裡的
          時候，這根圓柱不擋它——擋它的是門洞自己的盒子（兩側的門框、甬道的盡頭）。 */
