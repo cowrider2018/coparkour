@@ -57,7 +57,7 @@
              高度在身高中間。
    ------------------------------------------------------------------ */
 
-import { PHYS, solveXZ, steer } from '../../test-area/src/walk.js';
+import { PHYS, solveXZ, steer, clampArena } from '../../test-area/src/walk.js';
 
 /** 狗有多高。攻擊的長度都用它量，所以跟物理的身體是同一個數字。 */
 export const DOG_H = PHYS.height;
@@ -296,6 +296,33 @@ export function monsterStep(m, dt, target) {
 export function touching(a, b) {
   if (Math.hypot(a.x - b.x, a.z - b.z) >= PHYS.radius * 2) return false;
   return a.y < b.y + PHYS.height && b.y < a.y + PHYS.height;
+}
+
+/**
+ * 怪物彼此不重疊：兩隻的身體碰在一起（touching），就沿著兩者的連線各退一半，
+ * 退到剛好相切。三隻追同一個人，不擋的話會從三個方向收進同一個點、疊成一隻。
+ *
+ * 被破防攻擊定住的那一隻不動，另一隻退全部；推完夾回黑牆裡面。
+ */
+export function separate(monsters) {
+  const R2 = PHYS.radius * 2;
+  for (let i = 0; i < monsters.length; i++) {
+    for (let j = i + 1; j < monsters.length; j++) {
+      const a = monsters[i], b = monsters[j];
+      if (!touching(a, b) || (a.held && b.held)) continue;
+      const rx = b.x - a.x, rz = b.z - a.z;
+      const d = Math.hypot(rx, rz);
+      // 正好疊在同一點：沒有連線可言，往 +x 推開。
+      const [dx, dz] = d > 1e-6 ? [rx / d, rz / d] : [1, 0];
+      const gap = R2 - d;
+      const wa = a.held ? 0 : b.held ? 1 : 0.5;
+      const wb = 1 - wa;
+      a.x -= dx * gap * wa; a.z -= dz * gap * wa;
+      b.x += dx * gap * wb; b.z += dz * gap * wb;
+      [a.x, a.z] = clampArena(ARENA, a.x, a.z, PHYS.radius);
+      [b.x, b.z] = clampArena(ARENA, b.x, b.z, PHYS.radius);
+    }
+  }
 }
 
 /** 怪物碰到玩家會不會咬死他：碰到了，而且怪物不在被擊退的空中。 */

@@ -27,7 +27,7 @@ import { buildVeil } from '../../test-area/src/veil.js';
 import { lookInfo } from '../../src/cat/looks.js';
 import {
   ARENA, COLS, SPAWN, SWING, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster,
-  breaking, breakTarget, startBreak, breakContact, latch, spinStep, placeMonster, monsterStep, bites, knock,
+  breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, placeMonster, monsterStep, bites, knock,
   inSlash, inFan, inRing, slashTip, fanFrame, makeCombo, comboStep, invulnerable, cueing,
 } from './combat.js';
 import { makeMonsterCritter } from './monster.js';
@@ -306,6 +306,7 @@ function frame(now) {
   /* 怪物追人（或是被擊退、在空中飛）。然後才判打中：兩個身體都走完這一幀
      了，範圍是對著畫面上的位置判的。 */
   for (const { m } of foes) monsterStep(m, dt, player);
+  separate(foes.map((f) => f.m));
   // 破防攻擊：突進碰到目標就定住牠、進迴旋；迴旋轉完就扣血、跳離。
   if (combo.phase === 'dash' && breakContact(player, combo.target)) latch(combo, player, combo.target);
   if (combo.phase === 'spin') {

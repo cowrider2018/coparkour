@@ -31,15 +31,16 @@
                     錯過就歸零重算。
     12. 破防攻擊    選最近的破防目標；按下去窗口用掉、累積歸零；朝頭頂飛過去、
                     碰到之後牠轉一圈、玩家繞牠 360°、扣 5、往反方向跳離，同一
-                    瞬間牠被往突進的方向推開（只有水平）；整招無敵；在空中也按得出來——第一段接第二段破防的那一刻，
-                    玩家就在空中，接得上。
+                    瞬間牠被往突進的方向推開（只有水平）；整招無敵；在空中也
+                    按得出來——被第二段打破防的那一刻玩家就在空中，接得上。
+    13. 怪物不疊    三隻追同一個站著不動的人，身體一直不重疊、不出牆。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test-area/src/walk.js';
 import {
   ARENA, SPAWN, DOG_H, REACH, SWING, REST, KNOCK, KNOCK_SCALE, FAN, WINDOW, KINDS, DAMAGE, hurt, placeMonster,
   BREAK_AT, BREAK_WINDOW, broken,
-  BREAK_ATK, breaking, breakTarget, startBreak, breakContact, latch, spinStep,
+  BREAK_ATK, breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate,
   makeMonster, monsterStep, touching, bites, knock, inSlash, inFan, inRing, slashTip, fanFrame,
   makeCombo, comboStep, invulnerable, cueing,
 } from '../public/combat-area/src/combat.js';
@@ -526,6 +527,38 @@ console.log('12. 破防攻擊');
   cd.t = BREAK_ATK.spin;
   const rd = spinStep(cd, { ...pa }, md);
   ok(rd.died && md.vx === 0 && md.vz === 0 && !md.slide && near(md.z, md.spawn.z), '這一下打死牠：在重生點重生，不帶推開的速度');
+}
+
+/* ── 13. 怪物不疊 ────────────────────────────────────────────── */
+console.log('13. 怪物不疊');
+{
+  const p = body(SPAWN.player.x, SPAWN.player.z);
+  const ms = SPAWN.monsters.map((s) => makeMonster(s));
+  let worst = Infinity, out = false, t = 0;
+  while (t < 4) {
+    for (const m of ms) monsterStep(m, DT, p);
+    separate(ms);
+    for (let i = 0; i < ms.length; i++) {
+      for (let j = i + 1; j < ms.length; j++) worst = Math.min(worst, Math.hypot(ms[i].x - ms[j].x, ms[i].z - ms[j].z));
+      if (Math.abs(ms[i].x) > ARENA.x1 - PHYS.radius + 1e-6 || Math.abs(ms[i].z) > ARENA.z1 - PHYS.radius + 1e-6) out = true;
+    }
+    t += DT;
+  }
+  ok(worst >= PHYS.radius * 2 - 1e-6, `追了 4 秒，任兩隻最近 ${worst.toFixed(3)} 公尺（身體直徑 ${PHYS.radius * 2}）`);
+  ok(!out, '推開之後都還在黑牆裡');
+  ok(ms.some((m) => Math.hypot(m.x - p.x, m.z - p.z) < 1), '還是追得到人（不是互相擋死在原地）');
+  // 疊在同一點：也分得開。
+  const a = makeMonster(SPAWN.monsters[1]), b = makeMonster(SPAWN.monsters[2]);
+  b.x = a.x; b.z = a.z;
+  separate([a, b]);
+  ok(near(Math.hypot(a.x - b.x, a.z - b.z), PHYS.radius * 2), '兩隻完全疊在一起：推開到剛好相切');
+  // 被定住的那一隻不動。
+  const h = makeMonster(SPAWN.monsters[1]), f = makeMonster(SPAWN.monsters[2]);
+  f.x = h.x + 0.2; f.z = h.z;
+  h.held = true;
+  const hx = h.x;
+  separate([h, f]);
+  ok(h.x === hx && near(f.x - h.x, PHYS.radius * 2), '被破防攻擊定住的那一隻不動，另一隻退全部');
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');
