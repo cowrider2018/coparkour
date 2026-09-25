@@ -31,7 +31,8 @@
                     錯過就歸零重算。
     12. 破防攻擊    選最近的破防目標；按下去窗口用掉、累積歸零；朝頭頂飛過去、
                     碰到之後牠轉一圈、玩家繞牠 360°、扣 5、往反方向跳離，同一
-                    瞬間牠被往突進的方向推開（只有水平）；整招無敵；在空中按不算。
+                    瞬間牠被往突進的方向推開（只有水平）；整招無敵；在空中也按得出來——第一段接第二段破防的那一刻，
+                    玩家就在空中，接得上。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test-area/src/walk.js';
@@ -385,10 +386,11 @@ console.log('12. 破防攻擊');
   breakNow(a); breakNow(b);
   ok(breakTarget(p0, [a, b, c0]) === b, '好幾隻破防中：選最近的那一隻（沒破防的更近也不選）');
   ok(breakTarget(p0, [c0]) === null, '沒有破防中的：沒有目標');
-  // 在空中按不算；站在地上按才發動，而且蓋過連段
+  // 在空中也發動；蓋過連段
   const cc = makeCombo();
-  cc.phase = 'rest'; cc.t = 0.4;
-  ok(!comboStep(cc, DT, { pressed: true, grounded: false, near: false, breakable: true }).brk, '在空中按：不發動');
+  cc.phase = 'air'; cc.t = 0.1;
+  const inAir = comboStep(cc, DT, { pressed: true, grounded: false, near: false, breakable: true });
+  ok(inAir.brk && !inAir.start && cc.phase === 'dash', '第二段之後在空中按：破防攻擊（不是第三段）');
   const cr = makeCombo();
   cr.phase = 'rest'; cr.t = 0.4;
   const go = comboStep(cr, DT, { pressed: true, grounded: true, near: false, breakable: true });
@@ -444,6 +446,48 @@ console.log('12. 破防攻擊');
   ok(landedAt > 0, `跳離之後落地、回到待機（離牠 ${Math.hypot(p.x - m.x, p.z - m.z).toFixed(1)} 公尺）`);
   ok(!bitten, '整招沒被咬（突進、迴旋、跳離都無敵）');
   ok(!m.held, '跳離之後怪物被放開');
+
+  // 接在連段後面：站著等怪物過來、第一段自動、視窗裡按第二段——破防發生在第二段
+  // 的空中，窗口裡再按一次跳，在空中發動破防攻擊。
+  {
+    const q = { x: 0, y: 0, z: SPAWN.player.z, vx: 0, vy: 0, vz: 0, grounded: true, aimX: 0, aimZ: -1 };
+    const n = makeMonster();
+    const k = makeCombo();
+    const reach = { slash: inSlash, rise: (u, v) => inFan(u, v, k.tip), slam: inRing };
+    let tt = 0, p2 = false, p3 = false, brokeAt = -1, launchedY = -1, bit = false, over = false;
+    const got = [];
+    while (tt < 6 && !over) {
+      let pressed = false;
+      if (k.phase === 'rest' && !p2 && k.t >= 0.4) { pressed = true; p2 = true; }
+      if (broken(n) && !p3 && tt - brokeAt >= 0.2) { pressed = true; p3 = true; }
+      const tgt = breakTarget(q, [n]);
+      const a2 = comboStep(k, DT, { pressed, grounded: q.grounded, near: inSlash(q, n), breakable: !!tgt });
+      if (a2.start === 1) k.tip = slashTip(q);
+      if (a2.brk) { launchedY = q.y; startBreak(k, q, tgt); }
+      if (a2.jump) { q.vy = PHYS.jump; q.grounded = false; }
+      if (!breaking(k)) [q.vx, q.vz] = steer(q.vx, q.vz, q.aimX, q.aimZ, 0, DT);
+      if (k.phase !== 'spin') {
+        q.x += q.vx * DT; q.z += q.vz * DT;
+        q.vy -= PHYS.gravity * DT; q.y += q.vy * DT;
+        if (q.y <= 0 && q.vy <= 0) { q.y = 0; q.vy = 0; q.grounded = true; } else q.grounded = false;
+      }
+      monsterStep(n, DT, q);
+      if (k.phase === 'dash' && breakContact(q, n)) latch(k, q, n);
+      if (k.phase === 'spin' && spinStep(k, q, n).done) got.push('break');
+      const r = reach[k.phase];
+      if (r && !k.hit.has(n) && r(q, n)) {
+        knock(n, q.x, q.z, q.aimX, q.aimZ, KNOCK_SCALE[k.phase]); k.hit.add(n);
+        hurt(n, DAMAGE[k.phase]); got.push(k.phase);
+        if (broken(n) && brokeAt < 0) brokeAt = tt;
+      }
+      if (bites(q, n) && !invulnerable(k)) bit = true;
+      tt += DT;
+      if (got.includes('break') && k.phase === 'idle') over = true;
+    }
+    ok(got.join(' ') === 'slash rise break' && launchedY > 0.3,
+      `第一段 → 第二段 → 破防攻擊（${got.join(' → ')}），在 ${launchedY.toFixed(2)} 公尺高的空中發動`);
+    ok(n.hp === KINDS.hound.hp - DAMAGE.slash - DAMAGE.rise - DAMAGE.break && !bit, `扣 1 + 3 + 5，剩 ${n.hp}，沒被咬`);
+  }
 
   // 在空中被定住的怪物：放開之後帶著水平速度落下，不被往上挑。
   const pa = { x: 0, y: 1.5, z: 3, vx: 0, vy: 0, vz: 0, grounded: false, aimX: 0, aimZ: -1 };

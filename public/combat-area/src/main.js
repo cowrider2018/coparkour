@@ -260,7 +260,7 @@ function frame(now) {
      之前，因為破防攻擊一發動就接管速度。 */
   const pressed = pad.takeJump() || jumpQueued;
   jumpQueued = false;
-  const target = player.grounded ? breakTarget(player, foes.map((f) => f.m)) : null;
+  const target = breakTarget(player, foes.map((f) => f.m));
   const act = comboStep(combo, dt, {
     pressed, grounded: player.grounded, near: foes.some((f) => inSlash(player, f.m)),
     breakable: !!target,

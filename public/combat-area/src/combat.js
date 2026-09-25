@@ -26,7 +26,8 @@
    開一個 BREAK_WINDOW 秒的窗口，畫面上是一圈淡色的圓與一圈從同樣大小縮到
    消失的亮圓。窗口裡累積不再增加；窗口過了沒用上（錯過），累積歸零重新算。
 
-   窗口開著、玩家站在地上時按跳，就是破防攻擊（用掉窗口，累積一樣歸零）：
+   窗口開著時按跳，就是破防攻擊（用掉窗口，累積一樣歸零）。在地上、在空中都
+   可以——第一段接第二段剛好累積到 4，破防的那一刻玩家正在第二段的空中：
 
      突進  朝目標的頭頂飛過去（一次給足水平與垂直速度，照拋物線走）。有好幾隻
            破防中的時候，選最近的那一隻。
@@ -436,8 +437,8 @@ export function inRing(p, m) {
      leap   第三段的二段跳。無敵，一直到落地。
      slam   第三段落地那一下，亮 SWING 秒，之後回 idle。
 
-   破防攻擊蓋過上面每一個階段：有怪物破防中、玩家站在地上、按了跳，不管
-   現在在哪一段都直接進突進。
+   破防攻擊蓋過上面每一個階段：有怪物破防中、按了跳，不管玩家在地上還是
+   空中、現在在哪一段，都直接進突進。
 
      dash   突進。碰到目標 → spin（由 latch 切）；沒碰到就落地 → idle（揮空）。
      spin   迴旋。轉完 → vault（由 spinStep 切）。
@@ -494,7 +495,7 @@ export function comboStep(c, dt, { pressed, grounded, near, breakable = false })
   c.t += dt;
   const go = (phase) => { c.phase = phase; c.t = 0; c.hit = new Set(); };
   let used = false;                       // 這一下按跳已經被連段吃掉了
-  if (pressed && grounded && breakable && !breaking(c)) {
+  if (pressed && breakable && !breaking(c)) {
     go('dash'); out.brk = true;
     return out;
   }
@@ -562,6 +563,8 @@ export function breakTarget(p, monsters) {
 
 /**
  * 發動破防攻擊：用掉目標的窗口（累積歸零），給玩家一次飛向牠頭頂的速度。
+ * 在空中發動也是同一條式子——垂直速度是從玩家現在的高度反推的，原本往上或
+ * 往下的速度直接換掉。
  *
  * 速度是照拋物線反推的：BREAK_ATK.flight 秒後腳正好落在頭頂上。頭頂取的是
  * 牠**那時候**會在的地方——照牠現在的速度往前推（被擊退在空中的話連重力一起
