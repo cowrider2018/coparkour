@@ -65,7 +65,7 @@
    ------------------------------------------------------------------ */
 
 import * as THREE from '../public/test-area/vendor/three.module.js';
-import { buildRuins, BLOCKS, PITCH } from '../public/test-area/src/blocks.js';
+import { buildRuins, BLOCKS, DOORS, PITCH } from '../public/test-area/src/blocks.js';
 import {
   PHYS, SLIDE, APEX, solveXZ, supportAt, supportInfo, roundTop, roundSin, portalAt, portalDrift, portalGap, REPEL,
   steer, slideDrift, slideAccel, arenaGap, clampArena, boomLimit, BLOCK_TOP, TRIP, MOUNT,
@@ -1029,16 +1029,16 @@ head('整片走一遍：沒有鑽得進去的空心，也沒有回不來的地�
    區塊的一個**出口**——那一格算「回得去」，因為走得出去的地方不是困住，
    而目的地那一邊的路由那個區塊自己驗（見「傳送點」那一項）。
 
-   有門的區塊，門的每一種狀態各淹一遍：門是執行時開關的，兩種狀態都是
-   玩家會走到的地圖。 */
+   有門的區塊，連著它的門的每一種狀態各淹一遍：門是執行時開關的，兩種
+   狀態都是玩家會走到的地圖。 */
 {
   const G = 0.2;
   const snap = (v) => Math.round(v * 20) / 20;
   for (const b of BLOCKS) {
-    const groups = Object.keys(R.doors).filter((g) => g.startsWith(`${b.id}.`));
+    const groups = DOORS.filter((d) => d.blocks.includes(b.id)).map((d) => d.id);
     for (let mask = 0; mask < 1 << groups.length; mask++) {
       const doors = Object.fromEntries(groups.map((g, i) => [g, !!(mask & (1 << i))]));
-      const tag = groups.map((g, i) => `${g.split('.')[1]}${mask & (1 << i) ? '開' : '關'}`).join('、');
+      const tag = groups.map((g, i) => `${g}${mask & (1 << i) ? '開' : '關'}`).join('、');
       flood(b, doors, tag ? `（門：${tag}）` : '');
     }
   }
@@ -1135,8 +1135,10 @@ head('整片走一遍：沒有鑽得進去的空心，也沒有回不來的地�
     if (b.fenced) {
       ok(drops.length === 0, `${b.name}${tag}：牆頂只從門上下，走、跳都下不去`,
         drops.length ? `${drops.length} 步掉下去了，例如落在 ${at(drops[0])}` : '');
-      // 門全部關著：從出生點（地上）一格牆頂都到不了。
-      if (!Object.values(doors).some(Boolean)) ok(high === 0, `${b.name}${tag}：門關著上不了牆頂`, `${high} 格`);
+      /* 區塊裡面的門（兩頭都在這個區塊裡）全部關著：從出生點（地上）一格牆頂都到不了。
+         通到別的區塊的門開不開都一樣——走進去就離開了，淹不到牆頂。 */
+      const inner = DOORS.filter((d) => d.blocks.every((id) => id === b.id));
+      if (!inner.some((d) => doors[d.id])) ok(high === 0, `${b.name}${tag}：門關著上不了牆頂`, `${high} 格`);
     }
   }
 }
@@ -1377,14 +1379,16 @@ head('門');
     const gates = R.portals.filter((p) => p.door === g);
     ok(gates.length >= 1 && gates.every((p) => p.mouth), `${g}：開著的時候有感測區，每一個都登記了門口`,
       `${gates.length} 個感測區`);
-    const A = R.arenas.find((a) => a.id === g.split('.')[0]);
+    // 一扇門可以連著兩個區塊：每一塊門扇、每一塊路標，量的是它自己所在那個區塊的黑牆。
+    const arenaOf = (id) => R.arenas.find((a) => a.id === id);
     let worst = Infinity;
     for (const q of mine) {
+      const A = arenaOf(q.block);
       for (const V of [q.geometry.attributes.position.array, q.haze.pos]) {
         for (let i = 0; i < V.length; i += 3) worst = Math.min(worst, arenaGap(A, V[i], V[i + 2]));
       }
     }
-    for (const s of marks) worst = Math.min(worst, arenaGap(A, s.x, s.z));
+    for (const s of marks) worst = Math.min(worst, arenaGap(arenaOf(s.block), s.x, s.z));
     ok(worst > 0, `${g}：門扇、門洞的黑霧與路標在黑牆裡`, `離黑牆最近 ${worst.toFixed(2)} m`);
 
     for (const q of mine.filter((m) => m.open && m.haze.alpha.length)) {

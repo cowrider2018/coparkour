@@ -38,7 +38,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { C, toonVC, toon, glow, inkLine } from './palette.js';
 import { SURF, surfaceTextures } from './surface.js';
-import { buildRuins, BLOCKS } from './blocks.js';
+import { buildRuins, BLOCKS, DOORS } from './blocks.js';
 import { loadZoo } from './critter.js';
 import { Pad } from './pad.js';
 import { Hud } from './hud.js';
@@ -98,8 +98,8 @@ scene.add(new THREE.Mesh(ruins.geometry, stoneMat), new THREE.LineSegments(ruins
 const COLS = ruins.colliders;
 
 /* ── 門 ──────────────────────────────────────────────────────────
-   每一組門的狀態（組名 → 開著嗎）是執行時的，一開始照 blocks.js 的
-   `doors`。兩種狀態的門扇都砌好了，各自一個 mesh，換狀態只換哪一個看得到；
+   每一扇門的狀態（blocks.js `DOORS` 的 id → 開著嗎）是執行時的，一開始照
+   名冊上的 `open`。兩種狀態的門扇都砌好了，各自一個 mesh，換狀態只換哪一個看得到；
    感測區認不認得這一組門也看這一份（walk.js 的 portalAt）。 */
 const doors = { ...ruins.doors };
 const doorMeshes = ruins.pieces.map((q) => {
@@ -326,9 +326,9 @@ function warp(dest) {
   }
 }
 
-/** O：這個區塊裡的每一組門一起開或關（試玩用；之後由別的東西來開）。 */
+/** O：連著這個區塊的每一扇門一起開或關（試玩用；之後由別的東西來開）。 */
 function toggleDoors() {
-  const mine = Object.keys(doors).filter((g) => g.startsWith(`${player.block}.`));
+  const mine = DOORS.filter((d) => d.blocks.includes(player.block)).map((d) => d.id);
   if (!mine.length) { hud.flash('這裡沒有門'); return; }
   const open = !doors[mine[0]];
   for (const g of mine) setDoor(g, open);

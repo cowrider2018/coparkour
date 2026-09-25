@@ -142,7 +142,7 @@ function courtyard(B, flames, seed, A) {
   pointedArch(B, { x: 0, z: -13, ...ARCH, yaw: 0, depth: 1.3, ruin: 0, seed: seed + 62 });
   /* 門樓的鐵閘是一扇門（`gates`，跟兩側的拱洞同一組）：升起來的時候尖刺停在
      兩公尺多，柵條收進拱裡；走進門洞就到王座廳。 */
-  grate(B, { x: 0, z: -13, y: 0, w: 4.4, h: 3.4, yaw: 0, lift: 2.3, ceil: intrados(ARCH), group: 'gates', face: [0, 1] });
+  grate(B, { x: 0, z: -13, y: 0, w: 4.4, h: 3.4, yaw: 0, lift: 2.3, ceil: intrados(ARCH), group: 'courtyard.gates', face: [0, 1] });
   /* 垛口分兩段，各自坐在自己那一段牆的頂上（`on`）。以前是一整排坐在
      一個給定的 6.4 上，而牆頂是起伏的——所以牆低下去的地方那幾個垛是
      浮在空中的。門洞上方沒有垛，那裡是拱。 */
@@ -197,10 +197,10 @@ function courtyard(B, flames, seed, A) {
      起、到黑牆。門前半公尺有一顆大石（碎石撒出來的），進門要從它旁邊繞過去；
      到達點在大石的中庭那一側、面朝中庭。路標浮在升起的鐵閘前面。 */
   B.portalBox(-2.4, A.z0, 2.4, -12.9, -0.5, 3, 'throne.gate', {
-    door: 'gates', mouth: { x: 0, y: 0, z: -12.4, n: [0, 1] },
+    door: 'courtyard.gates', mouth: { x: 0, y: 0, z: -12.4, n: [0, 1] },
   });
   B.arrive('gate', 0, 0, -9.4, 0);
-  B.sign(0, 3.0, -12.1, '王座廳', { door: 'gates' });
+  B.sign(0, 3.0, -12.1, '王座廳', { door: 'courtyard.gates' });
 
   /* 兩側拱廊正中那個拱洞（z = 0）通到別的區塊：東邊是城牆步道兵營的那條小路，
      西邊是窄巷的南端，兩頭一一對應——從東邊出去，從城牆回來也回到東邊。
@@ -213,10 +213,10 @@ function courtyard(B, flames, seed, A) {
   const FACE = 12.5;                                   // 拱廊的內皮（x = ±13、深 1.0）
   for (const [sx, to, name, text] of [[1, 'wallwalk.fog', 'east', '城牆步道'], [-1, 'alley.fog', 'west', '城內窄巷']]) {
     B.portalBox(sx * (FACE + 0.5), -1.55, sx * A.x1, 1.55, -0.5, 3, to, {
-      door: 'gates', mouth: { x: sx * FACE, y: 0, z: 0, n: [-sx, 0] },
+      door: 'courtyard.gates', mouth: { x: sx * FACE, y: 0, z: 0, n: [-sx, 0] },
     });
     B.arrive(name, sx * (FACE - 1.5), 0, 0, -sx * Math.PI / 2);
-    B.sign(sx * (FACE - 0.2), 3.2, 0, text, { door: 'gates' });
+    B.sign(sx * (FACE - 0.2), 3.2, 0, text, { door: 'courtyard.gates' });
   }
   return { spawn: [0, 0, 3.5] };
 }
@@ -302,12 +302,12 @@ function throne(B, flames, seed, A) {
      什麼都沒有，缺口就是原本的樣子。開著走進缺口，從牆的內皮往裡 0.5 起就回中庭
      的門樓；到達點在門內、面朝王座。 */
   const FACE = -14.4 + 0.55, HEAP = { x0: -2.7, x1: 2.7, z0: A.z0 + 0.02, z1: FACE + 0.3, h: 2.6 };
-  B.detach({ door: 'gate', open: false, face: [0, 1] }, () => rubbleHeap(B, { ...HEAP, seed: seed + 170 }));
-  B.detach({ door: 'gate', open: true, face: [0, 1] }, () => {});
+  B.detach({ door: 'throne.gate', open: false, face: [0, 1] }, () => rubbleHeap(B, { ...HEAP, seed: seed + 170 }));
+  B.detach({ door: 'throne.gate', open: true, face: [0, 1] }, () => {});
   B.block(0, HEAP.h / 2, (HEAP.z0 + HEAP.z1) / 2, HEAP.x1 - HEAP.x0, HEAP.h, HEAP.z1 - HEAP.z0 + 0.04,
-    { kind: 'block', base: 0, door: 'gate' });
+    { kind: 'block', base: 0, door: 'throne.gate' });
   B.portalBox(-2.6, A.z0, 2.6, FACE - 0.5, -0.5, 3, 'courtyard.gate', {
-    door: 'gate', mouth: { x: 0, y: 0, z: FACE, n: [0, 1] },
+    door: 'throne.gate', mouth: { x: 0, y: 0, z: FACE, n: [0, 1] },
   });
   B.arrive('gate', 0, 0, -11.4, 0);
   /* 倒下的柱頭。以前是躺在地上的（頂面 0.7）——那正好是「跳一下站得
@@ -392,11 +392,11 @@ function cistern(B, flames, seed, A) {
       const bars = { x: c[0], z: c[1], y: 0, w: 2.0, h: ARCH.y, yaw: -mid + Math.PI / 2 };
       if (Math.sin(mid) < -0.9) {
         const face = R * Math.cos(Math.PI / segs) - 0.55;       // 門洞內皮離圓心多遠
-        grate(B, { ...bars, lift: 2.2, ceil: intrados(ARCH), group: 'gate', face: [-n[0], -n[1]] });
+        grate(B, { ...bars, lift: 2.2, ceil: intrados(ARCH), group: 'cistern.gate', face: [-n[0], -n[1]] });
         /* 感測區是圓的（門面是斜的，方的蓋不準）：圓心在黑牆上，半徑讓它從門洞
            內皮往裡 0.5 起算；身體在門洞裡能走到離中線 0.8，那裡也蓋得到。 */
         B.portal(n[0] * A.r, n[1] * A.r, A.r - face - 0.5, -0.5, 3, 'crypt.gate', {
-          door: 'gate', mouth: { x: n[0] * face, y: 0, z: n[1] * face, n: [-n[0], -n[1]] },
+          door: 'cistern.gate', mouth: { x: n[0] * face, y: 0, z: n[1] * face, n: [-n[0], -n[1]] },
         });
         B.arrive('gate', n[0] * (face - 1.6), 0, n[1] * (face - 1.6), Math.atan2(-n[0], -n[1]));
       } else {
@@ -410,7 +410,7 @@ function cistern(B, flames, seed, A) {
         const r0 = R * Math.cos(Math.PI / segs) + 0.15, D = A.r + 0.2 - r0;
         const tx = Math.cos(bars.yaw), tz = -Math.sin(bars.yaw);
         const W = 2.4, k = 6, L = W / k;
-        const door = Math.sin(mid) < -0.9 ? 'gate' : undefined;
+        const door = Math.sin(mid) < -0.9 ? 'cistern.gate' : undefined;
         for (let j = 0; j < k; j++) {
           const t = ((j + 0.5) / k - 0.5) * W;
           const cx = n[0] * (r0 + D / 2) + tx * t, cz = n[1] * (r0 + D / 2) + tz * t;
@@ -881,7 +881,7 @@ function roundTower(B, seed, o) {
     const n = [Math.cos(mid(i)), Math.sin(mid(i))];
     return towerDoor(B, seed + 196 + i, {
       face: on(i), n, y: doorSill[i], half: towerDoorHalf(RT), top: HT,
-      reach: [TX + n[0] * RT, n[1] * RT], to, arrive, group: 'tower',
+      reach: [TX + n[0] * RT, n[1] * RT], to, arrive, group: 'wallwalk.tower',
     });
   };
   // 塔身的碰撞是一根圓柱，在兩扇門的洞口各開一個缺口（見 `towerDoor`）。
@@ -1185,11 +1185,11 @@ function crypt(B, flames, seed, A) {
   const SILL = DOOR.y[0];
   grate(B, {
     x: 0, z: -Z, y: SILL, w: 2.4, h: 2.6, yaw: 0, lift: 1.9, ceil: () => DOOR.y[1],
-    group: 'gate', face: [0, 1],
+    group: 'crypt.gate', face: [0, 1],
     hole: [[DOOR.s[0], SILL, -Z - 0.45], [DOOR.s[1], DOOR.y[1], -Z + 0.45]],
   });
   B.portalBox(DOOR.s[0], A.z0, DOOR.s[1], -IZ - 0.5, SILL - 0.5, SILL + 2.5, 'cistern.gate', {
-    door: 'gate', mouth: { x: 0, y: SILL, z: -IZ, n: [0, 1] },
+    door: 'crypt.gate', mouth: { x: 0, y: SILL, z: -IZ, n: [0, 1] },
   });
   B.arrive('gate', 0, 0, -7.0, 0);
 
@@ -1515,9 +1515,8 @@ function alley(B, flames, seed, A) {
    不必靠玩，`tools/verify-test-area.mjs` 用真的物理走一遍就知道。兩層的
    區塊（城牆步道）給一串，一層一筆。
 
-   `doors` 是這個區塊裡每一組門一開始的狀態（組名 → 開著嗎）。一組門是
-   幾扇一起開關的門，狀態在執行時改（main.js 的 setDoor），不是地圖的版本；
-   砌完之後組名前面會加上區塊的 id（'wallwalk.tower'）。
+   門不在這裡登記，在下面的 `DOORS`：一扇門不屬於哪一個區塊，屬於它連著的
+   那幾個。
 
    `fenced` 是「空氣牆圍著的那一層」的走道面高度：那一層只能從感測區（門）
    上下，驗證器據此檢查從那一層走、跳都下不去。
@@ -1532,8 +1531,6 @@ export const BLOCKS = [
     room: { y: 0, hx: 12.4, hz: 12.4 },
     // 牆面：南牆 13.5、門樓 13.6、兩側拱廊 13.5。砌體最高 7.4。
     arena: { shape: 'rect', x0: -13.8, x1: 13.8, z0: -13.8, z1: 13.8, lid: 12.0 },
-    // 通到別的區塊的幾扇門，一開始關著。
-    doors: { gates: false },
   },
   {
     id: 'throne', name: '王座廳', hint: '兩列柱、斜插的穹稜、台座與王座',
@@ -1541,8 +1538,6 @@ export const BLOCKS = [
     room: { y: 0, cz: -1.5, hx: 6.9, hz: 12.0 },
     // 牆面：兩側 8.05、南端 14.95、北端（王座背後那道）18.95。
     arena: { shape: 'rect', x0: -8.3, x1: 8.3, z0: -15.2, z1: 19.2, lid: 14.0 },
-    // 正門的鐵閘，一開始放下。
-    doors: { gate: false },
   },
   {
     id: 'cistern', name: '圓塔水窖', hint: '環形拱廊、鐵閘、貼牆殘階、垂鏈',
@@ -1556,8 +1551,6 @@ export const BLOCKS = [
        下狗，而且再也走不回來。13.75 讓那條縫只剩 0.45，比身體窄，站在牆頭
        往外走會先被黑牆擋住，不會掉下去。 */
     arena: { shape: 'circle', x: 0, z: 0, r: 13.75, lid: 12.0 },
-    // 朝南那道鐵閘，一開始放下。
-    doors: { gate: false },
     // 三個門洞都有鐵閘：從地上走到底停在環牆或閘上，走不到黑牆。
     sealed: true,
   },
@@ -1580,16 +1573,12 @@ export const BLOCKS = [
       shape: 'circle', x: 0, z: 0, r: 22, lid: 14.0,
       haze: [[0, 1.0], [1.2, 0.34], [3.5, 0.24], [6.5, 0.14]],
     },
-    // 圓塔的兩扇門，一開始關著：兵營走不上牆。
-    doors: { tower: false },
     fenced: 5.2,
   },
   {
     id: 'crypt', name: '地下墓室', hint: '拱肋、石棺、壁龕與燭火',
     origin: [0, 3 * PITCH], build: crypt, seed: 0xc3d4, moss: 0,
     room: { y: 0, hx: 2.6, hz: 8.2 },
-    // 南端那道鐵閘，一開始放下。
-    doors: { gate: false },
     /* 牆面：兩側 8.05、兩端 14.85。封頂壓在拱頂上方一公尺多（拱頂約 7.1）。
        `sealed`：四面都是牆，唯一通到黑牆的門洞在南端樓梯頂、關著鐵閘——走到底停在牆上，
        不是停在黑牆上，所以驗證不驗「走到底貼在黑牆上」。 */
@@ -1606,6 +1595,24 @@ export const BLOCKS = [
   },
 ];
 
+/* ── 門的名冊 ─────────────────────────────────────────────────────
+   每一扇會開關的門登記一筆。一筆是幾扇一起開關的門：門扇、門洞裡屬於它的
+   碰撞、感測區、路標，砌的時候都寫這個 `id`（`{ door: 'wallwalk.tower' }`）。
+
+     name    叫什麼，給看的人（提示、任務的字）。
+     blocks  它在哪幾個區塊裡。屬於它的東西只准砌在這幾個區塊裡，而且每一個
+             區塊裡都要有一個屬於它的感測區——`buildRuins()` 兩件都查，不對就丟錯。
+     open    一開始開著嗎。執行時的狀態另外放（main.js 的 `doors`，由 setDoor
+             改），不是地圖的版本。 */
+export const DOORS = [
+  { id: 'courtyard.gates', name: '中庭的門樓與兩側拱洞', blocks: ['courtyard'], open: false },
+  { id: 'throne.gate', name: '王座廳正門', blocks: ['throne'], open: false },
+  { id: 'cistern.gate', name: '水窖南閘', blocks: ['cistern'], open: false },
+  // 一開始關著：兵營走不上牆。
+  { id: 'wallwalk.tower', name: '圓塔的兩扇門', blocks: ['wallwalk'], open: false },
+  { id: 'crypt.gate', name: '墓室南閘', blocks: ['crypt'], open: false },
+];
+
 /**
  * 砌出整片廢墟。
  *
@@ -1616,14 +1623,14 @@ export const BLOCKS = [
  * 門是例外：兩種狀態的門扇各自一塊（`pieces`），執行時換看得到的那一塊。
  *
  * @returns {{geometry, ink, colliders, flames, spawns, arenas, portals, arrivals,
- *   doors, pieces, signs, tris, inkLines}} `doors` 是每一組門一開始的狀態（組名 → 開著嗎）。
+ *   doors, pieces, signs, tris, inkLines}} `doors` 是每一扇門一開始的狀態（`DOORS` 的 id → 開著嗎）。
  */
 export function buildRuins(opts = {}) {
   const B = new Build(new Kit(), opts);
   const flames = [];
   const spawns = {};
   const arenas = [];
-  const doors = {};
+  const doors = Object.fromEntries(DOORS.map((d) => [d.id, d.open]));
   _colCursor = _inkCursor = _flameCursor = 0;   // 同一個行程裡砌第二遍也要對
   _partCursor = _wallCursor = _floorCursor = _portalCursor = 0;
   _arriveCursor = _pieceCursor = _signCursor = 0;
@@ -1639,7 +1646,6 @@ export function buildRuins(opts = {}) {
     shift(B, mark, ox, oz, flames, b.id);
     // 第四個數是出生時的鏡頭方位（cam.yaw）；沒給就是 π，也就是面朝 −z。
     spawns[b.id] = [meta.spawn[0] + ox, meta.spawn[1], meta.spawn[2] + oz, meta.yaw ?? Math.PI];
-    for (const [g, open] of Object.entries(b.doors || {})) doors[`${b.id}.${g}`] = open;
     const A = b.arena;
     arenas.push(A.shape === 'circle'
       ? { id: b.id, shape: 'circle', x: A.x + ox, z: A.z + oz, r: A.r, lid: A.lid, haze: A.haze }
@@ -1665,7 +1671,14 @@ export function buildRuins(opts = {}) {
     if (!a && !s) throw new Error(`感測區的目的地不存在：${p.to}（從 ${p.block}）`);
     p.dest = a ? { x: a.x, y: a.y, z: a.z, yaw: a.yaw, block: a.block }
       : { x: s[0], y: s[1], z: s[2], yaw: s[3], block: p.to };
-    if (p.door && !(p.door in doors)) throw new Error(`感測區屬於一組沒有登記的門：${p.door}`);
+  }
+  // 名冊上的每一扇門，在它連著的每一個區塊裡都要有一個屬於它的感測區：少一頭就是走不過去的門。
+  for (const d of DOORS) {
+    for (const id of d.blocks) {
+      if (!B.portals.some((p) => p.door === d.id && p.block === id)) {
+        throw new Error(`門在這個區塊裡沒有感測區：${d.id}（${id}）`);
+      }
+    }
   }
 
   const out = B.finish();
@@ -1683,6 +1696,15 @@ export function buildRuins(opts = {}) {
 let _colCursor = 0, _inkCursor = 0, _flameCursor = 0;
 let _partCursor = 0, _wallCursor = 0, _floorCursor = 0, _portalCursor = 0;
 let _arriveCursor = 0, _pieceCursor = 0, _signCursor = 0;
+
+/** 砌在區塊 `block` 裡的東西屬於門 `door`（沒有就不查）：那扇門要在名冊上，而且連著這個區塊。 */
+function mine(door, block) {
+  if (!door) return;
+  const d = DOORS.find((e) => e.id === door);
+  if (!d) throw new Error(`屬於一扇沒有登記的門：${door}（在 ${block}）`);
+  if (!d.blocks.includes(block)) throw new Error(`門 ${door} 不在 ${block} 裡，卻有東西砌在那裡`);
+}
+
 function shift(B, fromPos, ox, oz, flames, id) {
   for (let i = fromPos; i < B.pos.length; i += 3) { B.pos[i] += ox; B.pos[i + 2] += oz; }
   for (let i = _inkCursor; i < B.ink.length; i += 3) { B.ink[i] += ox; B.ink[i + 2] += oz; }
@@ -1692,12 +1714,12 @@ function shift(B, fromPos, ox, oz, flames, id) {
     c.min[0] += ox; c.max[0] += ox; c.min[2] += oz; c.max[2] += oz;
     // 圓柱的軸是另外一組座標，跟著搬——漏搬的話那根柱子會擋在別的區塊裡。
     if (c.shape === 'circle' || c.kind === 'pit') { c.x += ox; c.z += oz; }
-    // 圓柱上的缺口：跟著搬，屬於哪一組門也跟感測區一樣加上區塊的 id。
+    // 圓柱上的缺口：跟著搬。
     for (const n of c.notch || []) {
       n.min[0] += ox; n.max[0] += ox; n.min[2] += oz; n.max[2] += oz;
-      if (n.door) n.door = `${id}.${n.door}`;
+      mine(n.door, id);
     }
-    if (c.door) c.door = `${id}.${c.door}`;         // 屬於一組門的盒子（鐵閘）
+    mine(c.door, id);                               // 屬於一扇門的盒子（鐵閘）
   }
   _colCursor = B.colliders.length;
   for (let i = _flameCursor; i < flames.length; i++) { flames[i].x += ox; flames[i].z += oz; }
@@ -1719,8 +1741,7 @@ function shift(B, fromPos, ox, oz, flames, id) {
   }
   _floorCursor = B.floors.length;
   /* 感測區也是區塊自己的座標；`'spawn'` 在這裡換成區塊的 id、`'.名字'`
-     換成這個區塊的到達點、門的組名前面加上區塊的 id——砌它的那支函式不知道
-     自己叫什麼。 */
+     換成這個區塊的到達點——砌它的那支函式不知道自己叫什麼。 */
   const own = (name) => `${id}.${name}`;
   for (let i = _portalCursor; i < B.portals.length; i++) {
     const p = B.portals[i];
@@ -1728,7 +1749,7 @@ function shift(B, fromPos, ox, oz, flames, id) {
     if (p.mouth) { p.mouth.x += ox; p.mouth.z += oz; }
     if (p.to === 'spawn') p.to = id;
     else if (p.to.startsWith('.')) p.to = own(p.to.slice(1));
-    if (p.door) p.door = own(p.door);
+    mine(p.door, id);
     p.block = id;
   }
   _portalCursor = B.portals.length;
@@ -1739,19 +1760,19 @@ function shift(B, fromPos, ox, oz, flames, id) {
     a.block = id;
   }
   _arriveCursor = B.arrivals.length;
-  // 另外成一塊的幾何（門）：頂點、墨線與黑霧整塊搬，組名跟感測區一樣加上區塊的 id。
+  // 另外成一塊的幾何（門）：頂點、墨線與黑霧整塊搬。
   for (let i = _pieceCursor; i < B.pieces.length; i++) {
     const q = B.pieces[i];
     for (const arr of [q.pos, q.ink, q.haze.pos]) for (let k = 0; k < arr.length; k += 3) { arr[k] += ox; arr[k + 2] += oz; }
     if (q.hole) for (const c of q.hole) { c[0] += ox; c[2] += oz; }
-    if (q.door) q.door = own(q.door);
+    mine(q.door, id);
     q.block = id;
   }
   _pieceCursor = B.pieces.length;
   for (let i = _signCursor; i < B.signs.length; i++) {
     const s = B.signs[i];
     s.x += ox; s.z += oz;
-    if (s.door) s.door = own(s.door);
+    mine(s.door, id);
     s.block = id;
   }
   _signCursor = B.signs.length;
