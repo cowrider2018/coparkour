@@ -67,7 +67,7 @@
 import * as THREE from '../public/test-area/vendor/three.module.js';
 import { buildRuins, BLOCKS, PITCH } from '../public/test-area/src/blocks.js';
 import {
-  PHYS, SLIDE, APEX, solveXZ, supportAt, supportInfo, roundTop, roundSin, portalAt,
+  PHYS, SLIDE, APEX, solveXZ, supportAt, supportInfo, roundTop, roundSin, portalAt, portalDrift, portalGap, REPEL,
   steer, slideDrift, slideAccel, arenaGap, clampArena, boomLimit, BLOCK_TOP, TRIP, MOUNT,
 } from '../public/test-area/src/walk.js';
 import { VEIL, buildVeil, outline } from '../public/test-area/src/veil.js';
@@ -1236,6 +1236,61 @@ head('傳送點');
     ok(res.gate === back, `${label}：從到達點走得進回程的那一塊`,
       res.gate === back ? `${res.t.toFixed(1)} 秒`
         : res.gate ? `先碰到了 ${res.gate.block} → ${res.gate.to}` : `最近只到 ${res.best.toFixed(1)} m`);
+  }
+}
+
+head('傳送點前的反推');
+/* 感測區外面一個狗身長以內有一股把身體推開的速度（walk.js 的 REPEL），讓貼著
+   黑牆走、在門口停一下的人不會誤觸。每一個會推的感測區（開著、不是單向的），
+   從它前面的到達點用頁面那一套走法（操控速度加上反推，都加在位移上）驗三件事：
+
+     1. 到達點在那一圈外面——一落地就被推，那是在趕人。
+     2. 朝它直直走進去，照樣走得進去（只是慢）。
+     3. 走到離它 5 公分的地方放手：三秒內不會被送走，而且被推回那一圈的外緣附近。 */
+{
+  const ALL = Object.fromEntries(Object.keys(R.doors).map((g) => [g, true]));
+  const centerOf = (p) => (p.shape === 'box' ? [(p.x0 + p.x1) / 2, (p.z0 + p.z1) / 2] : [p.x, p.z]);
+  /** 頁面的一步：想走的速度（沒有就是 0）加上反推，推出、落地、問感測區。 */
+  const step = (q, want, dt) => {
+    const [px, pz] = portalDrift(R.portals, q.x, q.y, q.z, ALL);
+    [q.x, q.z] = solveXZ(COLS, q.x + (want[0] + px) * dt, q.z + (want[1] + pz) * dt, q.y, ALL);
+    const prevY = q.y;
+    q.vy -= PHYS.gravity * dt;
+    q.y += q.vy * dt;
+    const sup = supportAt(COLS, q.x, q.z, prevY);
+    if (q.y <= sup && q.vy <= 0) { q.y = sup; q.vy = 0; }
+    return portalAt(R.portals, q.x, q.y, q.z, ALL);
+  };
+  const pushed = R.portals.filter((p) => !p.oneWay);
+  ok(pushed.length > 0, '有會推人的感測區', `${pushed.length} 個`);
+  for (const p of pushed) {
+    const label = `${p.block} → ${p.to}`;
+    const [cx, cz] = centerOf(p);
+    // 它前面的到達點：同一個區塊裡、離它最近的那一個（高度也算：圓塔的兩扇門一上一下）。
+    const a = Object.values(R.arrivals).filter((v) => v.block === p.block)
+      .sort((u, v) => Math.hypot(u.x - cx, u.z - cz, u.y - p.y0) - Math.hypot(v.x - cx, v.z - cz, v.y - p.y0))[0];
+    const gap0 = portalGap(p, a.x, a.z)[0];
+    ok(gap0 >= REPEL.zone, `${label}：到達點在反推的範圍外`, `離感測區 ${gap0.toFixed(2)} m（${a.name}）`);
+    const dt = 1 / 60;
+    const toward = (q) => { const dx = cx - q.x, dz = cz - q.z, d = Math.hypot(dx, dz) || 1e-9; return [dx / d * PHYS.walk, dz / d * PHYS.walk]; };
+    // 2. 走進去
+    {
+      const q = { x: a.x, y: supportAt(COLS, a.x, a.z, a.y + 0.2), z: a.z, vy: 0 };
+      let hit = null, t = 0;
+      for (; t < 12 && !hit; t += dt) hit = step(q, toward(q), dt);
+      ok(hit === p, `${label}：頂著反推走得進去`, hit === p ? `${t.toFixed(1)} 秒` : hit ? `先碰到了 ${hit.block} → ${hit.to}` : '走不進去');
+    }
+    // 3. 走到邊上放手
+    {
+      const q = { x: a.x, y: supportAt(COLS, a.x, a.z, a.y + 0.2), z: a.z, vy: 0 };
+      let hit = null;
+      for (let t = 0; t < 12 && !hit && portalGap(p, q.x, q.z)[0] > 0.05; t += dt) hit = step(q, toward(q), dt);
+      const edge = portalGap(p, q.x, q.z)[0];
+      for (let t = 0; t < 3 && !hit; t += dt) hit = step(q, [0, 0], dt);
+      const end = portalGap(p, q.x, q.z)[0];
+      ok(!hit && edge <= 0.05 && end >= REPEL.zone * 0.8, `${label}：停在邊上會被推回安全的地方`,
+        hit ? `被送走了（${hit.to}）` : `放手時離感測區 ${edge.toFixed(2)} m，三秒後 ${end.toFixed(2)} m`);
+    }
   }
 }
 
