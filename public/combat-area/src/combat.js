@@ -32,7 +32,9 @@
            破防中的時候，選最近的那一隻。
      迴旋  碰到牠的那一刻，記下玩家相對於牠的位置；牠原地轉一圈，玩家保持那個
            相對位置繞著牠轉 360°。
-     跳離  轉完扣 5 點血，玩家往突進的反方向、往上跳下來。
+     跳離  轉完扣 5 點血，玩家往突進的反方向、往上跳下來；同一瞬間怪物被往
+           另一邊（突進的方向）推開——只有水平，不往上挑。在地上的怪物是沿著
+           地面滑出去、滑到停；在空中被定住的，放開之後帶著這一份水平速度落下。
 
    從按下去到跳離之後落地，玩家都是無敵的——整招都貼在怪物身上。飛在空中（被擊退、還沒落地）的怪物碰到玩家不算數。
    空中再挨一下就再擊退一次——每一下都是把速度**換成**擊退的那一份，
@@ -108,8 +110,14 @@ export const DAMAGE = { slash: 1, rise: 3, slam: 2, break: 5 };
  *   flight  突進花多久飛到頭頂（秒）。速度由它反推，所以不管目標多遠都是這麼久。
  *   spin    迴旋一圈多久（秒）。
  *   off     跳離：水平（突進的反方向）與垂直的速度。垂直是一次普通的跳。
+ *   push    同一瞬間怪物被推開：水平速度 h（突進的方向），在地上滑行時每秒
+ *           減速 decel——5 m/s 滑 0.6 秒、約 1.6 公尺。沒有垂直的份。
  */
-export const BREAK_ATK = { flight: 0.35, spin: 0.6, off: { h: 5, v: PHYS.jump } };
+export const BREAK_ATK = {
+  flight: 0.35, spin: 0.6,
+  off: { h: 5, v: PHYS.jump },
+  push: { h: 5, decel: 8 },
+};
 
 /** 一隻怪物的那一類數值。 */
 export const kindOf = (m) => KINDS[m.kind];
@@ -167,6 +175,8 @@ export function makeMonster(kind = 'hound', spawn = SPAWN.monster) {
     breakT: 0,
     /** 被破防攻擊定住（迴旋中）：不動、不受重力。 */
     held: false,
+    /* 被沿著地面推開、還在滑（破防攻擊的跳離）。這段時間牠不追人，滑到停為止。 */
+    slide: false,
   };
   placeMonster(m);
   return m;
@@ -183,6 +193,7 @@ export function placeMonster(m) {
   m.gauge = 0;
   m.breakT = 0;
   m.held = false;
+  m.slide = false;
   m.aimX = Math.sin(s.yaw); m.aimZ = Math.cos(s.yaw);
 }
 
@@ -230,6 +241,16 @@ export function monsterStep(m, dt, target) {
     if (m.breakT <= 0) resetBreak(m);
   }
   if (m.held) return;                     // 破防攻擊的迴旋：定在原地
+  if (m.slide && !m.air) {
+    // 沿著地面被推開：照 BREAK_ATK.push.decel 減速，停了才回去追人。
+    const sp = Math.hypot(m.vx, m.vz);
+    const ns = Math.max(0, sp - BREAK_ATK.push.decel * dt);
+    const k = sp > 1e-9 ? ns / sp : 0;
+    m.vx *= k; m.vz *= k;
+    [m.x, m.z] = solveXZ(COLS, m.x + m.vx * dt, m.z + m.vz * dt, m.y);
+    if (ns <= 0) m.slide = false;
+    return;
+  }
   if (m.air) {
     m.vy -= PHYS.gravity * dt;
     m.y += m.vy * dt;
@@ -276,6 +297,7 @@ export function knock(m, fromX, fromZ, awayX, awayZ, scale = KNOCK_SCALE.rise) {
   m.vx = dx * KNOCK.h * scale.h;
   m.vz = dz * KNOCK.h * scale.h;
   m.vy = KNOCK.v * scale.v;
+  m.slide = false;
   m.air = true;
   m.grounded = false;
   m.hits++;
@@ -601,9 +623,14 @@ export function spinStep(c, p, m) {
   if (rl > 0.05) { p.aimX = -rx / rl; p.aimZ = -rz / rl; }   // 一直面向牠
   m.aimX = Math.sin(c.yaw0 + a); m.aimZ = Math.cos(c.yaw0 + a);
   if (k < 1) return { done: false, died: false };
-  const died = hurt(m, DAMAGE.break);
+  /* 推開怪物在扣血之前：打死的話重生會把這一份清掉，不會帶到重生點去。 */
   m.held = false;
-  if (m.y > 0) { m.air = true; m.grounded = false; }         // 在空中被定住的：放開就往下掉
+  m.vx = c.dashX * BREAK_ATK.push.h;
+  m.vz = c.dashZ * BREAK_ATK.push.h;
+  m.vy = 0;
+  if (m.y > 0) { m.air = true; m.grounded = false; }         // 在空中被定住的：放開就帶著水平速度落下
+  else m.slide = true;
+  const died = hurt(m, DAMAGE.break);
   c.phase = 'vault';
   c.t = 0;
   p.vx = -c.dashX * BREAK_ATK.off.h;

@@ -30,8 +30,8 @@
     11. 破防門檻    傷害累積到 4 就破防、開 0.5 秒的窗口；窗口裡不再累積；
                     錯過就歸零重算。
     12. 破防攻擊    選最近的破防目標；按下去窗口用掉、累積歸零；朝頭頂飛過去、
-                    碰到之後牠轉一圈、玩家繞牠 360°、扣 5、往反方向跳離；整招
-                    無敵；在空中按不算。
+                    碰到之後牠轉一圈、玩家繞牠 360°、扣 5、往反方向跳離，同一
+                    瞬間牠被往突進的方向推開（只有水平）；整招無敵；在空中按不算。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test-area/src/walk.js';
@@ -405,7 +405,7 @@ console.log('12. 破防攻擊');
   ok(act.brk, '站在地上按跳：發動');
   startBreak(c, p, m);
   ok(!broken(m) && m.gauge === 0, '發動就用掉窗口，累積歸零');
-  let vault = null;
+  let vault = null, pushed = null, slid = null;
   let t = 0, bitten = false, latchedAt = -1, yawTurn = 0, orbit = 0, lastYaw = null, lastAng = null, done = false, landedAt = -1;
   const unwrap = (d) => d - Math.PI * 2 * Math.round(d / (Math.PI * 2));
   while (t < 4) {
@@ -423,9 +423,10 @@ console.log('12. 破防攻擊');
       const r = spinStep(c, p, m);
       const yaw2 = Math.atan2(m.aimX, m.aimZ), ang2 = Math.atan2(p.x - m.x, p.z - m.z);
       yawTurn += unwrap(yaw2 - yaw); orbit += unwrap(ang2 - ang);
-      if (r.done) { done = true; vault = [p.vx, p.vz, p.vy, c.dashX, c.dashZ]; }
+      if (r.done) { done = true; vault = [p.vx, p.vz, p.vy, c.dashX, c.dashZ]; pushed = { vx: m.vx, vz: m.vz, vy: m.vy, x: m.x, z: m.z, slide: m.slide }; }
     }
     if (bites(p, m) && !invulnerable(c)) bitten = true;
+    if (pushed && !slid && !m.slide) slid = Math.hypot(m.x - pushed.x, m.z - pushed.z);
     t += DT;
     if (done && c.phase === 'idle') { landedAt = t; break; }
   }
@@ -436,9 +437,33 @@ console.log('12. 破防攻擊');
   ok(hp0 - m.hp === DAMAGE.break, `扣 ${DAMAGE.break}（${hp0} → ${m.hp}）`);
   ok(vault && near(vault[0], -vault[3] * BREAK_ATK.off.h) && near(vault[1], -vault[4] * BREAK_ATK.off.h) && near(vault[2], BREAK_ATK.off.v),
     `跳離：往突進的反方向 ${BREAK_ATK.off.h} m/s、往上 ${BREAK_ATK.off.v.toFixed(1)} m/s`);
-  ok(landedAt > 0, `跳離之後落地、回到待機（離牠 ${Math.hypot(p.x - m.x, p.z - m.z).toFixed(1)} 公尺——牠一直在追）`);
+  ok(pushed && near(pushed.vx, vault[3] * BREAK_ATK.push.h) && near(pushed.vz, vault[4] * BREAK_ATK.push.h) && pushed.vy === 0 && pushed.slide,
+    `同一瞬間牠被往突進的方向推開 ${BREAK_ATK.push.h} m/s，沒有往上`);
+  const want = (BREAK_ATK.push.h ** 2) / (2 * BREAK_ATK.push.decel);
+  ok(slid !== null && Math.abs(slid - want) < 0.1, `沿著地面滑了 ${slid?.toFixed(2)} 公尺才停（應為 ${want.toFixed(2)}），停了才回去追人`);
+  ok(landedAt > 0, `跳離之後落地、回到待機（離牠 ${Math.hypot(p.x - m.x, p.z - m.z).toFixed(1)} 公尺）`);
   ok(!bitten, '整招沒被咬（突進、迴旋、跳離都無敵）');
   ok(!m.held, '跳離之後怪物被放開');
+
+  // 在空中被定住的怪物：放開之後帶著水平速度落下，不被往上挑。
+  const pa = { x: 0, y: 1.5, z: 3, vx: 0, vy: 0, vz: 0, grounded: false, aimX: 0, aimZ: -1 };
+  const ma = makeMonster();
+  ma.x = 0; ma.z = 1; ma.y = 1.2; ma.air = true;
+  const ca = makeCombo();
+  ca.dashX = 0; ca.dashZ = -1;
+  latch(ca, pa, ma);
+  ca.t = BREAK_ATK.spin;
+  spinStep(ca, pa, ma);
+  ok(ma.air && !ma.slide && ma.vy === 0 && near(ma.vz, -BREAK_ATK.push.h), '在空中被定住的：放開之後帶著水平速度落下，垂直速度是 0');
+  // 打死的那一下：推開的速度不帶到重生點。
+  const md = makeMonster();
+  md.x = 0; md.z = 1; md.hp = DAMAGE.break;
+  const cd = makeCombo();
+  cd.dashX = 0; cd.dashZ = -1;
+  latch(cd, { ...pa, y: 0.9 }, md);
+  cd.t = BREAK_ATK.spin;
+  const rd = spinStep(cd, { ...pa }, md);
+  ok(rd.died && md.vx === 0 && md.vz === 0 && !md.slide && near(md.z, md.spawn.z), '這一下打死牠：在重生點重生，不帶推開的速度');
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');
