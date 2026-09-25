@@ -1179,8 +1179,8 @@ head('傳送點');
      1. 在目的地那個區塊的黑牆裡，落得下來、站得住、不在牆裡。
      2. 不在任何一個感測區裡——不然一落地就又被送走，兩邊來回彈。門全部
         開著的時候問：那是感測區最多的時候。掉下來的到達點，整段落下都問。
-     3. 不是單向的（井）就要有回程：目的地那個區塊裡有一個感測區（同一組門）
-        把人送回這一個旁邊，而且從到達點用真的物理走得進它。 */
+     3. 不是單向的（井）就要有回程：目的地那個區塊裡有一個感測區把人送回這一個
+        旁邊，而且從到達點用真的物理走得進它（門全部開著）。 */
 {
   const ALL = Object.fromEntries(Object.keys(R.doors).map((g) => [g, true]));
   const centerOf = (p) => (p.shape === 'box' ? [(p.x0 + p.x1) / 2, (p.z0 + p.z1) / 2] : [p.x, p.z]);
@@ -1219,12 +1219,16 @@ head('傳送點');
     for (let y = sup; y <= d.y + 0.25 && !bounce; y += 0.1) bounce = portalAt(R.portals, d.x, y, d.z, ALL);
     ok(!bounce, `${label}：到達點不在任何感測區裡`, bounce ? `落在 ${bounce.block} → ${bounce.to} 那一塊裡` : '');
     if (p.oneWay) continue;
+    /* 回程：目的地那個區塊裡送回這個區塊的感測區裡，落點離這一塊最近的那一個。
+       兩頭可以各有各的門（中庭的鐵閘與王座廳的鐵閘是兩組，各自在自己的區塊裡
+       按 O），所以不要求同一組門；走回去的時候門全部開著。 */
     const [px, pz] = centerOf(p);
-    const back = R.portals.find((q) => q.block === d.block && q.dest.block === p.block && q.door === p.door
-      && Math.hypot(q.dest.x - px, q.dest.z - pz) < 4);
+    const far = (q) => Math.hypot(q.dest.x - px, q.dest.z - pz);
+    const back = R.portals.filter((q) => q.block === d.block && q.dest.block === p.block)
+      .sort((a, b) => far(a) - far(b)).find((q) => far(q) < 8);
     ok(!!back, `${label}：有回程`, back ? `${back.block} → ${back.to}` : '目的地那一邊沒有送回這裡的感測區');
     if (!back) continue;
-    const res = walkInto([d.x, sup, d.z], centerOf(back), p.door ? { [p.door]: true } : {});
+    const res = walkInto([d.x, sup, d.z], centerOf(back), ALL);
     ok(res.gate === back, `${label}：從到達點走得進回程的那一塊`,
       res.gate === back ? `${res.t.toFixed(1)} 秒`
         : res.gate ? `先碰到了 ${res.gate.block} → ${res.gate.to}` : `最近只到 ${res.best.toFixed(1)} m`);
@@ -1232,12 +1236,18 @@ head('傳送點');
 }
 
 head('門');
-/* 一組門是幾扇一起開關的門。每一組都要：兩種狀態各有一塊（關著的門扇、
-   開著的門洞），開著的時候至少兩個感測區（一扇進、一扇出），而且整塊在
-   自己那個區塊的黑牆裡（它不進合併的那一份，「黑牆沒有切到任何幾何」那一項
-   看不到它）。
+/* 一組門是幾扇一起開關的門（在那個區塊裡按 O）。每一組都要：
 
-   開著的門洞是甬道裡一層層的黑霧，要成立三件事：
+     · 至少一個感測區，而且每一個都登記了門口（`mouth`）。
+     · 看得出開關：每一扇門（每一個感測區的門口）旁邊，有一塊會隨著開關換掉的
+       門扇（`pieces`），或者一塊路標（`signs`）。有門扇的門，兩種狀態各一塊
+       （關著的木門、放下的鐵閘、堵住的亂石；開著的門洞、升起的鐵閘）——開著那一塊
+       可以是空的：亂石清走了，看得出來的是它不見了。只有路標的門沒有門扇：關著就是
+       一個走得進去、什麼都不會發生的拱洞。
+     · 門扇、門洞的黑霧與路標都在自己那個區塊的黑牆裡（它們不進合併的那一份，
+       「黑牆沒有切到任何幾何」那一項看不到它們）。
+
+   開著的門洞裡有黑霧的（圓塔的門），要再成立三件事：
      · 最裡面那一層是實心的（α = 1）——不然看得穿甬道，看到塔裡面。
      · 每一片都朝門外（法線跟門面同向）。材質是單面的，朝裡的話整片被剔掉，
        畫面上是「門開了但洞裡是亮的」，跟「黑霧沒做」長得一模一樣。
@@ -1245,18 +1255,19 @@ head('門');
        門前會先穿過一片霧。（門開著的時候狗走得進去、穿過前面幾層才被送走，
        那是要的：牠是走進黑裡不見的。）
 
-   門洞本身（`hole`：兩側門框石、上面頂板、下面地板圍出來的那一塊，從門面
-   到甬道盡頭）裡面沒有一個三角形。門框以外的東西會插進來：門洞兩側那兩段
-   塔牆錯開半塊的端磚，還有一路砌到塔心的幕牆——塔腳那扇門的甬道正好穿過
-   它城內那一面。關著看不到，開著隔著幾層淡霧就是一塊磚擋在洞裡。量的是
+   登記了門洞（`hole`：兩側門框石、上面頂板、下面地板圍出來的那一塊，從門面
+   到甬道盡頭）的門，洞裡面沒有一個三角形。門框以外的東西會插進來：門洞兩側
+   那兩段塔牆錯開半塊的端磚，還有一路砌到塔心的幕牆——塔腳那扇門的甬道正好
+   穿過它城內那一面。關著看不到，開著隔著幾層淡霧就是一塊磚擋在洞裡。量的是
    三角形切進盒子裡（每一片用盒子的六個面裁一次，裁完還剩一塊就是切進去了），
    不是頂點：一塊斜插進來的磚，它的角可以全部在盒子外面。
 
-   從門前兩公尺朝門直直走進去（真的物理）：
-     · 關著：停在門前，身體不碰到門扇（最外面那一點是鐵條）。
-     · 開著：狗整隻走進門洞才被送走——被送走的那一刻，身體的中心在門面內
-       超過狗的後半身（0.48，1 公尺高的狗量出來的）。沒有這一條，感測區悄悄
-       退回門口，狗就又是在門前消失，看不出牠走進了門。 */
+   每一扇門，從門口外兩公尺朝門直直走進去（真的物理）：
+     · 關著：沒被送走；有門扇的話停在門前，身體不碰到門扇。
+     · 開著：被送走的那一刻，身體的中心在門面內超過 `inset`——預設是狗的後半身
+       （0.48，1 公尺高的狗量出來的），狗整隻走進門洞才被送走。沒有這一條，
+       感測區悄悄退回門口，狗就又是在門前消失，看不出牠走進了門。貼在牆上、
+       走不進去的門給負的：鼻子碰到門面之前就送。 */
 {
   const P = R.geometry.attributes.position.array;
   /** 多邊形留下 axis 那一軸 ≥ v（sign = 1）或 ≤ v（sign = −1）的那一側。 */
@@ -1289,21 +1300,35 @@ head('門');
     && y >= c.min[1] - 1e-3 && y <= c.max[1] + 1e-3
     && (c.shape === 'circle' ? Math.hypot(x - c.x, z - c.z) <= c.r + 1e-3
       : x >= c.min[0] - 1e-3 && x <= c.max[0] + 1e-3 && z >= c.min[2] - 1e-3 && z <= c.max[2] + 1e-3));
+  /** 一塊門扇（或門洞）離門口 (x, z) 最近的頂點有多遠。 */
+  const nearest = (q, x, z) => {
+    let best = Infinity;
+    for (const V of [q.geometry.attributes.position.array, q.haze.pos]) {
+      for (let i = 0; i < V.length; i += 3) best = Math.min(best, Math.hypot(V[i] - x, V[i + 2] - z));
+    }
+    return best;
+  };
+  const DOG_BACK = 0.48;
+  const signs = R.signs || [];
   for (const [g, open0] of Object.entries(R.doors)) {
     const mine = R.pieces.filter((q) => q.door === g);
+    const marks = signs.filter((s) => s.door === g);
     const nOpen = mine.filter((q) => q.open).length, nShut = mine.length - nOpen;
-    ok(nOpen > 0 && nShut > 0 && nOpen === nShut, `${g}：每一扇門兩種狀態都有一塊`, `開 ${nOpen}、關 ${nShut}`);
+    ok(nOpen === nShut, `${g}：有門扇的門兩種狀態各一塊`, `開 ${nOpen}、關 ${nShut}、路標 ${marks.length}`);
     const gates = R.portals.filter((p) => p.door === g);
-    ok(gates.length >= 2, `${g}：開著的時候有進有出`, `${gates.length} 個感測區`);
+    ok(gates.length >= 1 && gates.every((p) => p.mouth), `${g}：開著的時候有感測區，每一個都登記了門口`,
+      `${gates.length} 個感測區`);
     const A = R.arenas.find((a) => a.id === g.split('.')[0]);
     let worst = Infinity;
     for (const q of mine) {
-      for (const P of [q.geometry.attributes.position.array, q.haze.pos]) {
-        for (let i = 0; i < P.length; i += 3) worst = Math.min(worst, arenaGap(A, P[i], P[i + 2]));
+      for (const V of [q.geometry.attributes.position.array, q.haze.pos]) {
+        for (let i = 0; i < V.length; i += 3) worst = Math.min(worst, arenaGap(A, V[i], V[i + 2]));
       }
     }
-    ok(worst > 0, `${g}：門扇與門洞的黑霧在黑牆裡`, `離黑牆最近 ${worst.toFixed(2)} m`);
-    for (const q of mine.filter((m) => m.open)) {
+    for (const s of marks) worst = Math.min(worst, arenaGap(A, s.x, s.z));
+    ok(worst > 0, `${g}：門扇、門洞的黑霧與路標在黑牆裡`, `離黑牆最近 ${worst.toFixed(2)} m`);
+
+    for (const q of mine.filter((m) => m.open && m.haze.alpha.length)) {
       const H = q.haze, [fx, fz] = q.face;
       const layers = new Set(), solid = [...H.alpha].some((a) => a >= 1);
       let back = 0, out = 0;
@@ -1317,44 +1342,60 @@ head('門');
         layers.add(H.alpha[i / 3]);
       }
       const where = `朝 (${fx.toFixed(0)}, ${fz.toFixed(0)}) 的那一扇`;
-      ok(H.alpha.length > 0 && solid, `${g}：${where}開著，門洞裡有黑霧、盡頭是實心的黑`, `${layers.size} 層`);
+      ok(solid, `${g}：${where}開著，門洞裡有黑霧、盡頭是實心的黑`, `${layers.size} 層`);
       ok(back === 0, `${g}：${where}的黑霧每一片都朝門外`, back ? `${back} 片朝裡` : '');
       ok(out === 0, `${g}：${where}的黑霧在門面以內`, out ? `${out} 個頂點露在外面` : '');
+    }
+    for (const q of mine.filter((m) => m.open && m.hole)) {
       // 貼著門框的面是門框自己，所以盒子往裡收 2 公分。
       const e = 0.02, lo = q.hole[0].map((v) => v + e), hi = q.hole[1].map((v) => v - e);
       const hits = intruders(lo, hi);
-      ok(hits.length === 0, `${g}：${where}的門洞裡沒有門框以外的磚`,
+      ok(hits.length === 0, `${g}：朝 (${q.face.map((v) => v.toFixed(0))}) 的門洞裡沒有門框以外的磚`,
         hits.length ? hits.slice(0, 3).map((h) => `(${h.min.map((v) => v.toFixed(1))})`).join(' ') : '');
+    }
 
-      // 門的局部座標：m 沿門面的法線（往外是正，門面是 0），c 是門洞的中線。
-      const [lo0, hi0] = q.hole;
-      const faceAt = Math.max(fx * lo0[0] + fz * lo0[2], fx * hi0[0] + fz * hi0[2], fx * lo0[0] + fz * hi0[2], fx * hi0[0] + fz * lo0[2]);
-      const m = (x, z) => fx * x + fz * z - faceAt;
-      const c = [(lo0[0] + hi0[0]) / 2, (lo0[2] + hi0[2]) / 2], cm = m(...c);
-      const sill = lo0[1];
-      const DOG_BACK = 0.48;
+    for (const p of gates.filter((q) => q.mouth)) {
+      // 門的局部座標：m 沿門面的法線（往門外、走過來的人那一邊是正，門面是 0）。
+      const { x: mx, y: sill, z: mz, n: [fx, fz] } = p.mouth;
+      const need = p.mouth.inset ?? DOG_BACK;
+      const m = (x, z) => fx * (x - mx) + fz * (z - mz);
+      const where = `往 ${p.to} 的那一扇`;
+      const shown = mine.some((q) => nearest(q, mx, mz) < 4)
+        || marks.some((s) => Math.hypot(s.x - mx, s.z - mz) < 4);
+      ok(shown, `${g}：${where}看得出開關`, shown ? '' : '門口四公尺內沒有門扇，也沒有路標');
       const walkIn = (doors) => {
         const dt = 1 / 60;
-        const p = { x: c[0] + fx * (2 - cm), z: c[1] + fz * (2 - cm), y: sill };
-        const target = [c[0] - fx * (1 + cm), c[1] - fz * (1 + cm)];
+        const q = { x: mx + fx * 2, z: mz + fz * 2, y: sill };
+        const target = [mx - fx, mz - fz];
         for (let t = 0; t < 3; t += dt) {
-          const dx = target[0] - p.x, dz = target[1] - p.z, d = Math.hypot(dx, dz) || 1e-9;
-          [p.x, p.z] = solveXZ(COLS, p.x + (dx / d) * PHYS.walk * dt, p.z + (dz / d) * PHYS.walk * dt, p.y, doors);
-          p.y = supportAt(COLS, p.x, p.z, p.y + 0.1);
-          if (portalAt(R.portals, p.x, p.y, p.z, doors)) return { sent: true, m: m(p.x, p.z) };
+          const dx = target[0] - q.x, dz = target[1] - q.z, d = Math.hypot(dx, dz) || 1e-9;
+          [q.x, q.z] = solveXZ(COLS, q.x + (dx / d) * PHYS.walk * dt, q.z + (dz / d) * PHYS.walk * dt, q.y, doors);
+          q.y = supportAt(COLS, q.x, q.z, q.y + 0.1);
+          const hit = portalAt(R.portals, q.x, q.y, q.z, doors);
+          if (hit) return { sent: hit === p, other: hit === p ? null : hit, m: m(q.x, q.z) };
         }
-        return { sent: false, m: m(p.x, p.z) };
+        return { sent: false, other: null, m: m(q.x, q.z) };
       };
-      const shutLeaf = mine.find((k) => !k.open && k.face[0] === fx && k.face[1] === fz);
-      const LP = shutLeaf.geometry.attributes.position.array;
+      /* 關著的門扇：門口四公尺內、關著那一塊的頂點裡最靠門外的那一個（木門最外面
+         那一點是鐵條，鐵閘是柵條與尖刺）。只有路標的門沒有門扇。 */
       let leaf = -Infinity;
-      for (let i = 0; i < LP.length; i += 3) leaf = Math.max(leaf, m(LP[i], LP[i + 2]));
+      for (const q of mine.filter((k) => !k.open)) {
+        const V = q.geometry.attributes.position.array;
+        for (let i = 0; i < V.length; i += 3) {
+          if (Math.hypot(V[i] - mx, V[i + 2] - mz) < 4) leaf = Math.max(leaf, m(V[i], V[i + 2]));
+        }
+      }
       const shut = walkIn({});
       const front = shut.m - PHYS.radius;
-      ok(!shut.sent && front > leaf, `${g}：${where}關著，停在門前`, `前緣離門扇 ${(front - leaf).toFixed(2)} m`);
+      ok(!shut.sent && !shut.other && front > leaf,
+        `${g}：${where}關著，沒被送走${leaf > -Infinity ? '、停在門前' : ''}`,
+        leaf > -Infinity ? `前緣離門扇 ${(front - leaf).toFixed(2)} m`
+          : `停在門面${shut.m < 0 ? '內' : '外'} ${Math.abs(shut.m).toFixed(2)} m`);
       const open = walkIn({ [g]: true });
-      ok(open.sent && -open.m > DOG_BACK, `${g}：${where}開著，狗整隻走進門洞才被送走`,
-        open.sent ? `送走時中心在門面內 ${(-open.m).toFixed(2)} m` : `沒被送走，停在門面外 ${open.m.toFixed(2)} m`);
+      ok(open.sent && -open.m > need,
+        `${g}：${where}開著，${need > 0 ? '狗整隻走進門洞才被送走' : '走到門面前就被送走'}`,
+        open.sent ? `送走時中心在門面${open.m < 0 ? '內' : '外'} ${Math.abs(open.m).toFixed(2)} m`
+          : open.other ? `先碰到了 ${open.other.block} → ${open.other.to}` : `沒被送走，停在門面外 ${open.m.toFixed(2)} m`);
     }
     console.log(`  ${g} 一開始${open0 ? '開著' : '關著'}`);
   }

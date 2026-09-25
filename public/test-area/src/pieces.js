@@ -948,27 +948,57 @@ export function chain(B, o) {
   B.hangs(false);
 }
 
-/** 鐵閘。一格一格的柵欄，下緣做成尖的。 */
+/**
+ * 鐵閘。一格一格的柵欄，下緣做成尖的。門檻在 o.y，寬 o.w、高 o.h，沿 yaw 那一條。
+ *
+ * 可以開關的鐵閘是兩塊（blocks.js 用 `B.detach` 各砌一次）：放下的那一塊有碰撞，
+ * 屬於那一組門（`door`，門開著碰撞就不存在）；升起的那一塊沒有碰撞（`solid: false`），
+ * 整面往上抬 `lift`，抬進門洞頂上的石頭裡——`ceil(t)` 是沿閘面 t 那一點的頂（拱的
+ * 內緣、門楣的底），每一根柵條與橫條都裁到那裡為止，看起來是收進了拱石的槽裡，
+ * 而不是穿過拱圈戳到外面。
+ *
+ * 斜著的鐵閘（水窖的環牆）：碰撞盒是軸對齊的，整面一個盒子的話外接盒會胖到
+ * 半公尺以上，於是切成幾段，每段各一個盒子。
+ */
 export function portcullis(B, o) {
   const w = o.w, h = o.h, yaw = o.yaw || 0;
   const cs = Math.cos(yaw), sn = Math.sin(yaw);
   const bars = Math.max(3, Math.round(w / 0.45));
+  const y0 = o.y + (o.lift || 0);
+  const top = (t) => Math.min(y0 + h, o.ceil ? o.ceil(t) : Infinity);
   for (let i = 0; i < bars; i++) {
     const t = (i / (bars - 1) - 0.5) * w;
-    B.add(B.kit.brick(0.09, h, 0.09, 0.02), {
-      p: [o.x + cs * t, o.y + h / 2, o.z - sn * t], r: [0, yaw, 0], color: C.iron, ink: false,
+    const bh = top(t) - y0;
+    if (bh < 0.1) continue;
+    B.add(B.kit.brick(0.09, bh, 0.09, 0.02), {
+      p: [o.x + cs * t, y0 + bh / 2, o.z - sn * t], r: [0, yaw, 0], color: C.iron, ink: false,
     });
     B.add(B.kit.cone(0.08, 0.24, 4), {
-      p: [o.x + cs * t, o.y - 0.1, o.z - sn * t], r: [Math.PI, yaw, 0], color: C.ironLit, ink: false,
+      p: [o.x + cs * t, y0 - 0.1, o.z - sn * t], r: [Math.PI, yaw, 0], color: C.ironLit, ink: false,
     });
   }
   for (let j = 0; j < 3; j++) {
-    B.add(B.kit.brick(w, 0.08, 0.08, 0.02), {
-      p: [o.x, o.y + h * (0.2 + j * 0.32), o.z], r: [0, yaw, 0], color: C.iron, ink: false,
+    const yb = y0 + h * (0.2 + j * 0.32);
+    /* 橫條只橫過頂比它高的那幾根柵條——閘收進拱裡的那一截，橫條也跟著收進去。 */
+    let reach = 0;                                // 還橫得過去的最外那一根離中線多遠
+    for (let i = 0; i < bars; i++) {
+      const t = (i / (bars - 1) - 0.5) * w;
+      if (top(t) > yb + 0.06) reach = Math.max(reach, Math.abs(t));
+    }
+    if (!reach) continue;
+    B.add(B.kit.brick(2 * reach, 0.08, 0.08, 0.02), {
+      p: [o.x, yb, o.z], r: [0, yaw, 0], color: C.iron, ink: false,
     });
   }
-  B.block(o.x, o.y + h / 2, o.z, Math.max(Math.abs(cs * w), 0.3), h, Math.max(Math.abs(sn * w), 0.3),
-    { kind: 'block', base: o.y });
+  if (o.solid === false) return;
+  const k = Math.abs(cs) > 1e-3 && Math.abs(sn) > 1e-3 ? Math.ceil(w / 0.5) : 1;
+  const L = w / k;
+  for (let i = 0; i < k; i++) {
+    const t = ((i + 0.5) / k - 0.5) * w;
+    B.block(o.x + cs * t, o.y + h / 2, o.z - sn * t,
+      Math.abs(cs) * L + Math.abs(sn) * 0.3, h, Math.abs(sn) * L + Math.abs(cs) * 0.3,
+      { kind: 'block', base: o.y, door: o.door });
+  }
 }
 
 /** 枯樹。從石縫裡長出來的那一種：主幹兩段、分枝遞迴兩層。 */

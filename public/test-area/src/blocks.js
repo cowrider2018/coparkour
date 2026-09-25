@@ -901,7 +901,7 @@ function towerDoor(B, seed, o) {
   const notch = { ...box(-W, W, -D, skin + PHYS.radius + 0.1, y - 0.5, y + DH - LIN), door: group };
 
   const [p0x, , p0z] = at(-0.65, -D, 0), [p1x, , p1z] = at(0.65, -DOG_BACK, 0);
-  B.portalBox(p0x, p0z, p1x, p1z, y - 0.5, y + 2.5, o.to, { door: group });
+  B.portalBox(p0x, p0z, p1x, p1z, y - 0.5, y + 2.5, o.to, { door: group, mouth: { x: fx, y, z: fz, n: [nx, nz] } });
   B.arrive(o.arrive, rx + nx * 1.9, y, rz + nz * 1.9, Math.atan2(nx, nz));
   return notch;
 }
@@ -1562,6 +1562,7 @@ function shift(B, fromPos, ox, oz, flames, id) {
       n.min[0] += ox; n.max[0] += ox; n.min[2] += oz; n.max[2] += oz;
       if (n.door) n.door = `${id}.${n.door}`;
     }
+    if (c.door) c.door = `${id}.${c.door}`;         // 屬於一組門的盒子（鐵閘）
   }
   _colCursor = B.colliders.length;
   for (let i = _flameCursor; i < flames.length; i++) { flames[i].x += ox; flames[i].z += oz; }
@@ -1589,6 +1590,7 @@ function shift(B, fromPos, ox, oz, flames, id) {
   for (let i = _portalCursor; i < B.portals.length; i++) {
     const p = B.portals[i];
     if (p.shape === 'box') { p.x0 += ox; p.x1 += ox; p.z0 += oz; p.z1 += oz; } else { p.x += ox; p.z += oz; }
+    if (p.mouth) { p.mouth.x += ox; p.mouth.z += oz; }
     if (p.to === 'spawn') p.to = id;
     else if (p.to.startsWith('.')) p.to = own(p.to.slice(1));
     if (p.door) p.door = own(p.door);

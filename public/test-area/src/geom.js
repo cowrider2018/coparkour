@@ -647,6 +647,8 @@ export class Build {
    * 只登記一個碰撞盒，不畫任何東西（牆體、台基、地板本身）。
    *
    * @param {object} [o] kind：'shell'（預設）／'floor'／'block'／'step'
+   *   door：這個盒子屬於一組門，那一組門開著的時候它不存在（放下的鐵閘）。
+   *     跟感測區、圓柱的缺口同一份門的狀態（walk.js 的 solveXZ），沒給就是關著。
    */
   block(cx, cy, cz, w, h, d, o = {}) {
     this.colliders.push({
@@ -656,6 +658,7 @@ export class Build {
       base: o.base === undefined ? cy - h / 2 : o.base,
       // 底下是故意空著的（懸臂石階）。只有驗證器在問。
       ...(o.open ? { open: true } : {}),
+      ...(o.door ? { door: o.door } : {}),
     });
     return this;
   }
@@ -692,6 +695,12 @@ export class Build {
    * `o.door`：這個感測區屬於哪一組門。那一組門關著的時候它不存在（門的
    * 狀態是執行時的，見 walk.js 的 portalAt）。`o.oneWay`：單向的通道（井），
    * 驗證器不替它找回程。
+   *
+   * `o.mouth`：屬於一組門的感測區，門口在哪裡——`{ x, y, z, n: [nx, nz], inset }`，
+   * (x, y, z) 是門面正中、門檻的高度，n 是門面的法線、指向走過來的人那一邊。
+   * 驗證器從門外兩公尺朝它直直走進去：關著停在門前，開著被送走的那一刻，身體
+   * 的中心要在門面內超過 `inset`（預設是狗的後半身，整隻走進門洞；貼在牆上
+   * 的門走不進去，給負的，意思是「離門面這麼近就送」）。
    *
    * 它不是碰撞體，不進 `colliders`：那張清單上的每一支程式（走路、鏡頭、
    * 驗證）都在問「擋不擋」，而感測區什麼都不擋。混進去的話，每一支都得
@@ -788,12 +797,14 @@ export class Build {
    * @param {number} x0 @param {number} z0 @param {number} x1 @param {number} z1 水平範圍
    * @param {number} y0 底（女牆腳，走道面稍下一點）
    * @param {number} y1 頂（拉到場地的封頂高度就不必再想跳多高）
+   * @param {object} [o] door：屬於一組門，那一組門開著的時候它不存在（跟 `block` 一樣）
    */
-  air(x0, z0, x1, z1, y0, y1) {
+  air(x0, z0, x1, z1, y0, y1, o = {}) {
     this.colliders.push({
       min: [Math.min(x0, x1), y0, Math.min(z0, z1)],
       max: [Math.max(x0, x1), y1, Math.max(z0, z1)],
       kind: 'shell', base: y0, air: true,
+      ...(o.door ? { door: o.door } : {}),
     });
     return this;
   }
@@ -887,9 +898,12 @@ export class Build {
   }
 }
 
-/** 感測區的兩個旗標：屬於哪一組門、是不是單向的。沒給就不帶這兩個欄位。 */
+/** 感測區的旗標：屬於哪一組門、是不是單向的、門口在哪。沒給就不帶這幾個欄位。 */
 function gate(o) {
-  return { ...(o.door ? { door: o.door } : {}), ...(o.oneWay ? { oneWay: true } : {}) };
+  return {
+    ...(o.door ? { door: o.door } : {}), ...(o.oneWay ? { oneWay: true } : {}),
+    ...(o.mouth ? { mouth: { ...o.mouth } } : {}),
+  };
 }
 
 /** 一份頂點資料 → 砌體的 BufferGeometry 與它的墨線。 */
