@@ -13,6 +13,10 @@
    的是破防攻擊：被定住的那一刻放到一半的招直接取消，不打。倒數照走，下一招
    還是從上一招開始算起的 `every` 秒後。
 
+   出招之後（球射出去、跳砸落地、扇形打下去）僵直 SKILL.recover 秒：站著不動、
+   也不追人，而且跟平常一樣打得退、傷害照算——這是反擊的空檔。被破防攻擊打斷
+   的不算出招，沒有僵直。
+
      orb   倒數 0.75 秒（地上一條往目標延伸的預告），然後朝鎖定的方向直線發射
            一顆球：半徑 0.75 個狗高、每秒 6 公尺，碰到黑牆就消失。
      leap  目標點上兩個圓倒數 1.5 秒：淺色的是範圍（半徑 2.5 個狗高），亮色的
@@ -36,6 +40,8 @@ export const SKILL = {
   orb: { windup: 0.75, radius: 0.75 * DOG_H, speed: 6 },
   leap: { windup: 1.5, air: 0.6, radius: 2.5 * DOG_H },
   cone: { windup: 1, radius: 4 * DOG_H, half: Math.PI / 6 },
+  /** 出招後僵直幾秒。 */
+  recover: 0.5,
 };
 
 /** 範圍攻擊打得到的高度：腳在這以下才算（一個狗高）。 */
@@ -131,13 +137,15 @@ export function bossStep(m, dt, target, world, rng = Math.random) {
   if (!k.skills || !k.skills.length) return null;
   if (m.cast && busy(m)) m.cast = null;                // 被打斷
   m.castT -= dt;
-  if (!m.cast && m.castT <= 0 && !busy(m)) {
+  if (!m.cast && m.castT <= 0 && !busy(m) && !(m.stun > 0)) {
     m.castT = k.every;
     begin(m, k.skills[Math.min(k.skills.length - 1, Math.floor(rng() * k.skills.length))], target);
   }
   if (!m.cast) return null;
   m.cast.t += dt;
-  return CAST[m.cast.skill](m, world) || null;
+  const hit = CAST[m.cast.skill](m, world) || null;
+  if (!m.cast) m.stun = SKILL.recover;                 // 出完了：僵直
+  return hit;
 }
 
 /** 球往前飛，碰到黑牆就消失。 */

@@ -234,6 +234,7 @@ export function placeMonster(m) {
   m.slide = false;
   m.cast = null;                          // 放到一半的招（skills.js）
   m.castT = kindOf(m).every || 0;         // 離下一招還有幾秒
+  m.stun = 0;                             // 出招後的僵直還剩幾秒（skills.js）
   m.aimX = Math.sin(s.yaw); m.aimZ = Math.cos(s.yaw);
 }
 
@@ -285,6 +286,7 @@ export function hurt(m, dmg) {
  * 東西：轉向不欠帳，加速量照 PHYS。
  */
 export function monsterStep(m, dt, target) {
+  if (m.stun > 0) m.stun = Math.max(0, m.stun - dt);
   // 破防窗口：時間到了還沒用上就是錯過，累積歸零。
   if (broken(m)) {
     m.breakT -= dt;
@@ -314,7 +316,8 @@ export function monsterStep(m, dt, target) {
     }
     return;
   }
-  if (m.cast) { m.vx = 0; m.vz = 0; return; }  // 放招中（skills.js）：站著不動
+  // 放招中、出招後的僵直（skills.js）：站著不動。
+  if (m.cast || m.stun > 0) { m.vx = 0; m.vz = 0; return; }
   const dx = target.x - m.x, dz = target.z - m.z;
   const d = Math.hypot(dx, dz);
   if (d > 1e-6) { m.aimX = dx / d; m.aimZ = dz / d; }

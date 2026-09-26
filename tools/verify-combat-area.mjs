@@ -43,6 +43,7 @@
                     落在鎖定的點上打半徑 2.5 狗高的一圈，走出圈外或跳起來就躲得過。
                     扇形：倒數 1 秒、朝鎖定的方向打 60°、4 狗高長的一片。三招都
                     挑得到。倒數中打不退、傷害減半無條件捨去，破防攻擊打斷得了。
+                    出招後僵直 0.5 秒：站著不動、打得退、傷害照算。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test-area/src/walk.js';
@@ -750,6 +751,44 @@ console.log('15. BOSS 放招');
     picked.add(b.cast.skill);
   }
   ok(['orb', 'leap', 'cone'].every((k) => picked.has(k)), `亂數涵蓋三招：${[...picked].join('、')}`);
+
+  // 出招後僵直：三招各放一次，量「出完」到「開始走動」隔多久。
+  ok(SKILL.recover === 0.5, '出招後僵直 0.5 秒');
+  for (const [name, r] of [['orb', 0], ['leap', 0.5], ['cone', 0.99]]) {
+    const ws = makeWorld();
+    const bs = bossAt(0, -4);
+    const qs = body(0, 4);
+    bs.castT = 0;
+    let doneAt = -1, walkAt = -1, ts = 0;
+    while (ts < 4 && walkAt < 0) {
+      const had = !!bs.cast;
+      bossStep(bs, DT, qs, ws, () => r);
+      if (had && !bs.cast && doneAt < 0) doneAt = ts;
+      const x0 = bs.x, z0 = bs.z;
+      monsterStep(bs, DT, qs);
+      if (doneAt >= 0 && (bs.x !== x0 || bs.z !== z0)) walkAt = ts;
+      ts += DT;
+    }
+    ok(doneAt > 0 && Math.abs(walkAt - doneAt - SKILL.recover) < 2 * DT,
+      `${name}：出完之後站了 ${(walkAt - doneAt).toFixed(2)} 秒才開始走`);
+  }
+  // 僵直中：打得退、傷害照算。
+  const bst = bossAt(0, -4);
+  bst.castT = 0;
+  const wst = makeWorld();
+  while (!wst.shots.length) bossStep(bst, DT, p, wst, () => 0);
+  ok(bst.stun > 0 && !armored(bst), '球射出去之後：僵直中，不是倒數');
+  const hst = bst.hp;
+  knock(bst, 0, 0, 0, -1);
+  hurt(bst, DAMAGE.rise);
+  ok(bst.air && hst - bst.hp === DAMAGE.rise, '僵直中被打：打得退，傷害照算（3）');
+  // 被破防攻擊打斷的不算出招：沒有僵直。
+  const bn = bossAt(0, -4);
+  bn.castT = 0;
+  bossStep(bn, DT, p, makeWorld(), () => 0);
+  bn.held = true;
+  bossStep(bn, DT, p, makeWorld(), () => 0);
+  ok(!bn.cast && !(bn.stun > 0), '被破防攻擊打斷：沒有僵直');
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');
