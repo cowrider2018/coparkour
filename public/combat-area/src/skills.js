@@ -137,7 +137,8 @@ export function bossStep(m, dt, target, world, rng = Math.random) {
   if (!k.skills || !k.skills.length) return null;
   if (m.cast && busy(m)) m.cast = null;                // 被打斷
   m.castT -= dt;
-  if (!m.cast && m.castT <= 0 && !busy(m) && !(m.stun > 0)) {
+  // 衝刺（combat.js 的 LUNGE）打完才挑下一招，兩件事不會疊在一起。
+  if (!m.cast && m.castT <= 0 && !busy(m) && !(m.stun > 0) && !m.lunge) {
     m.castT = k.every;
     begin(m, k.skills[Math.min(k.skills.length - 1, Math.floor(rng() * k.skills.length))], target);
   }

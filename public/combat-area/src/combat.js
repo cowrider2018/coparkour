@@ -19,8 +19,10 @@
      2 小怪 + 1 BOSS BOSS 在中線上，小怪在左右各 4 公尺（預設）。
 
    ── 怪物 ────────────────────────────────────────────────────────
-   一直追著玩家跑。身體跟玩家一樣大（同一個 PHYS 的圓柱），碰到玩家
-   玩家就死，雙方回到站位。追的速度比玩家走路慢：走得掉、但不能發呆。
+   一直追著玩家跑。身體跟玩家一樣大（同一個 PHYS 的圓柱）。碰到玩家不再
+   有事——傷害是一次一次的攻擊（衝刺，見 LUNGE）：追到 LUNGE.range 以內，
+   站著發呆 0.25 秒，然後朝那時鎖定的方向衝一下（速度 8、0.1 秒內減到 0），
+   只有衝的那 0.1 秒裡碰到玩家，玩家才死、全部回到站位。小怪與 BOSS 都是。
 
    每一下都會扣血（各段的傷害見 DAMAGE）。血扣到 0 就死，當場在牠自己的
    重生點重生（血滿、破防歸零），玩家留在原地。被打中還會被擊退：水平往遠離玩家的方向、
@@ -160,6 +162,18 @@ export const BREAK_ATK = {
 /** 一隻怪物的那一類數值。 */
 export const kindOf = (m) => KINDS[m.kind];
 
+/**
+ * 怪物的衝刺（每一類都一樣）：
+ *
+ *   range   追到身體中心相距這麼近就停下來準備衝。
+ *   windup  發呆多久（秒）。
+ *   speed   衝出去的初速，time 秒內線性減到 0——衝 speed·time/2 = 0.4 公尺。
+ *
+ * 0.9 = 身體相切的 0.6 + 衝得到的 0.4 再留 0.1：站著不動的人一定被碰到，
+ * 發呆的時候往後退一步就碰不到。
+ */
+export const LUNGE = { range: 0.9, windup: 0.25, speed: 8, time: 0.1 };
+
 /** 攻擊的長度：2.5 個狗高。每一段都一樣，差的只有角度。 */
 export const REACH = 2.5 * DOG_H;
 
@@ -235,6 +249,7 @@ export function placeMonster(m) {
   m.cast = null;                          // 放到一半的招（skills.js）
   m.castT = kindOf(m).every || 0;         // 離下一招還有幾秒
   m.stun = 0;                             // 出招後的僵直還剩幾秒（skills.js）
+  m.lunge = null;                         // 衝刺：{ t, dirX, dirZ }，見 LUNGE
   m.aimX = Math.sin(s.yaw); m.aimZ = Math.cos(s.yaw);
 }
 
@@ -292,6 +307,8 @@ export function monsterStep(m, dt, target) {
     m.breakT -= dt;
     if (m.breakT <= 0) resetBreak(m);
   }
+  // 被擊退、定住、推開：衝到一半的衝刺取消。
+  if (m.lunge && (m.held || m.slide || m.air)) m.lunge = null;
   if (m.held) return;                     // 破防攻擊的迴旋：定在原地
   if (m.slide && !m.air) {
     // 沿著地面被推開：照 BREAK_ATK.push.decel 減速，停了才回去追人。
@@ -318,12 +335,46 @@ export function monsterStep(m, dt, target) {
   }
   // 放招中、出招後的僵直（skills.js）：站著不動。
   if (m.cast || m.stun > 0) { m.vx = 0; m.vz = 0; return; }
+  /* 衝完的那一次在這一幀收掉——留到上一幀結束，碰撞才看得到牠衝到的最遠處。
+     收掉的這一幀站著不動、不接著衝下一次：BOSS 的 bossStep 在 monsterStep 之前，
+     牠要看到一幀「沒在衝」才挑得了招，不然貼著人的 BOSS 會一次接一次地衝，
+     永遠輪不到放招。 */
+  if (m.lunge && m.lunge.t >= LUNGE.windup + LUNGE.time) { m.lunge = null; m.vx = 0; m.vz = 0; return; }
+  if (m.lunge) { lungeStep(m, dt); return; }
   const dx = target.x - m.x, dz = target.z - m.z;
   const d = Math.hypot(dx, dz);
   if (d > 1e-6) { m.aimX = dx / d; m.aimZ = dz / d; }
+  if (d <= LUNGE.range) {
+    // 追到了：停下來發呆，方向在這一刻鎖定。
+    m.lunge = { t: 0, dirX: m.aimX, dirZ: m.aimZ };
+    m.vx = 0; m.vz = 0;
+    return;
+  }
   [m.vx, m.vz] = steer(m.vx, m.vz, m.aimX, m.aimZ, kindOf(m).speed, dt);
   [m.x, m.z] = solveXZ(COLS, m.x + m.vx * dt, m.z + m.vz * dt, m.y);
 }
+
+/** 衝出去之後 s 秒（0 ≤ s ≤ LUNGE.time）走了多遠：速度從 speed 線性減到 0 的積分。 */
+const lungeDist = (s) => LUNGE.speed * (s - (s * s) / (2 * LUNGE.time));
+
+/**
+ * 衝刺的一幀：發呆的時候站著；衝的時候沿鎖定的方向走，走多遠是那一段時間的
+ * 積分——跟幀長無關，一次衝刺永遠是 0.4 公尺。
+ */
+function lungeStep(m, dt) {
+  const L = m.lunge;
+  const s0 = Math.min(LUNGE.time, Math.max(0, L.t - LUNGE.windup));
+  L.t += dt;
+  const s1 = Math.min(LUNGE.time, Math.max(0, L.t - LUNGE.windup));
+  m.aimX = L.dirX; m.aimZ = L.dirZ;
+  const step = lungeDist(s1) - lungeDist(s0);
+  const v = s1 > 0 ? LUNGE.speed * (1 - s1 / LUNGE.time) : 0;
+  m.vx = L.dirX * v; m.vz = L.dirZ * v;
+  if (step > 0) [m.x, m.z] = solveXZ(COLS, m.x + L.dirX * step, m.z + L.dirZ * step, m.y);
+}
+
+/** 正在衝（發呆已經結束、這一次還沒收掉）。只有這段時間碰到玩家才算。 */
+export const lunging = (m) => !!m.lunge && m.lunge.t > LUNGE.windup;
 
 /**
  * 兩個身體碰在一起了嗎：水平上兩個圓柱相交，垂直上兩段身高重疊。
@@ -342,6 +393,9 @@ export function touching(a, b) {
  */
 export function separate(monsters) {
   const R2 = PHYS.radius * 2;
+  /* 幾輪：一對推開可能把另一對推回去重疊（三隻圍著同一個人的時候就是這樣），
+     多跑幾輪讓它收斂。 */
+  for (let pass = 0; pass < 4; pass++)
   for (let i = 0; i < monsters.length; i++) {
     for (let j = i + 1; j < monsters.length; j++) {
       const a = monsters[i], b = monsters[j];
@@ -361,8 +415,11 @@ export function separate(monsters) {
   }
 }
 
-/** 怪物碰到玩家會不會咬死他：碰到了，而且怪物不在被擊退的空中。 */
-export const bites = (p, m) => !m.air && touching(p, m);
+/**
+ * 怪物這一幀打到玩家了嗎：正在衝刺（lunging）、身體碰到了。其他時候碰到都
+ * 沒事——不衝的怪物只是一個會擋路的東西。
+ */
+export const bites = (p, m) => !m.air && lunging(m) && touching(p, m);
 
 /**
  * 擊退一隻怪物：水平往遠離 (fromX, fromZ) 的方向、垂直往上。速度是
@@ -376,6 +433,7 @@ export const bites = (p, m) => !m.air && touching(p, m);
 export function knock(m, fromX, fromZ, awayX, awayZ, scale = KNOCK_SCALE.rise) {
   m.hits++;
   if (armored(m)) return;
+  m.lunge = null;                         // 衝到一半被打：這一下取消
   let dx = m.x - fromX, dz = m.z - fromZ;
   const d = Math.hypot(dx, dz);
   if (d > 1e-6) { dx /= d; dz /= d; } else { dx = awayX; dz = awayZ; }

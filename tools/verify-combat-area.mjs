@@ -44,11 +44,15 @@
                     扇形：倒數 1 秒、朝鎖定的方向打 60°、4 狗高長的一片。三招都
                     挑得到。倒數中打不退、傷害減半無條件捨去，破防攻擊打斷得了。
                     出招後僵直 0.5 秒：站著不動、打得退、傷害照算。
+    16. 衝刺        碰到不再有事，傷害是一次一次的衝刺：追到 0.9 公尺以內停下來
+                    發呆 0.25 秒，朝那時鎖定的方向衝（8 → 0，0.1 秒，0.4 公尺，
+                    跟幀長無關），只有衝的時候碰到才死；發呆時橫移躲得掉、被打
+                    會取消。小怪與 BOSS 都一樣。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test-area/src/walk.js';
 import {
-  MODES, DEFAULT_MODE, ARENA, SPAWN, DOG_H, REACH, SWING, REST, KNOCK, KNOCK_SCALE, FAN, WINDOW, KINDS, DAMAGE, hurt, placeMonster,
+  MODES, DEFAULT_MODE, LUNGE, lunging, ARENA, SPAWN, DOG_H, REACH, SWING, REST, KNOCK, KNOCK_SCALE, FAN, WINDOW, KINDS, DAMAGE, hurt, placeMonster,
   BREAK_AT, BREAK_WINDOW, broken,
   BREAK_ATK, breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, armored,
   makeMonster, monsterStep, touching, bites, knock, inSlash, inFan, inRing, slashTip, fanFrame,
@@ -125,7 +129,7 @@ console.log('3. 擊退');
   }
   ok(overlapped > 0 && !bitten, `落地前疊在一起也不咬（疊了 ${overlapped} 幀）`);
   ok(!m.air && m.y === 0 && m.vx === 0 && m.vz === 0, `${air.toFixed(2)} 秒後落地，水平速度一起停掉`);
-  ok(bites({ ...p, x: m.x, z: m.z }, m), '落地之後碰到就咬');
+  ok(touching({ ...p, x: m.x, z: m.z }, m) && !bites({ ...p, x: m.x, z: m.z }, m), '落地之後碰到也不咬——只有衝刺才咬');
   const T = (2 * KNOCK.v) / PHYS.gravity;
   ok(Math.abs(air - T) < 2 * DT, `飛行時間是 2v/g（${T.toFixed(2)} 秒），最高 ${peak.toFixed(2)} m`);
   // 空中再挨一下：垂直速度換回 KNOCK.v，不是疊上去。
@@ -596,10 +600,11 @@ console.log('15. BOSS 放招');
     'BOSS 腳程 4、每 3 秒放一招；小怪沒有技能');
   ok(near(SKILL.orb.radius, 0.75 * DOG_H) && SKILL.orb.speed === 6 && SKILL.orb.windup === 0.75, '球：半徑 0.75 狗高、每秒 6 公尺、倒數 0.75 秒');
 
-  // 循環：3 秒才放第一招；放招中站著不動；下一招是 3 秒之後。
+  // 循環：3 秒才放第一招；放招中站著不動；下一招是 3 秒之後。人站在場地另一頭，
+  // BOSS 這 6 秒追不到——不然貼著人衝刺的時候，招會等衝完才放。
   const w = makeWorld();
-  const m = bossAt(0, -4);
-  const p = body(0, 4);
+  const m = bossAt(0, -11);
+  const p = body(0, 11.5);
   const starts = [];
   let still = true, t = 0;
   while (t < 6.6) {
@@ -752,25 +757,27 @@ console.log('15. BOSS 放招');
   }
   ok(['orb', 'leap', 'cone'].every((k) => picked.has(k)), `亂數涵蓋三招：${[...picked].join('、')}`);
 
-  // 出招後僵直：三招各放一次，量「出完」到「開始走動」隔多久。
+  // 出招後僵直：三招各放一次，量「出完」到「僵直結束」隔多久，這段時間一步都沒動、
+  // 也沒開始衝刺。
   ok(SKILL.recover === 0.5, '出招後僵直 0.5 秒');
   for (const [name, r] of [['orb', 0], ['leap', 0.5], ['cone', 0.99]]) {
     const ws = makeWorld();
     const bs = bossAt(0, -4);
     const qs = body(0, 4);
     bs.castT = 0;
-    let doneAt = -1, walkAt = -1, ts = 0;
-    while (ts < 4 && walkAt < 0) {
+    let doneAt = -1, freeAt = -1, ts = 0, stirred = false;
+    while (ts < 4 && freeAt < 0) {
       const had = !!bs.cast;
       bossStep(bs, DT, qs, ws, () => r);
       if (had && !bs.cast && doneAt < 0) doneAt = ts;
       const x0 = bs.x, z0 = bs.z;
       monsterStep(bs, DT, qs);
-      if (doneAt >= 0 && (bs.x !== x0 || bs.z !== z0)) walkAt = ts;
+      if (doneAt >= 0 && bs.stun > 0 && (bs.x !== x0 || bs.z !== z0 || bs.lunge)) stirred = true;
+      if (doneAt >= 0 && !(bs.stun > 0)) freeAt = ts;
       ts += DT;
     }
-    ok(doneAt > 0 && Math.abs(walkAt - doneAt - SKILL.recover) < 2 * DT,
-      `${name}：出完之後站了 ${(walkAt - doneAt).toFixed(2)} 秒才開始走`);
+    ok(doneAt > 0 && Math.abs(freeAt - doneAt - SKILL.recover) < 2 * DT && !stirred,
+      `${name}：出完之後僵直 ${(freeAt - doneAt).toFixed(2)} 秒，這段時間沒動、沒衝`);
   }
   // 僵直中：打得退、傷害照算。
   const bst = bossAt(0, -4);
@@ -789,6 +796,54 @@ console.log('15. BOSS 放招');
   bn.held = true;
   bossStep(bn, DT, p, makeWorld(), () => 0);
   ok(!bn.cast && !(bn.stun > 0), '被破防攻擊打斷：沒有僵直');
+}
+
+/* ── 16. 衝刺 ──────────────────────────────────────────────── */
+console.log('16. 衝刺');
+{
+  ok(LUNGE.range === 0.9 && LUNGE.windup === 0.25 && LUNGE.speed === 8 && LUNGE.time === 0.1,
+    '追到 0.9 公尺以內、發呆 0.25 秒、衝刺初速 8、0.1 秒減到 0');
+  /** 一隻怪物從 z 追向站在原點的人，記下衝刺的每一件事。 */
+  const run = (kind, z0, dt, during) => {
+    const m = makeMonster({ kind, x: 0, z: z0, yaw: 0 });
+    const q = body(0, 0);
+    let t = 0, stopAt = -1, dashAt = -1, endAt = -1, stopD = 0, from = null, moved = false, hitAt = -1, touchedIdle = false;
+    while (t < 4 && endAt < 0) {
+      const had = m.lunge;
+      const x0 = m.x, z1 = m.z;
+      monsterStep(m, dt, q);
+      if (!had && m.lunge && stopAt < 0) { stopAt = t; stopD = Math.hypot(m.x - q.x, m.z - q.z); from = [m.x, m.z]; }
+      if (m.lunge && !lunging(m) && (m.x !== x0 || m.z !== z1)) moved = true;
+      if (lunging(m) && dashAt < 0) dashAt = t;
+      if (had && !m.lunge && endAt < 0) endAt = t;
+      if (during) during(q, m, t, stopAt);
+      if (bites(q, m) && hitAt < 0) hitAt = t;
+      if (touching(q, m) && !lunging(m)) touchedIdle = true;
+      t += dt;
+    }
+    return { m, stopAt, dashAt, endAt, stopD, from, moved, hitAt, touchedIdle };
+  };
+  const a = run('minion', -3, DT);
+  ok(a.stopAt > 0 && a.stopD <= LUNGE.range && a.stopD > LUNGE.range - 0.1, `追到 ${a.stopD.toFixed(2)} 公尺停下來`);
+  ok(!a.moved && Math.abs(a.dashAt - a.stopAt - LUNGE.windup) < 2 * DT, `發呆 ${(a.dashAt - a.stopAt).toFixed(2)} 秒、一步都沒動，然後衝`);
+  const dash = Math.hypot(a.m.x - a.from[0], a.m.z - a.from[1]);
+  const want = (LUNGE.speed * LUNGE.time) / 2;
+  ok(Math.abs(dash - want) < 1e-6, `衝了 ${dash.toFixed(3)} 公尺（${want} 公尺）`);
+  ok(a.hitAt >= a.dashAt, '站著不動的人：衝的時候被碰到');
+  const slow = run('minion', -3, 1 / 20);
+  ok(Math.abs(Math.hypot(slow.m.x - slow.from[0], slow.m.z - slow.from[1]) - want) < 1e-6, '每秒 20 幀也衝一樣遠（跟幀長無關）');
+  // 碰到但沒在衝：沒事。
+  const idle = makeMonster({ kind: 'minion', x: 0, z: 0.3, yaw: 0 });
+  ok(touching(body(0, 0), idle) && !bites(body(0, 0), idle), '疊在一起但沒在衝：沒事');
+  // 發呆的時候往旁邊跨一步：方向已經鎖定，衝空。
+  const side = run('minion', -3, DT, (q, m, t, stopAt) => { if (stopAt >= 0 && t - stopAt > 0.1) q.x = 0.8; });
+  ok(side.hitAt < 0, '發呆的時候往旁邊跨 0.8 公尺：衝空');
+  // 發呆的時候被打：取消，不衝。
+  const cut = run('minion', -3, DT, (q, m, t, stopAt) => { if (stopAt >= 0 && m.lunge && !lunging(m) && !m.air && t - stopAt > 0.1) knock(m, 0, 0, 0, -1); });
+  ok(cut.hitAt < 0 && cut.dashAt < 0, '發呆的時候被打：擊退，這一下取消');
+  // BOSS 也是這樣打人。
+  const b = run('boss', -3, DT);
+  ok(b.stopAt > 0 && b.hitAt >= b.dashAt && b.dashAt > 0, 'BOSS：一樣是追到、發呆、衝刺');
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');
