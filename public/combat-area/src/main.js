@@ -34,6 +34,7 @@ import {
 } from './combat.js';
 import { makeMonsterCritter } from './monster.js';
 import { Blade } from './blade.js';
+import { Mover } from './moves.js';
 import {
   slashFx, fanFx, ringFx, cueFx, showFx, breakFx, showBreak, laneFx, showLane, orbMesh, circleFx, showCircle,
   coneFx, showCone,
@@ -87,6 +88,8 @@ scene.add(zoo.root);
 /** 咬在嘴裡的刀：掛在現在那一隻的頭上，換動物就跟著換過去。 */
 const blade = new Blade();
 blade.follow(zoo.active);
+/** 出招的動作：照連段的狀態播，疊在步態與空中姿勢上面。 */
+const mover = new Mover();
 
 const player = {
   x: SPAWN.player.x, y: 0, z: SPAWN.player.z,
@@ -410,6 +413,7 @@ function frame(now) {
   const viewYaw = Math.atan2(camera.position.x - player.x, camera.position.z - player.z);
   zoo.update(dt, {
     speed: Math.hypot(player.vx, player.vz), grounded: player.grounded, vy: player.vy, viewYaw,
+    move: mover.step(dt, combo.phase, combo.t),
   });
   blade.update();
   for (const { m, critter } of foes) {
@@ -510,7 +514,7 @@ requestAnimationFrame(frame);
 
 // 給主控台一個把手，方便手動看東西。foes 會隨陣容換掉，所以是 getter。
 window.combatArea = {
-  scene, camera, renderer, zoo, blade, player, combo, cam, pad, hud, resetStance, setMode,
+  scene, camera, renderer, zoo, blade, mover, player, combo, cam, pad, hud, resetStance, setMode,
   get foes() { return foes; },
   get monster() { return foes[0].m; },
   get mode() { return mode; },
