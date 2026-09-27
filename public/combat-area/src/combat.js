@@ -94,9 +94,9 @@ const post = (kind, dx) => {
  * 哪一類（KINDS 的鍵）。順序就是面板上的順序（數字鍵 1～3）。
  */
 export const MODES = [
-  { id: 'minions', name: '3 小怪', hint: '三隻綠色小怪。', monsters: [post('minion', -4), post('minion', 0), post('minion', 4)] },
-  { id: 'boss', name: '1 BOSS', hint: '一隻紫色 BOSS。', monsters: [post('boss', 0)] },
-  { id: 'mixed', name: '2 小怪 + 1 BOSS', hint: '紫色 BOSS 在中間，兩隻綠色小怪在左右。', monsters: [post('boss', 0), post('minion', -4), post('minion', 4)] },
+  { id: 'minions', name: '3 小怪', hint: '三隻小怪。', monsters: [post('minion', -4), post('minion', 0), post('minion', 4)] },
+  { id: 'boss', name: '1 BOSS', hint: '一隻兩倍大的 BOSS。', monsters: [post('boss', 0)] },
+  { id: 'mixed', name: '2 小怪 + 1 BOSS', hint: '大隻的 BOSS 在中間，兩隻小怪在左右。', monsters: [post('boss', 0), post('minion', -4), post('minion', 4)] },
 ];
 
 /** 一開始是哪一個陣容。 */
@@ -126,13 +126,13 @@ export const COLS = [{
  * 怪物就是多一筆，規則不動。每一隻怪物身上帶的是牠自己的「狀態」（位置、速度、
  * 挨了幾下…），數值一律回頭查這一張，用 `m.kind` 認類別。
  *
- *   minion  小怪（綠色）。血 4——第一段加第二段剛好打死，破不了防。腳程 3.4：
+ *   minion  小怪。血 4——第一段加第二段剛好打死，破不了防。腳程 3.4：
  *           走路是 PHYS.walk（4），所以放開手就會被追上。
- *   boss    BOSS（紫色）。血 20。腳程 4。不會一直追：每 `every` 秒從 `skills`
+ *   boss    BOSS（畫成兩倍大）。血 20。腳程 4。不會一直追：每 `every` 秒從 `skills`
  *           裡隨機放一招（規則在 skills.js），放招的時候站著不動。`steady`：
  *           衝刺前的蓄力不會被打斷（見 armored）。
  *
- * 身體一樣大（同一個 PHYS 的圓柱），顏色在 monster.js。
+ * 碰撞的身體一樣大（同一個 PHYS 的圓柱）；外觀（同一件毛、BOSS 畫兩倍大）在 monster.js。
  *
  * `breakAt` 是破防門檻。現在每一類都是 BREAK_AT，但它是逐類登記的——哪天某一類
  * 要比較硬，改那一筆就好。

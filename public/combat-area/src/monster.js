@@ -1,8 +1,10 @@
 /* ── combat-area/src/monster.js ──────────────────────────────────────
-   怪物的外觀：立耳犬，每一類一件純色的毛、紅眼睛。
+   怪物的外觀：立耳犬，純綠色的毛、紅眼睛。每一類的毛色都一樣，靠體型分：
 
-     minion  小怪：純綠色。
-     boss    BOSS：紫色。
+     minion  小怪：一般大小。
+     boss    BOSS：兩倍大。
+
+   只是看起來大：碰撞還是 combat.js 那同一個 PHYS 圓柱。
 
    是遊戲那隻狗本人（試玩場 critter.js 的 Critter，同一份 cat.bin 資料），
    只是毛色不是 cat.bin 裡的任何一件：每個頂點的顏色在這裡直接寫，
@@ -16,11 +18,10 @@
 
 import { Critter } from '../../test-area/src/critter.js';
 
-/** 每一類的毛色：body 身上、face 鼻子與嘴。鍵跟 combat.js 的 KINDS 一樣。 */
-const COATS = {
-  minion: { body: [0.24, 0.80, 0.22], face: [0.08, 0.36, 0.08] },
-  boss: { body: [0.50, 0.22, 0.72], face: [0.20, 0.07, 0.30] },
-};
+/** 毛色：body 身上、face 鼻子與嘴。 */
+const COAT = { body: [0.24, 0.80, 0.22], face: [0.08, 0.36, 0.08] };
+/** 每一類畫多高（公尺）。鍵跟 combat.js 的 KINDS 一樣。 */
+const HEIGHTS = { minion: 1.0, boss: 2.0 };
 const RED = [0.95, 0.08, 0.06];
 
 /**
@@ -32,9 +33,9 @@ const RED = [0.95, 0.08, 0.06];
  */
 export function makeMonsterCritter(zoo, kind) {
   const data = zoo.critters.get('dog-prick').data;
-  const c = new Critter(data, 'dog-prick', { height: 1.0 });
+  const c = new Critter(data, 'dog-prick', { height: HEIGHTS[kind] });
   c.setHat(false);
-  paint(c, COATS[kind]);
+  paint(c, COAT);
   return c;
 }
 
