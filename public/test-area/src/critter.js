@@ -801,6 +801,11 @@ export class Critter {
     this._dipV = 0;
     this._wasGrounded = true;
     this._lastVy = 0;
+    /* 疊加動作餵給尾巴的那幾份，見 update。 */
+    this._mvYaw = 0;
+    this._mvYawPrev = 0;
+    this._mvTail = 0;
+    this._mvPitch = 0;
     this._hat = true;
 
     /* 帽子的骨頭。dress() 讓每件服裝都「穿著」到場（彎折要量得到它的
@@ -1188,6 +1193,11 @@ export class Critter {
     this._dipV = other._dipV;
     this._wasGrounded = other._wasGrounded;
     this._lastVy = other._lastVy;
+    // 鏈子下面重新以 _yaw 起算，所以累加的那一份歸零、其餘照接。
+    this._mvYaw = 0;
+    this._mvYawPrev = other._mvYawPrev;
+    this._mvTail = other._mvTail;
+    this._mvPitch = other._mvPitch;
     this.root.rotation.y = this._yaw;
     this.drv.time = other.drv.time;
     this.sway.seed(this._yaw, 0);
@@ -1263,7 +1273,8 @@ export class Critter {
 
   /**
    * @param {number} dt 秒
-   * @param {object} st { speed 水平速度 m/s, grounded 在地上, vy 垂直速度 }
+   * @param {object} st { speed 水平速度 m/s, grounded 在地上, vy 垂直速度,
+   *   viewYaw 鏡頭在哪個方向, move 疊在上面的動作（可省略，見 moveOverlay） }
    */
   update(dt, st) {
     const d = Math.min(0.1, Math.max(0, dt || 0));
@@ -1306,13 +1317,33 @@ export class Critter {
        MAX_SUB_DT 同一個理由）。 */
     const steps = Math.max(1, Math.ceil(d / MAX_SUB_DT));
     const sd = d / steps;
+
+    /* 疊在上面的動作（st.move，見 moveOverlay）也要讓尾巴知道：整隻轉、
+       身體仰俯、尾巴的擺，都是尾巴那條彈簧鏈的驅動，所以尾巴是被身體
+       甩出去的，不是跟著骨頭硬轉。
+
+       轉身那一份是累加的（跟 _yaw 一樣不收進 ±π）：迴旋斬轉完一整圈之後
+       動作會從 2π 換回 0，兩個是同一個朝向，鏈子不該因此被倒轉一圈。
+       每一小步內插上一幀到這一幀，鏈子看到的是連續的轉，不是一幀一階。 */
+    const mv = st.move || null;
+    const mvYaw = mv ? mv.yaw : 0;
+    const yaw0 = this._mvYaw;
+    this._mvYaw += wrapPi(mvYaw - this._mvYawPrev) * MOVE_TAIL_SPIN;
+    this._mvYawPrev = mvYaw;
+    const tail0 = this._mvTail, tail1 = mv ? mv.tailYaw : 0;
+    const pitch0 = this._mvPitch, pitch1 = mv ? mv.pitch + mv.tailPitch * 0.5 : 0;
+    this._mvTail = tail1;
+    this._mvPitch = pitch1;
+
     let p = this.drv.pose;
     for (let i = 0; i < steps; i++) {
+      const f = (i + 1) / steps;
       p = this.drv.step(sd, speed01, 0, strideHz);
       // 空中的垂直速度平滑一次再交給尾巴——鏈子要看到會動的驅動，
       // 不是一階一階跳的。±1 是一次全力跳，所以除以跳躍初速。
       this._vySmooth += (vy - this._vySmooth) * (1 - Math.exp(-sd / 0.09));
-      this.sway.step(sd, this.drv.time, this._yaw, p.bodyPitch, p, this._vySmooth / 4.6);
+      const yawDrive = this._yaw + yaw0 + (this._mvYaw - yaw0) * f + tail0 + (tail1 - tail0) * f;
+      this.sway.step(sd, this.drv.time, yawDrive, p.bodyPitch + pitch0 + (pitch1 - pitch0) * f, p, this._vySmooth / 4.6);
     }
 
     this.rig.reset();
@@ -1341,8 +1372,12 @@ export class Critter {
     p.aimYaw = aim;
     p.aimWeight = 1;
 
+    /* 出招的時候頭要跟著招走，不是轉向鏡頭：動作的權重多少，就讓掉多少。 */
+    p.aimWeight = 1 - (mv ? Math.min(1, Math.max(0, mv.w)) : 0);
+
     applyPose(this.rig, p);
     airPose(this.rig, this._airW, this._riseW, this._dip);
+    if (mv) moveOverlay(this.rig, mv);
 
     // 帽子：戴著就是骨頭的原尺寸，脫掉就縮到零。
     for (const b of this._hatBones) {
@@ -1445,4 +1480,51 @@ function airPose(rig, w, rise, dip) {
     R[B.head * 3] -= dip * 0.12;
     R[B.tail * 3] += dip * 0.35;
   }
+}
+
+/* ── 疊在上面的動作 ─────────────────────────────────────────────
+   步態、呼吸、空中姿勢都是這隻動物「自己」在做的事；出招不是——它是
+   呼叫端（戰鬥那一頁）說了算的，而且要蓋在那些東西上面：邊跑邊砍，腿
+   還是在跑。所以動作是一組**加上去**的角度，每一個欄位是一種「全身一起
+   做的事」，對到骨架上的哪一根由這裡決定，呼叫端不必知道骨頭叫什麼：
+
+     yaw        整隻（連腿）繞垂直軸轉。迴旋斬就是它轉一整圈
+     twist      上半身（身體與頭，不含腿與尾巴）相對於腿扭
+     lean       上半身往側邊倒（正值往右倒）
+     pitch      身體仰俯（連頭與尾巴，不含腿；正值低頭）
+     headYaw／headPitch／headTilt   頭再多轉多少（正值：往左、低頭、左耳朝上）
+     tailYaw／tailPitch            尾巴的擺與抬（正值：往右、往上）
+     drop       身體往下沉多少（模型單位）
+     front／hind／knee／legs       腿不是加的：四條腿換成 front／hind／knee
+                那個姿勢，legs 是換多少（0 = 照原本的步態或空中姿勢）
+     w          這個動作佔多少（0～1）。頭轉向鏡頭的那一份讓掉這麼多
+
+   欄位缺了就是 0。 */
+
+/** 整隻轉的那一份交給尾巴的鏈子時打幾折：迴旋一圈是好幾弳，全給的話尾巴
+    會被甩成繞身體半圈的一條，打折之後是拖在後面的一條。 */
+const MOVE_TAIL_SPIN = 0.35;
+
+function moveOverlay(rig, m) {
+  const B = rig._cache;
+  if (!B) return;
+  const R = rig.rotation;
+  const v = (k) => m[k] || 0;
+  R[B.root * 3 + 1] += v('yaw');
+  R[B.bodyPivot * 3 + 1] += v('twist');
+  R[B.bodyPivot * 3 + 2] += v('lean');
+  R[B.torso * 3] += v('pitch');
+  R[B.head * 3] += v('headPitch');
+  R[B.head * 3 + 1] += v('headYaw');
+  R[B.head * 3 + 2] += v('headTilt');
+  R[B.tail * 3] += v('tailPitch');
+  R[B.tail * 3 + 2] += v('tailYaw');
+  const w = Math.min(1, Math.max(0, v('legs')));
+  if (w > 1e-4) {
+    const mix = (i, x) => { R[i] += (x - R[i]) * w; };
+    for (const b of [B.frontA, B.frontB]) mix(b * 3, v('front'));
+    for (const b of [B.hindA, B.hindB]) mix(b * 3, v('hind'));
+    for (const b of [B.kneeA, B.kneeB]) mix(b * 3, v('knee'));
+  }
+  rig.position[B.root * 3 + 1] -= v('drop');
 }
