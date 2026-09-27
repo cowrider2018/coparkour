@@ -795,6 +795,12 @@ export class Critter {
     this._yaw = 0;
     this._yawGoal = 0;
     this._vySmooth = 0;
+    this._airW = 0;
+    this._riseW = 0;
+    this._dip = 0;
+    this._dipV = 0;
+    this._wasGrounded = true;
+    this._lastVy = 0;
     this._hat = true;
 
     /* 帽子的骨頭。dress() 讓每件服裝都「穿著」到場（彎折要量得到它的
@@ -1176,6 +1182,12 @@ export class Critter {
     this._yaw = other._yaw;
     this._yawGoal = other._yawGoal;
     this._vySmooth = other._vySmooth;
+    this._airW = other._airW;
+    this._riseW = other._riseW;
+    this._dip = other._dip;
+    this._dipV = other._dipV;
+    this._wasGrounded = other._wasGrounded;
+    this._lastVy = other._lastVy;
     this.root.rotation.y = this._yaw;
     this.drv.time = other.drv.time;
     this.sway.seed(this._yaw, 0);
@@ -1258,7 +1270,21 @@ export class Critter {
     const speed = Math.abs(st.speed || 0);
     const grounded = st.grounded !== false;
     const moving = grounded && speed > IDLE_SPEED;
-    const state = grounded ? (moving ? 'run' : 'idle') : ((st.vy || 0) > 0 ? 'air' : 'fall');
+    const vy = st.vy || 0;
+
+    /* 空中姿勢的兩個權重與落地的那一沉，見 airPose。都是追目標，不是
+       指定，所以離地、過頂點、落地三個時刻都是幾十毫秒的轉場，不是一幀。 */
+    this._airW += ((grounded ? 0 : 1) - this._airW) * (1 - Math.exp(-d / (grounded ? AIR_OUT : AIR_IN)));
+    this._riseW += (smoothstep(-APEX_VY, APEX_VY, vy) - this._riseW) * (1 - Math.exp(-d / RISE_TAU));
+    if (grounded && !this._wasGrounded) this._dipV += Math.min(1.2, Math.max(0, -this._lastVy / 8)) * LAND_KICK;
+    const dsteps = Math.max(1, Math.ceil(d / MAX_SUB_DT));
+    for (let i = 0; i < dsteps; i++) {
+      const h = d / dsteps;
+      this._dipV += (-LAND_W * LAND_W * this._dip - 2 * LAND_ZETA * LAND_W * this._dipV) * h;
+      this._dip += this._dipV * h;
+    }
+    this._wasGrounded = grounded;
+    this._lastVy = vy;
 
     /* 轉身：連續轉過去，走最短的一邊。純外觀——移動一點都不等它，見
        walk.js 的 steer。每幀都轉，所以人停下來之後牠會繼續轉到最後
@@ -1285,7 +1311,7 @@ export class Critter {
       p = this.drv.step(sd, speed01, 0, strideHz);
       // 空中的垂直速度平滑一次再交給尾巴——鏈子要看到會動的驅動，
       // 不是一階一階跳的。±1 是一次全力跳，所以除以跳躍初速。
-      this._vySmooth += ((st.vy || 0) - this._vySmooth) * (1 - Math.exp(-sd / 0.09));
+      this._vySmooth += (vy - this._vySmooth) * (1 - Math.exp(-sd / 0.09));
       this.sway.step(sd, this.drv.time, this._yaw, p.bodyPitch, p, this._vySmooth / 4.6);
     }
 
@@ -1316,7 +1342,7 @@ export class Critter {
     p.aimWeight = 1;
 
     applyPose(this.rig, p);
-    if (!grounded) authored(this.rig, state);
+    airPose(this.rig, this._airW, this._riseW, this._dip);
 
     // 帽子：戴著就是骨頭的原尺寸，脫掉就縮到零。
     for (const b of this._hatBones) {
@@ -1368,22 +1394,55 @@ export class Critter {
            而它是 air 和 fall 唯一一眼分得出來的差別。
      fall  相反：前腳去找地板、後腿收到肚子底下準備落地。
 
-   `rig._cache` 是 applyPose 建的骨號表，所以這支一定要在 applyPose
-   之後才叫得動。 */
-function authored(rig, state) {
+   順序是 [前腿, 後腿, 膝, 身體仰俯, 頭仰俯, 尾巴（在 TAIL_LIFT 之上加多少）]。 */
+const AIR = [-0.85, 0.62, 0.26, -0.22, -0.14, -0.30];
+const FALL = [-0.34, -0.30, 0.34, 0.14, 0.02, 0.42];
+
+/* ── 以及怎麼接上去 ──
+   遊戲那邊是「在空中就指定成其中一個」：離地那一幀從跑步換成 air、過了
+   頂點那一幀換成 fall、落地那一幀換回跑步。2D 的貓 45 px 高、一次跳躍
+   十幾幀，那樣看得過去；這裡的狗佔半個畫面，三個時刻各是一次瞬間換姿勢。
+
+   所以改成三個會追目標的量，每幀混進去而不是指定：
+
+     _airW   在空中的程度，0 → 1。離地時用 AIR_IN 追上去、落地時用 AIR_OUT
+             放掉——落地比離地快，因為腳一碰地就該在撐了。
+     _riseW  air 與 fall 之間在哪。目標是垂直速度的 smoothstep：頂點前後
+             ±APEX_VY 那一段裡慢慢從前伸換成找地板，不是頂點那一幀翻過去。
+             本身再平滑一次，因為二段跳會把垂直速度一幀改掉。
+     _dip    落地的那一沉。一根欠阻尼的彈簧，落地那一幀照下墜的速度踢一下：
+             身體往下壓、膝蓋彎、頭慢半拍，然後回彈一點點。沒有它，落地是
+             「空中姿勢淡掉」而已，看不出有重量砸到地上。 */
+const AIR_IN = 0.07, AIR_OUT = 0.05;
+const APEX_VY = 3.0, RISE_TAU = 0.06;
+const LAND_W = 16, LAND_ZETA = 0.5, LAND_KICK = 4.5;
+
+/**
+ * 把空中姿勢以權重 `w` 混到 applyPose 寫好的那一份上，再疊上落地的一沉。
+ * `rig._cache` 是 applyPose 建的骨號表，所以這支一定要在 applyPose 之後叫。
+ */
+function airPose(rig, w, rise, dip) {
   const B = rig._cache;
   if (!B) return;
-  const set = (front, hind, knee, torso, head, tail) => {
-    rig.rotation[B.frontA * 3] = front;
-    rig.rotation[B.frontB * 3] = front;
-    rig.rotation[B.hindA * 3] = hind;
-    rig.rotation[B.hindB * 3] = hind;
-    rig.rotation[B.kneeA * 3] = knee;
-    rig.rotation[B.kneeB * 3] = knee;
-    rig.rotation[B.torso * 3] = torso;
-    rig.rotation[B.head * 3] = head;
-    rig.rotation[B.tail * 3] = tail;
-  };
-  if (state === 'air') set(-0.85, 0.62, 0.26, -0.22, -0.14, TAIL_LIFT - 0.30);
-  else set(-0.34, -0.30, 0.34, 0.14, 0.02, TAIL_LIFT + 0.42);
+  const R = rig.rotation;
+  if (w > 1e-4) {
+    const at = (k) => FALL[k] + (AIR[k] - FALL[k]) * rise;
+    const mix = (i, v) => { R[i] += (v - R[i]) * w; };
+    for (const b of [B.frontA, B.frontB]) mix(b * 3, at(0));
+    for (const b of [B.hindA, B.hindB]) mix(b * 3, at(1));
+    for (const b of [B.kneeA, B.kneeB]) mix(b * 3, at(2));
+    mix(B.torso * 3, at(3));
+    mix(B.head * 3, at(4));
+    mix(B.tail * 3, TAIL_LIFT + at(5));
+  }
+  if (Math.abs(dip) > 1e-4) {
+    rig.position[B.root * 3 + 1] -= dip * 0.30;
+    R[B.kneeA * 3] -= dip * 0.45;
+    R[B.kneeB * 3] -= dip * 0.45;
+    R[B.frontA * 3] += dip * 0.18;
+    R[B.frontB * 3] += dip * 0.18;
+    R[B.torso * 3] += dip * 0.10;
+    R[B.head * 3] -= dip * 0.12;
+    R[B.tail * 3] += dip * 0.35;
+  }
 }
