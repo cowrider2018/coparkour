@@ -21,8 +21,12 @@
    ── 怪物 ────────────────────────────────────────────────────────
    一直追著玩家跑。身體跟玩家一樣大（同一個 PHYS 的圓柱）。碰到玩家不再
    有事——傷害是一次一次的攻擊（衝刺，見 LUNGE）：追到 LUNGE.range 以內，
-   站著發呆 0.25 秒，然後朝那時鎖定的方向衝一下（速度 8、0.1 秒內減到 0），
-   只有衝的那 0.1 秒裡碰到玩家，玩家才死、全部回到站位。小怪與 BOSS 都是。
+   站著發呆（蓄力）0.25 秒，然後朝那時鎖定的方向衝一下（速度 16、0.25 秒內
+   減到 0），衝完再發呆 0.25 秒才回去追。只有衝的那 0.25 秒裡碰到玩家，玩家
+   才死、全部回到站位。小怪與 BOSS 都是。
+
+   蓄力被打會怎樣看類別（KINDS 的 `steady`）：小怪一打就取消；BOSS 蓄力不會
+   被打斷——跟放招的倒數一樣打不退、傷害減半（armored）。
 
    每一下都會扣血（各段的傷害見 DAMAGE）。血扣到 0 就死，當場在牠自己的
    重生點重生（血滿、破防歸零），玩家留在原地。被打中還會被擊退：水平往遠離玩家的方向、
@@ -125,7 +129,8 @@ export const COLS = [{
  *   minion  小怪（綠色）。血 4——第一段加第二段剛好打死，破不了防。腳程 3.4：
  *           走路是 PHYS.walk（4），所以放開手就會被追上。
  *   boss    BOSS（紫色）。血 20。腳程 4。不會一直追：每 `every` 秒從 `skills`
- *           裡隨機放一招（規則在 skills.js），放招的時候站著不動。
+ *           裡隨機放一招（規則在 skills.js），放招的時候站著不動。`steady`：
+ *           衝刺前的蓄力不會被打斷（見 armored）。
  *
  * 身體一樣大（同一個 PHYS 的圓柱），顏色在 monster.js。
  *
@@ -135,7 +140,7 @@ export const COLS = [{
 export const BREAK_AT = 8;
 export const KINDS = {
   minion: { name: '小怪', hp: 4, speed: 3.4, breakAt: BREAK_AT },
-  boss: { name: 'BOSS', hp: 20, speed: 4, breakAt: BREAK_AT, skills: ['orb', 'leap', 'cone'], every: 3 },
+  boss: { name: 'BOSS', hp: 20, speed: 4, breakAt: BREAK_AT, steady: true, skills: ['orb', 'leap', 'cone'], every: 3 },
 };
 
 /** 破防之後的窗口多長（秒）：亮圓從淡圓的大小縮到消失的時間。 */
@@ -165,14 +170,15 @@ export const kindOf = (m) => KINDS[m.kind];
 /**
  * 怪物的衝刺（每一類都一樣）：
  *
- *   range   追到身體中心相距這麼近就停下來準備衝。
- *   windup  發呆多久（秒）。
- *   speed   衝出去的初速，time 秒內線性減到 0——衝 speed·time/2 = 0.4 公尺。
+ *   range    追到身體中心相距這麼近就停下來蓄力。
+ *   windup   蓄力（發呆）多久（秒）。
+ *   speed    衝出去的初速，time 秒內線性減到 0——衝 speed·time/2 = 2.0 公尺。
+ *   recover  衝完之後再發呆多久，才回去追人。
  *
- * 0.9 = 身體相切的 0.6 + 衝得到的 0.4 再留 0.1：站著不動的人一定被碰到，
- * 發呆的時候往後退一步就碰不到。
+ * 衝得到的 2.0 比 range 1.8 還長：站著不動的人一定被衝到（牠會衝過頭），
+ * 蓄力的時候往旁邊閃開才躲得掉。
  */
-export const LUNGE = { range: 0.9, windup: 0.25, speed: 8, time: 0.1 };
+export const LUNGE = { range: 1.8, windup: 0.25, speed: 16, time: 0.25, recover: 0.25 };
 
 /** 攻擊的長度：2.5 個狗高。每一段都一樣，差的只有角度。 */
 export const REACH = 2.5 * DOG_H;
@@ -263,10 +269,13 @@ export function resetBreak(m) {
 }
 
 /**
- * 放招的倒數期間（skills.js 的 m.cast 還在）：不會被擊退，受到的傷害減半。
- * 倒數就是預告亮著的那一整段，跳砸最後那 0.6 秒的飛行也算在內。
+ * 蓄力中：不會被擊退，受到的傷害減半。蓄力是
+ *   · 放招的倒數（skills.js 的 m.cast 還在）——預告亮著的那一整段，跳砸最後那
+ *     0.6 秒的飛行也算在內；
+ *   · `steady` 那一類（BOSS）衝刺前發呆的那 0.25 秒。小怪沒有這一條，一打就取消。
  */
-export const armored = (m) => !!m.cast;
+export const armored = (m) => !!m.cast
+  || (!!kindOf(m).steady && !!m.lunge && m.lunge.t < LUNGE.windup);
 
 /**
  * 扣血，並累積破防。扣到 0 就死：記一次，當場回到牠自己的重生點重生——
@@ -335,11 +344,10 @@ export function monsterStep(m, dt, target) {
   }
   // 放招中、出招後的僵直（skills.js）：站著不動。
   if (m.cast || m.stun > 0) { m.vx = 0; m.vz = 0; return; }
-  /* 衝完的那一次在這一幀收掉——留到上一幀結束，碰撞才看得到牠衝到的最遠處。
-     收掉的這一幀站著不動、不接著衝下一次：BOSS 的 bossStep 在 monsterStep 之前，
-     牠要看到一幀「沒在衝」才挑得了招，不然貼著人的 BOSS 會一次接一次地衝，
-     永遠輪不到放招。 */
-  if (m.lunge && m.lunge.t >= LUNGE.windup + LUNGE.time) { m.lunge = null; m.vx = 0; m.vz = 0; return; }
+  /* 衝完、再發呆 recover 秒之後收掉。收掉的這一幀站著不動、不接著衝下一次：
+     BOSS 的 bossStep 在 monsterStep 之前，牠要看到一幀「沒在衝」才挑得了招，
+     不然貼著人的 BOSS 會一次接一次地衝，永遠輪不到放招。 */
+  if (m.lunge && m.lunge.t >= LUNGE.windup + LUNGE.time + LUNGE.recover) { m.lunge = null; m.vx = 0; m.vz = 0; return; }
   if (m.lunge) { lungeStep(m, dt); return; }
   const dx = target.x - m.x, dz = target.z - m.z;
   const d = Math.hypot(dx, dz);
@@ -358,8 +366,11 @@ export function monsterStep(m, dt, target) {
 const lungeDist = (s) => LUNGE.speed * (s - (s * s) / (2 * LUNGE.time));
 
 /**
- * 衝刺的一幀：發呆的時候站著；衝的時候沿鎖定的方向走，走多遠是那一段時間的
- * 積分——跟幀長無關，一次衝刺永遠是 0.4 公尺。
+ * 衝刺的一幀：蓄力與衝完之後都站著；衝的時候沿鎖定的方向走，走多遠是那一段
+ * 時間的積分——跟幀長無關，一次衝刺永遠是 2.0 公尺。
+ *
+ * `hot`：這一幀有衝（走了一段）。碰撞看的是它，而不是「t 落在哪一段」——衝完
+ * 的那一幀 t 已經跨進衝完之後的發呆了，但牠這一幀剛好走到最遠處。
  */
 function lungeStep(m, dt) {
   const L = m.lunge;
@@ -370,11 +381,12 @@ function lungeStep(m, dt) {
   const step = lungeDist(s1) - lungeDist(s0);
   const v = s1 > 0 ? LUNGE.speed * (1 - s1 / LUNGE.time) : 0;
   m.vx = L.dirX * v; m.vz = L.dirZ * v;
+  L.hot = step > 0;
   if (step > 0) [m.x, m.z] = solveXZ(COLS, m.x + L.dirX * step, m.z + L.dirZ * step, m.y);
 }
 
-/** 正在衝（發呆已經結束、這一次還沒收掉）。只有這段時間碰到玩家才算。 */
-export const lunging = (m) => !!m.lunge && m.lunge.t > LUNGE.windup;
+/** 這一幀正在衝。只有這段時間碰到玩家才算——蓄力與衝完之後的發呆都不算。 */
+export const lunging = (m) => !!m.lunge && !!m.lunge.hot;
 
 /**
  * 兩個身體碰在一起了嗎：水平上兩個圓柱相交，垂直上兩段身高重疊。
@@ -433,7 +445,7 @@ export const bites = (p, m) => !m.air && lunging(m) && touching(p, m);
 export function knock(m, fromX, fromZ, awayX, awayZ, scale = KNOCK_SCALE.rise) {
   m.hits++;
   if (armored(m)) return;
-  m.lunge = null;                         // 衝到一半被打：這一下取消
+  m.lunge = null;                         // 衝刺被打（小怪的蓄力、任何一類的衝與衝完）：這一下取消
   let dx = m.x - fromX, dz = m.z - fromZ;
   const d = Math.hypot(dx, dz);
   if (d > 1e-6) { dx /= d; dz /= d; } else { dx = awayX; dz = awayZ; }
