@@ -10,6 +10,7 @@
      地面      1
      黑牆      1（牆、頂、霧殼、牆腳漸層是同一個 mesh）
      動物      3（皮毛、臉、翻面的墨線外殼）
+     刀        9（刀身、刀背、護手、刀柄、柄頭，除了刀背各自一份墨線殼）
      怪物      3（同上，另一份幾何）
      攻擊範圍  出招的那 0.2 秒 1；提示圈亮著的時候 1
      破防      破防中的每一隻 2（淡圓 + 亮圓）
@@ -32,6 +33,7 @@ import {
   inSlash, inFan, inRing, slashTip, fanFrame, makeCombo, comboStep, invulnerable, cueing,
 } from './combat.js';
 import { makeMonsterCritter } from './monster.js';
+import { Blade } from './blade.js';
 import {
   slashFx, fanFx, ringFx, cueFx, showFx, breakFx, showBreak, laneFx, showLane, orbMesh, circleFx, showCircle,
   coneFx, showCone,
@@ -82,6 +84,9 @@ scene.add(ground);
    玩家那一隻：試玩場的 Zoo，一樣換得了動物、毛色、帽子。 */
 const zoo = await loadZoo({ look: 'dog-prick/yellow', height: 1.0 });
 scene.add(zoo.root);
+/** 咬在嘴裡的刀：掛在現在那一隻的頭上，換動物就跟著換過去。 */
+const blade = new Blade();
+blade.follow(zoo.active);
 
 const player = {
   x: SPAWN.player.x, y: 0, z: SPAWN.player.z,
@@ -181,6 +186,7 @@ function setMode(id) {
 /* ── 外觀 ────────────────────────────────────────────────────── */
 function setLook(look) {
   if (!zoo.setLook(look)) return;
+  blade.follow(zoo.active);
   hud.flash(lookInfo(look).name);
   hud.paint();
 }
@@ -405,6 +411,7 @@ function frame(now) {
   zoo.update(dt, {
     speed: Math.hypot(player.vx, player.vz), grounded: player.grounded, vy: player.vy, viewYaw,
   });
+  blade.update();
   for (const { m, critter } of foes) {
     critter.root.position.set(m.x, m.y, m.z);
     critter.setFacing(Math.atan2(m.aimX, m.aimZ));
@@ -503,7 +510,7 @@ requestAnimationFrame(frame);
 
 // 給主控台一個把手，方便手動看東西。foes 會隨陣容換掉，所以是 getter。
 window.combatArea = {
-  scene, camera, renderer, zoo, player, combo, cam, pad, hud, resetStance, setMode,
+  scene, camera, renderer, zoo, blade, player, combo, cam, pad, hud, resetStance, setMode,
   get foes() { return foes; },
   get monster() { return foes[0].m; },
   get mode() { return mode; },
