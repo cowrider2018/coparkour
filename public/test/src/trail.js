@@ -62,12 +62,13 @@ const EASE = {
  *   width    月牙最寬的地方多寬（公尺，沿著刀的方向量）
  *   push     刀氣往外推的速度（公尺 / 秒）
  *   drag     刀氣帶起來的速度是刀在那一點的速度的幾成
+ *   waves    整道月牙上有幾個起伏（swellAt）。一整圈的要是整數，接回起點才不會錯開
  *   taper    月牙：掃的頭尾細、中間粗（crescentAt）。一整圈的不收，不然起點那裡斷一截
  */
 export const TRAILS = {
-  slash: { t0: 0.05, t1: 0.17, from: -SLASH_HALF, to: SLASH_HALF, ease: 'strike', life: 0.95, width: 0.8, push: 0.4, drag: 0.08, taper: true },
-  rise: { t0: 0.04, t1: 0.17, from: 0, to: FAN.sweep, ease: 'strike', life: 0.95, width: 0.8, push: 0.4, drag: 0.08, taper: true },
-  slam: { t0: 0, t1: 0.40, from: -1.0 - Math.PI / 2, to: -1.0 - Math.PI / 2 + TAU + 0.35, ease: 'out2', life: 1.2, width: 0.55, push: 1.0, drag: 0.06, taper: false },
+  slash: { t0: 0.05, t1: 0.17, from: -SLASH_HALF, to: SLASH_HALF, ease: 'strike', life: 0.95, width: 1.3, push: 0.4, drag: 0.08, waves: 2, taper: true },
+  rise: { t0: 0.04, t1: 0.17, from: 0, to: FAN.sweep, ease: 'strike', life: 0.95, width: 1.3, push: 0.4, drag: 0.08, waves: 2, taper: true },
+  slam: { t0: 0, t1: 0.40, from: -1.0 - Math.PI / 2, to: -1.0 - Math.PI / 2 + TAU + 0.35, ease: 'out2', life: 1.2, width: 0.9, push: 1.0, drag: 0.06, waves: 4, taper: false },
 };
 
 /** 進入那一段 τ 秒時，劍氣掃到哪個角度（還沒開始是 from、掃完是 to）。 */
@@ -86,6 +87,18 @@ export function crescentAt(kind, theta) {
   if (!T.taper) return 1;
   const u = (theta - T.from) / (T.to - T.from);
   return 0.15 + 0.85 * Math.sin(Math.PI * Math.min(1, Math.max(0, u))) ** 0.7;
+}
+
+/**
+ * 月牙在角度 θ 的那一截往外鼓還是往內縮（−1 到 1）：沿著整道月牙一條平滑的波，
+ * 一共 waves 個起伏，phase 是這一刀的相位（每一刀隨機一次）。
+ *
+ * 擾動的大小由它決定：一道月牙只有兩三個起伏，煙就是少數幾個大的鼓包與渦，
+ * 而不是每一小段各抽一次亂數、滿滿一排細碎的渦。
+ */
+export function swellAt(kind, theta, phase) {
+  const T = TRAILS[kind];
+  return Math.sin(2 * Math.PI * T.waves * ((theta - T.from) / (T.to - T.from)) + phase);
 }
 
 /** 那道煙這一刻多濃（1 → 0）：掃的時候全亮，掃完之後淡到 life 收掉。 */

@@ -36,10 +36,10 @@ import {
 import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from './skills.js';
 import { Hearts } from './hearts.js';
 import { Fluid, Sheet } from './fluid.js';
-import { TRAILS, HALF, PIECE, sweepAt, fadeAt, sheetFrame, qiAt } from './trail.js';
+import { TRAILS, HALF, PIECE, sweepAt, fadeAt, swellAt, sheetFrame, qiAt } from './trail.js';
 
-/** 劍氣的亂流：往外推的速度每一段多或少這麼多（公尺 / 秒）。 */
-const QI_JITTER = 1.6;
+/** 劍氣的起伏：往外推的速度沿著月牙多或少這麼多（公尺 / 秒，見 trail.js 的 swellAt）。 */
+const QI_SWELL = 1.2;
 
 /** 劍氣的一段線段注入多少濃度（段長不到月牙的寬度就按比例少）。 */
 const QI_DYE = 1.5;
@@ -384,7 +384,7 @@ export class Fight {
       sheet = new Sheet(this.fluid, HALF);
       this.scene.add(sheet.node);
     }
-    const tr = { kind, tau: 0, tip: this.combo.tip, sheet };
+    const tr = { kind, tau: 0, tip: this.combo.tip, sheet, phase: Math.random() * 2 * Math.PI };
     tr.tile = this.fluid.acquire(tr);
     const { o, U, V } = sheetFrame(kind, player, tr.tip);
     sheet.place(o, U, V);
@@ -413,8 +413,9 @@ export class Fight {
    * 一段注入多少照它多長算：刀慢下來（第三段收尾）的時候一段比月牙的寬度還短，
    * 好幾段疊在同一個地方，照段數算的話那裡會堆成一塊實心的白。
    *
-   * 帶起來的速度是刀在那一點的速度的 drag 成，加上往外推的 push，再加一點亂流——
-   * 沒有亂流的話流場太乾淨，煙只會被拉長，捲不起來。
+   * 帶起來的速度是刀在那一點的速度的 drag 成，加上往外推的 push，再沿著月牙一鼓
+   * 一縮（swellAt）——沒有它的話流場太乾淨，煙只會被拉長，捲不起來；而它是一條
+   * 平滑的波、不是每一段各抽一次亂數，捲起來的才是少數幾個大的。
    */
   _inject(tr, t0, t1, dt, player) {
     const T = TRAILS[tr.kind], s = tr.sheet;
@@ -423,7 +424,7 @@ export class Fight {
     const spin = (a1 - a0) / dt;
     const at = (th) => {
       const q = qiAt(tr.kind, th, player, tr.tip), r = REACH - q.w / 2;
-      const j = (Math.random() - 0.5) * 2 * QI_JITTER;
+      const j = QI_SWELL * swellAt(tr.kind, th, tr.phase);
       q.v = s.toTileVel([0, 1, 2].map((c) => q.b.t[c] * spin * r * T.drag + q.b.d[c] * (T.push + j)));
       q.uv = s.toTile(q.p);
       return q;
