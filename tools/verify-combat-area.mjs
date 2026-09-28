@@ -34,7 +34,7 @@
                     瞬間牠被往突進的方向推開（只有水平）；整招無敵；在空中也
                     按得出來——被第二段打破防的那一刻玩家就在空中，接得上。
     13. 怪物不疊    三隻追同一個站著不動的人，身體一直不重疊、不出牆。
-    14. 陣容        三種陣容：3 小怪、1 BOSS、2 小怪 + 1 BOSS，預設是最後一種；
+    14. 陣容        三種陣容：3 殭屍、1 BOSS、2 殭屍 + 1 BOSS，預設是最後一種；
                     每一隻都在中線 1/3 那條橫線上、面向中心，不疊在一起。
     15. BOSS 放招   腳程 4；每 3 秒挑一招，挑的那一刻鎖定玩家的位置，放招中站著
                     不動；被擊退、定住、推開就打斷。球：倒數 0.75 秒、半徑 0.75
@@ -588,9 +588,9 @@ console.log('14. 陣容');
 {
   const tally = (md) => md.monsters.reduce((o, s) => ({ ...o, [s.kind]: (o[s.kind] || 0) + 1 }), {});
   const want = { minions: { minion: 3 }, boss: { boss: 1 }, mixed: { boss: 1, minion: 2 } };
-  ok(MODES.map((md) => md.id).join() === 'minions,boss,mixed', '三種陣容，面板上依序是 3 小怪、1 BOSS、2 小怪 + 1 BOSS');
+  ok(MODES.map((md) => md.id).join() === 'minions,boss,mixed', '三種陣容，面板上依序是 3 殭屍、1 BOSS、2 殭屍 + 1 BOSS');
   for (const md of MODES) ok(JSON.stringify(tally(md)) === JSON.stringify(want[md.id]), `${md.name}：${JSON.stringify(tally(md))}`);
-  ok(DEFAULT_MODE === 'mixed' && SPAWN.monsters === MODES[2].monsters, '預設是 2 小怪 + 1 BOSS');
+  ok(DEFAULT_MODE === 'mixed' && SPAWN.monsters === MODES[2].monsters, '預設是 2 殭屍 + 1 BOSS');
   const cx = (ARENA.x0 + ARENA.x1) / 2, cz = (ARENA.z0 + ARENA.z1) / 2;
   const row = ARENA.z0 + (ARENA.z1 - ARENA.z0) / 3;
   const good = MODES.every((md) => md.monsters.every((s, i) => near(s.z, row)

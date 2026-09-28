@@ -14,9 +14,9 @@
    中心（−z）。怪物排在中線 1/3 的那條橫線上，面向場地中心——隔著中心跟
    玩家對望。排哪幾隻由「陣容」決定（MODES）：
 
-     3 小怪          中線上一隻、左右各 4 公尺一隻。
+     3 殭屍          中線上一隻、左右各 4 公尺一隻。
      1 BOSS          中線上。
-     2 小怪 + 1 BOSS BOSS 在中線上，小怪在左右各 4 公尺（預設）。
+     2 殭屍 + 1 BOSS BOSS 在中線上，殭屍在左右各 4 公尺（預設）。
 
    ── 怪物 ────────────────────────────────────────────────────────
    一直追著玩家跑。身體跟玩家一樣大（同一個 PHYS 的圓柱）。碰到玩家不再
@@ -94,9 +94,9 @@ const post = (kind, dx) => {
  * 哪一類（KINDS 的鍵）。順序就是面板上的順序（數字鍵 1～3）。
  */
 export const MODES = [
-  { id: 'minions', name: '3 小怪', hint: '三隻小怪。', monsters: [post('minion', -4), post('minion', 0), post('minion', 4)] },
+  { id: 'minions', name: '3 殭屍', hint: '三隻殭屍。', monsters: [post('minion', -4), post('minion', 0), post('minion', 4)] },
   { id: 'boss', name: '1 BOSS', hint: '一隻兩倍大的 BOSS。', monsters: [post('boss', 0)] },
-  { id: 'mixed', name: '2 小怪 + 1 BOSS', hint: '大隻的 BOSS 在中間，兩隻小怪在左右。', monsters: [post('boss', 0), post('minion', -4), post('minion', 4)] },
+  { id: 'mixed', name: '2 殭屍 + 1 BOSS', hint: '大隻的 BOSS 在中間，兩隻殭屍在左右。', monsters: [post('boss', 0), post('minion', -4), post('minion', 4)] },
 ];
 
 /** 一開始是哪一個陣容。 */
@@ -126,7 +126,7 @@ export const COLS = [{
  * 怪物就是多一筆，規則不動。每一隻怪物身上帶的是牠自己的「狀態」（位置、速度、
  * 挨了幾下…），數值一律回頭查這一張，用 `m.kind` 認類別。
  *
- *   minion  小怪。血 4——第一段加第二段剛好打死，破不了防。腳程 3.4：
+ *   minion  殭屍（綠色的小怪）。血 4——第一段加第二段剛好打死，破不了防。腳程 3.4：
  *           走路是 PHYS.walk（4），所以放開手就會被追上。
  *   boss    BOSS（畫成兩倍大）。血 20。腳程 4。不會一直追：每 `every` 秒從 `skills`
  *           裡隨機放一招（規則在 skills.js），放招的時候站著不動。`steady`：
@@ -139,7 +139,7 @@ export const COLS = [{
  */
 export const BREAK_AT = 8;
 export const KINDS = {
-  minion: { name: '小怪', hp: 4, speed: 3.4, breakAt: BREAK_AT },
+  minion: { name: '殭屍', hp: 4, speed: 3.4, breakAt: BREAK_AT },
   boss: { name: 'BOSS', hp: 20, speed: 4, breakAt: BREAK_AT, steady: true, skills: ['orb', 'leap', 'cone'], every: 3 },
 };
 
