@@ -23,7 +23,7 @@
    一直追著玩家跑。身體跟玩家一樣大（同一個 PHYS 的圓柱）。碰到玩家不再
    有事——傷害是一次一次的攻擊（衝刺，見 LUNGE）：追到 LUNGE.range 以內，
    站著發呆（蓄力）0.25 秒，然後朝那時鎖定的方向衝一下（速度 16、0.25 秒內
-   減到 0），衝完再發呆 0.25 秒才回去追。只有衝的那 0.25 秒裡碰到玩家，玩家
+   減到 0），衝完僵直 0.5 秒才回去追。只有衝的那 0.25 秒裡碰到玩家，玩家
    才被咬到、扣血（小怪 1、BOSS 3，見 KINDS 的 `bite` 與下面的「玩家的血」）。
 
    蓄力被打會怎樣看類別（KINDS 的 `steady`）：小怪一打就取消；BOSS 蓄力不會
@@ -329,12 +329,12 @@ export const kindOf = (m) => KINDS[m.kind];
  *   range    追到身體中心相距這麼近就停下來蓄力。
  *   windup   蓄力（發呆）多久（秒）。
  *   speed    衝出去的初速，time 秒內線性減到 0——衝 speed·time/2 = 2.0 公尺。
- *   recover  衝完之後再發呆多久，才回去追人。
+ *   recover  衝完之後僵直多久，才回去追人。
  *
  * 衝得到的 2.0 比 range 1.8 還長：站著不動的人一定被衝到（牠會衝過頭），
  * 蓄力的時候往旁邊閃開才躲得掉。
  */
-export const LUNGE = { range: 1.8, windup: 0.25, speed: 16, time: 0.25, recover: 0.25 };
+export const LUNGE = { range: 1.8, windup: 0.25, speed: 16, time: 0.25, recover: 0.5 };
 
 /** 攻擊的長度：2.5 個狗高。每一段都一樣，差的只有角度。 */
 export const REACH = 2.5 * DOG_H;
