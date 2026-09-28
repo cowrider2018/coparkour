@@ -37,6 +37,9 @@ const LOOKS = {
   boss: { coat: ZOMBIE, height: 2.0, alpha: 1 },
   ghost: { coat: GHOST, height: 1.0, alpha: 0.5 },
 };
+/** 這一類畫多高，跟狗（1）比。落地的粉塵照它算（dust.js）。 */
+export const sizeOf = (kind) => LOOKS[kind].height;
+
 const RED = [0.95, 0.08, 0.06];
 /** 半透明的怪物畫在地上那些預告與攻擊範圍（fx.js，renderOrder 2～4）之後，才透得出它們。 */
 const SEE_THROUGH_ORDER = 5;

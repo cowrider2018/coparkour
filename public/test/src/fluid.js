@@ -64,8 +64,8 @@ export const FLUID = {
   dyeDecay: 1.6,
   /** 上一次注入之後幾秒整張圖停下來。這時候濃度已經剩不到百分之一。 */
   sleep: 2.5,
-  /** 一幀最多幾筆注入（多的丟掉）。 */
-  splats: 16,
+  /** 一幀最多幾筆注入（多的丟掉）。一道劍氣一幀最多 8 筆、一團落地的塵 8 筆。 */
+  splats: 32,
 };
 
 /* ── 著色器 ──────────────────────────────────────────────────────── */
@@ -420,7 +420,7 @@ const INK_PX = 2.0;
 const SHEET_VERT = /* glsl */ `
 uniform sampler2D uDye;
 uniform vec4 uTile;      // 左下角 xy、邊長 z
-uniform float uThick, uSide, uTexel;
+uniform float uThick, uSide, uTexel, uSoft;
 varying vec2 vA;
 varying vec2 vUv2;
 float dye(vec2 a) { return texture2D(uDye, a).r; }
@@ -430,7 +430,7 @@ float edge(vec2 uv) {
 }
 void main() {
   vec2 a = uTile.xy + uv * uTile.z;
-  float k = 3.0 * uTexel;
+  float k = uSoft * uTexel;
   // 網格比濃度粗，取五點平均再鼓，不然鼓出來的面會一格一格地抖。
   float d = (2.0 * dye(a) + dye(a + vec2(k, 0.0)) + dye(a - vec2(k, 0.0))
            + dye(a + vec2(0.0, k)) + dye(a - vec2(0.0, k))) / 6.0;
@@ -445,14 +445,14 @@ const INK_RGB = [(INK >> 16) & 255, (INK >> 8) & 255, INK & 255].map((c) => (c /
 
 const SHEET_FRAG = /* glsl */ `
 uniform sampler2D uDye;
-uniform float uSide, uTexel, uFade;
+uniform float uSide, uTexel, uFade, uSoft;
 uniform vec3 uU, uV, uN, uKey, uLit, uShade;
 varying vec2 vA;
 varying vec2 vUv2;
 float dye(vec2 a) { return texture2D(uDye, a).r; }
 // 一圈九點平均，半徑三格：比這還細的絲抹掉，切出來的邊才是大塊。
 float soft(vec2 a) {
-  float k = 3.0 * uTexel, q = 0.7071 * k;
+  float k = uSoft * uTexel, q = 0.7071 * k;
   return (2.0 * dye(a)
         + dye(a + vec2(k, 0.0)) + dye(a - vec2(k, 0.0)) + dye(a + vec2(0.0, k)) + dye(a - vec2(0.0, k))
         + dye(a + vec2(q, q)) + dye(a - vec2(q, q)) + dye(a + vec2(q, -q)) + dye(a - vec2(q, -q))) / 10.0;
@@ -465,7 +465,7 @@ void main() {
   if (px < -0.5) discard;
   float cover = clamp(px + 0.5, 0.0, 1.0);
 
-  float k = 4.0 * uTexel;
+  float k = (uSoft + 1.0) * uTexel;
   float gx = soft(vA + vec2(k, 0.0)) - soft(vA - vec2(k, 0.0));
   float gy = soft(vA + vec2(0.0, k)) - soft(vA - vec2(0.0, k));
   vec3 nl = normalize(vec3(-gx * 3.0, -gy * 3.0, uSide));
@@ -485,8 +485,9 @@ void main() {
  *   thick 最濃的地方往一面鼓多高（公尺）
  *   lit   迎光那一階的顏色（sRGB，0～1）
  *   shade 背光那一階
+ *   soft  硬切之前抹平的半徑（濃度格子的格數）：越大，細絲與細長的指狀越會融回圓的團塊
  */
-export const QI_LOOK = { thick: 0.1, lit: [1, 1, 1], shade: [0.74, 0.82, 0.95] };
+export const QI_LOOK = { thick: 0.1, lit: [1, 1, 1], shade: [0.74, 0.82, 0.95], soft: 3 };
 
 export class Sheet {
   /**
@@ -509,7 +510,7 @@ export class Sheet {
         uniforms: {
           uDye: { value: null }, uTile: { value: new THREE.Vector4() },
           uThick: { value: 0.1 }, uSide: { value: side }, uTexel: { value: 1 / (FLUID.dye * FLUID.grid) },
-          uLit: { value: new THREE.Vector3() }, uShade: { value: new THREE.Vector3() },
+          uLit: { value: new THREE.Vector3() }, uShade: { value: new THREE.Vector3() }, uSoft: { value: 3 },
           uFade: { value: 1 }, uKey: { value: KEY_DIR }, ...Object.fromEntries(Object.entries(this._axes).map(([k, v]) => [k, { value: v }])),
         },
         transparent: true, depthWrite: true, side: THREE.DoubleSide, fog: false,
@@ -542,6 +543,7 @@ export class Sheet {
       m.uniforms.uThick.value = look.thick / half;
       m.uniforms.uLit.value.set(...look.lit);
       m.uniforms.uShade.value.set(...look.shade);
+      m.uniforms.uSoft.value = look.soft;
     }
   }
 

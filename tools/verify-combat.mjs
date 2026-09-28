@@ -66,6 +66,9 @@
                     角度、一路往同一個方向掃；外緣就在 REACH 上、中間寬頭尾尖
                     （一整圈的不收）；月牙上的每一點都打得到——各種面向、第二段
                     跳起來高過末端點也一樣；整道都在那片煙的面上、邊以內。
+    22. 落地粉塵    太輕的落地（比 DUST.min 慢）不起塵；狗普通地跳一下是力道 1；力道有
+                    上限；體型越大、落得越重，塵越濃、起塵的那一圈越大、推得越快越遠、
+                    留得越久，沒有一項會倒過來；一團塵從全在淡到收掉，不會回來。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
@@ -79,6 +82,7 @@ import {
 } from '../public/test/src/combat.js';
 import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
+import { DUST, dustOf, dustFade } from '../public/test/src/dust.js';
 import { TRAILS, HALF, PIECE, sweepAt, fadeAt, crescentAt, sheetFrame, qiAt, along } from '../public/test/src/trail.js';
 
 let fails = 0;
@@ -1212,6 +1216,48 @@ console.log('21. 劍氣');
 
   // 一段線段最多掃過 PIECE：刀尖一段走的距離比月牙最寬處短，弧才不會變成折線。
   ok(PIECE * REACH < TRAILS.slash.width, `一段線段刀尖最多走 ${(PIECE * REACH).toFixed(2)} 公尺，比月牙最寬處（${TRAILS.slash.width}）短`);
+}
+
+/* ── 22. 落地粉塵 ──────────────────────────────────────────────────── */
+console.log('22. 落地粉塵');
+{
+  ok(dustOf(1, DUST.min) === null && dustOf(1, 1) === null && dustOf(2, 0) === null, `落地比 ${DUST.min} 公尺 / 秒慢不起塵`);
+  ok(near(dustOf(1, PHYS.jump).power, 1), '狗普通地跳一下（落地速度 = PHYS.jump）是力道 1');
+  ok(dustOf(2, 40).power === DUST.max && dustOf(1, 200).power === DUST.max, `力道最多 ${DUST.max}`);
+
+  /* 越大、越重，每一項都不會變小。 */
+  const KEYS = ['power', 'amount', 'foot', 'push', 'life', 'half', 'thick'];
+  const grows = (a, b) => KEYS.filter((k) => b[k] < a[k] - 1e-12);
+  let bySpeed = [], bySize = [];
+  for (const size of [0.5, 1, 1.5, 2]) {
+    for (let v = DUST.min + 0.1; v < 20; v += 0.25) {
+      const bad = grows(dustOf(size, v), dustOf(size, v + 0.25));
+      if (bad.length) bySpeed.push(`體型 ${size}、${v.toFixed(2)} → ${(v + 0.25).toFixed(2)}：${bad.join('、')}`);
+    }
+  }
+  for (const v of [4, PHYS.jump, 12]) {
+    for (let size = 0.5; size < 2.5; size += 0.1) {
+      const bad = grows(dustOf(size, v), dustOf(size + 0.1, v));
+      if (bad.length) bySize.push(`${v.toFixed(1)} 公尺 / 秒、體型 ${size.toFixed(1)} → ${(size + 0.1).toFixed(1)}：${bad.join('、')}`);
+    }
+  }
+  ok(!bySpeed.length, `落得越重，塵越濃越大越久${bySpeed.length ? '——' + bySpeed[0] : ''}`);
+  ok(!bySize.length, `體型越大，塵越濃越大越久${bySize.length ? '——' + bySize[0] : ''}`);
+  const dog = dustOf(1, PHYS.jump), boss = dustOf(2, PHYS.jump);
+  ok(boss.amount > dog.amount && boss.half > dog.half, `同樣的落地速度，BOSS（體型 2）的塵比狗濃、比狗大（力道 ${boss.power.toFixed(1)} 對 ${dog.power.toFixed(1)}）`);
+
+  /* 那一片煙裝得下推出去的塵：往外推 push、留 life 秒，推到的地方還在 half 以內。 */
+  let fits = true;
+  for (const size of [0.5, 1, 2]) for (const v of [3, 8, 15]) {
+    const d = dustOf(size, v);
+    if (d.foot + 0.4 * d.push * d.life > d.half) fits = false;
+  }
+  ok(fits, '那一片煙的半邊長裝得下起塵的那一圈加上往外推的距離');
+
+  let fades = true;
+  const d = dustOf(1.5, 9);
+  for (let t = 0; t < d.life; t += 0.01) if (dustFade(d, t + 0.01) > dustFade(d, t) + 1e-12) fades = false;
+  ok(dustFade(d, 0) === 1 && dustFade(d, d.life) === 0 && fades, `一團塵一開始全在、一路淡下去、${d.life.toFixed(2)} 秒收掉`);
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

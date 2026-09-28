@@ -14,7 +14,8 @@
      resolve  怪物追人、放招、球往前飛，然後才判打中——兩個身體都走完這一幀了，
               範圍是對著畫面上的位置判的。打死 BOSS 掉出靈魂，靈魂往下掉、漂，碰到
               就撿起來。回報玩家挨了哪一下、倒下沒有、打死了誰、撿了幾顆靈魂。
-     draw     怪物、劍氣（攻擊範圍）、BOSS 的預告與球、靈魂、破防的兩圈、刀、頭頂的愛心。
+     draw     怪物、劍氣（攻擊範圍）與落地的粉塵、BOSS 的預告與球、靈魂、破防的兩圈、刀、
+              頭頂的愛心。
               在相機擺好之後（破防的兩圈與愛心正對這一幀的鏡頭）；流體場也在這裡
               往前推一幀，所以要在 renderer.render 之前。
    ------------------------------------------------------------------ */
@@ -26,7 +27,7 @@ import {
   breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, placeMonster, monsterStep, bites, knock,
   inSlash, inFan, inRing, slashTip, fanFrame, makeCombo, comboStep, invulnerable, cueing, REACH,
 } from './combat.js';
-import { makeMonsterCritter } from './monster.js';
+import { makeMonsterCritter, sizeOf } from './monster.js';
 import { Blade } from './blade.js';
 import { Mover } from './moves.js';
 import {
@@ -37,12 +38,19 @@ import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength
 import { Hearts } from './hearts.js';
 import { Fluid, Sheet, QI_LOOK } from './fluid.js';
 import { TRAILS, HALF, PIECE, sweepAt, fadeAt, swellAt, sheetFrame, qiAt } from './trail.js';
+import { dustOf, dustFade, DUST_LOOK, PUSH_TIME } from './dust.js';
 
 /** 劍氣的起伏：往外推的速度沿著月牙多或少這麼多（公尺 / 秒，見 trail.js 的 swellAt）。 */
 const QI_SWELL = 1.2;
 
 /** 劍氣的一段線段注入多少濃度（段長不到月牙的寬度就按比例少）。 */
 const QI_DYE = 1.5;
+
+/** 一團塵：腳下那一圈切成幾段注入。 */
+const DUST_RING = 8;
+
+/** 一團塵的濃度：dust.js 的 amount 乘上這個，是 PUSH_TIME 那幾幀加起來注入的量。 */
+const DUST_DYE = 1.4;
 
 /** 右上那一行小字：現在在連段的哪裡。 */
 export const PHASE_NAME = {
@@ -97,6 +105,9 @@ export class Fight {
     /** 還看得到的每一道劍氣，與收回來的那幾片煙（下一道借）。 */
     this._trails = [];
     this._sheets = [];
+    /** 還看得到的每一團落地的塵，與每一個身體上一幀的高度、往下掉多快、站著沒有。 */
+    this._puffs = [];
+    this._feet = new WeakMap();
     /** 上一幀在哪一段：換段的那一刻起一道劍氣。 */
     this._phase = this.combo.phase;
     /** 這一幀在哪一段，它的範圍打不打得到怪物。第二段指著上一次第一段的末端點。 */
@@ -332,7 +343,7 @@ export class Fight {
 
     // 攻擊範圍：劍氣，畫不出流體的話是高亮。都跟著玩家的腳與面向走。
     const body = this.body(player);
-    if (this.fluid) this._qi(dt, body);
+    if (this.fluid) this._smoke(dt, body, player);
     else {
       const yaw = Math.atan2(body.aimX, body.aimZ);
       const lit = (phase) => (combo.phase === phase ? combo.t : Infinity);
@@ -389,19 +400,28 @@ export class Fight {
   }
 
   /**
-   * 劍氣的一幀：進了新的一段就起一道，掃的時候把刀氣注入流體，流體往前推一幀，
-   * 然後擺好每一片煙。淡完了、或格子被別的煙收走了，就收起來。
+   * 流體場的一幀：劍氣與落地的粉塵。進了新的一段就起一道劍氣、有身體落地就揚一團塵；
+   * 掃的時候把刀氣注入、剛落地的那幾幀把塵往外推；流體往前推一幀；然後擺好每一片煙。
+   * 淡完了、或格子被別的煙收走了，就收起來。
+   *
+   * @param {object} body 玩家這一幀（出招時是鎖住面向的那一份，fight.body）：劍氣跟著它
+   * @param {object} player 玩家本人：落地看它（body 可能是每幀重用的同一份替身）
    */
-  _qi(dt, player) {
+  _smoke(dt, body, player) {
     const combo = this.combo, fluid = this.fluid;
     if (combo.phase !== this._phase) {
       this._phase = combo.phase;
-      if (TRAILS[combo.phase] && (combo.phase !== 'rise' || combo.tip)) this._trails.push(this._startTrail(combo.phase, player));
+      if (TRAILS[combo.phase] && (combo.phase !== 'rise' || combo.tip)) this._trails.push(this._startTrail(combo.phase, body));
     }
     for (const tr of this._trails) {
       const prev = tr.tau;
       tr.tau += dt;
-      if (prev <= TRAILS[tr.kind].t1 && fluid.owns(tr.tile, tr)) this._inject(tr, prev, tr.tau, dt, player);
+      if (prev <= TRAILS[tr.kind].t1 && fluid.owns(tr.tile, tr)) this._inject(tr, prev, tr.tau, dt, body);
+    }
+    this._land(dt, player);
+    for (const pf of this._puffs) {
+      if (pf.tau < PUSH_TIME && fluid.owns(pf.tile, pf)) this._kick(pf, dt);
+      pf.tau += dt;
     }
     fluid.step(dt);
     this._trails = this._trails.filter((tr) => {
@@ -410,15 +430,76 @@ export class Fight {
       else this._endTrail(tr);
       return alive;
     });
+    this._puffs = this._puffs.filter((pf) => {
+      const alive = pf.tau < pf.d.life && fluid.owns(pf.tile, pf);
+      if (alive) pf.sheet.show(pf.tile, dustFade(pf.d, pf.tau));
+      else this._endTrail(pf);
+      return alive;
+    });
   }
 
-  /** 起一道劍氣：借一格流體、一片煙，擺在出招這一刻的位置上（之後不動）。 */
-  _startTrail(kind, player) {
+  /** 借一片煙（收回來的先用）。 */
+  _sheet() {
     let sheet = this._sheets.pop();
     if (!sheet) {
       sheet = new Sheet(this.fluid);
       this.scene.add(sheet.node);
     }
+    return sheet;
+  }
+
+  /**
+   * 落地：每一個踩地的身體（玩家、不會飛的怪物）上一幀在空中、這一幀站住了，就在
+   * 腳下揚一團塵，多濃照體型與落地速度（dust.js）。落地速度用上一幀的高度差算，
+   * 不讀身上的 vy——BOSS 跳砸是一幀一幀直接擺位置的，vy 一直是 0；落地那一幀的
+   * vy 也已經被歸零了。
+   */
+  _land(dt, player) {
+    const bodies = [[player, 1]];
+    for (const { m } of this.foes) if (!KINDS[m.kind].fly) bodies.push([m, sizeOf(m.kind)]);
+    for (const [b, size] of bodies) {
+      const s = this._feet.get(b);
+      if (s && b.grounded && !s.grounded) {
+        const d = dustOf(size, -s.vy);
+        if (d) this._puffs.push(this._startPuff(b, d));
+      }
+      this._feet.set(b, { y: b.y, vy: s && dt > 0 ? (b.y - s.y) / dt : 0, grounded: b.grounded });
+    }
+  }
+
+  /** 揚一團塵：借一格流體、一片煙，平貼在落地那一點的地上（之後不動）。 */
+  _startPuff(b, d) {
+    const sheet = this._sheet();
+    const pf = { d, tau: 0, sheet, x: b.x, y: b.y, z: b.z, seed: Math.random() * 2 * Math.PI };
+    pf.tile = this.fluid.acquire(pf);
+    sheet.place([b.x, b.y + 0.03, b.z], [1, 0, 0], [0, 0, -1], d.half, { ...DUST_LOOK, thick: d.thick });
+    return pf;
+  }
+
+  /**
+   * 落地之後 PUSH_TIME 秒之內，每一幀把腳下那一圈塵往外推：一圈切成 DUST_RING 段，
+   * 每一段注入同樣的濃度、帶著往外的速度。推的快慢沿著一圈有三個大起伏（每一團的
+   * 相位隨機）——不然是一個完美的圓環往外擴，看起來像水波不像塵。濃度按 dt 分攤，
+   * 那幾幀加起來是固定的量，跟幀率無關。
+   */
+  _kick(pf, dt) {
+    const d = pf.d, s = pf.sheet;
+    const c = (DUST_DYE * d.amount * Math.min(dt, PUSH_TIME)) / PUSH_TIME;
+    const at = (a) => s.toTile([pf.x + Math.cos(a) * d.foot, pf.y, pf.z + Math.sin(a) * d.foot]);
+    const vel = (a) => {
+      const k = d.push * (1 + 0.35 * Math.sin(3 * a + pf.seed * 2));
+      return s.toTileVel([Math.cos(a) * k, 0, Math.sin(a) * k]);
+    };
+    const rad = (0.7 * d.foot) / (2 * d.half);
+    for (let i = 0; i < DUST_RING; i++) {
+      const a0 = pf.seed + (2 * Math.PI * i) / DUST_RING, a1 = pf.seed + (2 * Math.PI * (i + 1)) / DUST_RING;
+      this.fluid.splat(pf.tile, at(a0), at(a1), vel(a0), vel(a1), c, c, rad);
+    }
+  }
+
+  /** 起一道劍氣：借一格流體、一片煙，擺在出招這一刻的位置上（之後不動）。 */
+  _startTrail(kind, player) {
+    const sheet = this._sheet();
     const tr = { kind, tau: 0, tip: this.combo.tip, sheet, phase: Math.random() * 2 * Math.PI };
     tr.tile = this.fluid.acquire(tr);
     const { o, U, V } = sheetFrame(kind, player, tr.tip);
@@ -426,17 +507,19 @@ export class Fight {
     return tr;
   }
 
+  /** 收掉一道劍氣或一團塵：還格子、收起那一片煙留給下一個借。 */
   _endTrail(tr) {
     this.fluid.release(tr.tile, tr);
     tr.sheet.show(-1, 0);
     this._sheets.push(tr.sheet);
   }
 
-  /** 全部的劍氣收起來（回到站位、換陣容）。 */
+  /** 全部的劍氣與塵收起來（回到站位、換陣容）。 */
   _dropTrails() {
     if (!this.fluid) return;
-    for (const tr of this._trails) this._endTrail(tr);
+    for (const tr of [...this._trails, ...this._puffs]) this._endTrail(tr);
     this._trails = [];
+    this._puffs = [];
     this._phase = this.combo.phase;
   }
 
