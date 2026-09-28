@@ -14,7 +14,7 @@
      resolve  怪物追人、放招、球往前飛，然後才判打中——兩個身體都走完這一幀了，
               範圍是對著畫面上的位置判的。打死 BOSS 掉出靈魂，靈魂往下掉、漂，碰到
               就撿起來。回報玩家挨了哪一下、倒下沒有、打死了誰、撿了幾顆靈魂。
-     draw     怪物、劍光（攻擊範圍）與粉塵（落地、BOSS 的扇形地震）、BOSS 的預告與球、靈魂、破防的兩圈、刀、
+     draw     怪物、劍光（攻擊範圍）與粉塵（落地、BOSS 範圍攻擊的地震）、BOSS 的預告與球、靈魂、破防的兩圈、刀、
               頭頂的愛心。
               在相機擺好之後（破防的兩圈與愛心正對這一幀的鏡頭）；流體場也在這裡
               往前推一幀，所以要在 renderer.render 之前。
@@ -39,10 +39,20 @@ import { Hearts } from './hearts.js';
 import { Fluid, Sheet } from './fluid.js';
 import { TRAILS } from './trail.js';
 import { Qi } from './qi.js';
-import { dustOf, dustFade, DUST_LOOK, PUSH_TIME, QUAKE, quakeBand, quakeFade } from './dust.js';
+import { dustOf, dustFade, DUST_LOOK, PUSH_TIME, QUAKE, quakeBands, quakeFade } from './dust.js';
 
 /** 一團塵：腳下那一圈切成幾段注入。 */
 const DUST_RING = 8;
+
+/** 地震的一道弧切成幾段：每一段大約這麼長（公尺），而且每 60° 至少一段（小圈切得太少，
+    弦離弧太遠，一圈會變成多邊形）。短的弧不硬切成好幾段——段比注入的寬度還短的話，
+    段與段疊在一起，那一道會比別道濃、比別道高。 */
+const QUAKE_SEG = 0.6, QUAKE_TURN = Math.PI / 3;
+
+/** 弧段與弧段之間留的空隙：每一段兩頭各縮這麼多個注入半徑。注入是沿著線段的高斯，
+    接在一起的兩段在接點上各給滿，濃度是兩倍，鼓出一根刺；各縮 √ln2 ≈ 0.83 個半徑，
+    兩邊的尾巴在空隙正中間加起來剛好是一倍。 */
+const QUAKE_JOINT = Math.sqrt(Math.LN2);
 
 /** 一團塵的濃度：dust.js 的 amount 乘上這個，是 PUSH_TIME 那幾幀加起來注入的量。 */
 const DUST_DYE = 1.4;
@@ -105,9 +115,11 @@ export class Fight {
     /** 還看得到的每一團落地的塵，與每一個身體上一幀的高度、往下掉多快、站著沒有。 */
     this._puffs = [];
     this._feet = new WeakMap();
-    /** BOSS 的扇形打下去揚起的地震塵：還看得到的每一片，與這一幀剛打下去、還沒揚的。 */
+    /** BOSS 的範圍攻擊（扇形、跳砸的圓）打下去揚起的地震塵：還看得到的每一片，與這一幀
+        剛打下去、還沒揚的。跳砸落地的那一隻這一幀不揚落地的塵（_quiet）——那一下是地震。 */
     this._quakes = [];
     this._stomps = [];
+    this._quiet = new Set();
     /** 上一幀在哪一段：換段的那一刻起一道劍光。 */
     this._phase = this.combo.phase;
     /** 這一幀在哪一段，它的範圍打不打得到怪物。第二段指著上一次第一段的末端點。 */
@@ -258,8 +270,15 @@ export class Fight {
     const kills = [];
     lifeStep(player, dt);
     // BOSS 先決定這一幀在不在放招（放招中 monsterStep 讓牠站著），球往前飛。
-    const strikes = foes.map(({ m }) => bossStep(m, dt, player, this.world)).filter(Boolean);
-    if (this.fluid) for (const st of strikes) if (st.shape === 'cone') this._stomps.push(st);
+    const strikes = [];
+    for (const { m } of foes) {
+      const st = bossStep(m, dt, player, this.world);
+      if (!st) continue;
+      strikes.push(st);
+      if (!this.fluid) continue;
+      this._stomps.push(st);
+      if (st.shape === 'circle') this._quiet.add(m);
+    }
     shotsStep(this.world, dt);
     for (const { m } of foes) monsterStep(m, dt, player);
     separate(foes.map((f) => f.m));
@@ -468,7 +487,7 @@ export class Fight {
 
   /**
    * 落地：每一個踩地的身體（玩家、不會飛的怪物）上一幀在空中、這一幀站住了，就在
-   * 腳下揚一團塵，多濃照體型與落地速度（dust.js）。落地速度用上一幀的高度差算，
+   * 腳下揚一團塵，多濃照體型與落地速度（dust.js）。BOSS 跳砸落地不算：那一下揚的是地震的塵。落地速度用上一幀的高度差算，
    * 不讀身上的 vy——BOSS 跳砸是一幀一幀直接擺位置的，vy 一直是 0；落地那一幀的
    * vy 也已經被歸零了。
    */
@@ -477,12 +496,13 @@ export class Fight {
     for (const { m } of this.foes) if (!KINDS[m.kind].fly) bodies.push([m, sizeOf(m.kind)]);
     for (const [b, size] of bodies) {
       const s = this._feet.get(b);
-      if (s && b.grounded && !s.grounded) {
+      if (s && b.grounded && !s.grounded && !this._quiet.has(b)) {
         const d = dustOf(size, -s.vy);
         if (d) this._puffs.push(this._startPuff(b, d));
       }
       this._feet.set(b, { y: b.y, vy: s && dt > 0 ? (b.y - s.y) / dt : 0, grounded: b.grounded });
     }
+    this._quiet.clear();
   }
 
   /** 揚一團塵：借一格流體、一片煙，平貼在落地那一點的地上（之後不動）。 */
@@ -516,37 +536,46 @@ export class Fight {
   }
 
   /**
-   * 扇形地震揚一片塵：借一格流體、一片煙，平貼在牠腳下那一層地上，蓋住整個扇形。
-   * 煙片是方的、正中間放在扇形半徑的一半處：扇形上離那裡最遠的是兩個角（0.62 r），
-   * 再留一段往外推的距離。
+   * 範圍攻擊揚一片地震的塵：借一格流體、一片煙，平貼在打下去的那一層地上，蓋住整個
+   * 範圍，再留一段往外推的距離。
+   *   扇形  煙片正中間放在扇形半徑的一半處：扇形上離那裡最遠的是兩個角（0.62 r）。
+   *   圓    煙片正中間就是圓心，半邊長是半徑。
    */
   _startQuake(st) {
     const sheet = this._sheet();
-    const q = { tau: 0, sheet, st };
+    const q = { tau: 0, sheet, st, bands: quakeBands(st.shape, st.r) };
+    const k = QUAKE[st.shape];
     q.tile = this.fluid.acquire(q);
-    const c = [st.x + (st.dirX * st.r) / 2, st.y + 0.03, st.z + (st.dirZ * st.r) / 2];
-    sheet.place(c, [1, 0, 0], [0, 0, -1], 0.62 * st.r + 0.6, { ...DUST_LOOK, thick: QUAKE.thick });
+    const fan = st.shape === 'cone';
+    const c = fan ? [st.x + (st.dirX * st.r) / 2, st.z + (st.dirZ * st.r) / 2] : [st.x, st.z];
+    sheet.place([c[0], st.y + 0.03, c[1]], [1, 0, 0], [0, 0, -1], (fan ? 0.62 : 1) * st.r + 0.6,
+      { ...DUST_LOOK, thick: k.thick, soft: k.soft, rise: QUAKE.rise });
     return q;
   }
 
   /**
-   * 地震的一幀：震波走到的每一道（quakeBand），在那一段 QUAKE.inject 秒裡沿著扇形的
-   * 那一圈弧注入、往外推。弧切成幾段，越外面的弧越長、段越多。濃度按 dt 分攤，跟
-   * 幀率無關。
+   * 地震的一幀：震波從腳下（扇形的尖、圓心）往外走，走到的每一道（quakeBands）在那一段
+   * QUAKE.inject 秒裡沿著那一圈弧注入、往外推——扇形是扇形那一段弧，圓是一整圈。弧照
+   * 長度切成每段 QUAKE_SEG 左右，越外面的弧越長、段越多；段與段之間留 QUAKE_JOINT 的
+   * 空隙。濃度按 dt 分攤，跟幀率無關。
    */
   _quake(q, dt) {
-    const st = q.st, s = q.sheet, yaw = Math.atan2(st.dirX, st.dirZ);
-    const rad = QUAKE.width / (2 * s.half);
-    for (let i = 0; i < QUAKE.bands; i++) {
-      const b = quakeBand(i);
+    const st = q.st, s = q.sheet, k = QUAKE[st.shape];
+    const [a0, span] = st.shape === 'cone'
+      ? [Math.atan2(st.dirX, st.dirZ) - st.half, 2 * st.half]
+      : [0, 2 * Math.PI];
+    const rad = k.width / (2 * s.half);
+    for (const b of q.bands) {
       if (q.tau < b.at || q.tau >= b.at + QUAKE.inject) continue;
-      const r = st.r * b.u, n = 3 + i;
+      const r = st.r * b.u;
+      const n = Math.max(Math.ceil(span / QUAKE_TURN - 1e-9), Math.ceil((r * span) / QUAKE_SEG));
       const c = (DUST_DYE * b.amount * Math.min(dt, QUAKE.inject)) / QUAKE.inject;
-      const dir = (k) => { const a = yaw - st.half + (2 * st.half * k) / n; return [Math.sin(a), Math.cos(a)]; };
+      const trim = Math.min((QUAKE_JOINT * k.width) / r, span / n / 4);
+      const dir = (k, e) => { const a = a0 + (span * k) / n + e; return [Math.sin(a), Math.cos(a)]; };
       const at = ([x, z]) => s.toTile([st.x + x * r, st.y, st.z + z * r]);
-      const vel = ([x, z]) => s.toTileVel([x * QUAKE.push, 0, z * QUAKE.push]);
-      for (let k = 0; k < n; k++) {
-        const d0 = dir(k), d1 = dir(k + 1);
+      const vel = ([x, z]) => s.toTileVel([x * k.push, 0, z * k.push]);
+      for (let j = 0; j < n; j++) {
+        const d0 = dir(j, trim), d1 = dir(j + 1, -trim);
         this.fluid.splat(q.tile, at(d0), at(d1), vel(d0), vel(d1), c, c, rad);
       }
     }
@@ -570,6 +599,7 @@ export class Fight {
     this._puffs = [];
     this._quakes = [];
     this._stomps.length = 0;
+    this._quiet.clear();
   }
 
   /** 右上那一行小字的戰鬥那幾段：每一隻怪物的血與破防、連段在哪。 */
