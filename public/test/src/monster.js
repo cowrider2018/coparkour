@@ -35,11 +35,20 @@
               甩頭（頭左右甩、跟著側過去）、甩尾巴（跟頭反向）、身體左右
               搖晃（慢一拍、幅度小），一邊甩一邊把頭抬回來，一開始最用力、
               到僵直結束收乾淨。
+
+   ── BOSS 放招的動作 ──────────────────────────────────────────────
+   放招（skills.js 的 m.cast）照 cast.t 播倒數那一套，出招之後的僵直（m.stun）
+   播那一招的收尾——僵直本身不記是哪一招，Motion 記著上一次在放哪一招。
+
+     orb   仰頭伸展蓄力：胸口挺起、頭往後仰到朝天、尾巴翹起來，越蓄越仰；
+           倒數最後那一下頭往前甩，球出去的那一刻正甩到一半——吐出去的；
+           甩到底停一下，然後在僵直裡慢慢回到原本的樣子。
    ------------------------------------------------------------------ */
 
 import * as THREE from '../vendor/three.module.js';
 import { Critter } from './critter.js';
 import { LUNGE, kindOf } from './combat.js';
+import { SKILL } from './skills.js';
 import { Mover } from './moves.js';
 
 /** 毛色：body 身上、face 鼻子與嘴。 */
@@ -155,14 +164,25 @@ function shakeKeys() {
   return keys;
 }
 
+/* ── 火球 ── 蓄到最後是 STRETCH_MAX；吐出去的那一刻在 SPIT_MID，甩到底是 SPIT。 */
+const STRETCH = { pitch: -0.35, headPitch: -0.50, drop: -0.06, tailPitch: 0.50, front: -0.20, hind: 0.20, legs: 0.6, w: 1 };
+const STRETCH_MAX = { ...STRETCH, pitch: -0.40, headPitch: -0.62, drop: -0.08, tailPitch: 0.60 };
+const SPIT = { pitch: 0.20, headPitch: 0.45, drop: 0.04, tailPitch: -0.20, w: 1 };
+const SPIT_MID = { pitch: -0.10, headPitch: -0.08, drop: -0.02, tailPitch: 0.20, front: -0.10, hind: 0.10, legs: 0.3, w: 1 };
+
 /**
  * 怪物的每一套動作（moves.js 的 MOVES 那一種寫法），鍵就是 Motion 挑的那一段：
- * 衝刺的蓄力、衝、僵直。
+ * 衝刺的蓄力、衝、僵直，BOSS 每一招的倒數（…Wind）與出招後的僵直（…Rec）。
  */
 const MOVES = {
   windup: { blend: 0.05, keys: [[0, {}], [0.16, CROUCH, 'out'], [LUNGE.windup, { ...CROUCH, headPitch: 0.86, drop: 0.10 }, 'inOut']] },
   dash: { blend: 0.05, keys: [[0, {}]] },
   recover: { blend: 0.04, keys: shakeKeys() },
+  orbWind: {
+    blend: 0.08,
+    keys: [[0, {}], [0.55, STRETCH, 'out'], [SKILL.orb.windup - 0.06, STRETCH_MAX, 'inOut'], [SKILL.orb.windup, SPIT_MID, 'in']],
+  },
+  orbRec: { blend: 0.02, keys: [[0, SPIT_MID], [0.05, SPIT, 'out'], [0.14, SPIT, 'lin'], [SKILL.recover, {}, 'inOut']] },
 };
 
 /** 衝的時候畫得跳多高：體型（sizeOf）的這麼多倍，公尺。 */
@@ -176,6 +196,8 @@ const DASH_HOP = 0.25;
 export class Motion {
   constructor() {
     this.mover = new Mover(MOVES, (phase, t) => [phase, t]);
+    /** 上一次在放哪一招：出招之後的僵直播它的收尾。 */
+    this._skill = null;
     this._out = { move: null, lift: 0, air: false, vy: null };
   }
 
@@ -195,8 +217,18 @@ export class Motion {
     return o;
   }
 
-  /** 現在在哪一段、這一段走了幾秒。沒在做什麼是 [null, 0]。 */
+  /**
+   * 現在在哪一段、這一段走了幾秒。沒在做什麼是 [null, 0]。被擊退、定住、推開
+   * 的時候也是——動作淡掉，交回給空中姿勢。
+   */
   _stage(m) {
+    if (m.air || m.held || m.slide) return [null, 0];
+    const c = m.cast;
+    if (c) {
+      this._skill = c.skill;
+      return MOVES[`${c.skill}Wind`] ? [`${c.skill}Wind`, c.t] : [null, 0];
+    }
+    if (m.stun > 0 && MOVES[`${this._skill}Rec`]) return [`${this._skill}Rec`, SKILL.recover - m.stun];
     const L = m.lunge;
     if (!L) return [null, 0];
     if (L.t < LUNGE.windup) return ['windup', L.t];
