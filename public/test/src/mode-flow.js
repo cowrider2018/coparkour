@@ -9,7 +9,7 @@
      走進第 k 場的範圍   所有的門關上、所有的傳送不通；一秒後 BOSS 出現。
      打死 BOSS           這一場清完：只開通往下一場的門（route.js 的 OPEN）。
      挨打                扣血（頭頂的愛心，fight.js）。血一路帶著走，不因為
-                         打完一場補回來。
+                         打完一場補回來；BOSS 死掉掉出的靈魂撿起來 +1。
      倒下（血扣光）      BOSS 收起來，血補回 3，人回到這一場的入口外面休息、面朝入口
                          （route.js 的 restAt），門照「還沒打第 k 場」開著。
                          不在同一個房間裡重生；自己走回去，一進房間就重打。
@@ -102,6 +102,7 @@ function startFrom(k) {
   deaths = 0;
   resetLife(player);
   fight.lineup([], fieldOf('wallwalk'));
+  fight.reset();                          // 地上沒撿的靈魂一起清掉
   applyDoors();
   place(k === 0 ? { ...ruins.arrivals[START] } : restAt(k, ruins));
   hud.flash(k === 0 ? `從頭開始：${STAGES[0].name}` : `從第 ${k + 1} 場開始：${STAGES[k].name}`);
@@ -122,7 +123,7 @@ function clear() {
   run.next++;
   applyDoors();
   const done = run.next >= STAGES.length;
-  hud.flash(done ? '六場全部打完——門全開了' : `打倒 BOSS！下一場：${stageName(run.next)}`);
+  hud.flash(done ? '六場全部打完——門全開了' : `打倒 BOSS！撿起牠的靈魂補一點血。下一場：${stageName(run.next)}`);
   if (!done) hud.paint({ block: STAGES[run.next].id });
 }
 
@@ -198,7 +199,8 @@ function frame(now) {
       hud.flash('BOSS 出現了');
     }
   }
-  const { hit, died } = fight.resolve(dt, player);
+  const { hit, died, souls } = fight.resolve(dt, player);
+  if (souls) hud.flash(`撿到靈魂，血 +${souls}`);
   if (run.active && spawnIn === 0 && !fight.foes.length) clear();
   if (died) fall(died);
   else if (hit) hud.flash(`${DEATH_TEXT[hit.cause]}，扣 ${hit.dmg} 點血`);

@@ -59,6 +59,8 @@
     19. 玩家的血    一開始 3 點；小怪咬 1、BOSS 咬 3、BOSS 的三招各 5（球與範圍攻擊
                     身上帶著這個數）；扣到 0 為止、不會變負的；挨一下之後 1 秒內
                     不再扣，所以一次衝刺從頭衝到尾只扣一次。
+    20. 靈魂        只有 BOSS 會掉；從身體中間受重力往下掉，落在腳下那一層地板上
+                    0.5 公尺，之後上下 ±0.2 簡諧漂浮、不橫移；碰到身體才撿得到。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
@@ -68,6 +70,7 @@ import {
   FLY, BREAK_ATK, breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, armored,
   makeMonster, monsterStep, touching, bites, knock, inSlash, inFan, inRing, slashTip, fanFrame,
   makeCombo, comboStep, invulnerable, cueing, FIELD, LIFE, resetLife, lifeStep, harm,
+  SOUL, dropSoul, soulStep, grabs,
 } from '../public/test/src/combat.js';
 import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
@@ -1076,6 +1079,34 @@ console.log('19. 玩家的血');
     return null;
   };
   ok(dmgOf(0) === 5 && dmgOf(0.5) === 5 && dmgOf(0.9) === 5, '球、跳砸、扇形打出來都帶著 5');
+}
+
+/* ── 20. 靈魂 ────────────────────────────────────────────────────── */
+console.log('20. 靈魂');
+{
+  ok(KINDS.boss.soul && !KINDS.minion.soul && !KINDS.ghost.soul, '只有 BOSS 會掉靈魂');
+
+  // 在平地上被打死：從身體中間掉下來，落在地板上 0.5 公尺停住。
+  const s = dropSoul({ x: 1, y: 0, z: 2, field: FIELD });
+  const y0 = s.y;
+  let t = 0;
+  while (s.base === null && t < 2) { soulStep(s, DT); t += DT; }
+  ok(y0 > SOUL.hover && s.base !== null && near(s.base, SOUL.hover), `受重力往下掉，${t.toFixed(2)} 秒後停在離地 ${SOUL.hover} 公尺`);
+  let lo = Infinity, hi = -Infinity;
+  for (let k = 0; k < SOUL.period / DT + 1; k++) { soulStep(s, DT); lo = Math.min(lo, s.y); hi = Math.max(hi, s.y); }
+  ok(near(hi, SOUL.hover + SOUL.bob, 0.01) && near(lo, SOUL.hover - SOUL.bob, 0.01) && s.x === 1 && s.z === 2,
+    `之後在 ${lo.toFixed(2)}～${hi.toFixed(2)} 之間上下漂（±${SOUL.bob}），不橫移`);
+
+  // 被挑在半空、腳下是高台：一路掉到台面上 0.5 公尺。
+  const cols = [...FIELD.cols, { kind: 'floor', min: [-3, 0, -3], max: [3, 2, 3], base: 0 }];
+  const a = dropSoul({ x: 0, y: 4, z: 0, field: { ...FIELD, cols } });
+  for (let k = 0; k < 120 && a.base === null; k++) soulStep(a, DT);
+  ok(near(a.base, 2 + SOUL.hover), `在高台上空死掉：落在台面上 ${SOUL.hover} 公尺（${a.base.toFixed(2)}）`);
+
+  // 撿：碰到身體才撿得到。
+  const at = (x, y, z) => ({ x, y, z });
+  ok(grabs(body(0, 0), at(0.3, 0.5, 0)) && !grabs(body(0, 0), at(PHYS.radius + SOUL.r + 0.01, 0.5, 0)), '水平上碰到身體才撿得到');
+  ok(!grabs(body(0, 0, 2), at(0, 0.5, 0)) && grabs(body(0, 0, 0.5), at(0, 0.5, 0)), '跳在牠正上方太高撿不到、碰到就撿得到');
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

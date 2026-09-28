@@ -57,6 +57,7 @@
    一開始 LIFE.start（3）顆心。被咬、被 BOSS 的招打到都扣血，扣多少看是哪一下
    （小怪衝刺 1、BOSS 衝刺 3、BOSS 的其他招 5，見 KINDS 的 `bite` 與 skills.js
    的 SKILL）；扣到 0 才倒下。挨了一下之後 LIFE.guard 秒不再被打中（見 harm）。
+   BOSS 死掉會掉出一顆靈魂（白球），撿起來血 +1（見 SOUL）。
 
    從按下去到跳離之後落地，玩家都是無敵的——整招都貼在怪物身上。飛在空中（被擊退、還沒落地）的怪物碰到玩家不算數。
    空中再挨一下就再擊退一次——每一下都是把速度**換成**擊退的那一份，
@@ -157,7 +158,7 @@ export const FIELD = { arena: ARENA, cols: COLS, doors: {} };
  *
  * 碰撞的身體一樣大（同一個 PHYS 的圓柱）；外觀（同一件毛、BOSS 畫兩倍大）在 monster.js。
  *
- * `bite` 是衝刺咬到玩家扣幾點血：小怪 1、BOSS 3。
+ * `bite` 是衝刺咬到玩家扣幾點血：小怪 1、BOSS 3。`soul`：死掉的時候掉出一顆靈魂（見 SOUL）。
  *
  * `breakAt` 是破防門檻。現在每一類都是 BREAK_AT，但它是逐類登記的——哪天某一類
  * 要比較硬，改那一筆就好。
@@ -165,7 +166,7 @@ export const FIELD = { arena: ARENA, cols: COLS, doors: {} };
 export const BREAK_AT = 8;
 export const KINDS = {
   minion: { name: '殭屍', hp: 4, speed: 3.4, breakAt: BREAK_AT, bite: 1 },
-  boss: { name: 'BOSS', hp: 20, speed: 4, breakAt: BREAK_AT, bite: 3, steady: true, skills: ['orb', 'leap', 'cone'], every: 3 },
+  boss: { name: 'BOSS', hp: 20, speed: 4, breakAt: BREAK_AT, bite: 3, soul: true, steady: true, skills: ['orb', 'leap', 'cone'], every: 3 },
   ghost: { name: '幽靈', hp: 4, speed: 3.4, breakAt: BREAK_AT, bite: 1, fly: true },
 };
 
@@ -201,6 +202,45 @@ export function harm(p, dmg) {
   p.hp = Math.max(0, p.hp - dmg);
   p.guard = LIFE.guard;
   return true;
+}
+
+/**
+ * 靈魂：KINDS 裡帶 `soul` 的那一類（BOSS）死掉的那一刻掉出一顆白球。
+ *
+ *   從牠（畫成兩倍大的）身體中間那個高度受重力往下掉，落到腳下那一層地板上
+ *   `hover` 公尺停住；之後以那個高度為中心、振幅 `bob`、週期 `period` 秒上下
+ *   漂浮（簡諧）。碰到玩家的身體（grabs）就被撿起來，血 +1，沒有上限。
+ *
+ *   r  球的半徑，撿不撿得到也用它量。
+ */
+export const SOUL = { r: 0.3, hover: 0.5, bob: 0.2, period: 2 };
+
+/**
+ * 一顆剛掉出來的靈魂。`at` 是牠死掉那一刻的位置與場地（{x, y, z, field}）——
+ * 呼叫端要在扣血之前記下來，扣到 0 的那一下 hurt 已經把牠搬回重生點了。
+ */
+export function dropSoul(at) {
+  return { x: at.x, y: at.y + PHYS.height, z: at.z, vy: 0, cols: at.field.cols, base: null, t: 0 };
+}
+
+/** 靈魂的一幀：還沒落定就照重力掉，落定了就在 base 上下漂。 */
+export function soulStep(s, dt) {
+  if (s.base === null) {
+    const base = supportInfo(s.cols, s.x, s.z, s.y).y + SOUL.hover;
+    s.vy -= PHYS.gravity * dt;
+    s.y += s.vy * dt;
+    if (s.y > base) return;
+    s.base = base;
+    s.vy = 0;
+  }
+  s.t += dt;
+  s.y = s.base + SOUL.bob * Math.sin((2 * Math.PI * s.t) / SOUL.period);
+}
+
+/** 玩家碰到這顆靈魂了嗎：球與玩家那根圓柱相交。 */
+export function grabs(p, s) {
+  if (Math.hypot(p.x - s.x, p.z - s.z) >= PHYS.radius + SOUL.r) return false;
+  return s.y + SOUL.r > p.y && s.y - SOUL.r < p.y + PHYS.height;
 }
 
 /**

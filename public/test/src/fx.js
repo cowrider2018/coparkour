@@ -219,6 +219,24 @@ export function orbMesh(radius) {
 }
 
 /**
+ * 一顆靈魂（BOSS 死掉掉出來的）的外觀：半透明的白球，裡面一顆比較實的芯、外面
+ * 一層淡淡的光暈。不吃霧、不寫深度。
+ */
+export function soulMesh(radius) {
+  const ball = (r, opacity) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity, depthWrite: false, fog: false,
+    }));
+    m.renderOrder = 3;
+    return m;
+  };
+  const node = new THREE.Group();
+  node.add(ball(radius * 0.6, 0.7), ball(radius, 0.35), ball(radius * 1.5, 0.12));
+  node.visible = false;
+  return node;
+}
+
+/**
  * 亮起、淡掉。`t` 是這一段開始了多久，`life` 是它亮多久。
  * 過了 life 就收起來。`pitch` 只有會仰俯的那一片（第二段）用：下緣的仰角。
  */

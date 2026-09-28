@@ -156,8 +156,9 @@ function frame(now) {
   }
 
   /* 怪物與打中。挨一下扣血；血扣光了雙方回到站位。打死的怪物在牠的重生點重生。 */
-  const { hit, died, kills } = fight.resolve(dt, player);
-  for (const k of kills) hud.flash(`打死${KINDS[k].name}，牠在重生點重生`);
+  const { hit, died, kills, souls } = fight.resolve(dt, player);
+  for (const k of kills) hud.flash(`打死${KINDS[k].name}，牠在重生點重生${KINDS[k].soul ? '，掉出一顆靈魂' : ''}`);
+  if (souls) hud.flash(`撿到靈魂，血 +${souls}`);
   if (died) {
     deaths++;
     resetStance();

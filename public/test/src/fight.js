@@ -12,14 +12,16 @@
               因為破防攻擊一發動就接管速度。
      （模式自己操控、移動玩家：`breaking` 的時候不操控，`spinning` 的時候不移動）
      resolve  怪物追人、放招、球往前飛，然後才判打中——兩個身體都走完這一幀了，
-              範圍是對著畫面上的位置判的。回報玩家挨了哪一下、倒下沒有、打死了誰。
-     draw     怪物、攻擊範圍的高亮、BOSS 的預告與球、破防的兩圈、刀、頭頂的愛心。
+              範圍是對著畫面上的位置判的。打死 BOSS 掉出靈魂，靈魂往下掉、漂，碰到
+              就撿起來。回報玩家挨了哪一下、倒下沒有、打死了誰、撿了幾顆靈魂。
+     draw     怪物、攻擊範圍的高亮、BOSS 的預告與球、靈魂、破防的兩圈、刀、頭頂的愛心。
               在相機擺好之後（破防的兩圈與愛心正對這一幀的鏡頭）。
    ------------------------------------------------------------------ */
 
 import { PHYS, supportInfo } from './walk.js';
 import {
   FIELD, SWING, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster, harm, lifeStep,
+  SOUL, dropSoul, soulStep, grabs,
   breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, placeMonster, monsterStep, bites, knock,
   inSlash, inFan, inRing, slashTip, fanFrame, makeCombo, comboStep, invulnerable, cueing,
 } from './combat.js';
@@ -28,7 +30,7 @@ import { Blade } from './blade.js';
 import { Mover } from './moves.js';
 import {
   slashFx, fanFx, ringFx, cueFx, showFx, breakFx, showBreak, laneFx, showLane, orbMesh, circleFx, showCircle,
-  coneFx, showCone,
+  coneFx, showCone, soulMesh,
 } from './fx.js';
 import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from './skills.js';
 import { Hearts } from './hearts.js';
@@ -79,6 +81,11 @@ export class Fight {
 
     /** 玩家頭頂的愛心：還剩幾點血。 */
     this.hearts = new Hearts(scene);
+
+    /* BOSS 掉出來的靈魂（combat.js 的 dropSoul）。換陣容不清——完整流程裡打完一場就換
+       下一場，沒撿的留在原地；回到站位（reset）才清。一顆一個 mesh，不夠就多做。 */
+    this.souls = [];
+    this._soulMeshes = [];
   }
 
   /** 換了動物：刀掛到新那一隻頭上。 */
@@ -143,6 +150,7 @@ export class Fight {
     }
     Object.assign(this.combo, makeCombo());
     this.world.shots.length = 0;
+    this.souls.length = 0;
   }
 
   /** 破防攻擊裡：突進與跳離是拋物線、迴旋的位置由 spinStep 擺，模式不要操控玩家。 */
@@ -181,6 +189,7 @@ export class Fight {
    *         都不算。
    *   died  這一下把血扣光了：倒下，怎麼倒的（hit 的 cause）。
    *   kills 這一幀打死的怪物是哪一類（KINDS 的鍵）。
+   *   souls 這一幀撿了幾顆靈魂（血已經加上去了）。
    */
   resolve(dt, player) {
     const combo = this.combo, foes = this.foes;
@@ -191,6 +200,8 @@ export class Fight {
     shotsStep(this.world, dt);
     for (const { m } of foes) monsterStep(m, dt, player);
     separate(foes.map((f) => f.m));
+    /* 每一隻這一刻在哪：扣到 0 的那一下 hurt 就把牠搬回重生點了，靈魂要掉在死的地方。 */
+    const spot = new Map(foes.map(({ m }) => [m, { x: m.x, y: m.y, z: m.z, field: m.field }]));
     // 破防攻擊：突進碰到目標就定住牠、進迴旋；迴旋轉完就扣血、跳離。
     if (combo.phase === 'dash' && breakContact(player, combo.target)) latch(combo, player, combo.target);
     const dead = new Set();
@@ -206,7 +217,10 @@ export class Fight {
         if (hurt(m, DAMAGE[combo.phase])) dead.add(m);
       }
     }
-    for (const m of dead) kills.push(m.kind);
+    for (const m of dead) {
+      kills.push(m.kind);
+      if (KINDS[m.kind].soul) this.souls.push(dropSoul(spot.get(m)));
+    }
     /* 打死：hurt 已經讓牠在重生點重生了。不重生的話就離場——外觀藏起來，下一幀
        起不在清單裡。 */
     if (!this.respawn && dead.size) {
@@ -226,7 +240,18 @@ export class Fight {
         if (hit.cause === 'shot') this.world.shots = this.world.shots.filter((s) => !shotHits(s, player));
       }
     }
-    return { hit, died: hit && player.hp <= 0 ? hit.cause : null, kills };
+    const died = hit && player.hp <= 0 ? hit.cause : null;
+
+    // 靈魂：往下掉、漂；碰到就撿起來，血 +1。倒下的這一幀不撿（血等一下就重設了）。
+    let souls = 0;
+    for (const sl of this.souls) soulStep(sl, dt);
+    if (!died) {
+      const left = this.souls.filter((sl) => !grabs(player, sl));
+      souls = this.souls.length - left.length;
+      player.hp += souls;
+      this.souls = left;
+    }
+    return { hit, died, kills, souls };
   }
 
   /** 玩家這一幀疊在步態上面的出招動作（給 zoo.update 的 move）。 */
@@ -283,6 +308,18 @@ export class Fight {
       const s = shots[i];
       o.visible = !!s;
       if (s) o.position.set(s.x, s.y, s.z);
+    });
+
+    // 靈魂。
+    while (this._soulMeshes.length < this.souls.length) {
+      const o = soulMesh(SOUL.r);
+      this.scene.add(o);
+      this._soulMeshes.push(o);
+    }
+    this._soulMeshes.forEach((o, i) => {
+      const sl = this.souls[i];
+      o.visible = !!sl;
+      if (sl) o.position.set(sl.x, sl.y, sl.z);
     });
 
     // 破防的兩圈：套在怪物身體的中間，正對這一幀的鏡頭。
