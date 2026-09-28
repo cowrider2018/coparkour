@@ -31,8 +31,10 @@
               速度從往上換成往下，所以是跳起來前腿前伸、過頂點換成找地板、
               落地那一沉（critter.js 的 airPose）。身體畫得跳起一點點（DASH_HOP）
               讓那個姿勢站得住——只是畫面，碰撞還是地上那一個圓柱。
-     recover  僵直：甩頭（頭左右甩、跟著側過去）、甩尾巴（跟頭反向）、身體
-              左右搖晃（慢一拍、幅度小），一開始最用力、到僵直結束收乾淨。
+     recover  僵直：先低頭 BOW_TIME 秒（頭垂下去、尾巴放低），之後才甩——
+              甩頭（頭左右甩、跟著側過去）、甩尾巴（跟頭反向）、身體左右
+              搖晃（慢一拍、幅度小），一邊甩一邊把頭抬回來，一開始最用力、
+              到僵直結束收乾淨。
    ------------------------------------------------------------------ */
 
 import * as THREE from '../vendor/three.module.js';
@@ -122,23 +124,32 @@ const CROUCH = {
   front: -0.35, hind: -0.50, knee: -0.60, legs: 0.8, w: 1,
 };
 
+/** 僵直的前 BOW_TIME 秒：低頭。0.12 秒垂到底，之後停著。 */
+const BOW = { pitch: 0.15, headPitch: 0.55, tailPitch: -0.25, w: 1 };
+const BOW_TIME = 0.2;
+
 /** 僵直的甩：每一個欄位 [幅度, 每秒幾下, 相位]。尾巴跟頭反向、身體慢一拍。 */
 const SHAKE = {
   headYaw: [0.60, 6, 0], headTilt: [0.25, 6, 0],
   tailYaw: [0.75, 5, Math.PI],
   lean: [0.18, 3, Math.PI], twist: [0.14, 3, 0],
 };
-/** 甩的力道：50 毫秒內甩到最大，前半撐著、後半收到僵直結束。 */
+/** 甩的力道（u 是甩的那一段走到哪，0～1）：頭 10% 甩到最大，前半撐著、後半收到僵直結束。 */
 const shakeEnv = (u) => Math.min(1, u / 0.1) * (1 - u * u);
 
-/** 僵直的關鍵影格：照 SHAKE 每 20 毫秒取一格，最後一格回到原本的樣子。 */
+/**
+ * 僵直的關鍵影格：先低頭，停到 BOW_TIME；之後照 SHAKE 每 20 毫秒取一格，
+ * 低頭的那一份跟著淡掉（頭一邊甩一邊抬回來），最後一格回到原本的樣子。
+ */
 function shakeKeys() {
-  const T = LUNGE.recover, step = 0.02;
-  const keys = [[0, {}]];
-  for (let t = step; t < T - 1e-6; t += step) {
-    const e = shakeEnv(t / T), pose = { pitch: 0.06 * e, w: 1 };
-    for (const [k, [a, hz, ph]] of Object.entries(SHAKE)) pose[k] = a * e * Math.sin(2 * Math.PI * hz * t + ph);
-    keys.push([t, pose, 'lin']);
+  const T = LUNGE.recover, span = T - BOW_TIME, step = 0.02;
+  const keys = [[0, {}], [0.12, BOW, 'out'], [BOW_TIME, BOW, 'lin']];
+  for (let s = step; s < span - 1e-6; s += step) {
+    const u = s / span, e = shakeEnv(u), b = 1 - u * u * (3 - 2 * u);
+    const pose = { w: 1 };
+    for (const k in BOW) if (k !== 'w') pose[k] = BOW[k] * b;
+    for (const [k, [a, hz, ph]] of Object.entries(SHAKE)) pose[k] = (pose[k] || 0) + a * e * Math.sin(2 * Math.PI * hz * s + ph);
+    keys.push([BOW_TIME + s, pose, 'lin']);
   }
   keys.push([T, {}, 'lin']);
   return keys;
