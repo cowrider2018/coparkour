@@ -19,18 +19,12 @@
    每一排鋪下去 HOLD 秒之後開始收：內緣往外緣收，FLASH 秒收到外緣、不見。先鋪的先收，所以尾巴先沒、刀尖最後——一道光從尾巴往刀尖
    收掉，外緣（打得到的最遠處）留到最後。
 
-   第二段例外：那片扇形是立著的，鏡頭通常正好從它的側面看，一條沿著半徑鋪開
-   的帶子只剩一條線。所以第二段的帶子橫過來——寬度沿著扇形的法線、貼著 REACH
-   內側立成一道弧——從玩家背後看是一道正對鏡頭的弧光。帶子的「外緣」（最亮的
-   那一邊）這時候是朝上那一邊。
-
    兩端收成尖：離頭尾不到 END 公尺的地方，帶子往中間收。刀尖現在的位置（頭）
    因此一直是尖的，第三段一整圈頭尾疊在一起的地方也不會有一道切痕。
    ------------------------------------------------------------------ */
 
 import * as THREE from '../vendor/three.module.js';
-import { TRAILS, PIECE, sweepAt, fadeAt, qiAt, along } from './trail.js';
-import { REACH } from './combat.js';
+import { TRAILS, PIECE, sweepAt, fadeAt, qiAt } from './trail.js';
 
 /** 一排橫截面切幾格。 */
 const ACROSS = 4;
@@ -43,10 +37,6 @@ const END = 0.35;
 
 /** 三區的分界（橫截面上從內緣 0 到外緣 1）：內側、中間、外緣那一條白。 */
 const ZONES = [0.45, 0.85];
-
-/** 第二段那一道弧離 REACH 往內多少、最寬多寬（公尺）。 */
-const RISE_IN = 0.06;
-const RISE_W = 0.9;
 
 /** 一排鋪上去之後多久開始收（秒）。 */
 const HOLD = 0.04;
@@ -174,13 +164,7 @@ export class Qi {
   /** 在第 rows 排寫下角度 θ 的橫截面。keep：固定下來（rows 往前一格），不然是頭。 */
   _row(theta, player, keep) {
     if (this.rows >= ROWS) return false;
-    let q = qiAt(this.kind, theta, player, this.tip), { d } = q.b;
-    if (this.kind === 'rise') {
-      /* 第二段橫過來：寬度沿著扇形的法線（刀的方向 × 掃的方向），中心貼著 REACH 內側。 */
-      const t = q.b.t;
-      d = [d[1] * t[2] - d[2] * t[1], d[2] * t[0] - d[0] * t[2], d[0] * t[1] - d[1] * t[0]];
-      q = { ...q, p: along(q.b, REACH - RISE_IN), w: (RISE_W * q.w) / TRAILS.rise.width };
-    }
+    const q = qiAt(this.kind, theta, player, this.tip), { d } = q.b;
     const len = this._last ? this._len + Math.hypot(q.p[0] - this._last[0], q.p[1] - this._last[1], q.p[2] - this._last[2]) : 0;
     const A = this._a;
     for (let j = 0; j <= ACROSS; j++) {
