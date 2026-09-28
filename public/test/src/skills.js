@@ -28,18 +28,18 @@
    範圍攻擊（leap 的那一圈、cone 的那一片）打的是地面上一個狗高以內：玩家的腳比那還高——
    跳起來了——就躲得過。
 
-   碰到就死：跟被咬一樣，玩家死、全部回到站位。玩家無敵的時候（第三段、破防
-   攻擊）碰到不算。
+   碰到扣 5 點血（每一招的 `damage`；BOSS 衝刺咬到是 3，見 combat.js 的 KINDS）。
+   打中人的球就消失。玩家無敵的時候（第三段、破防攻擊）碰到不算。
    ------------------------------------------------------------------ */
 
 import { PHYS, arenaGap, supportInfo } from './walk.js';
 import { FIELD, DOG_H, kindOf } from './combat.js';
 
-/** 每一招的數值。長度一律用狗高量。 */
+/** 每一招的數值。長度一律用狗高量；`damage` 是打中玩家扣幾點血。 */
 export const SKILL = {
-  orb: { windup: 0.75, radius: 0.75 * DOG_H, speed: 6 },
-  leap: { windup: 1.5, air: 0.6, radius: 2.5 * DOG_H },
-  cone: { windup: 1, radius: 4 * DOG_H, half: Math.PI / 6 },
+  orb: { windup: 0.75, radius: 0.75 * DOG_H, speed: 6, damage: 5 },
+  leap: { windup: 1.5, air: 0.6, radius: 2.5 * DOG_H, damage: 5 },
+  cone: { windup: 1, radius: 4 * DOG_H, half: Math.PI / 6, damage: 5 },
   /** 出招後僵直幾秒。 */
   recover: 0.5,
 };
@@ -82,7 +82,7 @@ const CAST = {
     const off = PHYS.radius + S.radius;
     world.shots.push({
       x: m.x + c.dirX * off, y: m.y + S.radius, z: m.z + c.dirZ * off,
-      vx: c.dirX * S.speed, vz: c.dirZ * S.speed, r: S.radius,
+      vx: c.dirX * S.speed, vz: c.dirZ * S.speed, r: S.radius, dmg: S.damage,
     });
     m.cast = null;
   },
@@ -103,14 +103,14 @@ const CAST = {
     m.x = c.tx; m.z = c.tz; m.y = c.ty;
     m.grounded = true;
     m.cast = null;
-    return { shape: 'circle', x: c.tx, y: c.ty, z: c.tz, r: S.radius };
+    return { shape: 'circle', x: c.tx, y: c.ty, z: c.tz, r: S.radius, dmg: S.damage };
   },
 
   cone(m) {
     const c = m.cast, S = SKILL.cone;
     if (c.t < S.windup) return null;
     m.cast = null;
-    return { shape: 'cone', x: m.x, y: m.y, z: m.z, dirX: c.dirX, dirZ: c.dirZ, r: S.radius, half: S.half };
+    return { shape: 'cone', x: m.x, y: m.y, z: m.z, dirX: c.dirX, dirZ: c.dirZ, r: S.radius, half: S.half, dmg: S.damage };
   },
 };
 

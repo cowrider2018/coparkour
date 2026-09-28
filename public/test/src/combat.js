@@ -24,7 +24,7 @@
    有事——傷害是一次一次的攻擊（衝刺，見 LUNGE）：追到 LUNGE.range 以內，
    站著發呆（蓄力）0.25 秒，然後朝那時鎖定的方向衝一下（速度 16、0.25 秒內
    減到 0），衝完再發呆 0.25 秒才回去追。只有衝的那 0.25 秒裡碰到玩家，玩家
-   才死、全部回到站位。小怪與 BOSS 都是。
+   才被咬到、扣血（小怪 1、BOSS 3，見 KINDS 的 `bite` 與下面的「玩家的血」）。
 
    蓄力被打會怎樣看類別（KINDS 的 `steady`）：小怪一打就取消；BOSS 蓄力不會
    被打斷——跟放招的倒數一樣打不退、傷害減半（armored）。
@@ -52,6 +52,11 @@
      跳離  轉完扣 5 點血，玩家往突進的反方向、往上跳下來；同一瞬間怪物被往
            另一邊（突進的方向）推開——只有水平，不往上挑。在地上的怪物是沿著
            地面滑出去、滑到停；在空中被定住的，放開之後帶著這一份水平速度落下。
+
+   ── 玩家的血 ────────────────────────────────────────────────────
+   一開始 LIFE.start（3）顆心。被咬、被 BOSS 的招打到都扣血，扣多少看是哪一下
+   （小怪衝刺 1、BOSS 衝刺 3、BOSS 的其他招 5，見 KINDS 的 `bite` 與 skills.js
+   的 SKILL）；扣到 0 才倒下。挨了一下之後 LIFE.guard 秒不再被打中（見 harm）。
 
    從按下去到跳離之後落地，玩家都是無敵的——整招都貼在怪物身上。飛在空中（被擊退、還沒落地）的怪物碰到玩家不算數。
    空中再挨一下就再擊退一次——每一下都是把速度**換成**擊退的那一份，
@@ -152,15 +157,51 @@ export const FIELD = { arena: ARENA, cols: COLS, doors: {} };
  *
  * 碰撞的身體一樣大（同一個 PHYS 的圓柱）；外觀（同一件毛、BOSS 畫兩倍大）在 monster.js。
  *
+ * `bite` 是衝刺咬到玩家扣幾點血：小怪 1、BOSS 3。
+ *
  * `breakAt` 是破防門檻。現在每一類都是 BREAK_AT，但它是逐類登記的——哪天某一類
  * 要比較硬，改那一筆就好。
  */
 export const BREAK_AT = 8;
 export const KINDS = {
-  minion: { name: '殭屍', hp: 4, speed: 3.4, breakAt: BREAK_AT },
-  boss: { name: 'BOSS', hp: 20, speed: 4, breakAt: BREAK_AT, steady: true, skills: ['orb', 'leap', 'cone'], every: 3 },
-  ghost: { name: '幽靈', hp: 4, speed: 3.4, breakAt: BREAK_AT, fly: true },
+  minion: { name: '殭屍', hp: 4, speed: 3.4, breakAt: BREAK_AT, bite: 1 },
+  boss: { name: 'BOSS', hp: 20, speed: 4, breakAt: BREAK_AT, bite: 3, steady: true, skills: ['orb', 'leap', 'cone'], every: 3 },
+  ghost: { name: '幽靈', hp: 4, speed: 3.4, breakAt: BREAK_AT, bite: 1, fly: true },
 };
+
+/**
+ * 玩家的血。
+ *
+ *   start  一開始（與倒下之後重來）有幾顆心。
+ *   guard  挨了一下之後幾秒不再被打中。衝刺碰著人是好幾幀、球穿過身體也是，不擋
+ *          的話一下會算成好幾下；同一幀被好幾下碰到也只算最重的那一下（呼叫端挑）。
+ *
+ * 血與 guard 記在玩家身上（`p.hp`、`p.guard`）。
+ */
+export const LIFE = { start: 3, guard: 1 };
+
+/** 血補回 LIFE.start、guard 清掉：開局與倒下之後。 */
+export function resetLife(p) {
+  p.hp = LIFE.start;
+  p.guard = 0;
+}
+
+/** guard 倒數。 */
+export function lifeStep(p, dt) {
+  if (p.guard > 0) p.guard = Math.max(0, p.guard - dt);
+}
+
+/**
+ * 玩家挨一下：扣 dmg 點血（不低於 0），開 guard。guard 還開著就不算。
+ *
+ * @returns {boolean} 這一下有沒有扣到
+ */
+export function harm(p, dmg) {
+  if (p.guard > 0) return false;
+  p.hp = Math.max(0, p.hp - dmg);
+  p.guard = LIFE.guard;
+  return true;
+}
 
 /**
  * 會飛的那幾類（`fly`）怎麼動：

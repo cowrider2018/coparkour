@@ -12,14 +12,14 @@
               因為破防攻擊一發動就接管速度。
      （模式自己操控、移動玩家：`breaking` 的時候不操控，`spinning` 的時候不移動）
      resolve  怪物追人、放招、球往前飛，然後才判打中——兩個身體都走完這一幀了，
-              範圍是對著畫面上的位置判的。回報玩家怎麼死的、打死了誰。
-     draw     怪物、攻擊範圍的高亮、BOSS 的預告與球、破防的兩圈、刀。在相機
-              擺好之後（破防的兩圈正對這一幀的鏡頭）。
+              範圍是對著畫面上的位置判的。回報玩家挨了哪一下、倒下沒有、打死了誰。
+     draw     怪物、攻擊範圍的高亮、BOSS 的預告與球、破防的兩圈、刀、頭頂的愛心。
+              在相機擺好之後（破防的兩圈與愛心正對這一幀的鏡頭）。
    ------------------------------------------------------------------ */
 
 import { PHYS, supportInfo } from './walk.js';
 import {
-  FIELD, SWING, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster,
+  FIELD, SWING, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster, harm, lifeStep,
   breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, placeMonster, monsterStep, bites, knock,
   inSlash, inFan, inRing, slashTip, fanFrame, makeCombo, comboStep, invulnerable, cueing,
 } from './combat.js';
@@ -31,6 +31,7 @@ import {
   coneFx, showCone,
 } from './fx.js';
 import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from './skills.js';
+import { Hearts } from './hearts.js';
 
 /** 右上那一行小字：現在在連段的哪裡。 */
 export const PHASE_NAME = {
@@ -38,7 +39,7 @@ export const PHASE_NAME = {
   dash: '破防突進', spin: '破防迴旋', vault: '破防跳離',
 };
 
-/** 玩家怎麼死的 → 給人看的一句話。 */
+/** 玩家挨了哪一下 → 給人看的一句話。 */
 export const DEATH_TEXT = { bitten: '被咬到了', shot: '被球打中了', struck: '被 BOSS 的招打中了' };
 
 export class Fight {
@@ -75,6 +76,9 @@ export class Fight {
     scene.add(this._fx.slash.node, this._fx.fan.node, this._fx.ring.node, this._fx.cue.node);
     /** 這一幀在哪一段，它的範圍打不打得到怪物。第二段指著上一次第一段的末端點。 */
     this._reach = { slash: inSlash, rise: (p, m) => inFan(p, m, this.combo.tip), slam: inRing };
+
+    /** 玩家頭頂的愛心：還剩幾點血。 */
+    this.hearts = new Hearts(scene);
   }
 
   /** 換了動物：刀掛到新那一隻頭上。 */
@@ -170,14 +174,18 @@ export class Fight {
   /**
    * 怪物這一幀，然後判打中。
    *
-   * @returns {{died: null | 'bitten' | 'shot' | 'struck', kills: string[]}}
-   *   died  玩家死了、怎麼死的（DEATH_TEXT 的鍵）。碰到就死：被衝刺咬到、被球打到、
-   *         被範圍攻擊打到；玩家無敵的時候（第三段、破防攻擊）都不算。
+   * @returns {{hit: null | {cause: string, dmg: number}, died: null | string, kills: string[]}}
+   *   hit   玩家這一幀挨了哪一下（cause 是 DEATH_TEXT 的鍵）、扣了幾點血。被衝刺咬到
+   *         扣那一類的 `bite`、被球或範圍攻擊打到扣那一招的 `damage`；同一幀碰到好幾下
+   *         只算最重的那一下。玩家無敵（第三段、破防攻擊）或剛挨過一下（LIFE.guard）
+   *         都不算。
+   *   died  這一下把血扣光了：倒下，怎麼倒的（hit 的 cause）。
    *   kills 這一幀打死的怪物是哪一類（KINDS 的鍵）。
    */
   resolve(dt, player) {
     const combo = this.combo, foes = this.foes;
     const kills = [];
+    lifeStep(player, dt);
     // BOSS 先決定這一幀在不在放招（放招中 monsterStep 讓牠站著），球往前飛。
     const strikes = foes.map(({ m }) => bossStep(m, dt, player, this.world)).filter(Boolean);
     shotsStep(this.world, dt);
@@ -206,13 +214,19 @@ export class Fight {
       this.foes = foes.filter((f) => !dead.has(f.m));
     }
 
-    let died = null;
-    if (!invulnerable(combo)) {
-      if (this.foes.some((f) => bites(player, f.m))) died = 'bitten';
-      else if (this.world.shots.some((s) => shotHits(s, player))) died = 'shot';
-      else if (strikes.some((st) => strikeHits(st, player))) died = 'struck';
+    let hit = null;
+    if (!invulnerable(combo) && !(player.guard > 0)) {
+      const take = (cause, dmg) => { if (!hit || dmg > hit.dmg) hit = { cause, dmg }; };
+      for (const { m } of this.foes) if (bites(player, m)) take('bitten', KINDS[m.kind].bite);
+      for (const s of this.world.shots) if (shotHits(s, player)) take('shot', s.dmg);
+      for (const st of strikes) if (strikeHits(st, player)) take('struck', st.dmg);
+      if (hit) {
+        harm(player, hit.dmg);
+        // 打中人的球就消失。
+        if (hit.cause === 'shot') this.world.shots = this.world.shots.filter((s) => !shotHits(s, player));
+      }
     }
-    return { died, kills };
+    return { hit, died: hit && player.hp <= 0 ? hit.cause : null, kills };
   }
 
   /** 玩家這一幀疊在步態上面的出招動作（給 zoo.update 的 move）。 */
@@ -222,6 +236,9 @@ export class Fight {
   draw(dt, camera, player) {
     const combo = this.combo, fx = this._fx;
     this.blade.update();
+    // 剛挨過一下（guard 還開著）：玩家一閃一閃的，頭頂是剩下的血。
+    this.zoo.root.visible = !(player.guard > 0) || Math.floor(player.guard * 12) % 2 === 0;
+    this.hearts.show(player.hp, player.x, player.y, player.z, camera.quaternion);
     for (const { m, critter } of this.foes) {
       critter.root.position.set(m.x, m.y, m.z);
       critter.setFacing(Math.atan2(m.aimX, m.aimZ));

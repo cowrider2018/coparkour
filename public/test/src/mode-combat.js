@@ -28,7 +28,7 @@ import { makeCam, snapCam, updateCam } from './camera.js';
 import { buildVeil } from './veil.js';
 import { hazeMesh } from './stage.js';
 import { Controls, speedFor, fitView, wardrobe } from './controls.js';
-import { ARENA, COLS, SPAWN, MODES, DEFAULT_MODE, KINDS } from './combat.js';
+import { ARENA, COLS, SPAWN, MODES, DEFAULT_MODE, KINDS, resetLife } from './combat.js';
 import { Fight, DEATH_TEXT } from './fight.js';
 
 const canvas = document.getElementById('view');
@@ -74,14 +74,15 @@ const player = {
 const fight = new Fight(scene, zoo, { respawn: true });
 let mode = DEFAULT_MODE;
 
-/** 被咬過幾次。 */
+/** 倒下（血扣光）過幾次。 */
 let deaths = 0;
 
 const cam = makeCam(0, 0);
 
-/** 回到站位：玩家在中線 2/3、怪物在 1/3，都面向中心，鏡頭在玩家背後。 */
+/** 回到站位：玩家在中線 2/3、怪物在 1/3，都面向中心，鏡頭在玩家背後。血補滿。 */
 function resetStance() {
   const s = SPAWN.player;
+  resetLife(player);
   player.x = s.x; player.y = 0; player.z = s.z;
   player.vx = player.vy = player.vz = 0;
   player.grounded = true;
@@ -154,14 +155,14 @@ function frame(now) {
     }
   }
 
-  /* 怪物與打中。死了雙方回到站位；打死的怪物在牠的重生點重生。 */
-  const { died, kills } = fight.resolve(dt, player);
+  /* 怪物與打中。挨一下扣血；血扣光了雙方回到站位。打死的怪物在牠的重生點重生。 */
+  const { hit, died, kills } = fight.resolve(dt, player);
   for (const k of kills) hud.flash(`打死${KINDS[k].name}，牠在重生點重生`);
   if (died) {
     deaths++;
     resetStance();
-    hud.flash(DEATH_TEXT[died]);
-  }
+    hud.flash(`${DEATH_TEXT[died]}——血扣光了，回到站位`);
+  } else if (hit) hud.flash(`${DEATH_TEXT[hit.cause]}，扣 ${hit.dmg} 點血`);
 
   // 動物
   zoo.root.position.set(player.x, player.y, player.z);
@@ -187,7 +188,7 @@ function frame(now) {
   let line = null;
   if (hudAcc > 0.25) {
     const st = fight.status();
-    line = `${Math.round(fpsN / fpsAcc)} fps ・ 被咬 ${deaths} 次 ・ ${st.foeLine} ・ ${st.phase} ・ `
+    line = `${Math.round(fpsN / fpsAcc)} fps ・ 血 ${player.hp} ・ 倒下 ${deaths} 次 ・ ${st.foeLine} ・ ${st.phase} ・ `
       + `x ${player.x.toFixed(1)} y ${player.y.toFixed(1)} z ${player.z.toFixed(1)}`;
     fpsAcc = 0; fpsN = 0; hudAcc = 0;
   }

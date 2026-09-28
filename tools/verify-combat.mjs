@@ -56,6 +56,9 @@
                     被擊退落回台上；走出台緣會掉下去、落在底下的地板；踏得上
                     一級台階；關著的門擋住、開著的不擋；圓的黑牆量得出球道多長、
                     球飛到它就消失；跳砸落在目標腳下那一塊的頂上，打的是那一層。
+    19. 玩家的血    一開始 3 點；小怪咬 1、BOSS 咬 3、BOSS 的三招各 5（球與範圍攻擊
+                    身上帶著這個數）；扣到 0 為止、不會變負的；挨一下之後 1 秒內
+                    不再扣，所以一次衝刺從頭衝到尾只扣一次。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
@@ -64,7 +67,7 @@ import {
   BREAK_AT, BREAK_WINDOW, broken,
   FLY, BREAK_ATK, breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, armored,
   makeMonster, monsterStep, touching, bites, knock, inSlash, inFan, inRing, slashTip, fanFrame,
-  makeCombo, comboStep, invulnerable, cueing, FIELD,
+  makeCombo, comboStep, invulnerable, cueing, FIELD, LIFE, resetLife, lifeStep, harm,
 } from '../public/test/src/combat.js';
 import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
@@ -1028,6 +1031,51 @@ console.log('18. 場地');
   ok(strike && strike.shape === 'circle' && near(boss.y, 2) && near(strike.y, 2), `跳砸落在台上（y = ${boss.y.toFixed(2)}）`);
   ok(strike && strikeHits(strike, p) && !strikeHits(strike, { ...p, y: 2 + PHYS.height + 0.01 }),
     '打的是台上那一層：站在台上會中、腳離台面超過一個狗高就躲得過');
+}
+
+/* ── 19. 玩家的血 ────────────────────────────────────────────────── */
+console.log('19. 玩家的血');
+{
+  const p = {};
+  resetLife(p);
+  ok(LIFE.start === 3 && p.hp === 3 && p.guard === 0, '一開始 3 點血');
+  ok(KINDS.minion.bite === 1 && KINDS.ghost.bite === 1 && KINDS.boss.bite === 3, '小怪咬 1、BOSS 咬 3');
+  ok(['orb', 'leap', 'cone'].every((k) => SKILL[k].damage === 5), 'BOSS 的三招各 5');
+
+  ok(harm(p, KINDS.minion.bite) && p.hp === 2 && p.guard === LIFE.guard, '被小怪咬到：3 → 2，開 guard');
+  ok(!harm(p, 5) && p.hp === 2, 'guard 還開著：再被打到不扣');
+  for (let t = 0; t < LIFE.guard + DT; t += DT) lifeStep(p, DT);
+  ok(p.guard === 0 && harm(p, 5) && p.hp === 0, 'guard 過了：挨 5 扣到 0，不會變負的');
+  resetLife(p);
+  ok(harm(p, KINDS.boss.bite) && p.hp === 0, '滿血被 BOSS 咬到一下：3 → 0，倒下');
+
+  // 一次衝刺從頭衝到尾：站著不動的人只扣一次。
+  const q = { ...body(0, 0), vx: 0, vy: 0, vz: 0, grounded: true };
+  resetLife(q);
+  const m = makeMonster({ kind: 'minion', x: 0, z: -3, yaw: 0 });
+  let bitFrames = 0;
+  for (let t = 0; t < 1.5; t += DT) {
+    lifeStep(q, DT);
+    monsterStep(m, DT, q);
+    if (bites(q, m)) { bitFrames++; harm(q, KINDS[m.kind].bite); }
+  }
+  ok(bitFrames > 1 && q.hp === 2, `衝刺碰著人 ${bitFrames} 幀，只扣 1 點（剩 ${q.hp}）`);
+
+  // 球與範圍攻擊身上帶著這一招的傷害。rng 挑招：0 → orb、0.5 → leap、0.9 → cone。
+  const boss = makeMonster({ kind: 'boss', x: 0, z: -4, yaw: 0 });
+  const tgt = { ...body(0, 0), vx: 0, vy: 0, vz: 0, grounded: true };
+  const dmgOf = (pick) => {
+    const w = makeWorld();
+    placeMonster(boss);
+    boss.castT = 0;
+    for (let t = 0; t < 3; t += DT) {
+      const st = bossStep(boss, DT, tgt, w, () => pick);
+      if (st) return st.dmg;
+      if (w.shots.length) return w.shots[0].dmg;
+    }
+    return null;
+  };
+  ok(dmgOf(0) === 5 && dmgOf(0.5) === 5 && dmgOf(0.9) === 5, '球、跳砸、扇形打出來都帶著 5');
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');
