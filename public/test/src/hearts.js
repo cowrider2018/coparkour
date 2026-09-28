@@ -18,22 +18,25 @@ const LIFT = 1.55;
 
 const INK_CSS = `#${INK.toString(16).padStart(6, '0')}`;
 
-/** 心形的外框：參數式的心形，在 64×64 的格子裡。 */
+/**
+ * 心形的外框，在 64×64 的格子裡：上面兩個圓的瓣，兩側往外鼓著收到底下一個圓的
+ * 尖——側邊的控制點都在弦的外側，所以整條邊是凸的，沒有往裡凹的地方。
+ */
 function heartPath(g) {
   g.beginPath();
-  for (let i = 0; i <= 64; i++) {
-    const t = (i / 64) * Math.PI * 2;
-    const x = 16 * Math.sin(t) ** 3;
-    const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
-    const px = 32 + x * 1.7, py = 29 - y * 1.7;
-    if (i) g.lineTo(px, py); else g.moveTo(px, py);
-  }
+  g.moveTo(29, 55.5);
+  g.bezierCurveTo(20, 50, 7.5, 40, 7.5, 25);
+  g.arc(20, 24.5, 12.5, Math.PI, Math.PI * 2 - 0.55);
+  g.arc(44, 24.5, 12.5, Math.PI + 0.55, Math.PI * 2);
+  g.bezierCurveTo(56.5, 40, 44, 50, 35, 55.5);
+  g.quadraticCurveTo(32, 58.5, 29, 55.5);
   g.closePath();
 }
 
 /**
  * 一顆心的圖（128 px 畫 64 格）。
- *   滿的  紅色、墨線描邊。
+ *   滿的  紅色；右下沿著邊一層深一點的弧形陰影（整顆心往左上縮一點之後剩下的那
+ *         一圈），看起來是鼓的；細的墨線描邊。
  *   空的  半透明的深色，一樣的描邊——扣掉的血。
  */
 function heartTexture(full) {
@@ -41,10 +44,27 @@ function heartTexture(full) {
   c.width = c.height = 128;
   const g = c.getContext('2d');
   g.scale(2, 2);
+  g.lineJoin = 'round';
   heartPath(g);
-  g.fillStyle = full ? '#e8403a' : 'rgba(43, 35, 32, 0.45)';
-  g.fill();
-  g.lineWidth = 5;
+  if (full) {
+    g.save();
+    g.clip();
+    g.fillStyle = '#b8262a';
+    g.fillRect(0, 0, 64, 64);
+    g.translate(-2.2, -2.4);
+    g.translate(32, 32);
+    g.scale(0.94, 0.94);
+    g.translate(-32, -32);
+    heartPath(g);
+    g.fillStyle = '#e8403a';
+    g.fill();
+    g.restore();
+  } else {
+    g.fillStyle = 'rgba(43, 35, 32, 0.45)';
+    g.fill();
+  }
+  heartPath(g);
+  g.lineWidth = 2.2;
   g.strokeStyle = INK_CSS;
   g.stroke();
   const tex = new THREE.CanvasTexture(c);
