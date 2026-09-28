@@ -1,12 +1,12 @@
-/* ── tools/verify-test-area.mjs ──────────────────────────────────────
-   /test-area/ 的離線驗證。
+/* ── tools/verify-terrain.mjs ──────────────────────────────────────
+   /test/?mode=terrain 的離線驗證。
 
    這一頁的設計規則有三條是「用眼睛看不出來有沒有壞」的：
 
      1. 中心夠空曠   每個區塊中央那片空地上，每一格的支撐高度都必須等於
                      鋪面的高度，而且站在上面不會被任何碰撞盒推開。
                      少一塊鋪面、多一顆會絆腳的大石頭，這一項就會紅。
-     2. 走得到       從出生點真的走到中心去——用的是 public/test-area/
+     2. 走得到       從出生點真的走到中心去——用的是 public/test/
                      src/walk.js 那一份物理，不是另寫一份。路上任何一個
                      看不見的盒子都會讓狗卡住。
      3. 烘焙接上了    部位表量到了、畫的就是烘出來的幾何、墨線那一推只
@@ -61,24 +61,24 @@
                      圓的（推到對角不會比推直的快 41%）也一樣：看不出來，
                      只有跑起來覺得斜著比較快。
 
-   跑法：node tools/verify-test-area.mjs
+   跑法：node tools/verify-terrain.mjs
    ------------------------------------------------------------------ */
 
-import * as THREE from '../public/test-area/vendor/three.module.js';
-import { buildRuins, BLOCKS, DOORS, PITCH } from '../public/test-area/src/blocks.js';
+import * as THREE from '../public/test/vendor/three.module.js';
+import { buildRuins, BLOCKS, DOORS, PITCH } from '../public/test/src/blocks.js';
 import {
   PHYS, SLIDE, APEX, solveXZ, supportAt, supportInfo, roundTop, roundSin, portalAt, portalDrift, portalGap, REPEL,
   steer, slideDrift, slideAccel, arenaGap, clampArena, boomLimit, BLOCK_TOP, TRIP, MOUNT,
-} from '../public/test-area/src/walk.js';
-import { VEIL, buildVeil, outline } from '../public/test-area/src/veil.js';
-import { toonVC, toon, inkLine, BAND_EDGE, BAND_KEY } from '../public/test-area/src/palette.js';
-import { SURF, SURF_DEF, TEX_N, MOSS, surfacePixels, mossAt } from '../public/test-area/src/surface.js';
-import { stone } from '../public/test-area/src/geom.js';
-import { CAM, makeCam, updateCam } from '../public/test-area/src/camera.js';
+} from '../public/test/src/walk.js';
+import { VEIL, buildVeil, outline } from '../public/test/src/veil.js';
+import { toonVC, toon, inkLine, BAND_EDGE, BAND_KEY } from '../public/test/src/palette.js';
+import { SURF, SURF_DEF, TEX_N, MOSS, surfacePixels, mossAt } from '../public/test/src/surface.js';
+import { stone } from '../public/test/src/geom.js';
+import { CAM, makeCam, updateCam } from '../public/test/src/camera.js';
 import { readFileSync } from 'node:fs';
-import { loadZoo, TURN_RATE } from '../public/test-area/src/critter.js';
-import { Pad } from '../public/test-area/src/pad.js';
-import { railTier } from '../public/test-area/src/hud.js';
+import { loadZoo, TURN_RATE } from '../public/test/src/critter.js';
+import { Pad } from '../public/test/src/pad.js';
+import { railTier } from '../public/test/src/hud.js';
 
 let fails = 0;
 const ok = (cond, label, detail = '') => {
@@ -690,7 +690,7 @@ head('圓的東西是圓的');
 
 head('圓頂上站不住');
 /* 滑的規則（slideDrift／slideAccel）跟頁面讀的是同一份，這裡只是照
-   main.js 那一套把它積起來——不給任何輸入，因為驗的正是「不操作會
+   mode-terrain.js 那一套把它積起來——不給任何輸入，因為驗的正是「不操作會
    怎樣」。 */
 {
   const CS = R.colliders;
@@ -729,7 +729,7 @@ head('圓頂上站不住');
   ok(badFall.length === 0, '不可踩的圓頂，正頂上也站不住',
     `${badFall.length} 個站得住`);
 
-  /** 放手，照 main.js 那一套滾。回報什麼時候離開 `c`、最快滑多快。 */
+  /** 放手，照 mode-terrain.js 那一套滾。回報什麼時候離開 `c`、最快滑多快。 */
   const sim = (c, d0, seconds = 6) => {
     const dt = 1 / 60;
     const x0 = c.x + d0, z0 = c.z;
@@ -1145,7 +1145,7 @@ head('整片走一遍：沒有鑽得進去的空心，也沒有回不來的地�
 
 head('坑都有出口');
 /* 坑（開著的井）底下沒有路上來，出口是感測區：碰到就被送走。兩件事要成立：
-   每一個坑的坑底都在某一個感測區裡（不然掉下去就只剩按 R），以及用 main.js
+   每一個坑的坑底都在某一個感測區裡（不然掉下去就只剩按 R），以及用 mode-terrain.js
    那一套垂直積分真的從坑口掉下去，會在幾秒內碰到它、被送到一個站得住的地方。
    坑底的感測區不屬於任何一組門（門關著的話掉下去就出不來），所以這裡不給門的狀態。 */
 {
@@ -1192,7 +1192,7 @@ head('傳送點');
 {
   const ALL = Object.fromEntries(Object.keys(R.doors).map((g) => [g, true]));
   const centerOf = (p) => (p.shape === 'box' ? [(p.x0 + p.x1) / 2, (p.z0 + p.z1) / 2] : [p.x, p.z]);
-  /** 朝 target 走，碰到感測區就停（跟 main.js 一樣，每一步問一次）。 */
+  /** 朝 target 走，碰到感測區就停（跟 mode-terrain.js 一樣，每一步問一次）。 */
   const walkInto = (from, target, doors, seconds = 20) => {
     const dt = 1 / 60;
     const p = { x: from[0], y: from[1] + 0.2, z: from[2], vy: 0 };
@@ -1927,7 +1927,7 @@ for (const id of zoo.models) {
    移動不等身體轉過去（walk.js 的 steer），所以轉身純粹是「讓人看清楚
    牠朝哪」，而那件事越快越好——這裡是遊戲那邊 TURN_RATE 的兩倍。
 
-   另一半是「停下來之後還會轉完最後那一下」：main.js 每幀都送朝向、而且
+   另一半是「停下來之後還會轉完最後那一下」：mode-terrain.js 每幀都送朝向、而且
    送的是最後一次的操控方向，所以放開手、人煞停了，身體還會繼續轉到那個
    方向才停。驗的是 update() 在 speed = 0 的時候照樣會轉。 */
 {
@@ -2253,7 +2253,7 @@ head('生物那張表的 RWD');
   ok(railTier(96) === 'narrow' && railTier(111) === 'narrow', '96–111 是最窄的那一級');
   ok(railTier(112) === 'mid' && railTier(149) === 'mid', '112–149 是中間那一級');
   ok(railTier(150) === 'wide' && railTier(190) === 'wide', '150 以上是最寬的那一級');
-  /* 直向的面板橫躺在上帶裡、有半個畫面寬，所以 main.js 餵一個大數字進來
+  /* 直向的面板橫躺在上帶裡、有半個畫面寬，所以 mode-terrain.js 餵一個大數字進來
      當「最寬」——那一級才會把毛色的名字放出來。 */
   ok(railTier(999) === 'wide', '直向（面板橫躺）算最寬的那一級');
 

@@ -1,7 +1,7 @@
-/* ── combat-area/src/main.js ─────────────────────────────────────────
-   /combat-area/ 這一頁的組裝與操作。
+/* ── test/src/mode-combat.js ────────────────────────────────────────
+   /test/?mode=combat：戰鬥模式的組裝與操作。
 
-   試玩場（/test-area/）的 main.js 拿掉地形之後剩下的東西：一塊黑牆圍起來
+   地形模式（mode-terrain.js） 拿掉地形之後剩下的東西：一塊黑牆圍起來
    的空地、那隻動物、第三人稱鏡頭、手把。走路、跳、鏡頭、手把的規則都
    不在這裡，是直接 import 試玩場那幾支——這一頁只多了戰鬥（combat.js）
    與一隻怪物（monster.js）。
@@ -17,15 +17,15 @@
      BOSS 技能 預告 2（淺色 + 亮色）；飛著的球每顆 1
    ------------------------------------------------------------------ */
 
-import * as THREE from '../../test-area/vendor/three.module.js';
-import { toon } from '../../test-area/src/palette.js';
-import { SURF, surfaceTextures } from '../../test-area/src/surface.js';
-import { loadZoo } from '../../test-area/src/critter.js';
-import { Pad } from '../../test-area/src/pad.js';
-import { Hud } from '../../test-area/src/hud.js';
-import { PHYS, solveXZ, supportInfo, steer } from '../../test-area/src/walk.js';
-import { CAM, makeCam, snapCam, updateCam } from '../../test-area/src/camera.js';
-import { buildVeil } from '../../test-area/src/veil.js';
+import * as THREE from '../vendor/three.module.js';
+import { toon } from './palette.js';
+import { SURF, surfaceTextures } from './surface.js';
+import { loadZoo } from './critter.js';
+import { Pad } from './pad.js';
+import { Hud } from './hud.js';
+import { PHYS, solveXZ, supportInfo, steer } from './walk.js';
+import { CAM, makeCam, snapCam, updateCam } from './camera.js';
+import { buildVeil } from './veil.js';
 import { lookInfo } from '../../src/cat/looks.js';
 import {
   ARENA, COLS, SPAWN, MODES, DEFAULT_MODE, SWING, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster,
@@ -65,7 +65,7 @@ ground.position.y = -0.06;
 scene.add(ground);
 
 /* ── 黑牆 ────────────────────────────────────────────────────────
-   veil.js 吐的那一份，材質照試玩場 main.js 的 hazeMesh：純黑、透明度在
+   veil.js 吐的那一份，材質照 mode-terrain.js 的 hazeMesh：純黑、透明度在
    頂點色的第四個分量、單面朝內。 */
 {
   const v = buildVeil([ARENA]);

@@ -1,4 +1,4 @@
-/* ── combat-area/src/fx.js ───────────────────────────────────────────
+/* ── test/src/fx.js ───────────────────────────────────────────
    攻擊範圍的高亮（主角出招的動作在 moves.js）。出招就是把那一段的範圍畫成一片半透明的
    亮色，亮 SWING 秒、邊亮邊淡。
 
@@ -7,13 +7,13 @@
    不是「看起來差不多」的另一個形狀。
 
    每一片的原點在玩家的腳下、+Z 是正前方——掛在一個 Group 上，擺位置與
-   轉 yaw 就是 main.js 每幀做的那兩件事（Object3D 的 rotation.y = yaw
+   轉 yaw 就是 mode-combat.js 每幀做的那兩件事（Object3D 的 rotation.y = yaw
    剛好把 +Z 轉到 (sin yaw, 0, cos yaw)，也就是 aim 的方向）。
    ------------------------------------------------------------------ */
 
-import * as THREE from '../../test-area/vendor/three.module.js';
-import { PHYS } from '../../test-area/src/walk.js';
-import { toon } from '../../test-area/src/palette.js';
+import * as THREE from '../vendor/three.module.js';
+import { PHYS } from './walk.js';
+import { toon } from './palette.js';
 import { REACH, FAN, SLASH_HALF } from './combat.js';
 
 const SEG = 32;

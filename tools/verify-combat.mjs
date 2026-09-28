@@ -1,5 +1,5 @@
-/* ── tools/verify-combat-area.mjs ────────────────────────────────────
-   /combat-area/ 的離線驗證。
+/* ── tools/verify-combat.mjs ────────────────────────────────────
+   /test/?mode=combat 的離線驗證。
 
    戰鬥的規則全都是「看不出來有沒有壞」的那一種：範圍差十度、視窗差
    0.1 秒、擊退落地前碰到算不算——畫面上都是一片亮光與一隻飛起來的狗，
@@ -54,16 +54,16 @@
                     推開；在空中被擊退的時候破防攻擊一樣瞄得到。
    ------------------------------------------------------------------ */
 
-import { PHYS } from '../public/test-area/src/walk.js';
+import { PHYS } from '../public/test/src/walk.js';
 import {
   MODES, DEFAULT_MODE, LUNGE, lunging, ARENA, SPAWN, DOG_H, REACH, SWING, REST, KNOCK, KNOCK_SCALE, FAN, WINDOW, KINDS, DAMAGE, hurt, placeMonster,
   BREAK_AT, BREAK_WINDOW, broken,
   FLY, BREAK_ATK, breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, armored,
   makeMonster, monsterStep, touching, bites, knock, inSlash, inFan, inRing, slashTip, fanFrame,
   makeCombo, comboStep, invulnerable, cueing,
-} from '../public/combat-area/src/combat.js';
-import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from '../public/combat-area/src/skills.js';
-import { steer } from '../public/test-area/src/walk.js';
+} from '../public/test/src/combat.js';
+import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from '../public/test/src/skills.js';
+import { steer } from '../public/test/src/walk.js';
 
 let fails = 0;
 const ok = (cond, msg) => {

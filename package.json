@@ -20,8 +20,8 @@
     "verify:wear": "node tools/verify-wear.mjs",
     "verify:layer": "node tools/verify-layer.mjs",
     "verify:showcase": "node tools/verify-showcase.mjs",
-    "verify:test-area": "node tools/verify-test-area.mjs",
-    "verify:combat-area": "node tools/verify-combat-area.mjs"
+    "verify:terrain": "node tools/verify-terrain.mjs",
+    "verify:combat": "node tools/verify-combat.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

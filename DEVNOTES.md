@@ -7,8 +7,8 @@
 碰撞體標錯了畫面上一模一樣，只有跑起來覺得「這裡怪怪的」，而怪在哪沒有人
 說得出來。
 
-適用範圍是 `public/test-area/`（試玩場）。驗證是
-`npm run verify:test-area`，加完東西一定要跑。
+適用範圍是 `public/test/`（試玩場，`?mode=terrain`）。驗證是
+`npm run verify:terrain`，加完東西一定要跑。
 
 ---
 
@@ -114,7 +114,7 @@
 
 ## 四、不會有人提醒你的幾個數字
 
-全部從 `PHYS` 算出來（`public/test-area/src/walk.js`），改了跳躍就全部跟著變，
+全部從 `PHYS` 算出來（`public/test/src/walk.js`），改了跳躍就全部跟著變，
 所以**不要把它們抄成常數**，要用就 import。
 
 | | 值 | 意思 |
@@ -263,7 +263,7 @@
 它同時管石頭頂面的苔與苔叢，所以新零件要撒苔叢一律呼叫 `mossTuft`（它自己
 看苔量），不要自己 `add` 一塊綠色的東西——那一塊不會跟著苔量走。
 
-`/test-area/?surf=0` 關掉紋路（著色器不接、貼圖不算），其他一模一樣。同一台
+`/test/?mode=terrain&surf=0` 關掉紋路（著色器不接、貼圖不算），其他一模一樣。同一台
 手機開關各看一次 fps，差的就是紋路的成本。
 
 ---
@@ -271,7 +271,7 @@
 ## 八、加完就跑驗證
 
 ```bash
-npm run verify:test-area
+npm run verify:terrain
 ```
 
 它會踩過每一片空地、從每個出生點走到中心、把走得到的地方淹一遍、掃過每一塊石頭底下有沒有東西

@@ -3,25 +3,48 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-<title>試打場</title>
+<title>試玩場</title>
 <meta name="theme-color" content="#1e1810" />
 <meta name="robots" content="noindex" />
 <!--
-  試打場：戰鬥系統的試做區。
+  試玩場：城堡遺跡、遊戲的那幾隻動物、戰鬥系統。一頁幾個模式，網址後綴選：
 
-  ── 它是 /test-area/ 拿掉地形之後剩下的東西 ─────────────────────
-  一塊被黑牆圍起來的方形空地，沒有任何結構。走路、跳、鏡頭、手把、動物
-  全部是試玩場那一套——不是複製過來的，是直接 import 那幾支檔案
-  （../test-area/src/ 的 walk.js、camera.js、critter.js、pad.js、hud.js、
-  veil.js），所以那邊調了手感，這邊自己跟著變。
+    ?mode=terrain  地形：四個城堡遺跡關卡區塊，走上去看看（src/mode-terrain.js）
+    ?mode=combat   戰鬥：一塊黑牆圍起來的空地，試打怪物（src/mode-combat.js）
 
-  這一頁新寫的只有戰鬥：src/combat.js 是規則（node 驗得動，見
-  tools/verify-combat-area.mjs），src/main.js 是組裝。
+  選模式的是 src/boot.js：它讀網址、拿掉不屬於這個模式的面板內容（標了
+  `data-for` 的元素），再載入那個模式的主程式。三個模式共用同一份走路、
+  鏡頭、手把、動物——都在 src/ 底下，不是複製的。
 
-  版面、面板、底板照抄試玩場的 index.html；右邊那塊面板從「地形」換成
-  戰鬥的狀態與按鍵。
+  ── 版面就是遊戲的手把模式 ──────────────────────────────────────
+  橫向時兩側各一根直欄：上半段是面板（左邊選生物、右邊選地形），下半段是
+  操作元件（左搖桿、右跳躍），中間那一整片永遠留給遊戲。直向時改成上下
+  兩條橫帶。底板、髮絲線、面板卡片、幾何值全部照搬 styles.css 與 pad.js
+  ——rail / barT / barB / ctrl 由 src/pad.js 算、各模式的主程式寫進 CSS 變數，
+  所以 DOM 的面板跟畫布上的搖桿永遠對齊在同一條列裡。
 
-  網址：/combat-area/
+  ── 這一頁是獨立的計畫，不是遊戲的一部分 ────────────────────────
+  關卡是它自己的一套幾何與材質，用 three.js（vendor/ 底下那一份，跟著
+  Workers Static Assets 一起送出去，不打 CDN）。分階著色的做法抄自
+  src/cat/cat.js——石頭分五階（斜面多，三階會把倒角與柱稜壓成一塊平色），
+  狗仍然是牠自己的三階。墨線只描輪廓，顏色是同一個 43,35,32。
+
+  但動物不是重畫的，是遊戲那幾隻本人：assets/cat.bin 經過遊戲自己的
+  src/cat/species.js（貓、立耳犬、垂耳犬）與 src/cat/wear.js（漁夫帽），
+  23 根骨頭的剛體骨架與 src/cat/pose.js 的對角步、彈簧尾巴照原樣跑，
+  連 src/cat/shape.js 的圓角方形都跟過來了——部位由它自己的 measureShapes
+  量，造型在載入時烘成每個部位一顆超橢球，從任何方向看都是圓角方形。沒
+  跟過來的是那台正交側視相機與 depthRange 的分段遮擋，理由見
+  src/critter.js。
+
+  操作元件也是遊戲那一套：src/pad.js 是 public/src/pad.js 的搬移，
+  水的配方（blobPath／fillLiquid／waveAt／tint）與彈簧常數都是原文，
+  唯一的差別是軌道從膠囊變成圓的——這一頁是 3D，要八個方向。
+
+  想細看動物就把鏡頭拉近再繞著轉：中間那片畫面拖曳＝轉視角、滾輪或
+  雙指＝縮放。沒有另外的觀賞模式。
+
+  網址：/test/?mode=terrain、/test/?mode=combat
 -->
 <style>
   :root {
@@ -280,7 +303,10 @@
 <div class="rail" id="railB"></div>
 <canvas id="pad"></canvas>
 
-<div id="boot"><div><b>正在放狗…</b><br />cat.bin 那三隻動物，外加兩隻綠的、一隻紫的</div></div>
+<div id="boot">
+  <div data-for="terrain"><b>正在砌城堡…</b><br />四個區塊約三十萬個三角形，外加 cat.bin 那三隻動物</div>
+  <div data-for="combat"><b>正在放狗…</b><br />cat.bin 那三隻動物，外加兩隻綠的、一隻紫的</div>
+</div>
 
 <section class="panel" id="creatures">
   <h2>生物<span id="look-name"></span></h2>
@@ -289,11 +315,17 @@
 </section>
 
 <section class="panel" id="terrains">
-  <h2>陣容</h2>
+  <h2><span data-for="terrain">地形</span><span data-for="combat">陣容</span></h2>
   <div id="terrain"></div>
   <div id="terrain-hint"></div>
-  <div id="rules">怪物碰到你不會怎樣，但追到 1.8 公尺內會停下來蓄力 0.25 秒再衝 2 公尺，衝的時候碰到才會死；衝完會再發呆 0.25 秒。小怪蓄力時一打就斷，BOSS 不會。殭屍（綠色，血 4）會一直追過來；幽靈（半透明，血 4）也一直追，但會飛，你跳起來牠就飛上來，被打飛會停在半空；BOSS（兩倍大的殭屍，血 20）走得比較快，但每 3 秒會停下來隨機放一招：地上出現一條紅帶，0.75 秒後沿著它射出一顆球；或是你腳下出現紅圈，1.5 秒後牠跳過來砸那一整圈；或是牠面前出現紅色扇形，1 秒後打那一整片（這兩招跳起來都躲得過）。牠預告的時候打不退、傷害減半，只有破防攻擊打斷得了；出完招會僵住 0.5 秒，那是反擊的時候。被咬到、被打到都會全部回到站位重來。第一、二、三擊各扣 1、3、2；血扣光就死，在牠的重生點重生（你留在原地）。累積 8 點傷害會破防（牠身上出現一圈縮小的亮圓），亮圓消失前按跳（在空中也可以）是破防攻擊，扣 5。靠近到打得到就會自動出第一擊；腳下的藍圈亮著的時候按跳接下一擊（第一擊後 0.25～0.75 秒是第二擊，第二擊之後落地前是第三擊）。</div>
-  <div id="keys">
+  <div id="rules" data-for="combat">怪物碰到你不會怎樣，但追到 1.8 公尺內會停下來蓄力 0.25 秒再衝 2 公尺，衝的時候碰到才會死；衝完會再發呆 0.25 秒。小怪蓄力時一打就斷，BOSS 不會。殭屍（綠色，血 4）會一直追過來；幽靈（半透明，血 4）也一直追，但會飛，你跳起來牠就飛上來，被打飛會停在半空；BOSS（兩倍大的殭屍，血 20）走得比較快，但每 3 秒會停下來隨機放一招：地上出現一條紅帶，0.75 秒後沿著它射出一顆球；或是你腳下出現紅圈，1.5 秒後牠跳過來砸那一整圈；或是牠面前出現紅色扇形，1 秒後打那一整片（這兩招跳起來都躲得過）。牠預告的時候打不退、傷害減半，只有破防攻擊打斷得了；出完招會僵住 0.5 秒，那是反擊的時候。被咬到、被打到都會全部回到站位重來。第一、二、三擊各扣 1、3、2；血扣光就死，在牠的重生點重生（你留在原地）。累積 8 點傷害會破防（牠身上出現一圈縮小的亮圓），亮圓消失前按跳（在空中也可以）是破防攻擊，扣 5。靠近到打得到就會自動出第一擊；腳下的藍圈亮著的時候按跳接下一擊（第一擊後 0.25～0.75 秒是第二擊，第二擊之後落地前是第三擊）。</div>
+  <div id="keys" data-for="terrain">
+    <kbd>WASD</kbd>移動 <kbd>⇧</kbd>衝刺 <kbd>空白</kbd>跳<br />
+    <kbd>拖曳</kbd>轉視角 <kbd>滾輪</kbd>縮放 <kbd>1</kbd>–<kbd>6</kbd>地形<br />
+    <kbd>R</kbd>回出生點 <kbd>O</kbd>開關門 <kbd>H</kbd>帽子 <kbd>C</kbd>毛色 <kbd>X</kbd>換動物<br />
+    <kbd>P</kbd>傳送範圍
+  </div>
+  <div id="keys" data-for="combat">
     <kbd>WASD</kbd>移動 <kbd>⇧</kbd>衝刺 <kbd>空白</kbd>跳／連段<br />
     <kbd>拖曳</kbd>轉視角 <kbd>滾輪</kbd>縮放<br />
     <kbd>R</kbd>重新站位 <kbd>1</kbd>–<kbd>4</kbd>陣容 <kbd>H</kbd>帽子 <kbd>C</kbd>毛色 <kbd>X</kbd>換動物
@@ -303,6 +335,6 @@
 
 <div id="toast"></div>
 
-<script type="module" src="./src/main.js"></script>
+<script type="module" src="./src/boot.js"></script>
 </body>
 </html>

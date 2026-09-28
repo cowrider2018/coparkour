@@ -1,4 +1,4 @@
-/* ── combat-area/src/blade.js ────────────────────────────────────────
+/* ── test/src/blade.js ────────────────────────────────────────
    主角咬著的那把刀。
 
    橫咬在嘴裡：刀柄從左頰（模型的 +X）伸出去，刀身從右頰（−X）伸出去，
@@ -22,8 +22,8 @@
    殼。刀每一塊都是凸的（稜柱、方盒），所以外推不會在角上裂開。
    ------------------------------------------------------------------ */
 
-import * as THREE from '../../test-area/vendor/three.module.js';
-import { toon, INK } from '../../test-area/src/palette.js';
+import * as THREE from '../vendor/three.module.js';
+import { toon, INK } from './palette.js';
 import { Rig } from '../../src/cat/rig.js';
 
 /* 尺寸，模型單位（狗的模型約 4.2 單位高 = 1 公尺，1 單位約 24 公分）。

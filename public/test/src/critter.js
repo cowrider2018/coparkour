@@ -1,4 +1,4 @@
-/* ── test-area/src/critter.js ────────────────────────────────────────
+/* ── test/src/critter.js ────────────────────────────────────────
    遊戲的那幾隻動物，本人，跑在 three.js 裡。
 
    `public/assets/cat.bin` 一份檔，經過遊戲自己的 `species.js`：貓、
@@ -457,7 +457,7 @@ export async function loadZoo(opts = {}) {
  * 三隻動物與「現在是哪一隻」。
  *
  * 對外的介面跟一隻動物一樣（`update`／`setFacing`／`setHat`…），因為
- * main.js 不該知道有幾隻——它只有一個角色在跑。
+ * mode-terrain.js 不該知道有幾隻——它只有一個角色在跑。
  */
 export class Zoo {
   constructor(roster, opts = {}) {
@@ -1255,7 +1255,7 @@ export class Critter {
    *
    * 要知道視窗多高才算得出來：墨線是在「y 正規化的螢幕座標」裡推的，
    * 那個空間的 y 從 −1 到 +1 橫跨整個畫面高，所以一個像素是 2/height。
-   * main.js 在每次 resize 時叫一次。
+   * mode-terrain.js 在每次 resize 時叫一次。
    */
   setInkPx(px, viewportHeight) {
     this._inkPx = px;

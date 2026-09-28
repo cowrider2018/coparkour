@@ -1,4 +1,4 @@
-/* ── combat-area/src/monster.js ──────────────────────────────────────
+/* ── test/src/monster.js ──────────────────────────────────────
    怪物的外觀：立耳犬，紅眼睛。一個系列一件毛，系列裡靠體型分：
 
      minion  殭屍：純綠色，一般大小。
@@ -22,8 +22,8 @@
    所以這裡的數字就是畫面上看到的那個顏色，不必先轉。
    ------------------------------------------------------------------ */
 
-import * as THREE from '../../test-area/vendor/three.module.js';
-import { Critter } from '../../test-area/src/critter.js';
+import * as THREE from '../vendor/three.module.js';
+import { Critter } from './critter.js';
 
 /** 毛色：body 身上、face 鼻子與嘴。 */
 const ZOMBIE = { body: [0.24, 0.80, 0.22], face: [0.08, 0.36, 0.08] };
@@ -44,7 +44,7 @@ const SEE_THROUGH_ORDER = 5;
 /**
  * 做一隻怪物的外觀。借玩家那個 Zoo 已經讀好的立耳犬資料，不再讀一次 cat.bin。
  *
- * @param {import('../../test-area/src/critter.js').Zoo} zoo
+ * @param {import('./critter.js').Zoo} zoo
  * @param {string} kind KINDS 的鍵
  * @returns {Critter}
  */

@@ -1,9 +1,9 @@
-/* ── combat-area/src/combat.js ───────────────────────────────────────
+/* ── test/src/combat.js ───────────────────────────────────────
    試打場的規則：場地、站位、怪物、攻擊。
 
-   跟 test-area 的 walk.js 一樣是「規則」而不是「畫面」：這裡只算數字，
-   套到 three 上是 main.js 的事。分出來是因為它有兩個使用者——這一頁，
-   以及 tools/verify-combat-area.mjs。
+   跟 walk.js 一樣是「規則」而不是「畫面」：這裡只算數字，
+   套到 three 上是 mode-combat.js 的事。分出來是因為它有兩個使用者——這一頁，
+   以及 tools/verify-combat.mjs。
 
    ── 場地 ────────────────────────────────────────────────────────
    一塊方形空地，外圈一道黑牆，沒有任何結構。黑牆就是試玩場那一道
@@ -72,7 +72,7 @@
              高度在身高中間。
    ------------------------------------------------------------------ */
 
-import { PHYS, solveXZ, steer, clampArena } from '../../test-area/src/walk.js';
+import { PHYS, solveXZ, steer, clampArena } from './walk.js';
 
 /** 狗有多高。攻擊的長度都用它量，所以跟物理的身體是同一個數字。 */
 export const DOG_H = PHYS.height;
@@ -118,7 +118,7 @@ export const SPAWN = {
 };
 
 /**
- * 碰撞清單：只有黑牆那一筆。欄位跟 test-area 的 geom.js `bound()` 登記的
+ * 碰撞清單：只有黑牆那一筆。欄位跟 geom.js `bound()` 登記的
  * 一樣（`kind: 'bound'` 加上外接盒），所以 solveXZ 與鏡頭的 boomLimit
  * 不必認得這一頁。
  */

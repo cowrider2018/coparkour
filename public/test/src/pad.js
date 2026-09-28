@@ -1,4 +1,4 @@
-/* ── test-area/src/pad.js ────────────────────────────────────────────
+/* ── test/src/pad.js ────────────────────────────────────────────
    螢幕手把，照搬遊戲的那一套。
 
    來源是 `public/src/pad.js`：橫向的時候兩側各一根直欄，上半段是儀表板、
@@ -9,7 +9,7 @@
             rail = clamp(min(W·0.155, H·0.44), 96, 190)、
             iw = min(rail − 18, 168)、
             直向的 barT / barB、觸控區從 min(cy − boxH/2 − 28, H·0.5) 開始。
-            算好的 rail / barT / barB / ctrl / zone 由 main.js 寫進 CSS
+            算好的 rail / barT / barB / ctrl / zone 由 mode-terrain.js 寫進 CSS
             變數，DOM 的面板與畫布上的操作元件因此永遠對齊在同一條列裡。
      外觀   「靜如儀器、動如水」：沒被碰的時候只有幾條薄荷細線和一個空心
             旋鈕；手指一按上去就液化成水球，用的是 `touch.js` 的
@@ -149,7 +149,7 @@ export class Pad {
 
   /* ── 幾何 ──────────────────────────────────────────────────────
      src/pad.js 的 layout()，數字照抄。回傳的 rail / barT / barB / ctrlTop
-     / zoneH 由 main.js 寫進 CSS 變數，所以 DOM 的面板與這裡畫的東西
+     / zoneH 由 mode-terrain.js 寫進 CSS 變數，所以 DOM 的面板與這裡畫的東西
      共用同一條操作列。
 
      預設左搖桿、右跳躍，而且不提供對調——遊戲那邊有對調是因為它要照顧

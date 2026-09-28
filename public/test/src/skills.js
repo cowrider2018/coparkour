@@ -1,8 +1,8 @@
-/* ── combat-area/src/skills.js ───────────────────────────────────────
+/* ── test/src/skills.js ───────────────────────────────────────
    BOSS 的技能：規則。
 
    跟 combat.js 一樣只算數字——哪一招、打在哪裡、碰到沒有。畫出預告與球是
-   fx.js 與 main.js 的事，而這一支 node 驗得動（tools/verify-combat-area.mjs）。
+   fx.js 與 mode-combat.js 的事，而這一支 node 驗得動（tools/verify-combat.mjs）。
 
    ── 循環 ────────────────────────────────────────────────────────
    有技能的那一類（KINDS 的 `skills`）每 `every` 秒從自己的技能裡隨機挑一招。
@@ -32,7 +32,7 @@
    攻擊）碰到不算。
    ------------------------------------------------------------------ */
 
-import { PHYS, arenaGap } from '../../test-area/src/walk.js';
+import { PHYS, arenaGap } from './walk.js';
 import { ARENA, DOG_H, kindOf } from './combat.js';
 
 /** 每一招的數值。長度一律用狗高量。 */
