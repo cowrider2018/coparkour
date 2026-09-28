@@ -42,7 +42,7 @@
    ------------------------------------------------------------------ */
 
 import * as THREE from '../vendor/three.module.js';
-import { KEY_DIR } from './palette.js';
+import { KEY_DIR, INK } from './palette.js';
 
 /** 流體場的大小與手感。 */
 export const FLUID = {
@@ -394,15 +394,27 @@ export class Fluid {
 
 /* ── 一片煙 ──────────────────────────────────────────────────────────
    把流體場的一格擺進世界：一片 2h 見方的方格，原點 o、格內座標的 u 軸沿 U、
-   v 軸沿 V（兩個單位向量，互相垂直）。畫法是半透明的白：
+   v 軸沿 V（兩個單位向量，互相垂直）。畫法是卡通的：濃度場硬切成一塊，
+   跟場景裡的石頭與狗同一套——明確的邊、墨線、幾階平色。流動只剩那道邊
+   在動。
 
+     邊    濃度先取一圈平均再硬切：流體會拉出比一兩格還細的絲，直接切的話
+           邊是一排鋸齒與尖刺，抹掉之後才是圓滑的大塊。切在哪由 fwidth 換成
+           「離邊幾個像素」，所以邊在任何距離都是一個像素寬的抗鋸齒。
+     墨線  離邊 INK_PX 個像素以內是墨色，跟狗的描邊一樣粗（controls.js 的
+           ink(2.0)）、同一個墨色（palette.js 的 INK）。
+     明暗  法線從濃度的梯度算（濃度當成高度場），吃 palette.js 的主光，硬切成
+           兩階：迎光的白、背光的淡藍灰。
      體積  兩層網格，一層往法線正面鼓、一層往背面鼓，鼓多高看那裡的濃度——
            所以側著看是一片有厚度的透鏡，不是一條線。
-     明暗  法線從濃度的梯度算（濃度當成高度場），吃 palette.js 的主光：
-           迎光的一面白、背光的一面偏冷的灰，煙的一團一團才讀得出來。
-     邊    格子的邊一圈淡掉：那是一道牆，煙貼在牆上看起來像被切掉。
+     格邊  格子的邊一圈把濃度壓到 0：那是一道牆，煙貼在牆上看起來像被切掉。
 
-   `alpha` 是整片的透明度（特效自己淡出用）。 */
+   `fade` 是特效自己的淡出（1 → 0）。卡通的煙不是慢慢變透明，是被吃掉：
+   fade 往下，切的門檻往上抬，邊從外往內縮，細的地方先斷，最後剩幾塊最濃的
+   再消失。 */
+
+/** 描邊幾個像素寬（裝置像素）。 */
+const INK_PX = 2.0;
 
 const SHEET_VERT = /* glsl */ `
 uniform sampler2D uDye;
@@ -426,28 +438,45 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position + vec3(0.0, 0.0, uSide * h), 1.0);
 }`;
 
+/* INK 是 sRGB 的十六進位；這個著色器不經過 three 的色彩空間轉換，直接寫進畫面，
+   所以照原樣拆成三個 0～1 的數。 */
+const INK_RGB = [(INK >> 16) & 255, (INK >> 8) & 255, INK & 255].map((c) => (c / 255).toFixed(4)).join(', ');
+
 const SHEET_FRAG = /* glsl */ `
 uniform sampler2D uDye;
-uniform float uSide, uTexel, uAlpha;
+uniform float uSide, uTexel, uFade;
 uniform vec3 uU, uV, uN, uKey;
 varying vec2 vA;
 varying vec2 vUv2;
 float dye(vec2 a) { return texture2D(uDye, a).r; }
+// 一圈九點平均，半徑三格：比這還細的絲抹掉，切出來的邊才是大塊。
+float soft(vec2 a) {
+  float k = 3.0 * uTexel, q = 0.7071 * k;
+  return (2.0 * dye(a)
+        + dye(a + vec2(k, 0.0)) + dye(a - vec2(k, 0.0)) + dye(a + vec2(0.0, k)) + dye(a - vec2(0.0, k))
+        + dye(a + vec2(q, q)) + dye(a - vec2(q, q)) + dye(a + vec2(q, -q)) + dye(a - vec2(q, -q))) / 10.0;
+}
 void main() {
   vec2 e2 = smoothstep(0.0, 0.08, vUv2) * smoothstep(0.0, 0.08, 1.0 - vUv2);
-  float d = dye(vA);
-  float a = uAlpha * smoothstep(0.02, 1.1, d) * e2.x * e2.y;
-  if (a < 0.004) discard;
-  float k = 2.0 * uTexel;
-  float gx = dye(vA + vec2(k, 0.0)) - dye(vA - vec2(k, 0.0));
-  float gy = dye(vA + vec2(0.0, k)) - dye(vA - vec2(0.0, k));
-  vec3 nl = normalize(vec3(-gx * 5.0, -gy * 5.0, uSide));
+  float d = soft(vA) * e2.x * e2.y;
+  float th = mix(1.3, 0.3, uFade);            // 淡出：門檻往上抬，邊往內縮
+  float px = (d - th) / max(fwidth(d), 1e-5); // 離邊幾個像素，裡面是正的
+  if (px < -0.5) discard;
+  float cover = clamp(px + 0.5, 0.0, 1.0);
+
+  float k = 4.0 * uTexel;
+  float gx = soft(vA + vec2(k, 0.0)) - soft(vA - vec2(k, 0.0));
+  float gy = soft(vA + vec2(0.0, k)) - soft(vA - vec2(0.0, k));
+  vec3 nl = normalize(vec3(-gx * 3.0, -gy * 3.0, uSide));
   vec3 n = normalize(nl.x * uU + nl.y * uV + nl.z * uN);
   if (!gl_FrontFacing) n = -n;
-  float lit = smoothstep(-0.25, 0.65, dot(n, uKey));
-  vec3 col = mix(vec3(0.80, 0.84, 0.93), vec3(1.0), lit);
-  col = mix(col, vec3(1.0), smoothstep(0.9, 1.8, d) * 0.6);   // 濃的芯更白
-  gl_FragColor = vec4(col, a * 0.62);
+  float ndl = dot(n, uKey), w = max(fwidth(ndl), 1e-4);
+  float lit = smoothstep(0.1 - w, 0.1 + w, ndl);
+  vec3 col = mix(vec3(0.74, 0.82, 0.95), vec3(1.0), lit);
+
+  float ink = 1.0 - clamp(px - ${INK_PX.toFixed(1)} + 0.5, 0.0, 1.0);
+  col = mix(col, vec3(${INK_RGB}), ink);
+  gl_FragColor = vec4(col, cover * mix(0.9, 1.0, ink));
 }`;
 
 export class Sheet {
@@ -456,7 +485,7 @@ export class Sheet {
    * @param {number} half 半邊長（公尺）
    * @param {number} thick 最濃的地方往一面鼓多高（公尺）
    */
-  constructor(fluid, half, thick = 0.22) {
+  constructor(fluid, half, thick = 0.1) {
     this.fluid = fluid;
     this.half = half;
     const geo = new THREE.PlaneGeometry(half * 2, half * 2, 56, 56);
@@ -470,9 +499,9 @@ export class Sheet {
         uniforms: {
           uDye: { value: null }, uTile: { value: new THREE.Vector4() },
           uThick: { value: thick }, uSide: { value: side }, uTexel: { value: 1 / (FLUID.dye * FLUID.grid) },
-          uAlpha: { value: 1 }, uKey: { value: KEY_DIR }, ...Object.fromEntries(Object.entries(this._axes).map(([k, v]) => [k, { value: v }])),
+          uFade: { value: 1 }, uKey: { value: KEY_DIR }, ...Object.fromEntries(Object.entries(this._axes).map(([k, v]) => [k, { value: v }])),
         },
-        transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false,
+        transparent: true, depthWrite: true, side: THREE.DoubleSide, fog: false,
       });
       const m = new THREE.Mesh(geo, mat);
       m.renderOrder = 3;
@@ -507,16 +536,16 @@ export class Sheet {
     return [(v[0] * uU.x + v[1] * uU.y + v[2] * uU.z) / s, (v[0] * uV.x + v[1] * uV.y + v[2] * uV.z) / s];
   }
 
-  /** 這一幀畫哪一格、多透明。alpha 0 或沒有格子就收起來。 */
-  show(tile, alpha) {
+  /** 這一幀畫哪一格、淡出到哪（fade 1 → 0，見上面）。fade 0 或沒有格子就收起來。 */
+  show(tile, fade) {
     this.tile = tile;
-    this.node.visible = tile >= 0 && alpha > 0;
+    this.node.visible = tile >= 0 && fade > 0;
     if (!this.node.visible) return;
     const { x, y, size } = this.fluid.tileRect(tile);
     for (const m of this._mats) {
       m.uniforms.uDye.value = this.fluid.texture;
       m.uniforms.uTile.value.set(x, y, size, 0);
-      m.uniforms.uAlpha.value = alpha;
+      m.uniforms.uFade.value = fade;
     }
   }
 }
