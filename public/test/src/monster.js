@@ -20,10 +20,25 @@
 
    顏色跟 cat.bin 一樣是 sRGB 的 0～1（Critter 的著色器自己轉線性），
    所以這裡的數字就是畫面上看到的那個顏色，不必先轉。
+
+   ── 衝刺的動作 ──────────────────────────────────────────────────
+   衝刺（combat.js 的 LUNGE）照 m.lunge.t 切成三段，各有一套動作，用主角
+   那一個播放器播（moves.js 的 Mover，招與招之間一樣是淡進淡出）：
+
+     windup   後傾低頭：身體往後坐、前半身仰起來，頭反過來壓低，後腿收到
+              肚子底下、膝蓋彎著，尾巴垂下去——壓住的彈簧，眼睛盯著前面。
+     dash     主角的跳躍動作組：不疊動作，而是跟 Critter 說「在空中」，垂直
+              速度從往上換成往下，所以是跳起來前腿前伸、過頂點換成找地板、
+              落地那一沉（critter.js 的 airPose）。身體畫得跳起一點點（DASH_HOP）
+              讓那個姿勢站得住——只是畫面，碰撞還是地上那一個圓柱。
+     recover  僵直：甩頭（頭左右甩、跟著側過去）、甩尾巴（跟頭反向）、身體
+              左右搖晃（慢一拍、幅度小），一開始最用力、到僵直結束收乾淨。
    ------------------------------------------------------------------ */
 
 import * as THREE from '../vendor/three.module.js';
 import { Critter } from './critter.js';
+import { LUNGE } from './combat.js';
+import { Mover } from './moves.js';
 
 /** 毛色：body 身上、face 鼻子與嘴。 */
 const ZOMBIE = { body: [0.24, 0.80, 0.22], face: [0.08, 0.36, 0.08] };
@@ -97,4 +112,67 @@ function paint(c, coat) {
     out[v * 3] = col[0]; out[v * 3 + 1] = col[1]; out[v * 3 + 2] = col[2];
   }
   c._colorAttr.needsUpdate = true;
+}
+
+/* ── 衝刺的動作 ── */
+
+/** 蓄力：後傾低頭。pitch 是整個上半身（連頭），headPitch 再把頭壓回去、壓過頭。 */
+const CROUCH = {
+  pitch: -0.30, headPitch: 0.78, drop: 0.08, tailPitch: -0.40,
+  front: -0.35, hind: -0.50, knee: -0.60, legs: 0.8, w: 1,
+};
+
+/** 僵直的甩：每一個欄位 [幅度, 每秒幾下, 相位]。尾巴跟頭反向、身體慢一拍。 */
+const SHAKE = {
+  headYaw: [0.60, 6, 0], headTilt: [0.25, 6, 0],
+  tailYaw: [0.75, 5, Math.PI],
+  lean: [0.18, 3, Math.PI], twist: [0.14, 3, 0],
+};
+/** 甩的力道：50 毫秒內甩到最大，前半撐著、後半收到僵直結束。 */
+const shakeEnv = (u) => Math.min(1, u / 0.1) * (1 - u * u);
+
+/** 僵直的關鍵影格：照 SHAKE 每 20 毫秒取一格，最後一格回到原本的樣子。 */
+function shakeKeys() {
+  const T = LUNGE.recover, step = 0.02;
+  const keys = [[0, {}]];
+  for (let t = step; t < T - 1e-6; t += step) {
+    const e = shakeEnv(t / T), pose = { pitch: 0.06 * e, w: 1 };
+    for (const [k, [a, hz, ph]] of Object.entries(SHAKE)) pose[k] = a * e * Math.sin(2 * Math.PI * hz * t + ph);
+    keys.push([t, pose, 'lin']);
+  }
+  keys.push([T, {}, 'lin']);
+  return keys;
+}
+
+/** 衝刺的三套動作（moves.js 的 MOVES 那一種寫法）。 */
+const LUNGE_MOVES = {
+  windup: { blend: 0.05, keys: [[0, {}], [0.16, CROUCH, 'out'], [LUNGE.windup, { ...CROUCH, headPitch: 0.86, drop: 0.10 }, 'inOut']] },
+  dash: { blend: 0.05, keys: [[0, {}]] },
+  recover: { blend: 0.04, keys: shakeKeys() },
+};
+
+/** 一隻怪物的動作播放器：phase 就是 LUNGE_MOVES 的鍵（lungeStage 給的）。 */
+export const monsterMover = () => new Mover(LUNGE_MOVES, (phase, t) => [phase, t]);
+
+/** 衝刺在哪一段、這一段走了幾秒。沒在衝是 [null, 0]。 */
+export function lungeStage(m) {
+  const L = m.lunge;
+  if (!L) return [null, 0];
+  if (L.t < LUNGE.windup) return ['windup', L.t];
+  const s = L.t - LUNGE.windup;
+  return s < LUNGE.time ? ['dash', s] : ['recover', s - LUNGE.time];
+}
+
+/** 衝的時候畫得跳多高：體型（sizeOf）的這麼多倍，公尺。 */
+const DASH_HOP = 0.25;
+
+/**
+ * 衝的那一段畫成一跳：第 s 秒身體畫得高出多少（拋物線，頭尾是 0），以及
+ * 那條拋物線的垂直速度——交給 Critter 的 vy，空中姿勢照它從前伸換成找地板，
+ * 落地那一沉照它踢多重。會飛的不跳（本來就飄著），只換姿勢。
+ */
+export function dashHop(kind, s, fly) {
+  const u = Math.min(1, Math.max(0, s / LUNGE.time));
+  const h = DASH_HOP * sizeOf(kind);
+  return { lift: fly ? 0 : h * 4 * u * (1 - u), vy: (h * 4 * (1 - 2 * u)) / LUNGE.time };
 }

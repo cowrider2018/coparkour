@@ -27,7 +27,7 @@ import {
   breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, placeMonster, monsterStep, bites, knock,
   inSlash, inFan, inRing, slashTip, makeCombo, comboStep, invulnerable, cueing,
 } from './combat.js';
-import { makeMonsterCritter, sizeOf } from './monster.js';
+import { makeMonsterCritter, sizeOf, monsterMover, lungeStage, dashHop } from './monster.js';
 import { Blade } from './blade.js';
 import { Mover } from './moves.js';
 import {
@@ -167,7 +167,7 @@ export class Fight {
       const slot = this._slot(s.kind, i);
       slot.critter.root.visible = true;
       slot.critter.setFacing(s.yaw);
-      return { m: makeMonster(s, field), ...slot };
+      return { m: makeMonster(s, field), mover: monsterMover(), ...slot };
     });
     this.world = makeWorld(field);
     Object.assign(this.combo, makeCombo());
@@ -179,6 +179,7 @@ export class Fight {
     for (const f of this.foes) {
       placeMonster(f.m);
       f.critter.setFacing(f.m.spawn.yaw);
+      f.mover = monsterMover();
     }
     Object.assign(this.combo, makeCombo());
     this._face = null;
@@ -328,13 +329,19 @@ export class Fight {
     // 剛挨過一下（guard 還開著）：玩家一閃一閃的。頭頂是最大血量幾顆心、剩下的幾顆是滿的。
     this.zoo.root.visible = !(player.guard > 0) || Math.floor(player.guard * 12) % 2 === 0;
     this.hearts.show(player.hp, player.max, player.x, player.y, player.z, camera.quaternion);
-    for (const { m, critter } of this.foes) {
-      critter.root.position.set(m.x, m.y, m.z);
+    for (const { m, critter, mover } of this.foes) {
+      const fly = !!KINDS[m.kind].fly;
+      /* 衝刺的動作（monster.js）：蓄力與僵直疊一套動作，衝的那一段是跳躍的
+         姿勢——在空中、垂直速度照畫出來的那一跳。 */
+      const [stage, s] = lungeStage(m);
+      const hop = stage === 'dash' ? dashHop(m.kind, s, fly) : null;
+      critter.root.position.set(m.x, m.y + (hop ? hop.lift : 0), m.z);
       critter.setFacing(Math.atan2(m.aimX, m.aimZ));
       // 會飛的一直是飄著的姿勢：不踩地、不走路。
       critter.update(dt, {
-        speed: Math.hypot(m.vx, m.vz), grounded: m.grounded && !KINDS[m.kind].fly, vy: m.vy,
+        speed: Math.hypot(m.vx, m.vz), grounded: m.grounded && !fly && !hop, vy: hop ? hop.vy : m.vy,
         viewYaw: Math.atan2(camera.position.x - m.x, camera.position.z - m.z),
+        move: mover.step(dt, stage, s),
       });
     }
 
