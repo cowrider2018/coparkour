@@ -332,7 +332,7 @@ export class Fight {
     for (const { m, critter, motion } of this.foes) {
       /* 衝刺與放招的動作（monster.js 的 Motion）：疊一套動作，跳的那幾段畫成在空中、
          垂直速度照那一跳。 */
-      const mo = motion.step(dt, m);
+      const mo = motion.step(dt, m, player);
       critter.root.position.set(m.x, m.y + mo.lift, m.z);
       critter.setFacing(Math.atan2(m.aimX, m.aimZ));
       // 會飛的一直是飄著的姿勢：不踩地、不走路。

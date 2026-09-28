@@ -43,6 +43,12 @@
      orb   仰頭伸展蓄力：胸口挺起、頭往後仰到朝天、尾巴翹起來，越蓄越仰；
            倒數最後那一下頭往前甩，球出去的那一刻正甩到一半——吐出去的；
            甩到底停一下，然後在僵直裡慢慢回到原本的樣子。
+     cone  前肢抬起：整個前半身立起來、兩隻前腳離地收在胸前，頭反過來壓低
+           盯著主角；倒數最後那一下整隻砸下去，打下去的那一刻前腳踩到地；
+           僵直裡再往下一沉，然後慢慢起身。
+
+   「盯著主角」不只是姿勢裡把頭壓低：放招鎖定的是倒數開始那一刻的方向，主角
+   之後還在跑，所以頭另外跟著主角現在的位置左右轉（LOOK，最多 LOOK.max）。
    ------------------------------------------------------------------ */
 
 import * as THREE from '../vendor/three.module.js';
@@ -170,6 +176,21 @@ const STRETCH_MAX = { ...STRETCH, pitch: -0.40, headPitch: -0.62, drop: -0.08, t
 const SPIT = { pitch: 0.20, headPitch: 0.45, drop: 0.04, tailPitch: -0.20, w: 1 };
 const SPIT_MID = { pitch: -0.10, headPitch: -0.08, drop: -0.02, tailPitch: 0.20, front: -0.10, hind: 0.10, legs: 0.3, w: 1 };
 
+/* ── 扇形地震 ── 立起來是 REAR，砸下去是 STOMP。 */
+const REAR = {
+  pitch: -0.80, headPitch: 0.95, drop: -0.12, tailPitch: 0.40,
+  front: -1.10, knee: 0.70, hind: -0.20, legs: 1, w: 1,
+};
+const STOMP = {
+  pitch: 0.30, headPitch: 0.10, drop: 0.12, tailPitch: 0.20,
+  front: -0.40, hind: 0.20, knee: -0.30, legs: 0.8, w: 1,
+};
+
+/**
+ * 頭跟著主角轉：哪幾段要盯（值是盯多用力）、多快轉過去與放掉（秒）、最多轉多少（弳）。
+ */
+const LOOK = { stages: { coneWind: 1 }, tau: 0.12, max: 1.0 };
+
 /**
  * 怪物的每一套動作（moves.js 的 MOVES 那一種寫法），鍵就是 Motion 挑的那一段：
  * 衝刺的蓄力、衝、僵直，BOSS 每一招的倒數（…Wind）與出招後的僵直（…Rec）。
@@ -183,6 +204,15 @@ const MOVES = {
     keys: [[0, {}], [0.55, STRETCH, 'out'], [SKILL.orb.windup - 0.06, STRETCH_MAX, 'inOut'], [SKILL.orb.windup, SPIT_MID, 'in']],
   },
   orbRec: { blend: 0.02, keys: [[0, SPIT_MID], [0.05, SPIT, 'out'], [0.14, SPIT, 'lin'], [SKILL.recover, {}, 'inOut']] },
+  coneWind: {
+    blend: 0.1,
+    keys: [
+      [0, {}], [0.6, REAR, 'out'],
+      [SKILL.cone.windup - 0.14, { ...REAR, pitch: -0.88, headPitch: 1.02, drop: -0.14 }, 'inOut'],
+      [SKILL.cone.windup, STOMP, 'in'],
+    ],
+  },
+  coneRec: { blend: 0.02, keys: [[0, STOMP], [0.08, { ...STOMP, pitch: 0.36, drop: 0.16 }, 'out'], [SKILL.recover, {}, 'inOut']] },
 };
 
 /** 衝的時候畫得跳多高：體型（sizeOf）的這麼多倍，公尺。 */
@@ -198,23 +228,46 @@ export class Motion {
     this.mover = new Mover(MOVES, (phase, t) => [phase, t]);
     /** 上一次在放哪一招：出招之後的僵直播它的收尾。 */
     this._skill = null;
+    /** 頭跟著主角轉的那一份現在有多少（0～1，追 LOOK.stages 給的目標）。 */
+    this._look = 0;
+    this._pose = {};
     this._out = { move: null, lift: 0, air: false, vy: null };
   }
 
   /**
    * @param {number} dt
    * @param {object} m combat.js 的怪物
+   * @param {{x: number, z: number}} player 主角：要盯著的時候頭轉向牠
    * @returns {{move: object, lift: number, air: boolean, vy: number | null}}
    *   move 疊在上面的動作（給 critter.update）、lift 身體畫得比 m.y 高多少（公尺）、
    *   air 畫成在空中、vy 交給 Critter 的垂直速度（null = 用 m.vy）
    */
-  step(dt, m) {
+  step(dt, m, player) {
     const o = this._out;
     o.lift = 0; o.air = false; o.vy = null;
     const [stage, t] = this._stage(m);
     if (stage === 'dash') this._hop(o, m, t);
-    o.move = this.mover.step(dt, stage, t);
+    o.move = this._lookAt(dt, stage, m, player, this.mover.step(dt, stage, t));
     return o;
+  }
+
+  /**
+   * 頭跟著主角轉：主角在身體朝向的哪一邊，頭就再轉那麼多（夾在 ±LOOK.max）。
+   * 轉多少乘上 _look，進出那幾段是追過去的，不是一幀跳過去。頭既然在看人，
+   * 就不轉向鏡頭（w 至少是 _look）。播放器的那一份不能改（它下一招從那裡淡），
+   * 所以寫在自己的一份上。
+   */
+  _lookAt(dt, stage, m, player, move) {
+    const goal = LOOK.stages[stage] || 0;
+    this._look += (goal - this._look) * (1 - Math.exp(-dt / LOOK.tau));
+    if (this._look < 1e-3 || !player) return move;
+    const face = Math.atan2(m.aimX, m.aimZ), to = Math.atan2(player.x - m.x, player.z - m.z);
+    let d = to - face;
+    d -= 2 * Math.PI * Math.round(d / (2 * Math.PI));
+    const pose = Object.assign(this._pose, move);
+    pose.headYaw = move.headYaw + Math.max(-LOOK.max, Math.min(LOOK.max, d)) * this._look;
+    pose.w = Math.max(move.w, this._look);
+    return pose;
   }
 
   /**
