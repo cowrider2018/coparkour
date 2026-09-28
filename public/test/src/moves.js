@@ -31,6 +31,12 @@
    換招的那一刻記下「現在長什麼樣」，新的一招在頭 `blend` 秒裡從那個樣子
    淡進來。所以第一段收到一半接第二段、第二段在空中接第三段，都不會跳。
    沒有招的時候就是從那個樣子淡回 {}。
+
+   ── 出招中不轉身 ──────────────────────────────────────────────
+   連段的四招（hold）一出手，身體的朝向就停在出手那一刻，招連同收尾播完
+   才轉向搖桿指的方向（fight.js 用 holding 決定）。動作是照「面向前方」
+   編的：中途跟著搖桿轉，橫砍會變成甩頭，迴旋會多轉或少轉一截。破防攻擊
+   不鎖——那幾招的朝向本來就是招自己擺的（朝目標飛、繞著牠面向牠）。
    ------------------------------------------------------------------ */
 
 import { SWING } from './combat.js';
@@ -95,11 +101,12 @@ const VAULT_POSE = {
 };
 
 /**
- * 每一招：blend 淡進來多久、keys 關鍵影格 [時間, 姿勢, 加減速]。
+ * 每一招：hold 出招中鎖住朝向、blend 淡進來多久、keys 關鍵影格 [時間, 姿勢, 加減速]。
  * 第一格的時間一律是 0。
  */
 export const MOVES = {
   slash: {
+    hold: true,
     blend: 0.08,
     keys: [
       [0, SLASH_WIND],
@@ -110,6 +117,7 @@ export const MOVES = {
     ],
   },
   rise: {
+    hold: true,
     blend: 0.07,
     keys: [
       [0, RISE_WIND],
@@ -120,6 +128,7 @@ export const MOVES = {
     ],
   },
   leap: {
+    hold: true,
     blend: 0.14,
     keys: [
       [0, {}],
@@ -128,6 +137,7 @@ export const MOVES = {
     ],
   },
   slam: {
+    hold: true,
     blend: 0.06,
     keys: [
       [0, { ...COIL, yaw: -1.0, twist: -0.62, drop: 0.34, front: -0.30, hind: 0.45, knee: -0.55 }],
@@ -209,6 +219,12 @@ export class Mover {
     this.from = Object.fromEntries(CHANNELS.map((k) => [k, 0]));
     this.out = Object.fromEntries(CHANNELS.map((k) => [k, 0]));
     this._pose = Object.fromEntries(CHANNELS.map((k) => [k, 0]));
+  }
+
+  /** 正在播一招要鎖住朝向的招，而且還沒播完（收尾也算）。 */
+  get holding() {
+    const mv = this.name ? MOVES[this.name] : null;
+    return !!mv && !!mv.hold && (!ends(mv) || this.tau < duration(mv));
   }
 
   /** 從現在的樣子換到 name 這一招（或 null），τ 從 tau 起。 */

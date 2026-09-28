@@ -210,7 +210,7 @@ function frame(now) {
 
   // 動物
   zoo.root.position.set(player.x, player.y, player.z);
-  zoo.setFacing(Math.atan2(player.aimX, player.aimZ));
+  zoo.setFacing(fight.faceYaw(player));
   const viewYaw = Math.atan2(camera.position.x - player.x, camera.position.z - player.z);
   zoo.update(dt, { speed, grounded: player.grounded, vy: player.vy, viewYaw, move: fight.move(dt) });
 

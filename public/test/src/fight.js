@@ -70,6 +70,9 @@ export class Fight {
     this.blade.follow(zoo.active);
     /** 出招的動作：照連段的狀態播，疊在步態與空中姿勢上面。 */
     this.mover = new Mover();
+    /** 出招中鎖住的朝向 [x, z]（null = 沒鎖，跟著 aim）。見 body。 */
+    this._face = null;
+    this._body = {};
 
     /* 怪物：每一隻是「狀態」（combat.js 的 makeMonster）加上「外觀」（monster.js 的
        Critter、破防的兩圈、三種預告）。外觀是每一類一個池子，換陣容的時候借用、多的
@@ -170,6 +173,7 @@ export class Fight {
       f.critter.setFacing(f.m.spawn.yaw);
     }
     Object.assign(this.combo, makeCombo());
+    this._face = null;
     this.world.shots.length = 0;
     this.souls.length = 0;
     this._dropTrails();
@@ -182,6 +186,27 @@ export class Fight {
   get spinning() { return this.combo.phase === 'spin'; }
 
   /**
+   * 出招的那個身體：位置是玩家的，面向是出手那一刻鎖住的。
+   *
+   * 連段的招一出手就不跟著搖桿轉身（moves.js 的 hold），招連同收尾播完才放開。
+   * 腳還是跟著搖桿走——鎖的只有朝向。範圍、擊退、劍氣都照這個身體算，所以畫面上
+   * 刀掃到哪、判定就在哪，不會身體還朝著舊方向、範圍已經跟著搖桿轉過去。
+   * 沒鎖的時候就是玩家本人。
+   */
+  body(player) {
+    if (!this._face) return player;
+    const b = Object.assign(this._body, player);
+    b.aimX = this._face[0]; b.aimZ = this._face[1];
+    return b;
+  }
+
+  /** 動物這一幀該面向哪（給 setFacing）：出招中是鎖住的朝向，其餘跟著 aim。 */
+  faceYaw(player) {
+    const b = this.body(player);
+    return Math.atan2(b.aimX, b.aimZ);
+  }
+
+  /**
    * 按跳交給連段。站不站在地上看的是上一幀的結果，跟判斷能不能跳是同一個時間點。
    * 要起跳的話這裡就把垂直速度給玩家。
    */
@@ -189,10 +214,13 @@ export class Fight {
     const combo = this.combo;
     const target = breakTarget(player, this.foes.map((f) => f.m));
     const act = comboStep(combo, dt, {
-      pressed, grounded: player.grounded, near: this.foes.some((f) => inSlash(player, f.m)),
+      pressed, grounded: player.grounded, near: this.foes.some((f) => inSlash(this.body(player), f.m)),
       breakable: !!target,
     });
-    if (act.start === 1) combo.tip = slashTip(player);
+    /* 出手就鎖住朝向。前一招還沒播完（還鎖著）的話沿用那一個：接招不轉身。 */
+    if (act.start) this._face ??= [player.aimX, player.aimZ];
+    if (act.brk) this._face = null;
+    if (act.start === 1) combo.tip = slashTip(this.body(player));
     if (act.brk) startBreak(combo, player, target);
     if (act.jump) {
       player.vy = PHYS.jump;
@@ -232,9 +260,10 @@ export class Fight {
       if (r.died) dead.add(combo.target);
     }
     const reach = this._reach[combo.phase];
+    const body = this.body(player);
     for (const { m } of foes) {
-      if (reach && !combo.hit.has(m) && reach(player, m)) {
-        knock(m, player.x, player.z, player.aimX, player.aimZ, KNOCK_SCALE[combo.phase]);
+      if (reach && !combo.hit.has(m) && reach(body, m)) {
+        knock(m, body.x, body.z, body.aimX, body.aimZ, KNOCK_SCALE[combo.phase]);
         combo.hit.add(m);
         if (hurt(m, DAMAGE[combo.phase])) dead.add(m);
       }
@@ -277,7 +306,12 @@ export class Fight {
   }
 
   /** 玩家這一幀疊在步態上面的出招動作（給 zoo.update 的 move）。 */
-  move(dt) { return this.mover.step(dt, this.combo.phase, this.combo.t); }
+  move(dt) {
+    const out = this.mover.step(dt, this.combo.phase, this.combo.t);
+    // 招播完了（收尾也播完）：放開朝向，下一幀起轉向搖桿指的方向。
+    if (!this.mover.holding) this._face = null;
+    return out;
+  }
 
   /** 擺好這一幀的外觀。在 zoo.update 與相機之後叫。 */
   draw(dt, camera, player) {
@@ -297,13 +331,14 @@ export class Fight {
     }
 
     // 攻擊範圍：劍氣，畫不出流體的話是高亮。都跟著玩家的腳與面向走。
-    if (this.fluid) this._qi(dt, player);
+    const body = this.body(player);
+    if (this.fluid) this._qi(dt, body);
     else {
-      const yaw = Math.atan2(player.aimX, player.aimZ);
+      const yaw = Math.atan2(body.aimX, body.aimZ);
       const lit = (phase) => (combo.phase === phase ? combo.t : Infinity);
       showFx(fx.slash, lit('slash'), SWING, player.x, player.y, player.z, yaw);
       if (combo.tip) {
-        const fr = fanFrame(player, combo.tip);
+        const fr = fanFrame(body, combo.tip);
         showFx(fx.fan, lit('rise'), SWING, player.x, player.y, player.z, Math.atan2(fr.dirX, fr.dirZ), fr.a0);
       }
       showFx(fx.ring, lit('slam'), SWING, player.x, player.y, player.z, yaw);
