@@ -406,8 +406,13 @@ export class Fluid {
            ink(2.0)）、同一個墨色（palette.js 的 INK）。
      明暗  法線從濃度的梯度算（濃度當成高度場），吃 palette.js 的主光，硬切成
            兩階：迎光的白、背光的淡藍灰。
-     體積  兩層網格，一層往法線正面鼓、一層往背面鼓，鼓多高看那裡的濃度——
-           所以側著看是一片有厚度的透鏡，不是一條線。
+     體積  兩層網格，一層往法線正面鼓、一層往背面鼓，鼓多高看那裡的濃度
+           **超過切的門檻多少**——所以側著看是一片有厚度的透鏡，不是一條線，
+           而透鏡的邊（剛好切到的地方）厚度是 0。平躺在地上的煙，背面那一層
+           埋在地裡，正面那一層的輪廓就貼著地面。
+           高度要是直接照濃度算，輪廓上的濃度就是門檻那麼多，邊已經鼓起一截：
+           平躺的煙會是一塊邊緣懸空的板子，底下看得到地面；淡出的時候門檻往上抬，
+           邊還跟著往上飄。
      格邊  格子的邊一圈把濃度壓到 0：那是一道牆，煙貼在牆上看起來像被切掉。
 
    `fade` 是特效自己的淡出（1 → 0）。卡通的煙不是慢慢變透明，是被吃掉：
@@ -417,24 +422,31 @@ export class Fluid {
 /** 描邊幾個像素寬（裝置像素）。 */
 const INK_PX = 2.0;
 
+/** 切的門檻：fade 0 → 1 從 [0] 降到 [1]。鼓多高也從這裡起算，兩個著色器共用這一份。 */
+const CUT = [1.3, 0.3];
+const CUT_GLSL = `float cut(float fade) { return mix(${CUT[0].toFixed(2)}, ${CUT[1].toFixed(2)}, fade); }`;
+
 const SHEET_VERT = /* glsl */ `
 uniform sampler2D uDye;
 uniform vec4 uTile;      // 左下角 xy、邊長 z
-uniform float uThick, uSide, uTexel, uSoft;
+uniform float uThick, uSide, uTexel, uSoft, uFade;
 varying vec2 vA;
 varying vec2 vUv2;
 float dye(vec2 a) { return texture2D(uDye, a).r; }
-float edge(vec2 uv) {
-  vec2 e = smoothstep(0.0, 0.06, uv) * smoothstep(0.0, 0.06, 1.0 - uv);
-  return e.x * e.y;
-}
+${CUT_GLSL}
 void main() {
   vec2 a = uTile.xy + uv * uTile.z;
   float k = uSoft * uTexel;
-  // 網格比濃度粗，取五點平均再鼓，不然鼓出來的面會一格一格地抖。
+  // 網格比濃度粗，取五點平均再鼓，不然鼓出來的面會一格一格地抖。格邊那一圈跟
+  // 片段著色器一樣壓到 0，切出來的輪廓與鼓的起點才是同一條。
+  vec2 e2 = smoothstep(0.0, 0.08, uv) * smoothstep(0.0, 0.08, 1.0 - uv);
   float d = (2.0 * dye(a) + dye(a + vec2(k, 0.0)) + dye(a - vec2(k, 0.0))
-           + dye(a + vec2(0.0, k)) + dye(a - vec2(0.0, k))) / 6.0;
-  float h = uThick * (1.0 - exp(-1.6 * d)) * edge(uv);
+           + dye(a + vec2(0.0, k)) + dye(a - vec2(0.0, k))) / 6.0 * e2.x * e2.y;
+  // 從切的門檻起算：輪廓上是 0，透鏡的邊收成一條線（見上面「體積」）。超過的量
+  // 取平方再鼓：輪廓一帶先平平地貼著地、往裡面才鼓起來。直接照超過的量鼓的話，
+  // 輪廓一過去一格網格之內就陡升一截，切出來的底邊是一排鋸齒。
+  float x = max(0.0, d - cut(uFade));
+  float h = uThick * (1.0 - exp(-2.0 * x * x));
   vA = a; vUv2 = uv;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position + vec3(0.0, 0.0, uSide * h), 1.0);
 }`;
@@ -450,6 +462,7 @@ uniform vec3 uU, uV, uN, uKey, uLit, uShade;
 varying vec2 vA;
 varying vec2 vUv2;
 float dye(vec2 a) { return texture2D(uDye, a).r; }
+${CUT_GLSL}
 // 一圈九點平均，半徑三格：比這還細的絲抹掉，切出來的邊才是大塊。
 float soft(vec2 a) {
   float k = uSoft * uTexel, q = 0.7071 * k;
@@ -460,7 +473,7 @@ float soft(vec2 a) {
 void main() {
   vec2 e2 = smoothstep(0.0, 0.08, vUv2) * smoothstep(0.0, 0.08, 1.0 - vUv2);
   float d = soft(vA) * e2.x * e2.y;
-  float th = mix(1.3, 0.3, uFade);            // 淡出：門檻往上抬，邊往內縮
+  float th = cut(uFade);                      // 淡出：門檻往上抬，邊往內縮
   float px = (d - th) / max(fwidth(d), 1e-5); // 離邊幾個像素，裡面是正的
   if (px < -0.5) discard;
   float cover = clamp(px + 0.5, 0.0, 1.0);
@@ -482,10 +495,11 @@ void main() {
 
 /*
  * 一片煙長什麼樣（擺的時候給，見 Sheet.place；dust.js 的 DUST_LOOK 就是一個）：
- *   thick 最濃的地方往一面鼓多高（公尺）
+ *   thick 最濃的地方往一面鼓多高（公尺），從輪廓（高度 0）往裡面長上去
  *   lit   迎光那一階的顏色（sRGB，0～1）
  *   shade 背光那一階
  *   soft  硬切之前抹平的半徑（濃度格子的格數）：越大，細絲與細長的指狀越會融回圓的團塊
+ *   ground 平躺在地上（正面朝上）：只畫往正面鼓的那一層
  */
 
 export class Sheet {
@@ -498,11 +512,13 @@ export class Sheet {
   constructor(fluid) {
     this.fluid = fluid;
     this.half = 1;
-    const geo = new THREE.PlaneGeometry(2, 2, 56, 56);
+    const geo = new THREE.PlaneGeometry(2, 2, 96, 96);
     this.node = new THREE.Group();
     this.node.matrixAutoUpdate = false;
     this.node.visible = false;
     this._axes = { uU: new THREE.Vector3(1, 0, 0), uV: new THREE.Vector3(0, 1, 0), uN: new THREE.Vector3(0, 0, 1) };
+    /** 往正面鼓、往背面鼓的兩層（見「體積」）。 */
+    this._meshes = [];
     this._mats = [1, -1].map((side) => {
       const mat = new THREE.ShaderMaterial({
         vertexShader: SHEET_VERT, fragmentShader: SHEET_FRAG,
@@ -518,6 +534,7 @@ export class Sheet {
       m.renderOrder = 3;
       m.frustumCulled = false;
       this.node.add(m);
+      this._meshes.push(m);
       return mat;
     });
     /** 這一片的原點與兩軸（世界座標），place 給。 */
@@ -537,6 +554,8 @@ export class Sheet {
     const s = (v) => v.clone().multiplyScalar(half);
     this.node.matrix.makeBasis(s(uU), s(uV), s(uN)).setPosition(this.o);
     this.node.matrixWorldNeedsUpdate = true;
+    // 平躺在地上的：背面那一層鼓進地裡，看不到，而輪廓附近它比擺放的那一點點離地還淺，會從地面冒出來。
+    this._meshes[1].visible = !look.ground;
     for (const m of this._mats) {
       /* 鼓的高度在網格自己的單位裡量，網格被放大了 half 倍，所以除回去。 */
       m.uniforms.uThick.value = look.thick / half;

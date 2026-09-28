@@ -69,7 +69,7 @@ export function dustOf(size, speed) {
 
 /** 塵長什麼樣（fluid.js 的 Sheet.place）：土黃，背光那一階深一點；抹得比劍氣開（soft），推開時拉出的
     細長指狀會融回一團一團的圓塊，才像塵不像潑出去的水。thick 每一團各自給。 */
-export const DUST_LOOK = { thick: 0.1, lit: [0.88, 0.81, 0.69], shade: [0.67, 0.58, 0.47], soft: 9 };
+export const DUST_LOOK = { thick: 0.1, lit: [0.88, 0.81, 0.69], shade: [0.67, 0.58, 0.47], soft: 9, ground: true };
 
 /** 注入那幾幀：落地之後這麼久之內一直往外推（秒）。 */
 export const PUSH_TIME = 0.06;
