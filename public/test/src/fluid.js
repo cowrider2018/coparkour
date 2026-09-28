@@ -429,7 +429,7 @@ const CUT_GLSL = `float cut(float fade) { return mix(${CUT[0].toFixed(2)}, ${CUT
 const SHEET_VERT = /* glsl */ `
 uniform sampler2D uDye;
 uniform vec4 uTile;      // 左下角 xy、邊長 z
-uniform float uThick, uSide, uTexel, uSoft, uFade;
+uniform float uThick, uSide, uTexel, uSoft, uFade, uRise;
 varying vec2 vA;
 varying vec2 vUv2;
 float dye(vec2 a) { return texture2D(uDye, a).r; }
@@ -443,10 +443,10 @@ void main() {
   float d = (2.0 * dye(a) + dye(a + vec2(k, 0.0)) + dye(a - vec2(k, 0.0))
            + dye(a + vec2(0.0, k)) + dye(a - vec2(0.0, k))) / 6.0 * e2.x * e2.y;
   // 從切的門檻起算：輪廓上是 0，透鏡的邊收成一條線（見上面「體積」）。超過的量
-  // 取平方再鼓：輪廓一帶先平平地貼著地、往裡面才鼓起來。直接照超過的量鼓的話，
+  // 取平方再鼓：輪廓一帶先平平地貼著地、往裡面才鼓起來。uRise 是多快鼓到 thick。直接照超過的量鼓的話，
   // 輪廓一過去一格網格之內就陡升一截，切出來的底邊是一排鋸齒。
   float x = max(0.0, d - cut(uFade));
-  float h = uThick * (1.0 - exp(-2.0 * x * x));
+  float h = uThick * (1.0 - exp(-uRise * x * x));
   vA = a; vUv2 = uv;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position + vec3(0.0, 0.0, uSide * h), 1.0);
 }`;
@@ -500,6 +500,8 @@ void main() {
  *   shade 背光那一階
  *   soft  硬切之前抹平的半徑（濃度格子的格數）：越大，細絲與細長的指狀越會融回圓的團塊
  *   ground 平躺在地上（正面朝上）：只畫往正面鼓的那一層
+ *   rise  多快鼓到 thick（預設 2）：高度是 thick·(1 − e^(−rise·x²))，x 是濃度超過切的門檻
+ *         多少。大的一點點濃就鼓滿；小的鼓得慢，濃度差一路看得出高度差
  */
 
 export class Sheet {
@@ -526,7 +528,7 @@ export class Sheet {
           uDye: { value: null }, uTile: { value: new THREE.Vector4() },
           uThick: { value: 0.1 }, uSide: { value: side }, uTexel: { value: 1 / (FLUID.dye * FLUID.grid) },
           uLit: { value: new THREE.Vector3() }, uShade: { value: new THREE.Vector3() }, uSoft: { value: 3 },
-          uFade: { value: 1 }, uKey: { value: KEY_DIR }, ...Object.fromEntries(Object.entries(this._axes).map(([k, v]) => [k, { value: v }])),
+          uFade: { value: 1 }, uRise: { value: 2 }, uKey: { value: KEY_DIR }, ...Object.fromEntries(Object.entries(this._axes).map(([k, v]) => [k, { value: v }])),
         },
         transparent: true, depthWrite: true, side: THREE.DoubleSide, fog: false,
       });
@@ -562,6 +564,7 @@ export class Sheet {
       m.uniforms.uLit.value.set(...look.lit);
       m.uniforms.uShade.value.set(...look.shade);
       m.uniforms.uSoft.value = look.soft;
+      m.uniforms.uRise.value = look.rise ?? 2;
     }
   }
 
