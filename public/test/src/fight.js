@@ -536,7 +536,7 @@ export class Fight {
    */
   _quake(q, dt) {
     const st = q.st, s = q.sheet, yaw = Math.atan2(st.dirX, st.dirZ);
-    const rad = 0.3 / (2 * s.half);
+    const rad = QUAKE.width / (2 * s.half);
     for (let i = 0; i < QUAKE.bands; i++) {
       const b = quakeBand(i);
       if (q.tau < b.at || q.tau >= b.at + QUAKE.inject) continue;
