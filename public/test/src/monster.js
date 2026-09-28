@@ -39,7 +39,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { Critter } from './critter.js';
-import { LUNGE } from './combat.js';
+import { LUNGE, kindOf } from './combat.js';
 import { Mover } from './moves.js';
 
 /** 毛色：body 身上、face 鼻子與嘴。 */
@@ -155,35 +155,65 @@ function shakeKeys() {
   return keys;
 }
 
-/** 衝刺的三套動作（moves.js 的 MOVES 那一種寫法）。 */
-const LUNGE_MOVES = {
+/**
+ * 怪物的每一套動作（moves.js 的 MOVES 那一種寫法），鍵就是 Motion 挑的那一段：
+ * 衝刺的蓄力、衝、僵直。
+ */
+const MOVES = {
   windup: { blend: 0.05, keys: [[0, {}], [0.16, CROUCH, 'out'], [LUNGE.windup, { ...CROUCH, headPitch: 0.86, drop: 0.10 }, 'inOut']] },
   dash: { blend: 0.05, keys: [[0, {}]] },
   recover: { blend: 0.04, keys: shakeKeys() },
 };
 
-/** 一隻怪物的動作播放器：phase 就是 LUNGE_MOVES 的鍵（lungeStage 給的）。 */
-export const monsterMover = () => new Mover(LUNGE_MOVES, (phase, t) => [phase, t]);
-
-/** 衝刺在哪一段、這一段走了幾秒。沒在衝是 [null, 0]。 */
-export function lungeStage(m) {
-  const L = m.lunge;
-  if (!L) return [null, 0];
-  if (L.t < LUNGE.windup) return ['windup', L.t];
-  const s = L.t - LUNGE.windup;
-  return s < LUNGE.time ? ['dash', s] : ['recover', s - LUNGE.time];
-}
-
 /** 衝的時候畫得跳多高：體型（sizeOf）的這麼多倍，公尺。 */
 const DASH_HOP = 0.25;
 
 /**
- * 衝的那一段畫成一跳：第 s 秒身體畫得高出多少（拋物線，頭尾是 0），以及
- * 那條拋物線的垂直速度——交給 Critter 的 vy，空中姿勢照它從前伸換成找地板，
- * 落地那一沉照它踢多重。會飛的不跳（本來就飄著），只換姿勢。
+ * 一隻怪物的動作：每幀看牠在做什麼，挑 MOVES 的哪一段、播到第幾秒，交給
+ * 主角那一個播放器（段與段之間淡進淡出）。有幾段是「跳」：不疊動作，而是跟
+ * Critter 說在空中、垂直速度多少，讓牠擺跳躍的姿勢（見檔頭）。
  */
-export function dashHop(kind, s, fly) {
-  const u = Math.min(1, Math.max(0, s / LUNGE.time));
-  const h = DASH_HOP * sizeOf(kind);
-  return { lift: fly ? 0 : h * 4 * u * (1 - u), vy: (h * 4 * (1 - 2 * u)) / LUNGE.time };
+export class Motion {
+  constructor() {
+    this.mover = new Mover(MOVES, (phase, t) => [phase, t]);
+    this._out = { move: null, lift: 0, air: false, vy: null };
+  }
+
+  /**
+   * @param {number} dt
+   * @param {object} m combat.js 的怪物
+   * @returns {{move: object, lift: number, air: boolean, vy: number | null}}
+   *   move 疊在上面的動作（給 critter.update）、lift 身體畫得比 m.y 高多少（公尺）、
+   *   air 畫成在空中、vy 交給 Critter 的垂直速度（null = 用 m.vy）
+   */
+  step(dt, m) {
+    const o = this._out;
+    o.lift = 0; o.air = false; o.vy = null;
+    const [stage, t] = this._stage(m);
+    if (stage === 'dash') this._hop(o, m, t);
+    o.move = this.mover.step(dt, stage, t);
+    return o;
+  }
+
+  /** 現在在哪一段、這一段走了幾秒。沒在做什麼是 [null, 0]。 */
+  _stage(m) {
+    const L = m.lunge;
+    if (!L) return [null, 0];
+    if (L.t < LUNGE.windup) return ['windup', L.t];
+    const s = L.t - LUNGE.windup;
+    return s < LUNGE.time ? ['dash', s] : ['recover', s - LUNGE.time];
+  }
+
+  /**
+   * 衝的那一段畫成一跳：第 s 秒身體畫得高出多少（拋物線，頭尾是 0），以及
+   * 那條拋物線的垂直速度——交給 Critter 的 vy，空中姿勢照它從前伸換成找地板，
+   * 落地那一沉照它踢多重。會飛的不跳（本來就飄著），只換姿勢。
+   */
+  _hop(o, m, s) {
+    const u = Math.min(1, Math.max(0, s / LUNGE.time));
+    const h = DASH_HOP * sizeOf(m.kind);
+    o.lift = kindOf(m).fly ? 0 : h * 4 * u * (1 - u);
+    o.air = true;
+    o.vy = (h * 4 * (1 - 2 * u)) / LUNGE.time;
+  }
 }
