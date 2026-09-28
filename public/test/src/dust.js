@@ -115,7 +115,7 @@ export function dustFade(d, tau) {
 export const QUAKE = {
   gap: 0.9, wave: 0.4, inject: 0.06, life: 1.2, rise: 0.45,
   cone: { near: 0.9, far: 1.8, width: 0.25, push: 0.6, soft: 9, thick: 3 },
-  circle: { near: 0.9, far: 1.8, width: 0.2, push: 0.35, soft: 6, thick: 3 },
+  circle: { near: 0.9, far: 1.8, width: 0.2, push: 0.35, soft: 6, thick: 1.5 },
 };
 
 /**
