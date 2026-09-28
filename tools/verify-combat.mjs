@@ -65,7 +65,8 @@
     21. 劍氣        三段攻擊的範圍畫成的那一道月牙（trail.js）：掃的角度就是判定的
                     角度、一路往同一個方向掃；外緣就在 REACH 上、中間寬頭尾尖
                     （一整圈的不收）；月牙上的每一點都打得到——各種面向、第二段
-                    跳起來高過末端點也一樣；整道在同一個面上。
+                    跳起來高過末端點也一樣；整道在同一個面上；組成月牙的那一串點
+                    相鄰的一定重疊。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
@@ -79,7 +80,7 @@ import {
 } from '../public/test/src/combat.js';
 import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
-import { TRAILS, PIECE, sweepAt, fadeAt, crescentAt, qiAt, along } from '../public/test/src/trail.js';
+import { TRAILS, GAP, MIN_GAP, gapAt, sweepAt, fadeAt, crescentAt, qiAt, along } from '../public/test/src/trail.js';
 
 let fails = 0;
 const ok = (cond, msg) => {
@@ -1208,8 +1209,16 @@ console.log('21. 劍氣');
   }
   ok(flat, '整道月牙在同一個面上、每一截的面法線都一樣（第二段是那片鉛直扇形所在的面）');
 
-  // 一排最多掃過 PIECE：刀尖兩排之間走的距離比月牙最寬處短，弧才不會變成折線。
-  ok(PIECE * REACH < TRAILS.slash.width, `刀尖兩排之間最多走 ${(PIECE * REACH).toFixed(2)} 公尺，比月牙最寬處（${TRAILS.slash.width}）短`);
+  /* 月牙是一串點：相鄰兩顆的間距比那裡的半寬小，所以一定重疊——剛掃出來的月牙
+     是一整塊。只看半寬大於 MIN_GAP 的地方（更小的是尖端，本來就收成一點）。 */
+  let overlap = true;
+  for (const kind of Object.keys(TRAILS)) {
+    for (let k = 0; k <= 60; k++) {
+      const w = qiAt(kind, along60(kind, k), me, slashTip(me)).w;
+      if (w / 2 > MIN_GAP && gapAt(w) >= w / 2) overlap = false;
+    }
+  }
+  ok(GAP < 1 && overlap, `相鄰兩顆點的間距是半寬的 ${GAP} 倍，一定重疊`);
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');
