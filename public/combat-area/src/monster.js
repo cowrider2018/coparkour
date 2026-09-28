@@ -1,10 +1,16 @@
 /* ── combat-area/src/monster.js ──────────────────────────────────────
-   怪物的外觀：立耳犬，純綠色的毛、紅眼睛。每一類的毛色都一樣，靠體型分：
+   怪物的外觀：立耳犬，紅眼睛。一個系列一件毛，系列裡靠體型分：
 
-     minion  小怪：一般大小。
-     boss    BOSS：兩倍大。
+     minion  殭屍：純綠色，一般大小。
+     boss    殭屍 BOSS：同一件綠毛，兩倍大。
+     ghost   幽靈：淡藍白，半透明，一般大小。
 
    只是看起來大：碰撞還是 combat.js 那同一個 PHYS 圓柱。
+
+   半透明是畫兩趟：Critter 原本那一個網格只寫深度、不上色，再疊一個共用同一份
+   幾何與骨頭的網格照 alpha 混色。只畫一趟的話，自己身體後面的腿、墨線的內面
+   都會透出來，看起來是一團疊在一起的線。兩個網格的 renderOrder 一樣、位置一樣，
+   three 的半透明排序這時照建立的先後（id），所以先建的那一個（寫深度）先畫。
 
    是遊戲那隻狗本人（試玩場 critter.js 的 Critter，同一份 cat.bin 資料），
    只是毛色不是 cat.bin 裡的任何一件：每個頂點的顏色在這裡直接寫，
@@ -16,13 +22,24 @@
    所以這裡的數字就是畫面上看到的那個顏色，不必先轉。
    ------------------------------------------------------------------ */
 
+import * as THREE from '../../test-area/vendor/three.module.js';
 import { Critter } from '../../test-area/src/critter.js';
 
 /** 毛色：body 身上、face 鼻子與嘴。 */
-const COAT = { body: [0.24, 0.80, 0.22], face: [0.08, 0.36, 0.08] };
-/** 每一類畫多高（公尺）。鍵跟 combat.js 的 KINDS 一樣。 */
-const HEIGHTS = { minion: 1.0, boss: 2.0 };
+const ZOMBIE = { body: [0.24, 0.80, 0.22], face: [0.08, 0.36, 0.08] };
+const GHOST = { body: [0.78, 0.88, 0.98], face: [0.34, 0.44, 0.60] };
+/**
+ * 每一類的外觀，鍵跟 combat.js 的 KINDS 一樣：毛色、畫多高（公尺）、不透明度
+ * （1 = 不透明）。
+ */
+const LOOKS = {
+  minion: { coat: ZOMBIE, height: 1.0, alpha: 1 },
+  boss: { coat: ZOMBIE, height: 2.0, alpha: 1 },
+  ghost: { coat: GHOST, height: 1.0, alpha: 0.5 },
+};
 const RED = [0.95, 0.08, 0.06];
+/** 半透明的怪物畫在地上那些預告與攻擊範圍（fx.js，renderOrder 2～4）之後，才透得出它們。 */
+const SEE_THROUGH_ORDER = 5;
 
 /**
  * 做一隻怪物的外觀。借玩家那個 Zoo 已經讀好的立耳犬資料，不再讀一次 cat.bin。
@@ -33,10 +50,35 @@ const RED = [0.95, 0.08, 0.06];
  */
 export function makeMonsterCritter(zoo, kind) {
   const data = zoo.critters.get('dog-prick').data;
-  const c = new Critter(data, 'dog-prick', { height: HEIGHTS[kind] });
+  const look = LOOKS[kind];
+  const c = new Critter(data, 'dog-prick', { height: look.height });
   c.setHat(false);
-  paint(c, COAT);
+  paint(c, look.coat);
+  if (look.alpha < 1) seeThrough(c, look.alpha);
   return c;
+}
+
+/** 讓一隻 Critter 半透明：原本的網格只寫深度，另一個網格照 alpha 上色（理由見檔頭）。 */
+function seeThrough(c, alpha) {
+  const depth = c.mesh;
+  /* 材質的 clone 不帶 onBeforeCompile 與快取鍵，要自己接上——骨頭與毛色的
+     著色都在那裡面。uniform 是 rig3 閉包裡的同一份，所以兩個網格一起動。 */
+  const tint = depth.material.map((m) => {
+    const t = m.clone();
+    t.onBeforeCompile = m.onBeforeCompile;
+    t.customProgramCacheKey = m.customProgramCacheKey;
+    t.transparent = true;
+    t.opacity = alpha;
+    t.depthWrite = false;
+    return t;
+  });
+  for (const m of depth.material) { m.transparent = true; m.colorWrite = false; }
+  const mesh = new THREE.Mesh(c.geometry, tint);
+  mesh.position.copy(depth.position);
+  mesh.scale.copy(depth.scale);
+  mesh.frustumCulled = false;
+  depth.renderOrder = mesh.renderOrder = SEE_THROUGH_ORDER;
+  depth.parent.add(mesh);
 }
 
 /** 照骨頭上色。Critter 沒有「自訂毛色」的入口，所以直接寫它的顏色屬性。 */

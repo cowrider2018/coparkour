@@ -17,6 +17,7 @@
      3 殭屍          中線上一隻、左右各 4 公尺一隻。
      1 BOSS          中線上。
      2 殭屍 + 1 BOSS BOSS 在中線上，殭屍在左右各 4 公尺（預設）。
+     3 幽靈          跟 3 殭屍同樣的站位。
 
    ── 怪物 ────────────────────────────────────────────────────────
    一直追著玩家跑。身體跟玩家一樣大（同一個 PHYS 的圓柱）。碰到玩家不再
@@ -27,6 +28,10 @@
 
    蓄力被打會怎樣看類別（KINDS 的 `steady`）：小怪一打就取消；BOSS 蓄力不會
    被打斷——跟放招的倒數一樣打不退、傷害減半（armored）。
+
+   幽靈（KINDS 的 `fly`）不受重力、會飛：y 跟 x、z 是同一回事。追人是朝玩家
+   的腳在三維裡追、衝刺朝三維的方向衝；被擊退的時候速度一樣照那一段給，但不
+   往下掉，而是三個軸一起照 FLY.drag 減速，停在半空中再回去追。
 
    每一下都會扣血（各段的傷害見 DAMAGE）。血扣到 0 就死，當場在牠自己的
    重生點重生（血滿、破防歸零），玩家留在原地。被打中還會被擊退：水平往遠離玩家的方向、
@@ -97,6 +102,7 @@ export const MODES = [
   { id: 'minions', name: '3 殭屍', hint: '三隻殭屍。', monsters: [post('minion', -4), post('minion', 0), post('minion', 4)] },
   { id: 'boss', name: '1 BOSS', hint: '一隻兩倍大的 BOSS。', monsters: [post('boss', 0)] },
   { id: 'mixed', name: '2 殭屍 + 1 BOSS', hint: '大隻的 BOSS 在中間，兩隻殭屍在左右。', monsters: [post('boss', 0), post('minion', -4), post('minion', 4)] },
+  { id: 'ghosts', name: '3 幽靈', hint: '三隻半透明、會飛的幽靈。', monsters: [post('ghost', -4), post('ghost', 0), post('ghost', 4)] },
 ];
 
 /** 一開始是哪一個陣容。 */
@@ -131,6 +137,8 @@ export const COLS = [{
  *   boss    BOSS（畫成兩倍大）。血 20。腳程 4。不會一直追：每 `every` 秒從 `skills`
  *           裡隨機放一招（規則在 skills.js），放招的時候站著不動。`steady`：
  *           衝刺前的蓄力不會被打斷（見 armored）。
+ *   ghost   幽靈（半透明的小怪）。血、腳程跟殭屍一樣。`fly`：不受重力，
+ *           y 跟 x、z 一樣追、一樣衝、被擊退也不落下（見 FLY）。
  *
  * 碰撞的身體一樣大（同一個 PHYS 的圓柱）；外觀（同一件毛、BOSS 畫兩倍大）在 monster.js。
  *
@@ -141,7 +149,21 @@ export const BREAK_AT = 8;
 export const KINDS = {
   minion: { name: '殭屍', hp: 4, speed: 3.4, breakAt: BREAK_AT },
   boss: { name: 'BOSS', hp: 20, speed: 4, breakAt: BREAK_AT, steady: true, skills: ['orb', 'leap', 'cone'], every: 3 },
+  ghost: { name: '幽靈', hp: 4, speed: 3.4, breakAt: BREAK_AT, fly: true },
 };
+
+/**
+ * 會飛的那幾類（`fly`）怎麼動：
+ *
+ *   drag  被擊退之後，速度沿著它自己的方向每秒減掉這麼多（公尺每秒²），三個軸
+ *         一起。取重力那個數，所以垂直往上的那一份飛得跟殭屍一樣高（第二段
+ *         1.1 公尺、第三段 4.5 公尺）——差別是停在那裡，不掉下來。
+ *   top   腳最高到哪：黑牆的蓋子底下一個身高。
+ */
+export const FLY = { drag: PHYS.gravity, top: ARENA.lid - PHYS.height };
+
+/** 會飛的高度只能在地板與 FLY.top 之間。 */
+const flyY = (y) => Math.min(FLY.top, Math.max(0, y));
 
 /** 破防之後的窗口多長（秒）：亮圓從淡圓的大小縮到消失的時間。 */
 export const BREAK_WINDOW = 0.5;
@@ -329,6 +351,7 @@ export function monsterStep(m, dt, target) {
     if (ns <= 0) m.slide = false;
     return;
   }
+  if (m.air && kindOf(m).fly) { driftStep(m, dt); return; }
   if (m.air) {
     m.vy -= PHYS.gravity * dt;
     m.y += m.vy * dt;
@@ -343,30 +366,66 @@ export function monsterStep(m, dt, target) {
     return;
   }
   // 放招中、出招後的僵直（skills.js）：站著不動。
-  if (m.cast || m.stun > 0) { m.vx = 0; m.vz = 0; return; }
+  if (m.cast || m.stun > 0) { m.vx = 0; m.vy = 0; m.vz = 0; return; }
   /* 衝完、再發呆 recover 秒之後收掉。收掉的這一幀站著不動、不接著衝下一次：
      BOSS 的 bossStep 在 monsterStep 之前，牠要看到一幀「沒在衝」才挑得了招，
      不然貼著人的 BOSS 會一次接一次地衝，永遠輪不到放招。 */
-  if (m.lunge && m.lunge.t >= LUNGE.windup + LUNGE.time + LUNGE.recover) { m.lunge = null; m.vx = 0; m.vz = 0; return; }
+  if (m.lunge && m.lunge.t >= LUNGE.windup + LUNGE.time + LUNGE.recover) { m.lunge = null; m.vx = 0; m.vy = 0; m.vz = 0; return; }
   if (m.lunge) { lungeStep(m, dt); return; }
-  const dx = target.x - m.x, dz = target.z - m.z;
-  const d = Math.hypot(dx, dz);
-  if (d > 1e-6) { m.aimX = dx / d; m.aimZ = dz / d; }
+  /* 朝玩家的腳追。會飛的連高低一起追（三維的方向），走路的只看水平。 */
+  const fly = !!kindOf(m).fly;
+  const dx = target.x - m.x, dy = fly ? target.y - m.y : 0, dz = target.z - m.z;
+  const d = Math.hypot(dx, dy, dz);
+  const h = Math.hypot(dx, dz);
+  if (h > 1e-6) { m.aimX = dx / h; m.aimZ = dz / h; }
   if (d <= LUNGE.range) {
     // 追到了：停下來發呆，方向在這一刻鎖定。
-    m.lunge = { t: 0, dirX: m.aimX, dirZ: m.aimZ };
-    m.vx = 0; m.vz = 0;
+    m.lunge = d > 1e-6 ? { t: 0, dirX: dx / d, dirY: dy / d, dirZ: dz / d } : { t: 0, dirX: m.aimX, dirY: 0, dirZ: m.aimZ };
+    m.vx = 0; m.vy = 0; m.vz = 0;
     return;
   }
-  [m.vx, m.vz] = steer(m.vx, m.vz, m.aimX, m.aimZ, kindOf(m).speed, dt);
+  if (fly) {
+    [m.vx, m.vy, m.vz] = steer3(m.vx, m.vy, m.vz, dx / d, dy / d, dz / d, kindOf(m).speed, dt);
+    m.y = flyY(m.y + m.vy * dt);
+  } else {
+    [m.vx, m.vz] = steer(m.vx, m.vz, m.aimX, m.aimZ, kindOf(m).speed, dt);
+  }
   [m.x, m.z] = solveXZ(COLS, m.x + m.vx * dt, m.z + m.vz * dt, m.y);
+}
+
+/**
+ * walk.js 的 steer 搬到三維：沿著想去的方向那一份照 PHYS.accel 追上 want，
+ * 其他方向的份直接丟掉（轉向不欠帳，跟 steer 一樣）。
+ */
+function steer3(vx, vy, vz, dirX, dirY, dirZ, want, dt) {
+  const cur = vx * dirX + vy * dirY + vz * dirZ;
+  const rate = PHYS.accel * dt;
+  const next = cur + Math.max(-rate, Math.min(rate, want - cur));
+  return [dirX * next, dirY * next, dirZ * next];
+}
+
+/**
+ * 會飛的被擊退：照速度飛，速度沿著自己的方向每秒減 FLY.drag，減到 0 就停在
+ * 那裡、回去追人。撞到地板或蓋子，那個方向的份歸零。
+ */
+function driftStep(m, dt) {
+  const sp = Math.hypot(m.vx, m.vy, m.vz);
+  const ns = Math.max(0, sp - FLY.drag * dt);
+  const k = sp > 1e-9 ? ns / sp : 0;
+  m.vx *= k; m.vy *= k; m.vz *= k;
+  const y = m.y + m.vy * dt;
+  m.y = flyY(y);
+  if (m.y !== y) m.vy = 0;
+  [m.x, m.z] = solveXZ(COLS, m.x + m.vx * dt, m.z + m.vz * dt, m.y);
+  if (ns <= 0) { m.vx = m.vy = m.vz = 0; m.air = false; }
 }
 
 /** 衝出去之後 s 秒（0 ≤ s ≤ LUNGE.time）走了多遠：速度從 speed 線性減到 0 的積分。 */
 const lungeDist = (s) => LUNGE.speed * (s - (s * s) / (2 * LUNGE.time));
 
 /**
- * 衝刺的一幀：蓄力與衝完之後都站著；衝的時候沿鎖定的方向走，走多遠是那一段
+ * 衝刺的一幀：蓄力與衝完之後都站著；衝的時候沿鎖定的方向走（會飛的是三維的
+ * 方向，`dirY`），走多遠是那一段
  * 時間的積分——跟幀長無關，一次衝刺永遠是 2.0 公尺。
  *
  * `hot`：這一幀有衝（走了一段）。碰撞看的是它，而不是「t 落在哪一段」——衝完
@@ -377,12 +436,17 @@ function lungeStep(m, dt) {
   const s0 = Math.min(LUNGE.time, Math.max(0, L.t - LUNGE.windup));
   L.t += dt;
   const s1 = Math.min(LUNGE.time, Math.max(0, L.t - LUNGE.windup));
-  m.aimX = L.dirX; m.aimZ = L.dirZ;
+  const dy = L.dirY || 0;
+  const h = Math.hypot(L.dirX, L.dirZ);
+  if (h > 1e-6) { m.aimX = L.dirX / h; m.aimZ = L.dirZ / h; }   // 正上下方衝的時候面向不變
   const step = lungeDist(s1) - lungeDist(s0);
   const v = s1 > 0 ? LUNGE.speed * (1 - s1 / LUNGE.time) : 0;
-  m.vx = L.dirX * v; m.vz = L.dirZ * v;
+  m.vx = L.dirX * v; m.vy = dy * v; m.vz = L.dirZ * v;
   L.hot = step > 0;
-  if (step > 0) [m.x, m.z] = solveXZ(COLS, m.x + L.dirX * step, m.z + L.dirZ * step, m.y);
+  if (step > 0) {
+    if (dy) m.y = flyY(m.y + dy * step);
+    [m.x, m.z] = solveXZ(COLS, m.x + L.dirX * step, m.z + L.dirZ * step, m.y);
+  }
 }
 
 /** 這一幀正在衝。只有這段時間碰到玩家才算——蓄力與衝完之後的發呆都不算。 */
@@ -715,19 +779,39 @@ export function breakTarget(p, monsters) {
 }
 
 /**
+ * 怪物 T 秒後的腳在哪（x, y, z），照牠現在的速度往前推。
+ *   · 會飛、被擊退：沿著速度走，照 FLY.drag 減速到停。
+ *   · 會飛、其他時候：直線。
+ *   · 走路、被擊退在空中：水平直線、垂直照重力，落地就停在地上。
+ *   · 走路、其他時候：水平直線，腳在原本的高度。
+ */
+function ahead(m, T) {
+  if (kindOf(m).fly) {
+    let k = T;
+    if (m.air) {
+      const sp = Math.hypot(m.vx, m.vy, m.vz);
+      k = sp > 1e-9 ? Math.min(sp * T - 0.5 * FLY.drag * T * T, (sp * sp) / (2 * FLY.drag)) / sp : 0;
+    }
+    return [m.x + m.vx * k, flyY(m.y + m.vy * k), m.z + m.vz * k];
+  }
+  const y = m.air ? Math.max(0, m.y + m.vy * T - 0.5 * PHYS.gravity * T * T) : m.y;
+  return [m.x + m.vx * T, y, m.z + m.vz * T];
+}
+
+/**
  * 發動破防攻擊：用掉目標的窗口（累積歸零），給玩家一次飛向牠頭頂的速度。
  * 在空中發動也是同一條式子——垂直速度是從玩家現在的高度反推的，原本往上或
  * 往下的速度直接換掉。
  *
  * 速度是照拋物線反推的：BREAK_ATK.flight 秒後腳正好落在頭頂上。頭頂取的是
- * 牠**那時候**會在的地方——照牠現在的速度往前推（被擊退在空中的話連重力一起
- * 算，落地就停在地上）。追過來的怪物是迎著玩家跑的，照現在的位置瞄會飛過頭。
+ * 牠**那時候**會在的地方——照牠現在的速度往前推（見 ahead）。追過來的怪物是
+ * 迎著玩家跑的，照現在的位置瞄會飛過頭。
  */
 export function startBreak(c, p, m) {
   resetBreak(m);
   const T = BREAK_ATK.flight, g = PHYS.gravity;
-  const tx = m.x + m.vx * T, tz = m.z + m.vz * T;
-  const ty = (m.air ? Math.max(0, m.y + m.vy * T - 0.5 * g * T * T) : m.y) + PHYS.height;
+  const [tx, my, tz] = ahead(m, T);
+  const ty = my + PHYS.height;
   const hx = tx - p.x, hz = tz - p.z, hd = Math.hypot(hx, hz);
   c.target = m;
   [c.dashX, c.dashZ] = hd > 1e-6 ? [hx / hd, hz / hd] : [p.aimX, p.aimZ];
@@ -784,8 +868,8 @@ export function spinStep(c, p, m) {
   m.vx = c.dashX * BREAK_ATK.push.h;
   m.vz = c.dashZ * BREAK_ATK.push.h;
   m.vy = 0;
-  if (m.y > 0) { m.air = true; m.grounded = false; }         // 在空中被定住的：放開就帶著水平速度落下
-  else m.slide = true;
+  if (m.y > 0 && !kindOf(m).fly) { m.air = true; m.grounded = false; }   // 在空中被定住的：放開就帶著水平速度落下
+  else m.slide = true;                                       // 會飛的不落下：在原本的高度滑開
   const died = hurt(m, DAMAGE.break);
   c.phase = 'vault';
   c.t = 0;

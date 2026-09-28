@@ -419,8 +419,9 @@ function frame(now) {
   for (const { m, critter } of foes) {
     critter.root.position.set(m.x, m.y, m.z);
     critter.setFacing(Math.atan2(m.aimX, m.aimZ));
+    // 會飛的一直是飄著的姿勢：不踩地、不走路。
     critter.update(dt, {
-      speed: Math.hypot(m.vx, m.vz), grounded: m.grounded, vy: m.vy,
+      speed: Math.hypot(m.vx, m.vz), grounded: m.grounded && !KINDS[m.kind].fly, vy: m.vy,
       viewYaw: Math.atan2(camera.position.x - m.x, camera.position.z - m.z),
     });
   }

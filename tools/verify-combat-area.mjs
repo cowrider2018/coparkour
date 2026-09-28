@@ -34,7 +34,7 @@
                     瞬間牠被往突進的方向推開（只有水平）；整招無敵；在空中也
                     按得出來——被第二段打破防的那一刻玩家就在空中，接得上。
     13. 怪物不疊    三隻追同一個站著不動的人，身體一直不重疊、不出牆。
-    14. 陣容        三種陣容：3 殭屍、1 BOSS、2 殭屍 + 1 BOSS，預設是最後一種；
+    14. 陣容        四種陣容：3 殭屍、1 BOSS、2 殭屍 + 1 BOSS、3 幽靈，預設是第三種；
                     每一隻都在中線 1/3 那條橫線上、面向中心，不疊在一起。
     15. BOSS 放招   腳程 4；每 3 秒挑一招，挑的那一刻鎖定玩家的位置，放招中站著
                     不動；被擊退、定住、推開就打斷。球：倒數 0.75 秒、半徑 0.75
@@ -48,13 +48,17 @@
                     蓄力 0.25 秒，朝那時鎖定的方向衝（16 → 0，0.25 秒，2.0 公尺，
                     跟幀長無關），衝完發呆 0.25 秒；只有衝的時候碰到才死。小怪
                     蓄力被打就取消；BOSS 蓄力打不退、傷害減半。
+    17. 幽靈        不受重力：朝玩家的腳在三維裡追、朝三維的方向衝 2.0 公尺；
+                    被擊退往上飛得跟殭屍一樣高，但停在半空、不落下，停了再追；
+                    高度夾在地板與蓋子底下；破防攻擊的迴旋之後在原本的高度被
+                    推開；在空中被擊退的時候破防攻擊一樣瞄得到。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test-area/src/walk.js';
 import {
   MODES, DEFAULT_MODE, LUNGE, lunging, ARENA, SPAWN, DOG_H, REACH, SWING, REST, KNOCK, KNOCK_SCALE, FAN, WINDOW, KINDS, DAMAGE, hurt, placeMonster,
   BREAK_AT, BREAK_WINDOW, broken,
-  BREAK_ATK, breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, armored,
+  FLY, BREAK_ATK, breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, armored,
   makeMonster, monsterStep, touching, bites, knock, inSlash, inFan, inRing, slashTip, fanFrame,
   makeCombo, comboStep, invulnerable, cueing,
 } from '../public/combat-area/src/combat.js';
@@ -587,8 +591,8 @@ console.log('13. 怪物不疊');
 console.log('14. 陣容');
 {
   const tally = (md) => md.monsters.reduce((o, s) => ({ ...o, [s.kind]: (o[s.kind] || 0) + 1 }), {});
-  const want = { minions: { minion: 3 }, boss: { boss: 1 }, mixed: { boss: 1, minion: 2 } };
-  ok(MODES.map((md) => md.id).join() === 'minions,boss,mixed', '三種陣容，面板上依序是 3 殭屍、1 BOSS、2 殭屍 + 1 BOSS');
+  const want = { minions: { minion: 3 }, boss: { boss: 1 }, mixed: { boss: 1, minion: 2 }, ghosts: { ghost: 3 } };
+  ok(MODES.map((md) => md.id).join() === 'minions,boss,mixed,ghosts', '四種陣容，面板上依序是 3 殭屍、1 BOSS、2 殭屍 + 1 BOSS、3 幽靈');
   for (const md of MODES) ok(JSON.stringify(tally(md)) === JSON.stringify(want[md.id]), `${md.name}：${JSON.stringify(tally(md))}`);
   ok(DEFAULT_MODE === 'mixed' && SPAWN.monsters === MODES[2].monsters, '預設是 2 殭屍 + 1 BOSS');
   const cx = (ARENA.x0 + ARENA.x1) / 2, cz = (ARENA.z0 + ARENA.z1) / 2;
@@ -870,6 +874,90 @@ console.log('16. 衝刺');
   const loose = makeMonster({ kind: 'boss', x: 0, z: -4, yaw: 0 });
   loose.lunge = { t: LUNGE.windup + LUNGE.time + 0.1, dirX: 0, dirZ: 1 };
   ok(!armored(loose), 'BOSS 衝完之後的發呆：不是蓄力');
+}
+
+/* ── 17. 幽靈 ────────────────────────────────────────────────── */
+console.log('17. 幽靈');
+{
+  const ghost = (x, z, y = 0) => { const m = makeMonster({ kind: 'ghost', x, z, yaw: 0 }); m.y = y; return m; };
+  ok(KINDS.ghost.fly && !KINDS.minion.fly && !KINDS.boss.fly && KINDS.ghost.hp === KINDS.minion.hp && KINDS.ghost.speed === KINDS.minion.speed,
+    '名冊：只有幽靈會飛；血與腳程跟殭屍一樣');
+
+  // 追：人站在 3 公尺高的地方，幽靈從地上飛上去，停下來的時候三維距離在 range 以內。
+  {
+    const m = ghost(0, -6), q = body(0, 0, 3);
+    let t = 0;
+    while (t < 5 && !m.lunge) { monsterStep(m, DT, q); t += DT; }
+    const d = Math.hypot(m.x - q.x, m.y - q.y, m.z - q.z);
+    ok(m.lunge && m.y > 1 && d <= LUNGE.range && d > LUNGE.range - 0.1,
+      `人在 3 公尺高：飛到 y = ${m.y.toFixed(2)}、三維距離 ${d.toFixed(2)} 停下來蓄力`);
+    ok(m.lunge && m.lunge.dirY > 0, '鎖定的方向往上');
+    const from = [m.x, m.y, m.z];
+    while (t < 6 && m.lunge) { monsterStep(m, DT, q); t += DT; }
+    const dash = Math.hypot(m.x - from[0], m.y - from[1], m.z - from[2]);
+    ok(Math.abs(dash - (LUNGE.speed * LUNGE.time) / 2) < 1e-6, `朝三維的方向衝了 ${dash.toFixed(3)} 公尺`);
+  }
+  // 站在地上的人：幽靈追到地面的高度，衝得到。
+  {
+    const m = ghost(0, -4, 2), q = body(0, 0);
+    let t = 0, hit = false;
+    while (t < 4 && !hit) { monsterStep(m, DT, q); hit = bites(q, m); t += DT; }
+    ok(hit, '人在地上、幽靈從 2 公尺高追過來：衝得到');
+  }
+  // 擊退：往上飛得跟殭屍一樣高，停在那裡不掉，停了才回去追。
+  {
+    const m = ghost(0, -4), z = makeMonster({ kind: 'minion', x: 0, z: -4, yaw: 0 });
+    knock(m, 0, 0, 0, -1); knock(z, 0, 0, 0, -1);
+    let top = 0, zTop = 0, t = 0, stopAt = -1;
+    while (t < 2) {
+      if (z.air) { monsterStep(z, DT, body(0, 20)); zTop = Math.max(zTop, z.y); }
+      if (m.air) { monsterStep(m, DT, body(0, 20)); top = Math.max(top, m.y); if (!m.air) stopAt = t; }
+      t += DT;
+    }
+    ok(Math.abs(top - zTop) < 0.05, `第二段挑起來：幽靈最高 ${top.toFixed(2)}、殭屍最高 ${zTop.toFixed(2)}`);
+    ok(stopAt > 0 && near(m.y, top) && m.vy === 0, `${stopAt.toFixed(2)} 秒停在 ${m.y.toFixed(2)} 公尺的半空，不落下`);
+    const y0 = m.y, z0 = m.z;
+    for (let i = 0; i < 10; i++) monsterStep(m, DT, body(0, 20, y0));
+    ok(m.z > z0 && near(m.y, y0, 0.01), '停了之後回去追人（同一個高度的人：只往前、不升降）');
+  }
+  // 高度夾在地板與蓋子底下。
+  {
+    const hi = ghost(0, 0, FLY.top - 0.5);
+    knock(hi, 0, 0, 0, -1, KNOCK_SCALE.slam);
+    for (let i = 0; i < 120 && hi.air; i++) monsterStep(hi, DT, body(0, 20));
+    const lo = ghost(0, 0, 0.2);
+    lo.vy = -10; lo.air = true;
+    for (let i = 0; i < 60 && lo.air; i++) monsterStep(lo, DT, body(0, 20));
+    ok(near(hi.y, FLY.top) && FLY.top === ARENA.lid - PHYS.height && near(lo.y, 0),
+      `往上砸：停在蓋子底下 ${hi.y.toFixed(2)}；往下：停在地板`);
+  }
+  // 破防攻擊的迴旋之後：在原本的高度被推開，不落下。
+  {
+    const m = ghost(0, -2, 1.5), c = makeCombo(), p = body(0, 0);
+    m.hp = KINDS.boss.hp;                  // 破防攻擊扣 5，比幽靈的血多——別讓牠死了重生回地上
+    c.dashX = 0; c.dashZ = -1;
+    latch(c, p, m);
+    c.t = BREAK_ATK.spin;
+    spinStep(c, p, m);
+    for (let i = 0; i < 60 && m.slide; i++) monsterStep(m, DT, body(0, 20, 1.5));
+    ok(!m.air && !m.slide && near(m.y, 1.5) && m.z < -2, `轉完被推開：還在 ${m.y.toFixed(2)} 公尺高，往突進的方向滑開`);
+  }
+  // 在空中被擊退的幽靈：破防攻擊照牠 T 秒後的位置瞄，碰得到。
+  {
+    const m = ghost(0, -3, 1);
+    knock(m, 0, -1, 0, -1, KNOCK_SCALE.slam);
+    for (let i = 0; i < 3; i++) monsterStep(m, DT, body(0, 20));
+    const c = makeCombo(), p = { ...body(0, 0), vx: 0, vy: 0, vz: 0, grounded: true };
+    startBreak(c, p, m);
+    let hit = false;
+    for (let t = 0; t < BREAK_ATK.flight + 0.1 && !hit; t += DT) {
+      p.vy -= PHYS.gravity * DT;
+      p.x += p.vx * DT; p.y += p.vy * DT; p.z += p.vz * DT;
+      if (m.air) monsterStep(m, DT, body(0, 20));
+      hit = breakContact(p, m);
+    }
+    ok(hit, '被第三段往上砸、正在飛的幽靈：破防攻擊碰得到');
+  }
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');
