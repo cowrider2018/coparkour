@@ -36,17 +36,15 @@
    ------------------------------------------------------------------ */
 
 import * as THREE from '../vendor/three.module.js';
-import { C, toonVC, toon, glow, inkLine } from './palette.js';
-import { SURF, surfaceTextures } from './surface.js';
 import { buildRuins, BLOCKS, DOORS } from './blocks.js';
 import { loadZoo } from './critter.js';
 import { Pad } from './pad.js';
 import { Hud } from './hud.js';
-import { facet } from './geom.js';
-import { PHYS, solveXZ, supportInfo, steer, slideDrift, slideAccel, arenaGap, portalAt, portalDrift } from './walk.js';
+import { PHYS, portalAt } from './walk.js';
 import { makeCam, snapCam, updateCam } from './camera.js';
-import { buildVeil } from './veil.js';
-import { Controls, speedFor, fitView, wardrobe } from './controls.js';
+import { Controls, fitView, wardrobe } from './controls.js';
+import { buildStage } from './stage.js';
+import { makeHero, steerHero, moveHero } from './hero.js';
 
 const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -58,212 +56,16 @@ scene.fog = new THREE.Fog(0xa28a6d, 42, 165);
 
 const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 420);
 
-/* ── 沒有天空 ────────────────────────────────────────────────────
-   四個場地都被黑牆封了頂（見 veil.js），所以天空一片都看不到——這一頁
-   以前有一顆從裡面看的漸層球，現在拿掉了：畫一個永遠看不到的東西不如
-   不畫。清除色是黑的，所以萬一哪裡有縫，露出來的也是同一個黑。
-
-   之後要做天井房（不封頂）的話，那顆球在 git 裡（`git log -S sky`）。
-   ------------------------------------------------------------------ */
-
-/* ── 沒有燈 ──────────────────────────────────────────────────────
-   場景裡一顆 three 的燈都沒有：石頭的五階調與狗的三階調都是材質自己
-   算的（palette.js 的 banded、critter.js 的 FUR_FRAG），兩邊讀的是同一
-   個方向 palette.js 的 KEY_POS。加一盞 three 的燈在這裡不會亮任何東西，
-   只會讓人以為光是它給的。
-   ------------------------------------------------------------------ */
-
-/* ── 表面紋路開不開 ──────────────────────────────────────────────
-   `?surf=0` 關掉石紋與木紋（貼圖不算、著色器不接），其他一模一樣——
-   同一台手機上開關各看一次 fps，就是紋路的成本。烘在頂點色裡的那一層
-   （逐塊深淺、牆根）不受影響：那一層在載入時就算完了，每幀不花任何東西。 */
-const SURF_ON = new URLSearchParams(location.search).get('surf') !== '0';
-if (SURF_ON) {
-  /* 各向異性過濾：地板是斜著看的，沒有它的話幾公尺外的石板紋路就糊成一片。
-     開到 4 就夠——再高，手機上多花的填色率換不到看得出來的差別。 */
-  const an = Math.min(4, renderer.capabilities.getMaxAnisotropy());
-  for (const t of surfaceTextures()) t.anisotropy = an;
-}
-
-/* 地面。石板鋪面比它高 0.06，所以不會打架。 */
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(520, 520), toon(0x6a5844, SURF_ON ? SURF.dirt : false));
-ground.rotation.x = -Math.PI / 2;
-ground.position.y = -0.06;
-scene.add(ground);
-
-/* ── 廢墟 ────────────────────────────────────────────────────── */
-const ruins = buildRuins();
-const stoneMat = toonVC({ surf: SURF_ON }), inkMat = inkLine();
-scene.add(new THREE.Mesh(ruins.geometry, stoneMat), new THREE.LineSegments(ruins.ink, inkMat));
-const COLS = ruins.colliders;
-
-/* ── 門 ──────────────────────────────────────────────────────────
-   每一扇門的狀態（blocks.js `DOORS` 的 id → 開著嗎）是執行時的，一開始照
-   名冊上的 `open`。兩種狀態的門扇都砌好了，各自一個 mesh，換狀態只換哪一個看得到；
-   感測區認不認得這一組門也看這一份（walk.js 的 portalAt）。 */
-const doors = { ...ruins.doors };
-const doorMeshes = ruins.pieces.map((q) => {
-  const g = new THREE.Group();
-  if (q.geometry.attributes.position.count) g.add(new THREE.Mesh(q.geometry, stoneMat));
-  if (q.ink.attributes.position.count) g.add(new THREE.LineSegments(q.ink, inkMat));
-  // 開著的門洞裡那幾層黑霧：跟黑牆同一種材質，所以門洞的盡頭跟黑牆是同一個黑。
-  if (q.haze.alpha.length) g.add(hazeMesh(q.haze));
-  scene.add(g);
-  return { node: g, door: q.door, open: q.open };
-});
-/* ── 路標 ────────────────────────────────────────────────────────
-   懸浮在門口的一行字（blocks.js 的 `sign`），一張永遠朝著鏡頭的字卡。屬於
-   一組門：那一組門開著才看得到——沒有門扇的門就靠它說「這裡走得過去」。
-   字是金色（跟面板的 accent2 同一個）描一圈深褐，不吃霧：黑牆前面的拱洞
-   是全場最暗的地方，路標要在那裡讀得出來。 */
-const SIGN_H = 0.55;                 // 字卡高幾公尺（字高約六成）
-function signSprite(text) {
-  const px = 72, pad = px * 0.5;
-  const font = `600 ${px}px system-ui, "Noto Sans TC", sans-serif`;
-  const c = document.createElement('canvas');
-  let g = c.getContext('2d');
-  g.font = font;
-  c.width = Math.ceil(g.measureText(text).width + pad * 2);
-  c.height = Math.round(px * 1.6);
-  g = c.getContext('2d');            // 改了尺寸，畫布的狀態全部重設
-  g.font = font;
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.lineJoin = 'round';
-  g.lineWidth = px * 0.2;
-  g.strokeStyle = '#1e1810';
-  g.strokeText(text, c.width / 2, c.height / 2);
-  g.fillStyle = '#f2c14e';
-  g.fillText(text, c.width / 2, c.height / 2);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, fog: false }));
-  sp.scale.set(SIGN_H * (c.width / c.height), SIGN_H, 1);
-  /* 排在所有半透明的東西之後畫。黑牆與黑霧是同一個 mesh、原點在世界的原點，
-     three 照原點的遠近排半透明物件，於是它常常排在路標後面畫——路標不寫深度，
-     後畫的那一片黑就整個蓋上來，只剩被鐵閘柵條擋住的那幾條縫露得出字。 */
-  sp.renderOrder = 1;
-  return sp;
-}
-const signs = ruins.signs.map((s) => {
-  const node = signSprite(s.text);
-  node.position.set(s.x, s.y, s.z);
-  scene.add(node);
-  return { node, door: s.door, y: s.y, phase: s.x * 0.37 + s.z * 0.23 };
-});
-
-/* ── 傳送範圍（P）────────────────────────────────────────────────
-   每一個感測區的觸發範圍畫成一個線框：方的是一個盒子，圓的是上下兩圈加四根直線。
-   亮金色是現在走進去會被送走的（沒有門，或門開著），暗灰色是門關著的。線框不吃
-   深度，隔著牆也看得到——這是調傳送點用的，不是遊戲的一部分，所以一開始關著。 */
-const portalLines = (() => {
-  const group = new THREE.Group();
-  group.visible = false;
-  scene.add(group);
-  const lit = new THREE.LineBasicMaterial({ color: 0xf2c14e, depthTest: false, fog: false });
-  const dim = new THREE.LineBasicMaterial({ color: 0x6b655c, depthTest: false, fog: false });
-  const items = ruins.portals.map((p) => {
-    const v = [];
-    const seg = (a, b) => v.push(...a, ...b);
-    if (p.shape === 'box') {
-      const xs = [p.x0, p.x1], zs = [p.z0, p.z1];
-      for (const y of [p.y0, p.y1]) {
-        seg([p.x0, y, p.z0], [p.x1, y, p.z0]); seg([p.x1, y, p.z0], [p.x1, y, p.z1]);
-        seg([p.x1, y, p.z1], [p.x0, y, p.z1]); seg([p.x0, y, p.z1], [p.x0, y, p.z0]);
-      }
-      for (const x of xs) for (const z of zs) seg([x, p.y0, z], [x, p.y1, z]);
-    } else {
-      const N = 32, at = (k, y) => [p.x + Math.cos((k / N) * Math.PI * 2) * p.r, y, p.z + Math.sin((k / N) * Math.PI * 2) * p.r];
-      for (const y of [p.y0, p.y1]) for (let k = 0; k < N; k++) seg(at(k, y), at(k + 1, y));
-      for (let k = 0; k < N; k += N / 4) seg(at(k, p.y0), at(k, p.y1));
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
-    const line = new THREE.LineSegments(g, lit);
-    line.renderOrder = 2;
-    group.add(line);
-    return { line, door: p.door };
-  });
-  const paint = () => { for (const it of items) it.line.material = !it.door || doors[it.door] ? lit : dim; };
-  return { group, paint };
-})();
-
-function setDoor(group, open) {
-  doors[group] = open;
-  for (const m of doorMeshes) if (m.door === group) m.node.visible = m.open === open;
-  for (const s of signs) if (s.door === group) s.node.visible = open;
-  portalLines.paint();
-}
+/* ── 遺跡 ────────────────────────────────────────────────────────
+   地面、砌體、門、路標、黑牆、火焰：stage.js（完整流程模式站的是同一片）。 */
+const stage = buildStage(scene, renderer);
+const { ruins, doors, setDoor, arenaAt } = stage;
+const COLS = stage.cols;
 
 /** P：傳送範圍的線框，開或關。 */
 function togglePortalLines() {
-  portalLines.group.visible = !portalLines.group.visible;
-  hud.flash(portalLines.group.visible ? '顯示傳送範圍' : '隱藏傳送範圍');
+  hud.flash(stage.togglePortalLines() ? '顯示傳送範圍' : '隱藏傳送範圍');
 }
-for (const g of Object.keys(doors)) setDoor(g, doors[g]);
-
-/* ── 黑牆 ────────────────────────────────────────────────────────
-   形狀、尺寸、高度與黑霧的層次全部在 veil.js（那一支只吐頂點與透明度，
-   而且它算得對不對 node 驗得出來——三角形的繞向錯了，單面材質會把整片
-   剔掉，畫面上是「黑牆沒出現」，跟「還沒做」長得一模一樣）。
-
-   這裡只負責把那份資料變成一個 mesh：一顆材質、一個 draw。
-   ------------------------------------------------------------------ */
-/** 黑牆與黑霧的 mesh：veil.js 吐的那一份，或門洞裡的那幾層（同一種資料）。 */
-function hazeMesh(v) {
-  /* 純黑，不是調色盤的 C.fog（#1e1810）——牆要黑，而 #1e1810 在暖色的
-     天光下看起來是深褐色的一塊布。顏色在這裡而不在 veil.js，因為 sRGB
-     到線性的轉換是 three 的事。 */
-  const c = new THREE.Color(0x000000);
-  const col = new Float32Array(v.alpha.length * 4);
-  for (let i = 0; i < v.alpha.length; i++) {
-    col[i * 4] = c.r; col[i * 4 + 1] = c.g; col[i * 4 + 2] = c.b;
-    col[i * 4 + 3] = v.alpha[i];
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(v.pos, 3));
-  // 四個分量：透明度靠頂點色帶著走，所以整圈黑牆加黑霧是一個 draw。
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
-  g.computeBoundingSphere();
-  /* 單面，法線朝內。這不是省一半的填色率而已——雙面的話，玩家走進霧殼
-     與牆之間那一公尺時，那層霧會跑到鏡頭前面，整個畫面被染暗一次。 */
-  return new THREE.Mesh(g, new THREE.MeshBasicMaterial({
-    vertexColors: true, transparent: true, side: THREE.FrontSide,
-    fog: false, depthWrite: false,
-  }));
-}
-scene.add(hazeMesh(buildVeil(ruins.arenas)));
-
-/** 站在哪個場地裡。取「離邊界最裡面」的那一個——四個場地互不重疊。 */
-function arenaAt(x, z) {
-  let best = ruins.arenas[0], bg = -Infinity;
-  for (const a of ruins.arenas) {
-    const g = arenaGap(a, x, z);
-    if (g > bg) { bg = g; best = a; }
-  }
-  return best;
-}
-
-/* 火焰。一份幾何、一顆材質，逐盆一個 mesh——它們要各自抖，所以不能合併。
-   抖法是三個不成比例的正弦相加（3.1／5.7／11.3 Hz），沒有一個週期看得
-   出來；火焰同時是唯一一個不吃霧的東西，遠處那幾點才亮得起來。 */
-const flameGeo = facet(new THREE.ConeGeometry(0.3, 0.72, 7, 1));
-const flameMat = glow(C.flame);
-flameMat.fog = false;
-const coreMat = glow(C.flameCore);
-coreMat.fog = false;
-const flames = ruins.flames.map((f) => {
-  const g = new THREE.Group();
-  const outer = new THREE.Mesh(flameGeo, flameMat);
-  const core = new THREE.Mesh(flameGeo, coreMat);
-  core.scale.set(0.5, 0.62, 0.5);
-  core.position.y = -0.06;
-  g.add(outer, core);
-  g.position.set(f.x, f.y + 0.32 * f.s, f.z);
-  g.scale.setScalar(f.s);
-  scene.add(g);
-  return { node: g, outer, base: f.s, phase: Math.random() * 9 };
-});
 
 /* ── 動物 ────────────────────────────────────────────────────────
    遊戲那幾隻本人：一份 cat.bin，經過 species.js 生出貓與兩種狗，每一種
@@ -272,19 +74,7 @@ const flames = ruins.flames.map((f) => {
 const zoo = await loadZoo({ look: 'dog-prick/yellow', height: 1.0 });
 scene.add(zoo.root);
 
-const player = {
-  x: ruins.spawns.courtyard[0], y: 0, z: ruins.spawns.courtyard[2],
-  vx: 0, vy: 0, vz: 0, grounded: true, block: 'courtyard',
-  /* 腳底下那個面站不站得住，由 walk.js 的 supportInfo 給：null = 站得住，
-     'slide' = 可操作的緩滑，'fall' = 失去操作的滑落。欄位名字跟著它，
-     所以 slideDrift／slideAccel 直接吃 player，不必抄一份。 */
-  slip: null, sin: 0, dx: 0, dz: 0,
-  /* 最後一次操控的方向。移動與朝向都讀它：移動是「沿著它的那一份速度」
-     （walk.js 的 steer），朝向是「轉到這裡為止」。放開手之後它不會被
-     清掉——那正是「停下來還會轉完最後那一下」的全部機制。
-     初值 +Z，因為模型的靜止朝向就是 +Z。 */
-  aimX: 0, aimZ: 1,
-};
+const player = { ...makeHero(ruins.spawns.courtyard[0], 0, ruins.spawns.courtyard[2]), block: 'courtyard' };
 
 /* 碰撞的規則在 walk.js——那一支 tools/verify-terrain.mjs 也在用，
    於是「中心夠空曠」這條設計規則可以離線踩過一遍來驗，而不是靠看。 */
@@ -363,27 +153,7 @@ function frame(now) {
 
   const input = controls.axis();
 
-  /* 站在不可踩的圓頂上（樹梢那種）：操作整個失效，只剩重力。判斷用
-     的是**上一幀**踩到的那個面——這一幀踩到什麼要等垂直那一段算完才
-     知道，而輸入得在那之前處理。差一幀，16 毫秒，手上感覺不到。 */
-  const locked = player.grounded && player.slip === 'fall';
-  if (locked) { input.ix = 0; input.iz = 0; input.mag = 0; }
-
-  // 操控的方向當幀就是移動的方向。轉向沒有延遲，加速量照舊。
-  const aim = controls.aim(input);
-  if (aim) [player.aimX, player.aimZ] = aim;
-
-  if (locked) {
-    /* 沿著面加速 g·sinθ。不走 accel／brake 那一段：煞車是 23，比滑落的
-       加速度還大，兩個一起算的結果是站在上面紋風不動。 */
-    const [ax, az] = slideAccel(player);
-    player.vx += ax * dt;
-    player.vz += az * dt;
-  } else {
-    [player.vx, player.vz] = steer(
-      player.vx, player.vz, player.aimX, player.aimZ, speedFor(input.mag), dt,
-    );
-  }
+  const locked = steerHero(player, dt, controls, input);
 
   const jumped = controls.jumpHeld();
   if (jumped && player.grounded && !locked) {
@@ -391,42 +161,7 @@ function frame(now) {
     player.grounded = false;
   }
 
-  /* 緩滑（屋頂、斜坡、大石）。它是一個**終端速度**而不是一個加速度，
-     所以加在位移上而不是加進速度裡：加進速度的話，在斜面上站著不動的
-     每一幀都會再累積一次，一秒之後就不是緩滑而是摔下去了。走路、跳躍、
-     撞牆全部照常——這就是跑酷遊戲抓著牆往下溜的那個狀態。 */
-  const [driftX, driftZ] = player.grounded ? slideDrift(player) : [0, 0];
-  /* 感測區前那一圈的反推（walk.js 的 REPEL）：也是加在位移上的速度——進門會慢，
-     停下來會被推回安全的地方。 */
-  const [pushX, pushZ] = portalDrift(ruins.portals, player.x, player.y, player.z, doors);
-
-  /* 水平。撞到東西不必把速度清掉：速度永遠只沿著操控的方向，所以「沿著
-     牆一直加速」不會發生（速率被 speedFor 封在 8 以內），而正面撞牆之後
-     轉開，新方向上的投影本來就是 0——以前那兩行逐軸清零做的事，現在是
-     steer 的投影在做。 */
-  const mvx = player.vx + driftX + pushX, mvz = player.vz + driftZ + pushZ;
-  const [sx, sz] = solveXZ(COLS, player.x + mvx * dt, player.z + mvz * dt, player.y, doors);
-  player.x = sx; player.z = sz;
-
-  // 垂直
-  const prevY = player.y;
-  player.vy -= PHYS.gravity * dt;
-  player.y += player.vy * dt;
-  const sup = supportInfo(COLS, player.x, player.z, prevY);
-  if (player.y <= sup.y && player.vy <= 0) {
-    player.y = sup.y;
-    player.vy = 0;
-    player.grounded = true;
-    /* 踩到的是什麼跟踩在多高是同一次搜尋的結果。分開問兩次的話，兩次
-       之間隔著一個位移，而那正是「明明已經滑下來了卻還被鎖著」。 */
-    player.slip = sup.slip;
-    player.sin = sup.sin;
-    player.dx = sup.dx;
-    player.dz = sup.dz;
-  } else {
-    player.grounded = false;
-    player.slip = null;                 // 在空中：控制權回來
-  }
+  const realSpeed = moveHero(player, dt, COLS, ruins.portals, doors);
 
   /* 感測區（井底、沒入黑霧的路、開著的門）：走進去就被送到它的目的地。
      判斷在 walk.js，驗證器淹水的時候問的是同一支；門關著的那幾個不算。 */
@@ -446,7 +181,6 @@ function frame(now) {
   player.block = best;
 
   // 動物
-  const realSpeed = Math.hypot(mvx, mvz);
   zoo.root.position.set(player.x, player.y, player.z);
   /* 朝向只看操控，不看位移，而且每幀都送：
        · 停下來之後還會繼續轉到最後推的那個方向才停（目標不會被清掉）。
@@ -460,20 +194,7 @@ function frame(now) {
     speed: realSpeed, grounded: player.grounded, vy: player.vy, viewYaw,
   });
 
-  // 火焰
-  for (const f of flames) {
-    const t = now / 1000 + f.phase;
-    const w = 1
-      + Math.sin(t * 3.1) * 0.10
-      + Math.sin(t * 5.7) * 0.06
-      + Math.sin(t * 11.3) * 0.035;
-    f.node.scale.set(f.base, f.base * w * 1.05, f.base);
-    f.outer.rotation.y = t * 1.4;
-    f.outer.position.y = (w - 1) * 0.2;
-  }
-
-  // 路標浮著：上下晃五公分，兩秒多一個來回，每一塊的相位不同。
-  for (const sg of signs) sg.node.position.y = sg.y + Math.sin(now / 1000 * 2.6 + sg.phase) * 0.05;
+  stage.animate(now);
 
   // 相機。規則在 camera.js，這裡只把算出來的兩個點交給 three。
   {
@@ -490,7 +211,7 @@ function frame(now) {
   if (hudAcc > 0.25) {
     fpsShown = Math.round(fpsN / fpsAcc);
     fpsAcc = 0; fpsN = 0; hudAcc = 0;
-    line = `${fpsShown} fps${SURF_ON ? '' : '（無紋路）'} ・ 關卡 ${(ruins.tris / 1000).toFixed(0)}k tri ・ `
+    line = `${fpsShown} fps${stage.surf ? '' : '（無紋路）'} ・ 關卡 ${(ruins.tris / 1000).toFixed(0)}k tri ・ `
       + `${(ruins.inkLines / 1000).toFixed(0)}k 墨線 ・ 動物 ${(critterTris / 1000).toFixed(0)}k ・ `
       + `x ${player.x.toFixed(1)} y ${player.y.toFixed(1)} z ${player.z.toFixed(1)}`
       + (player.slip ? `・${player.slip === 'fall' ? '滑落' : '緩滑'}` : '');

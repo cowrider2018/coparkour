@@ -34,7 +34,7 @@
        黑板子插在地上」的來源。
 
    ── 為什麼是資料而不是一個 mesh ────────────────────────────────
-   跟 blocks.js 同一個理由：這裡只吐頂點與透明度，材質與 mesh 是 mode-terrain.js
+   跟 blocks.js 同一個理由：這裡只吐頂點與透明度，材質與 mesh 是 stage.js
    的事。而且它有一個看不出來的失敗模式——三角形的繞向。法線必須朝內
    （場地的軸），因為材質是單面的：繞向反了就整片被剔掉，畫面上是「黑牆
    沒有出現」，而那跟「還沒做」長得一模一樣。繞向算得對不對，node 驗得出來。
@@ -79,7 +79,7 @@ export function outline(a, inset = 0) {
 /**
  * @param {object[]} arenas blocks.js 的 `arenas`
  * @returns {{pos: Float32Array, alpha: Float32Array, tris: number}}
- *   pos 三個一組、alpha 一個一組（顏色由 mode-terrain.js 給，它才知道色彩空間）
+ *   pos 三個一組、alpha 一個一組（顏色由 stage.js 給，它才知道色彩空間）
  */
 export function buildVeil(arenas) {
   const pos = [], alpha = [];

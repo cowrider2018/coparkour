@@ -15,7 +15,7 @@
    幾何，墨線也因此只算一次（見 geom.js 的 edgesOf）。
 
    會動的東西（火焰）不進合併緩衝區，而是回報座標給 blocks.js，由
-   mode-terrain.js 建成自己的 mesh：合併過的頂點沒有辦法逐幀縮放。
+   stage.js 建成自己的 mesh：合併過的頂點沒有辦法逐幀縮放。
    ------------------------------------------------------------------ */
 
 import { stone, drum, spike, blob, ring, cloth, gablePrism, cap, rng, hashAt } from './geom.js';
@@ -895,7 +895,7 @@ export function rubble(B, o) {
 
 /* ── 火盆 ────────────────────────────────────────────────────────
    三腳、一缽、一堆炭。火焰本身不在這裡：它要逐幀抖，所以座標回報給
-   上層，由 mode-terrain.js 建一顆會呼吸的自發光錐。 */
+   上層，由 stage.js 建一顆會呼吸的自發光錐。 */
 export function brazier(B, o, flames) {
   const r = rng(o.seed);
   const y = o.y || 0, s = o.s || 1;
@@ -1414,7 +1414,7 @@ export function archeryTarget(B, o) {
 
 /**
  * 炊事的火：一圈壓進地裡的石頭、幾根燒黑的柴、三腳架吊著一口鍋，火在鍋底下。
- * 火焰跟火盆一樣回報給 `flames`，由 mode-terrain.js 建成會抖的錐。
+ * 火焰跟火盆一樣回報給 `flames`，由 stage.js 建成會抖的錐。
  */
 export function campfire(B, o, flames) {
   const y = o.y || 0;

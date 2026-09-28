@@ -1255,7 +1255,7 @@ export class Critter {
    *
    * 要知道視窗多高才算得出來：墨線是在「y 正規化的螢幕座標」裡推的，
    * 那個空間的 y 從 −1 到 +1 橫跨整個畫面高，所以一個像素是 2/height。
-   * mode-terrain.js 在每次 resize 時叫一次。
+   * controls.js 的 fitView 在每次 resize 時經由模式叫一次。
    */
   setInkPx(px, viewportHeight) {
     this._inkPx = px;

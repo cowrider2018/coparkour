@@ -1,7 +1,7 @@
 /* ── test/src/mode-combat.js ────────────────────────────────────────
    /test/?mode=combat：戰鬥模式的組裝與操作。
 
-   地形模式（mode-terrain.js） 拿掉地形之後剩下的東西：一塊黑牆圍起來
+   地形模式（mode-terrain.js）拿掉地形之後剩下的東西：一塊黑牆圍起來
    的空地、那隻動物、第三人稱鏡頭、手把。走路、跳、鏡頭、手把的規則都
    不在這裡，是直接 import 試玩場那幾支——這一頁只多了戰鬥（combat.js）
    與一隻怪物（monster.js）。
@@ -26,6 +26,7 @@ import { Hud } from './hud.js';
 import { PHYS, solveXZ, supportInfo, steer } from './walk.js';
 import { makeCam, snapCam, updateCam } from './camera.js';
 import { buildVeil } from './veil.js';
+import { hazeMesh } from './stage.js';
 import { Controls, speedFor, fitView, wardrobe } from './controls.js';
 import {
   ARENA, COLS, SPAWN, MODES, DEFAULT_MODE, SWING, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster,
@@ -65,21 +66,8 @@ ground.position.y = -0.06;
 scene.add(ground);
 
 /* ── 黑牆 ────────────────────────────────────────────────────────
-   veil.js 吐的那一份，材質照 mode-terrain.js 的 hazeMesh：純黑、透明度在
-   頂點色的第四個分量、單面朝內。 */
-{
-  const v = buildVeil([ARENA]);
-  const col = new Float32Array(v.alpha.length * 4);
-  for (let i = 0; i < v.alpha.length; i++) col[i * 4 + 3] = v.alpha[i];
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(v.pos, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
-  g.computeBoundingSphere();
-  scene.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({
-    vertexColors: true, transparent: true, side: THREE.FrontSide,
-    fog: false, depthWrite: false,
-  })));
-}
+   veil.js 吐的那一份，mesh 是 stage.js 的 hazeMesh（遺跡的黑牆是同一種）。 */
+scene.add(hazeMesh(buildVeil([ARENA])));
 
 /* ── 動物 ────────────────────────────────────────────────────────
    玩家那一隻：試玩場的 Zoo，一樣換得了動物、毛色、帽子。 */

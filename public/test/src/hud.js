@@ -42,7 +42,7 @@
 
    ── 這支只碰 DOM ─────────────────────────────────────────────────
    選了什麼由 callback 往外送，面板不知道場景長什麼樣，也不碰 zoo 以外
-   的任何東西。狀態的唯一來源是 zoo 與 mode-terrain.js，`paint()` 只是把那個狀態
+   的任何東西。狀態的唯一來源是 zoo 與模式的主程式，`paint()` 只是把那個狀態
    畫成選中的樣子。
    ------------------------------------------------------------------ */
 
@@ -155,7 +155,7 @@ export class Hud {
   /**
    * 直欄寬度變了：換一套裝。
    *
-   * mode-terrain.js 在每次 resize 之後叫，值就是 pad.js 算出來的欄寬，所以面板
+   * controls.js 在每次 resize 之後叫，值就是 pad.js 算出來的欄寬，所以面板
    * 與它底下的搖桿看到的是同一個數字。
    */
   fit(rail) {
@@ -165,7 +165,7 @@ export class Hud {
     document.body.dataset.rail = tier;
   }
 
-  /** 把 zoo 與 mode-terrain.js 的狀態畫成「選中」的樣子。 */
+  /** 把 zoo 與模式的主程式的狀態畫成「選中」的樣子。 */
   paint(state = {}) {
     for (const [look, b] of this.lookBtns) b.classList.toggle('on', look === this.zoo.look);
     /* 色票在窄欄裡沒有字，所以「現在選的是哪一件」由標題那一行說。 */
