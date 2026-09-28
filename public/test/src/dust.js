@@ -15,6 +15,7 @@
             （走下一級台階、小跳）不起塵。
 
    power 越大：注入的塵越濃、起塵的那一圈越大、往外推得越快越遠、留得越久。
+   塵是輕的：推得快、散得快（半秒上下），濃度不高，一下就被吃掉。
    每一項都跟著體型或 power 往上走，不會有「更重的落地反而比較淡」的時候。
    ------------------------------------------------------------------ */
 
@@ -47,16 +48,16 @@ export function dustOf(size, speed) {
   const power = Math.min(DUST.max, (size * size * (speed - DUST.min)) / (DUST.ref - DUST.min));
   const k = Math.sqrt(power);
   const foot = 0.3 * size;
-  const push = (1.4 + 1.6 * k) * Math.sqrt(size);
-  const life = 0.55 + 0.25 * k;
+  const push = 1.5 * (1.4 + 1.6 * k) * Math.sqrt(size);
+  const life = 0.35 + 0.15 * k;
   return {
     power,
-    amount: 0.5 + 0.6 * power,
+    amount: 0.3 + 0.35 * power,
     foot,
     push,
     life,
     half: foot + 0.45 * push * life + 0.4,
-    thick: 0.3 * size * (0.7 + 0.3 * Math.min(1, power)),
+    thick: 0.2 * size * (0.7 + 0.3 * Math.min(1, power)),
   };
 }
 
@@ -67,8 +68,8 @@ export const DUST_LOOK = { thick: 0.1, lit: [0.88, 0.81, 0.69], shade: [0.67, 0.
 /** 注入那幾幀：落地之後這麼久之內一直往外推（秒）。 */
 export const PUSH_TIME = 0.06;
 
-/** 那團塵這一刻還剩幾成（1 → 0）：頭三成的時間全在，之後散到 life 收掉。 */
+/** 那團塵這一刻還剩幾成（1 → 0）：頭 15% 的時間全在，之後一路散到 life 收掉。 */
 export function dustFade(d, tau) {
-  const u = Math.min(1, Math.max(0, (tau - 0.3 * d.life) / (0.7 * d.life)));
+  const u = Math.min(1, Math.max(0, (tau - 0.15 * d.life) / (0.85 * d.life)));
   return 1 - u * u * (3 - 2 * u);
 }
