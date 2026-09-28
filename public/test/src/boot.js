@@ -16,9 +16,11 @@
 export const MODES = {
   terrain: { title: '試玩場：城堡遺跡', entry: './mode-terrain.js' },
   combat: { title: '試打場', entry: './mode-combat.js' },
+  flow: { title: '完整流程', entry: './mode-flow.js' },
 };
 
-export const DEFAULT = 'terrain';
+/** 沒給模式的時候：完整流程——另外兩個是它的零件各自拿出來試。 */
+export const DEFAULT = 'flow';
 
 const asked = new URLSearchParams(location.search).get('mode');
 const mode = Object.hasOwn(MODES, asked) ? asked : DEFAULT;
