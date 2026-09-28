@@ -61,7 +61,7 @@ scene.add(zoo.root);
 const player = { ...makeHero(0, 0, 0), block: 'wallwalk' };
 
 /* 戰鬥：打死的 BOSS 就沒了（不重生），場上沒有怪物就是這一場清完。 */
-const fight = new Fight(scene, zoo, { respawn: false, renderer });
+const fight = new Fight(scene, zoo, { respawn: false });
 
 const cam = makeCam(0, 0);
 

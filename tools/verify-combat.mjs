@@ -65,7 +65,7 @@
     21. 劍氣        三段攻擊的範圍畫成的那一道月牙（trail.js）：掃的角度就是判定的
                     角度、一路往同一個方向掃；外緣就在 REACH 上、中間寬頭尾尖
                     （一整圈的不收）；月牙上的每一點都打得到——各種面向、第二段
-                    跳起來高過末端點也一樣；整道都在那片煙的面上、邊以內。
+                    跳起來高過末端點也一樣；整道在同一個面上。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
@@ -79,7 +79,7 @@ import {
 } from '../public/test/src/combat.js';
 import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
-import { TRAILS, HALF, PIECE, sweepAt, fadeAt, crescentAt, sheetFrame, qiAt, along } from '../public/test/src/trail.js';
+import { TRAILS, PIECE, sweepAt, fadeAt, crescentAt, qiAt, along } from '../public/test/src/trail.js';
 
 let fails = 0;
 const ok = (cond, msg) => {
@@ -1192,26 +1192,24 @@ console.log('21. 劍氣');
   }
   ok(inside, `月牙上的每一點都打得到${inside ? '' : `——${where} 打不到`}`);
 
-  /* 那片煙：出招那一刻擺好，人沒動的話整道月牙都在那一片的面上、在它的邊以內。 */
+  /* 整道月牙在同一個面上：人沒動的話每一截的面法線（刀的方向 × 掃的方向）都一樣，
+     而且每一截都在那個面上。qi.js 照這個法線把月牙往兩面鼓、算明暗。 */
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-  let flat = true, fits = true;
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  let flat = true;
   for (const kind of Object.keys(TRAILS)) {
     for (const [p, tip] of cases) {
-      const { o, U, V } = sheetFrame(kind, p, tip);
-      const N = [U[1] * V[2] - U[2] * V[1], U[2] * V[0] - U[0] * V[2], U[0] * V[1] - U[1] * V[0]];
+      const q0 = qiAt(kind, TRAILS[kind].from, p, tip), N = cross(q0.b.d, q0.b.t);
       for (let k = 0; k <= 60; k++) {
-        const q = qiAt(kind, along60(kind, k), p, tip);
-        const d = q.p.map((v, i) => v - o[i]);
-        if (Math.abs(dot(d, N)) > 1e-9) flat = false;
-        if (Math.max(Math.abs(dot(d, U)), Math.abs(dot(d, V))) + q.w / 2 > HALF) fits = false;
+        const q = qiAt(kind, along60(kind, k), p, tip), n = cross(q.b.d, q.b.t);
+        if (Math.abs(dot(n, N) - 1) > 1e-9 || Math.abs(dot(q.p.map((v, i) => v - q0.p[i]), N)) > 1e-9) flat = false;
       }
     }
   }
-  ok(flat, '月牙整道都在那片煙的面上（第二段是那片鉛直扇形所在的面）');
-  ok(fits, `月牙整道都在那片煙的邊以內（半邊長 ${HALF.toFixed(2)} 公尺）`);
+  ok(flat, '整道月牙在同一個面上、每一截的面法線都一樣（第二段是那片鉛直扇形所在的面）');
 
-  // 一段線段最多掃過 PIECE：刀尖一段走的距離比月牙最寬處短，弧才不會變成折線。
-  ok(PIECE * REACH < TRAILS.slash.width, `一段線段刀尖最多走 ${(PIECE * REACH).toFixed(2)} 公尺，比月牙最寬處（${TRAILS.slash.width}）短`);
+  // 一排最多掃過 PIECE：刀尖兩排之間走的距離比月牙最寬處短，弧才不會變成折線。
+  ok(PIECE * REACH < TRAILS.slash.width, `刀尖兩排之間最多走 ${(PIECE * REACH).toFixed(2)} 公尺，比月牙最寬處（${TRAILS.slash.width}）短`);
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

@@ -15,34 +15,27 @@
               範圍是對著畫面上的位置判的。打死 BOSS 掉出靈魂，靈魂往下掉、漂，碰到
               就撿起來。回報玩家挨了哪一下、倒下沒有、打死了誰、撿了幾顆靈魂。
      draw     怪物、劍氣（攻擊範圍）、BOSS 的預告與球、靈魂、破防的兩圈、刀、頭頂的愛心。
-              在相機擺好之後（破防的兩圈與愛心正對這一幀的鏡頭）；流體場也在這裡
-              往前推一幀，所以要在 renderer.render 之前。
+              在相機擺好之後（破防的兩圈與愛心正對這一幀的鏡頭）。
    ------------------------------------------------------------------ */
 
 import { PHYS, supportInfo } from './walk.js';
 import {
-  FIELD, SWING, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster, harm, lifeStep, gainHeart,
+  FIELD, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster, harm, lifeStep, gainHeart,
   SOUL, dropSoul, soulStep, grabs,
   breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, placeMonster, monsterStep, bites, knock,
-  inSlash, inFan, inRing, slashTip, fanFrame, makeCombo, comboStep, invulnerable, cueing, REACH,
+  inSlash, inFan, inRing, slashTip, makeCombo, comboStep, invulnerable, cueing,
 } from './combat.js';
 import { makeMonsterCritter } from './monster.js';
 import { Blade } from './blade.js';
 import { Mover } from './moves.js';
 import {
-  slashFx, fanFx, ringFx, cueFx, showFx, breakFx, showBreak, laneFx, showLane, orbMesh, circleFx, showCircle,
+  cueFx, showFx, breakFx, showBreak, laneFx, showLane, orbMesh, circleFx, showCircle,
   coneFx, showCone, soulMesh,
 } from './fx.js';
 import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from './skills.js';
 import { Hearts } from './hearts.js';
-import { Fluid, Sheet } from './fluid.js';
-import { TRAILS, HALF, PIECE, sweepAt, fadeAt, swellAt, sheetFrame, qiAt } from './trail.js';
-
-/** 劍氣的起伏：往外推的速度沿著月牙多或少這麼多（公尺 / 秒，見 trail.js 的 swellAt）。 */
-const QI_SWELL = 1.2;
-
-/** 劍氣的一段線段注入多少濃度（段長不到月牙的寬度就按比例少）。 */
-const QI_DYE = 1.5;
+import { TRAILS } from './trail.js';
+import { Qi } from './qi.js';
 
 /** 右上那一行小字：現在在連段的哪裡。 */
 export const PHASE_NAME = {
@@ -57,11 +50,10 @@ export class Fight {
   /**
    * @param {THREE.Scene} scene
    * @param {import('./critter.js').Zoo} zoo 玩家那一隻（刀掛在牠頭上，怪物借牠的立耳犬資料）
-   * @param {{respawn?: boolean, renderer?: THREE.WebGLRenderer}} o respawn：打死的怪物在牠的
-   *   重生點重生（戰鬥模式）；false 的話打死就離場（完整流程）。renderer：劍氣的流體場畫在它上面，
-   *   沒給就是以前那幾片高亮
+   * @param {{respawn?: boolean}} o respawn：打死的怪物在牠的重生點重生（戰鬥模式）；
+   *   false 的話打死就離場（完整流程）
    */
-  constructor(scene, zoo, { respawn = true, renderer = null } = {}) {
+  constructor(scene, zoo, { respawn = true } = {}) {
     this.scene = scene;
     this.zoo = zoo;
     this.respawn = respawn;
@@ -85,18 +77,14 @@ export class Fight {
     this.world = makeWorld();
     this._orbs = [];
 
-    /* 連段的狀態與每一段的高亮。 */
+    /* 連段的狀態與按鍵的提示圈。 */
     this.combo = makeCombo();
-    this._fx = { slash: slashFx(), fan: fanFx(), ring: ringFx(), cue: cueFx() };
-    scene.add(this._fx.slash.node, this._fx.fan.node, this._fx.ring.node, this._fx.cue.node);
-    /* 劍氣：三段攻擊的範圍畫成一道煙（trail.js），煙是共用流體場（fluid.js）的一格。
-       畫不出流體的機器、或網址給了 `?fluid=0`，就是上面那幾片高亮——同一台手機上
-       開關各看一次 fps，就是流體的成本。 */
-    const fluidOn = new URLSearchParams(location.search).get('fluid') !== '0';
-    this.fluid = renderer && fluidOn && Fluid.supported(renderer) ? new Fluid(renderer) : null;
-    /** 還看得到的每一道劍氣，與收回來的那幾片煙（下一道借）。 */
-    this._trails = [];
-    this._sheets = [];
+    this._fx = { cue: cueFx() };
+    scene.add(this._fx.cue.node);
+    /** 劍氣：三段攻擊的範圍，一道卡通的月牙（trail.js 算形狀、qi.js 畫）。還看得到的
+        每一道，與收掉的那幾道（下一道借）。 */
+    this._qis = [];
+    this._spare = [];
     /** 上一幀在哪一段：換段的那一刻起一道劍氣。 */
     this._phase = this.combo.phase;
     /** 這一幀在哪一段，它的範圍打不打得到怪物。第二段指著上一次第一段的末端點。 */
@@ -330,19 +318,8 @@ export class Fight {
       });
     }
 
-    // 攻擊範圍：劍氣，畫不出流體的話是高亮。都跟著玩家的腳與面向走。
-    const body = this.body(player);
-    if (this.fluid) this._qi(dt, body);
-    else {
-      const yaw = Math.atan2(body.aimX, body.aimZ);
-      const lit = (phase) => (combo.phase === phase ? combo.t : Infinity);
-      showFx(fx.slash, lit('slash'), SWING, player.x, player.y, player.z, yaw);
-      if (combo.tip) {
-        const fr = fanFrame(body, combo.tip);
-        showFx(fx.fan, lit('rise'), SWING, player.x, player.y, player.z, Math.atan2(fr.dirX, fr.dirZ), fr.a0);
-      }
-      showFx(fx.ring, lit('slam'), SWING, player.x, player.y, player.z, yaw);
-    }
+    // 攻擊範圍：劍氣，跟著玩家的腳與出招時鎖住的面向走。
+    this._qi(dt, this.body(player));
     // 提示圈不淡：亮著就是「現在按」。貼在玩家腳下那一層地板上（人可能在空中）。
     const floor = supportInfo(this.world.field.cols, player.x, player.z, player.y).y;
     showFx(fx.cue, cueing(combo) ? 0 : Infinity, 1, player.x, floor, player.z, 0);
@@ -389,91 +366,35 @@ export class Fight {
   }
 
   /**
-   * 劍氣的一幀：進了新的一段就起一道，掃的時候把刀氣注入流體，流體往前推一幀，
-   * 然後擺好每一片煙。淡完了、或格子被別的煙收走了，就收起來。
+   * 劍氣的一幀：進了新的一段就起一道（掛在出招這一刻），每一道往前一幀——還在掃
+   * 就把這一幀掃過的那一截鋪上去——被吃完了就收起來。
    */
   _qi(dt, player) {
-    const combo = this.combo, fluid = this.fluid;
+    const combo = this.combo;
     if (combo.phase !== this._phase) {
       this._phase = combo.phase;
-      if (TRAILS[combo.phase] && (combo.phase !== 'rise' || combo.tip)) this._trails.push(this._startTrail(combo.phase, player));
+      if (TRAILS[combo.phase] && (combo.phase !== 'rise' || combo.tip)) {
+        let q = this._spare.pop();
+        if (!q) {
+          q = new Qi();
+          this.scene.add(q.node);
+        }
+        q.start(combo.phase, combo.tip);
+        this._qis.push(q);
+      }
     }
-    for (const tr of this._trails) {
-      const prev = tr.tau;
-      tr.tau += dt;
-      if (prev <= TRAILS[tr.kind].t1 && fluid.owns(tr.tile, tr)) this._inject(tr, prev, tr.tau, dt, player);
-    }
-    fluid.step(dt);
-    this._trails = this._trails.filter((tr) => {
-      const alive = tr.tau < TRAILS[tr.kind].life && fluid.owns(tr.tile, tr);
-      if (alive) tr.sheet.show(tr.tile, fadeAt(tr.kind, tr.tau));
-      else this._endTrail(tr);
-      return alive;
+    this._qis = this._qis.filter((q) => {
+      if (q.step(dt, player)) return true;
+      this._spare.push(q);
+      return false;
     });
-  }
-
-  /** 起一道劍氣：借一格流體、一片煙，擺在出招這一刻的位置上（之後不動）。 */
-  _startTrail(kind, player) {
-    let sheet = this._sheets.pop();
-    if (!sheet) {
-      sheet = new Sheet(this.fluid, HALF);
-      this.scene.add(sheet.node);
-    }
-    const tr = { kind, tau: 0, tip: this.combo.tip, sheet, phase: Math.random() * 2 * Math.PI };
-    tr.tile = this.fluid.acquire(tr);
-    const { o, U, V } = sheetFrame(kind, player, tr.tip);
-    sheet.place(o, U, V);
-    return tr;
-  }
-
-  _endTrail(tr) {
-    this.fluid.release(tr.tile, tr);
-    tr.sheet.show(-1, 0);
-    this._sheets.push(tr.sheet);
   }
 
   /** 全部的劍氣收起來（回到站位、換陣容）。 */
   _dropTrails() {
-    if (!this.fluid) return;
-    for (const tr of this._trails) this._endTrail(tr);
-    this._trails = [];
+    for (const q of this._qis) { q.stop(); this._spare.push(q); }
+    this._qis = [];
     this._phase = this.combo.phase;
-  }
-
-  /**
-   * 劍氣從 τ0 掃到 τ1 的這一段注入流體：月牙沿著刀尖的路徑切成幾段線段（一段最多
-   * 掃 PIECE），每一段從上一段的尾巴（tr.last）接起——所以整道是連續的一筆，人在
-   * 揮的時候轉向也只是讓那一筆彎一下，不會斷。線段多粗就是那裡的月牙多寬。
-   *
-   * 一段注入多少照它多長算：刀慢下來（第三段收尾）的時候一段比月牙的寬度還短，
-   * 好幾段疊在同一個地方，照段數算的話那裡會堆成一塊實心的白。
-   *
-   * 帶起來的速度是刀在那一點的速度的 drag 成，加上往外推的 push，再沿著月牙一鼓
-   * 一縮（swellAt）——沒有它的話流場太乾淨，煙只會被拉長，捲不起來；而它是一條
-   * 平滑的波、不是每一段各抽一次亂數，捲起來的才是少數幾個大的。
-   */
-  _inject(tr, t0, t1, dt, player) {
-    const T = TRAILS[tr.kind], s = tr.sheet;
-    const a0 = sweepAt(tr.kind, t0), a1 = sweepAt(tr.kind, t1);
-    if (a1 === a0 || dt <= 0) return;
-    const spin = (a1 - a0) / dt;
-    const at = (th) => {
-      const q = qiAt(tr.kind, th, player, tr.tip), r = REACH - q.w / 2;
-      const j = QI_SWELL * swellAt(tr.kind, th, tr.phase);
-      q.v = s.toTileVel([0, 1, 2].map((c) => q.b.t[c] * spin * r * T.drag + q.b.d[c] * (T.push + j)));
-      q.uv = s.toTile(q.p);
-      return q;
-    };
-    if (!tr.last) tr.last = at(a0);
-    const n = Math.min(8, Math.ceil(Math.abs(a1 - a0) / PIECE));
-    for (let i = 1; i <= n; i++) {
-      const q = at(a0 + ((a1 - a0) * i) / n), l = tr.last;
-      const w = (q.w + l.w) / 2;
-      const len = Math.hypot(q.p[0] - l.p[0], q.p[1] - l.p[1], q.p[2] - l.p[2]);
-      const c = QI_DYE * Math.min(1, len / w);
-      this.fluid.splat(tr.tile, l.uv, q.uv, l.v, q.v, c, c, w / 2 / (2 * HALF));
-      tr.last = q;
-    }
   }
 
   /** 右上那一行小字的戰鬥那幾段：每一隻怪物的血與破防、連段在哪。 */

@@ -12,9 +12,7 @@
      動物      3（皮毛、臉、翻面的墨線外殼）
      刀        9（刀身、刀背、護手、刀柄、柄頭，除了刀背各自一份墨線殼）
      怪物      3（同上，另一份幾何）
-     劍氣      每一道 2（煙的兩層），掃完淡掉之前都在；流體場醒著的時候另外
-               14 個畫到貼圖上的 pass（fluid.js）。`?fluid=0` 是以前的高亮：
-               出招的那 0.2 秒 1
+     劍氣      每一道 2（月牙的上下兩層），出招到被吃完那一秒左右（qi.js）
      提示圈    亮著的時候 1
      破防      破防中的每一隻 2（淡圓 + 亮圓）
      BOSS 技能 預告 2（淺色 + 亮色）；飛著的球每顆 1
@@ -75,7 +73,7 @@ resetLife(player);
 
 /* 戰鬥：怪物、連段、打中與被打中、刀。場上有哪幾隻由陣容決定（setMode）；
    這一頁打死的怪物在牠的重生點重生。 */
-const fight = new Fight(scene, zoo, { respawn: true, renderer });
+const fight = new Fight(scene, zoo, { respawn: true });
 let mode = DEFAULT_MODE;
 
 /** 倒下（血扣光）過幾次。 */
