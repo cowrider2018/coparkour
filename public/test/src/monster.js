@@ -46,6 +46,9 @@
      cone  前肢抬起：整個前半身立起來、兩隻前腳離地收在胸前，頭反過來壓低
            盯著主角；倒數最後那一下整隻砸下去，打下去的那一刻前腳踩到地；
            僵直裡再往下一沉，然後慢慢起身。
+     leap  俯身看主角蓄力：壓低身子、膝蓋彎到底、頭抬起來盯著主角，越蓄越低；
+           最後那一段飛過去的時候跟衝刺一樣是主角的跳躍動作組（在空中、垂直
+           速度照那一條拋物線）；落地俯身緩衝，停一下，然後在僵直裡慢慢站起來。
 
    「盯著主角」不只是姿勢裡把頭壓低：放招鎖定的是倒數開始那一刻的方向，主角
    之後還在跑，所以頭另外跟著主角現在的位置左右轉（LOOK，最多 LOOK.max）。
@@ -55,6 +58,7 @@ import * as THREE from '../vendor/three.module.js';
 import { Critter } from './critter.js';
 import { LUNGE, kindOf } from './combat.js';
 import { SKILL } from './skills.js';
+import { PHYS } from './walk.js';
 import { Mover } from './moves.js';
 
 /** 毛色：body 身上、face 鼻子與嘴。 */
@@ -186,10 +190,22 @@ const STOMP = {
   front: -0.40, hind: 0.20, knee: -0.30, legs: 0.8, w: 1,
 };
 
+/* ── 跳砸 ── 蓄力是 COIL，落地緩衝是 LAND。 */
+const COIL = {
+  pitch: 0.50, headPitch: -0.70, drop: 0.34, tailPitch: 0.45,
+  front: -0.90, hind: -0.60, knee: -1.00, legs: 1, w: 1,
+};
+const LAND = {
+  pitch: 0.40, headPitch: 0.10, drop: 0.25, tailPitch: 0.40,
+  front: -0.30, hind: -0.50, knee: -0.80, legs: 0.9, w: 1,
+};
+/** 跳砸站著蓄力的那一段有多長（之後 SKILL.leap.air 秒在飛）。 */
+const LEAP_WIND = SKILL.leap.windup - SKILL.leap.air;
+
 /**
  * 頭跟著主角轉：哪幾段要盯（值是盯多用力）、多快轉過去與放掉（秒）、最多轉多少（弳）。
  */
-const LOOK = { stages: { coneWind: 1 }, tau: 0.12, max: 1.0 };
+const LOOK = { stages: { coneWind: 1, leapWind: 1 }, tau: 0.12, max: 1.0 };
 
 /**
  * 怪物的每一套動作（moves.js 的 MOVES 那一種寫法），鍵就是 Motion 挑的那一段：
@@ -213,6 +229,9 @@ const MOVES = {
     ],
   },
   coneRec: { blend: 0.02, keys: [[0, STOMP], [0.08, { ...STOMP, pitch: 0.36, drop: 0.16 }, 'out'], [SKILL.recover, {}, 'inOut']] },
+  leapWind: { blend: 0.1, keys: [[0, {}], [0.35, COIL, 'out'], [LEAP_WIND, { ...COIL, drop: 0.38, knee: -1.05 }, 'inOut']] },
+  leapAir: { blend: 0.06, keys: [[0, {}]] },
+  leapRec: { blend: 0.03, keys: [[0, {}], [0.08, LAND, 'out'], [0.18, LAND, 'lin'], [SKILL.recover, {}, 'inOut']] },
 };
 
 /** 衝的時候畫得跳多高：體型（sizeOf）的這麼多倍，公尺。 */
@@ -247,6 +266,7 @@ export class Motion {
     o.lift = 0; o.air = false; o.vy = null;
     const [stage, t] = this._stage(m);
     if (stage === 'dash') this._hop(o, m, t);
+    if (stage === 'leapAir') this._fly(o, m, t);
     o.move = this._lookAt(dt, stage, m, player, this.mover.step(dt, stage, t));
     return o;
   }
@@ -279,6 +299,7 @@ export class Motion {
     const c = m.cast;
     if (c) {
       this._skill = c.skill;
+      if (c.skill === 'leap' && c.t >= LEAP_WIND) return ['leapAir', c.t - LEAP_WIND];
       return MOVES[`${c.skill}Wind`] ? [`${c.skill}Wind`, c.t] : [null, 0];
     }
     if (m.stun > 0 && MOVES[`${this._skill}Rec`]) return [`${this._skill}Rec`, SKILL.recover - m.stun];
@@ -287,6 +308,16 @@ export class Motion {
     if (L.t < LUNGE.windup) return ['windup', L.t];
     const s = L.t - LUNGE.windup;
     return s < LUNGE.time ? ['dash', s] : ['recover', s - LUNGE.time];
+  }
+
+  /**
+   * 跳砸飛過去的那一段：位置是 skills.js 一幀一幀擺的（牠身上的 vy 一直是 0），
+   * 所以垂直速度照那一條拋物線自己算——從往上換成往下，交給 Critter 擺跳躍的姿勢。
+   */
+  _fly(o, m, s) {
+    const c = m.cast, A = SKILL.leap.air, u = Math.min(1, Math.max(0, s / A));
+    o.air = true;
+    o.vy = ((c.ty - c.y0) + (PHYS.gravity * A * A / 2) * (1 - 2 * u)) / A;
   }
 
   /**
