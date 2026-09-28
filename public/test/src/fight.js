@@ -35,7 +35,7 @@ import {
 } from './fx.js';
 import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from './skills.js';
 import { Hearts } from './hearts.js';
-import { Fluid, Sheet } from './fluid.js';
+import { Fluid, Sheet, QI_LOOK } from './fluid.js';
 import { TRAILS, HALF, PIECE, sweepAt, fadeAt, swellAt, sheetFrame, qiAt } from './trail.js';
 
 /** 劍氣的起伏：往外推的速度沿著月牙多或少這麼多（公尺 / 秒，見 trail.js 的 swellAt）。 */
@@ -416,13 +416,13 @@ export class Fight {
   _startTrail(kind, player) {
     let sheet = this._sheets.pop();
     if (!sheet) {
-      sheet = new Sheet(this.fluid, HALF);
+      sheet = new Sheet(this.fluid);
       this.scene.add(sheet.node);
     }
     const tr = { kind, tau: 0, tip: this.combo.tip, sheet, phase: Math.random() * 2 * Math.PI };
     tr.tile = this.fluid.acquire(tr);
     const { o, U, V } = sheetFrame(kind, player, tr.tip);
-    sheet.place(o, U, V);
+    sheet.place(o, U, V, HALF, QI_LOOK);
     return tr;
   }
 

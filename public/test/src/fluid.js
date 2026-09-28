@@ -46,8 +46,9 @@ import { KEY_DIR, INK } from './palette.js';
 
 /** 流體場的大小與手感。 */
 export const FLUID = {
-  /** 一邊幾格：grid² 格可以同時有煙。 */
-  grid: 2,
+  /** 一邊幾格：grid² 格可以同時有煙。劍氣一道一格、落地的粉塵一團一格，一套連段加上
+      幾隻被打飛落地的怪物就是五六格。 */
+  grid: 3,
   /** 一格的速度格子幾見方。渦旋最小就是幾格大，所以這個數決定擾動的尺寸：
       64 在 7 公尺見方的一片上是一格 11 公分，捲起來的是大而少的渦；128 的話
       渦小一半、多一倍，一片細碎。 */
@@ -445,7 +446,7 @@ const INK_RGB = [(INK >> 16) & 255, (INK >> 8) & 255, INK & 255].map((c) => (c /
 const SHEET_FRAG = /* glsl */ `
 uniform sampler2D uDye;
 uniform float uSide, uTexel, uFade;
-uniform vec3 uU, uV, uN, uKey;
+uniform vec3 uU, uV, uN, uKey, uLit, uShade;
 varying vec2 vA;
 varying vec2 vUv2;
 float dye(vec2 a) { return texture2D(uDye, a).r; }
@@ -472,23 +473,32 @@ void main() {
   if (!gl_FrontFacing) n = -n;
   float ndl = dot(n, uKey), w = max(fwidth(ndl), 1e-4);
   float lit = smoothstep(0.1 - w, 0.1 + w, ndl);
-  vec3 col = mix(vec3(0.74, 0.82, 0.95), vec3(1.0), lit);
+  vec3 col = mix(uShade, uLit, lit);
 
   float ink = 1.0 - clamp(px - ${INK_PX.toFixed(1)} + 0.5, 0.0, 1.0);
   col = mix(col, vec3(${INK_RGB}), ink);
   gl_FragColor = vec4(col, cover * mix(0.9, 1.0, ink));
 }`;
 
+/**
+ * 一片煙長什麼樣（擺的時候給，見 Sheet.place）。
+ *   thick 最濃的地方往一面鼓多高（公尺）
+ *   lit   迎光那一階的顏色（sRGB，0～1）
+ *   shade 背光那一階
+ */
+export const QI_LOOK = { thick: 0.1, lit: [1, 1, 1], shade: [0.74, 0.82, 0.95] };
+
 export class Sheet {
   /**
+   * 網格是 2 見方（半邊長 1），實際多大在 place 用矩陣縮放——同一片可以借給大小
+   * 不同的煙。
+   *
    * @param {Fluid} fluid
-   * @param {number} half 半邊長（公尺）
-   * @param {number} thick 最濃的地方往一面鼓多高（公尺）
    */
-  constructor(fluid, half, thick = 0.1) {
+  constructor(fluid) {
     this.fluid = fluid;
-    this.half = half;
-    const geo = new THREE.PlaneGeometry(half * 2, half * 2, 56, 56);
+    this.half = 1;
+    const geo = new THREE.PlaneGeometry(2, 2, 56, 56);
     this.node = new THREE.Group();
     this.node.matrixAutoUpdate = false;
     this.node.visible = false;
@@ -498,7 +508,8 @@ export class Sheet {
         vertexShader: SHEET_VERT, fragmentShader: SHEET_FRAG,
         uniforms: {
           uDye: { value: null }, uTile: { value: new THREE.Vector4() },
-          uThick: { value: thick }, uSide: { value: side }, uTexel: { value: 1 / (FLUID.dye * FLUID.grid) },
+          uThick: { value: 0.1 }, uSide: { value: side }, uTexel: { value: 1 / (FLUID.dye * FLUID.grid) },
+          uLit: { value: new THREE.Vector3() }, uShade: { value: new THREE.Vector3() },
           uFade: { value: 1 }, uKey: { value: KEY_DIR }, ...Object.fromEntries(Object.entries(this._axes).map(([k, v]) => [k, { value: v }])),
         },
         transparent: true, depthWrite: true, side: THREE.DoubleSide, fog: false,
@@ -514,13 +525,24 @@ export class Sheet {
     this.tile = -1;
   }
 
-  /** 擺在世界裡：原點 o、u 軸沿 U、v 軸沿 V（單位向量、互相垂直）。 */
-  place(o, U, V) {
+  /**
+   * 擺在世界裡：原點 o、u 軸沿 U、v 軸沿 V（單位向量、互相垂直）、半邊長 half（公尺）、
+   * 長什麼樣 look（QI_LOOK 那一種）。
+   */
+  place(o, U, V, half, look = QI_LOOK) {
     const { uU, uV, uN } = this._axes;
+    this.half = half;
     this.o.set(...o); uU.set(...U); uV.set(...V);
     uN.crossVectors(uU, uV);
-    this.node.matrix.makeBasis(uU, uV, uN).setPosition(this.o);
+    const s = (v) => v.clone().multiplyScalar(half);
+    this.node.matrix.makeBasis(s(uU), s(uV), s(uN)).setPosition(this.o);
     this.node.matrixWorldNeedsUpdate = true;
+    for (const m of this._mats) {
+      /* 鼓的高度在網格自己的單位裡量，網格被放大了 half 倍，所以除回去。 */
+      m.uniforms.uThick.value = look.thick / half;
+      m.uniforms.uLit.value.set(...look.lit);
+      m.uniforms.uShade.value.set(...look.shade);
+    }
   }
 
   /** 世界座標的一點 → 格內座標 [u, v]。 */
