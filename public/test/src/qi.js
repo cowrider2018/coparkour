@@ -25,11 +25,15 @@
    ── 動 ──────────────────────────────────────────────────────────
      擾動  每一顆的半徑乘上 1 − WOB·noise(沿著月牙的長度, 時間)：單一頻率的
            平滑噪聲，一個起伏 WOBBLE 公尺長——大而少的鼓包。
-     消散  一顆放下去 HOLD 秒之後，再等一段隨它在月牙上的位置而定的時間，才在
-           SHRINK 秒內縮掉。那段等待是沿著月牙的平滑噪聲（一個起伏 PIECE_LEN
-           公尺），所以相鄰的點差不多一起消失：月牙斷成幾大塊，一塊一塊地
-           不見，斷口是融起來的圓頭。要是每一顆一起慢慢縮，一串球縮到比間距小
-           就斷成一排小珠子。先放的也先開始等，所以大致是從尾巴往頭消失。
+     消散  用減的：每一顆點配一顆「挖洞」的球，放在同一個地方（沿著刀的方向
+           隨機偏一點，缺口的邊才不是一條直線），從曲面上挖掉一塊。
+           有一條「前緣」從起點（最早出現的那一端）沿著月牙往刀尖推：掃完 HOLD
+           秒之後出發，剛好在 life 推過刀尖、把最後那一顆挖完。每一顆挖洞的球
+           多大，看它落後前緣多遠——落後 x 公尺就是 SLOPE·x，最大到比那裡的劍氣
+           還大（CUT 倍半寬）。所以缺口從起點開一個口，一路往刀尖吃過去；前緣
+           那一顆是 0、後面一顆比一顆大，相鄰的洞一定連在一起（SLOPE ≥ 1、間距
+           比半寬小），缺口是一個連續的圓頭，不會在前面冒出一個個孤立的小洞。
+           組成劍氣的點本身不縮。
    半徑每幀在這裡算好才交給著色器，著色器只管畫。
 
    ── 怎麼畫 ──────────────────────────────────────────────────────
@@ -64,14 +68,20 @@ const NEAR = 2;
 const WOB = 0.3;
 const WOBBLE = 0.9;
 
-/** 一顆放下去之後至少多久才開始縮（秒）。 */
-const HOLD = 0.1;
+/** 掃完之後多久開始挖第一口（秒）。 */
+const HOLD = 0.05;
 
-/** 一顆從開始縮到不見多久（秒）。 */
-const SHRINK = 0.2;
+/** 挖洞的球落後前緣 1 公尺，半徑就是幾公尺。≥ 1：前緣後面那一顆的洞一定蓋得到前緣那一顆。 */
+const SLOPE = 1.5;
 
-/** 消散時一塊多長（公尺）：這麼長的一段差不多同時縮掉。 */
-const PIECE_LEN = 1.0;
+/** 挖洞的球最大是那裡劍氣半寬的幾倍——比 1 大，才挖得穿、跟隔壁的洞連起來。 */
+const CUT = 1.7;
+
+/** 挖洞的球沿著刀的方向最多偏半寬的幾成。偏太多會在另一邊留下細細一條殘邊。 */
+const CUT_JITTER = 0.2;
+
+/** 一個像素算挖洞的時候，前後各看幾顆（挖洞的球比點大，看得要比 NEAR 遠）。 */
+const NEAR_CUT = 5;
 
 /** 描邊幾個像素寬（裝置像素）。 */
 const INK_PX = 2.0;
@@ -108,19 +118,24 @@ void main() {
 const FRAG = /* glsl */ `
 #define MAXP ${MAXP}
 #define NEAR ${NEAR}
-/* 點存在一張 MAXP × 2 的浮點貼圖裡：第 0 列是中心與這一幀的半徑（0 就是不見了），
-   第 1 列是月牙所在那個面的法線。不用 uniform 陣列：用變數去索引 uniform 陣列，
+#define NEAR_CUT ${NEAR_CUT}
+/* 點存在一張 MAXP × 3 的浮點貼圖裡：第 0 列是中心與這一幀的半徑（0 就是不見了），
+   第 1 列是月牙所在那個面的法線，第 2 列是那一顆配的挖洞的球（中心、半徑）。不用 uniform 陣列：用變數去索引 uniform 陣列，
    在 ANGLE（Windows 上的 Chrome）底下會變成一長串比較，比讀貼圖慢好幾倍。 */
 uniform highp sampler2D uPts;
 uniform int uCount;
+uniform int uCuts;   // 前面這幾顆有挖洞的球（越早出現的越先挖，所以一定是最前面那幾顆）
 vec4 P(int i) { return texelFetch(uPts, ivec2(i, 0), 0); }
 vec3 N(int i) { return texelFetch(uPts, ivec2(i, 1), 0).xyz; }
+vec4 C(int i) { return texelFetch(uPts, ivec2(i, 2), 0); }
 uniform mat4 uPV;
 uniform float uPxA;      // 一個像素張多大的角（弧度）
 uniform vec3 uKey;
 varying vec3 vW;
 varying float vIdx;
 int i0, i1, ic;
+float raw;   // 挖洞之前的距離：決定視線是不是已經穿出殼了
+bool cut;    // 這一點離挖出來的那一面比較近
 float smin(float a, float b, float k) {
   float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
   return mix(b, a, h) - k * h * (1.0 - h);
@@ -148,7 +163,20 @@ float sdf(vec3 p) {
     if (c.w <= 0.0 || length(p - c.xyz) - c.w > d + ${BLEND.toFixed(2)}) continue;
     d = smin(d, blob(i, p), ${BLEND.toFixed(2)});
   }
-  return d;
+  raw = d;
+  /* 挖洞：附近那幾顆挖洞的球聯集起來，從 d 裡減掉。用硬的 max，不用 smooth
+     subtraction：後者算出來的不是距離，缺口外面一大片都會被當成「離曲面很近」，
+     描出一圈寬寬的墨影。挖洞的球本身是圓的，硬減出來的缺口也是圓的咬痕。 */
+  float c = 1e3;
+  for (int k = -NEAR_CUT; k <= NEAR_CUT; k++) {
+    int i = ic + k;
+    if (i >= uCuts) break;
+    if (i < 0) continue;
+    vec4 q = C(i);
+    if (q.w > 0.0) c = min(c, length(p - q.xyz) - q.w);
+  }
+  cut = -c > d;
+  return max(d, -c);
 }
 /* 看哪幾顆：以離 p 最近的那一顆為中心，前後各 NEAR 顆。最近的那一顆沿著視線往前
    找：看隔壁有沒有更近的，有就挪過去——視線沿著月牙走一大段（側看那一圈）的時候，
@@ -173,8 +201,9 @@ void main() {
     float d = sdf(ro + rd * t);
     if (d / t < best) { best = d / t; bestT = t; }
     if (d < 0.5 * uPxA * t) { hit = true; break; }   // 離曲面不到半個像素
-    // 殼只比點大一點：離曲面這麼遠，這條視線已經穿出去了，不會再回來。
-    if (d > 0.5 || t > tEnd) break;
+    /* 殼只比點大一點：離曲面這麼遠，這條視線已經穿出去了，不會再回來。看的是挖洞
+       之前的距離——挖掉的洞裡離曲面也很遠，但視線穿過洞還會碰到後面剩下的那一截。 */
+    if (raw > 0.5 || t > tEnd) break;
     t += max(d, 0.002 * t);
   }
   float miss = best / uPxA;                 // 視線離曲面最近的時候差幾個像素
@@ -185,8 +214,11 @@ void main() {
   if (hit) {
     vec2 e = vec2(0.002, -0.002);
     vec3 n = normalize(e.xyy * sdf(p + e.xyy) + e.yyx * sdf(p + e.yyx) + e.yxy * sdf(p + e.yxy) + e.xxx * sdf(p + e.xxx));
+    sdf(p);                                   // 重新算一次打中那一點，cut 才是那一點的
     float ndl = dot(n, uKey), w = max(fwidth(ndl), 1e-4);
     col = mix(vec3(0.74, 0.82, 0.95), vec3(1.0), smoothstep(0.1 - w, 0.1 + w, ndl));
+    // 挖出來的切面是挖洞那顆球的內側，法線朝裡，照光算會一塊亮一塊暗：一律亮面。
+    if (cut) col = vec3(1.0);
   } else {
     a = clamp(${(INK_PX + 1).toFixed(1)} - miss, 0.0, 1.0);
   }
@@ -219,13 +251,13 @@ export class Qi {
     g.setIndex(idx);
     this.geometry = g;
 
-    this._data = new Float32Array(MAXP * 2 * 4);
-    this._tex = new THREE.DataTexture(this._data, MAXP, 2, THREE.RGBAFormat, THREE.FloatType);
+    this._data = new Float32Array(MAXP * 3 * 4);
+    this._tex = new THREE.DataTexture(this._data, MAXP, 3, THREE.RGBAFormat, THREE.FloatType);
     this._tex.minFilter = this._tex.magFilter = THREE.NearestFilter;
     this.material = new THREE.ShaderMaterial({
       vertexShader: VERT, fragmentShader: FRAG,
       uniforms: {
-        uPts: { value: this._tex }, uCount: { value: 0 },
+        uPts: { value: this._tex }, uCount: { value: 0 }, uCuts: { value: 0 },
         uPV: { value: new THREE.Matrix4() }, uPxA: { value: 0.001 }, uKey: { value: KEY_DIR },
       },
       transparent: true, depthWrite: true, side: THREE.FrontSide, fog: false,
@@ -254,6 +286,7 @@ export class Qi {
     this.pts = [];
     this.head = null;
     this._th = null;
+    this._from = 0;
     this._seed = Math.random() * 100;
     this.material.uniforms.uCount.value = 0;
     this.geometry.setDrawRange(0, 0);
@@ -301,13 +334,14 @@ export class Qi {
   _all() { return this.head ? [...this.pts, this.head] : this.pts; }
 
   /**
-   * 殼：每一顆一個方形截面——沿著刀的方向 ±(半寬 + MARGIN)、沿著面法線
+   * 殼：從第 from 顆起（前面的已經整顆挖掉了，不用再包），每一顆一個方形截面——沿著刀的方向 ±(半寬 + MARGIN)、沿著面法線
    * ±(半寬·FLAT + MARGIN)——頭尾沿著路徑再伸出去一個半寬（把球的前後包進去），
    * 最後收成一點把管口封起來。
    */
-  _hull() {
-    const P = this._all(), n = P.length;
+  _hull(from = 0) {
+    const P = this._all(), n = P.length, a = Math.min(from, n - 1);
     if (!n) return;
+    this._from = a;
     const rows = [];
     const tan = (i) => norm(n === 1 ? cross(P[0].N, P[0].d) : sub(P[Math.min(i + 1, n - 1)].c, P[Math.max(i - 1, 0)].c));
     const section = (c, p, i, scale) => {
@@ -315,9 +349,9 @@ export class Qi {
       rows.push({ i, corners: [[1, 1], [-1, 1], [-1, -1], [1, -1]].map(([a, b]) => [0, 1, 2].map((k) => c[k] + p.d[k] * a * R + p.N[k] * b * H)) });
     };
     const ext = (i, s) => { const t = tan(i), r = P[i].w / 2 + MARGIN; return [0, 1, 2].map((k) => P[i].c[k] + t[k] * s * r); };
-    section(ext(0, -1), P[0], 0, 0);
-    section(ext(0, -1), P[0], 0, 1);
-    P.forEach((p, i) => section(p.c, p, i, 1));
+    section(ext(a, -1), P[a], a, 0);
+    section(ext(a, -1), P[a], a, 1);
+    for (let i = a; i < n; i++) section(P[i].c, P[i], i, 1);
     section(ext(n - 1, 1), P[n - 1], n - 1, 1);
     section(ext(n - 1, 1), P[n - 1], n - 1, 0);
     rows.forEach((r, ri) => r.corners.forEach((v, j) => {
@@ -331,19 +365,36 @@ export class Qi {
 
   /** 每一顆這一幀多大：扣掉融合鼓出去的那一點、乘上擾動、被吃掉的那幾成。 */
   _size() {
-    const P = this._all(), D = this._data;
-    /* 最晚放下去的那一顆（t1）等最久也要在 life 縮完。 */
-    const spread = Math.max(0, TRAILS[this.kind].life - TRAILS[this.kind].t1 - HOLD - SHRINK);
+    const P = this._all(), D = this._data, T = TRAILS[this.kind];
     const fade = fadeAt(this.kind, this.tau);
+    /* 前緣：t1 + HOLD 從起點出發，life 的時候推過刀尖再加上最後那一顆長到最大要的
+       距離。掃完之前整道還在變長，所以用這一刻的全長——出發的時候已經掃完了。 */
+    const total = P.length ? P[P.length - 1].l : 0;
+    const most = Math.max(0, ...P.map((p) => CUT * p.w / 2 + BLEND));
+    const go = T.t1 + HOLD, end = Math.max(go + 0.05, T.life - 0.02);
+    const front = Math.max(0, (this.tau - go) / (end - go)) * (total + most / SLOPE);
+    let cuts = 0, gone = 0;
     P.forEach((p, i) => {
+      const full = CUT * p.w / 2 + BLEND;
+      const k = Math.min(full, Math.max(0, front - p.l) * SLOPE);
+      if (k > 0) cuts = i + 1;
+      /* 挖洞的球長到最大就把自己那一顆整顆蓋住了（CUT − CUT_JITTER > 1）：那一顆
+         當作不見，不用再算它的距離。 */
+      if (k >= full && gone === i) gone = i + 1;
       const wob = 1 - WOB * noise(p.l / WOBBLE + this._seed, this.tau * 1.4 + this._seed);
-      const wait = HOLD + spread * noise(p.l / PIECE_LEN + this._seed * 1.7, this._seed);
-      const eat = Math.min(1, Math.max(0, (this.tau - p.born - wait) / SHRINK));
-      const r = Math.max(0, p.w / 2 - BLEND / 4) * wob * (1 - eat) * (fade > 0 ? 1 : 0);
+      const r = k >= full ? 0 : Math.max(0, p.w / 2 - BLEND / 4) * wob * (fade > 0 ? 1 : 0);
       D.set([p.c[0], p.c[1], p.c[2], r], i * 4);
       D.set([p.N[0], p.N[1], p.N[2], 0], (MAXP + i) * 4);
+      const off = (noise(p.l * 3.1 + this._seed, this._seed * 0.7) * 2 - 1) * CUT_JITTER * p.w / 2;
+      D.set([p.c[0] + p.d[0] * off, p.c[1] + p.d[1] * off, p.c[2] + p.d[2] * off, k], (2 * MAXP + i) * 4);
     });
     this._tex.needsUpdate = true;
     this.material.uniforms.uCount.value = P.length;
+    this.material.uniforms.uCuts.value = cuts;
+    /* 殼跟著縮：整顆挖掉的那幾顆不包了，只留最後一顆當缺口那一邊的邊。 */
+    const from = Math.max(0, gone - 1);
+    if (from !== this._from) this._hull(from);
   }
+
+
 }
