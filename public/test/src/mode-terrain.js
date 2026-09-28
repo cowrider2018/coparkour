@@ -44,9 +44,9 @@ import { Pad } from './pad.js';
 import { Hud } from './hud.js';
 import { facet } from './geom.js';
 import { PHYS, solveXZ, supportInfo, steer, slideDrift, slideAccel, arenaGap, portalAt, portalDrift } from './walk.js';
-import { CAM, makeCam, snapCam, updateCam } from './camera.js';
+import { makeCam, snapCam, updateCam } from './camera.js';
 import { buildVeil } from './veil.js';
-import { lookInfo } from '../../src/cat/looks.js';
+import { Controls, speedFor, fitView, wardrobe } from './controls.js';
 
 const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -294,10 +294,6 @@ const player = {
    所以「被牆逼到最近的時候角色會不會離開畫面中心」是驗得出來的，不是
    靠看。這裡只有玩家的輸入寫進 yaw／pitch／dist。 */
 const cam = makeCam(0, 0);
-const CAM_NEAR = CAM.near, CAM_FAR = CAM.far;
-
-/** 正在轉視角的那幾根手指。兩根以上就是縮放。 */
-const drag = new Map();
 
 /** 把角色放到某個區塊的出生點。 */
 function goto(id) {
@@ -335,174 +331,47 @@ function toggleDoors() {
   hud.flash(open ? '門開了' : '門關了');
 }
 
-/* ── 外觀 ────────────────────────────────────────────────────── */
-function setLook(look) {
-  if (!zoo.setLook(look)) return;
-  hud.flash(lookInfo(look).name);
-  hud.paint();
-}
-/** C：同一種動物換下一件毛色。X：換下一種動物，毛色留在同一欄。 */
-function cycleSkin(step) {
-  const { model, skin } = lookInfo(zoo.look);
-  const skins = zoo.critters.get(model).skins;
-  const i = (skins.indexOf(skin) + step + skins.length) % skins.length;
-  setLook(`${model}/${skins[i]}`);
-}
-function cycleModel(step) {
-  const { model, skin } = lookInfo(zoo.look);
-  const ms = zoo.models;
-  const next = ms[(ms.indexOf(model) + step + ms.length) % ms.length];
-  const col = Math.max(0, zoo.critters.get(model).skins.indexOf(skin));
-  const skins = zoo.critters.get(next).skins;
-  setLook(`${next}/${skins[Math.min(col, skins.length - 1)]}`);
-}
-function toggleHat() {
-  zoo.setHat(!zoo.hatOn);
-  hud.flash(zoo.hatOn ? '戴上漁夫帽' : '脫下漁夫帽');
-  hud.paint();
-}
-/* ── HUD ─────────────────────────────────────────────────────── */
+/* ── 外觀、HUD、操作 ──────────────────────────────────────────────
+   輸入與版面在 controls.js（每個模式都一樣）；這裡只有這個模式自己的鍵：
+   R 回出生點、O 開關門、P 傳送範圍、1–6 換地形。 */
+const looks = wardrobe(zoo, () => hud);
 const hud = new Hud({
   zoo,
   blocks: BLOCKS,
-  onLook: setLook,
+  onLook: looks.setLook,
   onBlock: goto,
-  onHat: toggleHat,
+  onHat: looks.toggleHat,
 });
-
-/* ── 螢幕上的操作 ─────────────────────────────────────────────────
-   pad.js 那一份，就是遊戲的手把：左搖桿、右跳躍。 */
 const pad = new Pad(document.getElementById('pad'));
-
-/* ── 指標路由 ────────────────────────────────────────────────────
-   按下的那一刻決定這根手指屬於誰，之後就不換：搖桿、跳躍鈕，或是中間
-   那片畫面（視角）。所以左手走、右手轉不會互搶，也不會有一次拖曳中途
-   從轉視角變成走路。 */
-const owners = new Map();
-canvas.addEventListener('pointerdown', (e) => {
-  const zone = pad.hit(e.clientX, e.clientY);
-  owners.set(e.pointerId, zone || 'view');
-  if (zone) pad.down(zone, e.pointerId, e.clientX, e.clientY);
-  else drag.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  try { canvas.setPointerCapture(e.pointerId); } catch { /* 沒有就算了 */ }
-});
-/** 兩根手指的距離，用來縮放。null = 現在不是雙指。 */
-let pinch = null;
-const pinchSpan = () => {
-  const ps = [...drag.values()];
-  if (ps.length < 2) return null;
-  return Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y);
-};
-canvas.addEventListener('pointermove', (e) => {
-  const who = owners.get(e.pointerId);
-  if (who === 'joy' || who === 'jmp') { pad.move(e.pointerId, e.clientX, e.clientY); return; }
-  const d = drag.get(e.pointerId);
-  if (!d) return;
-  if (drag.size >= 2) {
-    /* 雙指：只縮放，不轉。同時做兩件事的話，兩根手指必然有一點旋轉分量，
-       畫面會一邊縮一邊歪。 */
-    const before = pinch ?? pinchSpan();
-    d.x = e.clientX; d.y = e.clientY;
-    const after = pinchSpan();
-    if (before && after) {
-      cam.dist = Math.max(CAM_NEAR, Math.min(CAM_FAR, cam.dist * (before / after)));
-    }
-    pinch = after;
-    return;
-  }
-  cam.yaw -= (e.clientX - d.x) * 0.006;
-  cam.pitch = Math.max(-0.35, Math.min(1.15, cam.pitch + (e.clientY - d.y) * 0.004));
-  d.x = e.clientX; d.y = e.clientY;
-});
-const release = (e) => {
-  pad.up(e.pointerId);
-  owners.delete(e.pointerId);
-  drag.delete(e.pointerId);
-  pinch = drag.size >= 2 ? pinchSpan() : null;
-};
-canvas.addEventListener('pointerup', release);
-canvas.addEventListener('pointercancel', release);
-canvas.addEventListener('wheel', (e) => {
-  e.preventDefault();
-  cam.dist = Math.max(CAM_NEAR, Math.min(CAM_FAR, cam.dist + Math.sign(e.deltaY) * 0.6));
-}, { passive: false });
-
-/* ── 鍵盤 ────────────────────────────────────────────────────── */
-const keys = new Set();
-const held = (...names) => names.some((n) => keys.has(n));
-addEventListener('keydown', (e) => {
-  if (e.repeat) return;
-  const k = e.key.toLowerCase();
-  keys.add(k);
-  if (k === 'h') toggleHat();
-  if (k === 'c') cycleSkin(e.shiftKey ? -1 : 1);
-  if (k === 'x') cycleModel(e.shiftKey ? -1 : 1);
+const controls = new Controls(canvas, pad, cam, (k, e) => {
+  if (looks.key(k, e)) return;
   if (k === 'r') goto(player.block);
   if (k === 'o') toggleDoors();
   if (k === 'p') togglePortalLines();
   if (k >= '1' && k <= '9' && BLOCKS[+k - 1]) goto(BLOCKS[+k - 1].id);
-  if ([' ', 'w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
 });
-addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
-addEventListener('blur', () => keys.clear());
 
 /* ── 主迴圈 ──────────────────────────────────────────────────── */
 const critterTris = zoo.active.data.header.groups.reduce((n, g) => n + g.count, 0) / 3;
 let last = performance.now();
 let fpsAcc = 0, fpsN = 0, fpsShown = 0, hudAcc = 0;
 
-/**
- * 軸的長度 → 想要的速度。
- *
- * 類比的，而且兩種輸入共用一條式子：搖桿推多少就走多快；鍵盤送進來的
- * 長度是「按著＝0.72、加上 ⇧＝1」，於是鍵盤的預設速度剛好落在
- * PHYS.walk 上，而推到底的搖桿與 ⇧ 一樣是 PHYS.run。
- */
-function speedFor(mag) {
-  if (mag <= 0) return 0;
-  if (mag <= 0.72) return PHYS.walk * (mag / 0.72);
-  return PHYS.walk + (PHYS.run - PHYS.walk) * ((mag - 0.72) / 0.28);
-}
-
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   pad.update(dt);
 
-  /* 一個軸，兩種來源。鍵盤先湊成一個向量再正規化——斜著按兩個鍵不會比
-     直著按快 41%，那個 bug 在這種相機下特別明顯。 */
-  let ix = 0, iz = 0;
-  if (held('w', 'arrowup')) iz += 1;
-  if (held('s', 'arrowdown')) iz -= 1;
-  if (held('a', 'arrowleft')) ix -= 1;
-  if (held('d', 'arrowright')) ix += 1;
-  const km = Math.hypot(ix, iz);
-  if (km > 0) {
-    const want = held('shift') ? 1 : 0.72;
-    ix = (ix / km) * want; iz = (iz / km) * want;
-  }
-  // 搖桿：往畫面下方推＝往後走，所以 z 取負。
-  if (pad.mag > 0) { ix += pad.axis.x; iz -= pad.axis.y; }
-  let mag = Math.hypot(ix, iz);
-  if (mag > 1) { ix /= mag; iz /= mag; mag = 1; }
+  const input = controls.axis();
 
   /* 站在不可踩的圓頂上（樹梢那種）：操作整個失效，只剩重力。判斷用
      的是**上一幀**踩到的那個面——這一幀踩到什麼要等垂直那一段算完才
      知道，而輸入得在那之前處理。差一幀，16 毫秒，手上感覺不到。 */
   const locked = player.grounded && player.slip === 'fall';
-  if (locked) { ix = 0; iz = 0; mag = 0; }
+  if (locked) { input.ix = 0; input.iz = 0; input.mag = 0; }
 
-  /* 相機站在玩家的 −(sin yaw, cos yaw) 方向上，所以「前」就是
-     +(sin yaw, cos yaw)。「右」是 cross(前, 上)——在 Y 軸朝上的右手系裡
-     那等於 (−cos yaw, +sin yaw)，不是 (+cos yaw, −sin yaw)。
-     少了這兩個負號就是 A、D 互換：畫面上看起來像在鏡子裡走路。 */
-  const fwdX = Math.sin(cam.yaw), fwdZ = Math.cos(cam.yaw);
-  const rgtX = -fwdZ, rgtZ = fwdX;
-  if (mag > 1e-4) {
-    // 操控的方向當幀就是移動的方向。轉向沒有延遲，加速量照舊。
-    player.aimX = (fwdX * iz + rgtX * ix) / mag;
-    player.aimZ = (fwdZ * iz + rgtZ * ix) / mag;
-  }
+  // 操控的方向當幀就是移動的方向。轉向沒有延遲，加速量照舊。
+  const aim = controls.aim(input);
+  if (aim) [player.aimX, player.aimZ] = aim;
 
   if (locked) {
     /* 沿著面加速 g·sinθ。不走 accel／brake 那一段：煞車是 23，比滑落的
@@ -512,11 +381,11 @@ function frame(now) {
     player.vz += az * dt;
   } else {
     [player.vx, player.vz] = steer(
-      player.vx, player.vz, player.aimX, player.aimZ, speedFor(mag), dt,
+      player.vx, player.vz, player.aimX, player.aimZ, speedFor(input.mag), dt,
     );
   }
 
-  const jumped = pad.takeJump() || held(' ');
+  const jumped = controls.jumpHeld();
   if (jumped && player.grounded && !locked) {
     player.vy = PHYS.jump;
     player.grounded = false;
@@ -631,45 +500,11 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-/** 安全區。CSS 已經接成自訂屬性，這裡讀回來給 pad.js 擺元件。 */
-function safeArea() {
-  const cs = getComputedStyle(document.documentElement);
-  const px = (n) => parseFloat(cs.getPropertyValue(n)) || 0;
-  return { l: px('--sa-l'), r: px('--sa-r'), t: px('--sa-t'), b: px('--sa-b') };
-}
-
-function resize() {
-  const w = window.innerWidth, h = window.innerHeight;
-  const dpr = renderer.getPixelRatio();
-  renderer.setSize(w, h, false);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-
-  /* 操作列的幾何由 pad.js 算，算完寫回 CSS——DOM 的面板與畫布上的搖桿
-     因此永遠對齊在同一條列裡，這是遊戲那邊的做法。 */
-  pad.layout(w, h, dpr, safeArea());
-  const st = document.documentElement.style;
-  st.setProperty('--rail', `${pad.rail}px`);
-  st.setProperty('--barT', `${pad.barT}px`);
-  st.setProperty('--barB', `${pad.barB}px`);
-  st.setProperty('--ctrl', `${pad.ctrlTop}px`);
-  document.body.classList.toggle('pad-land', !pad.portrait);
-  document.body.classList.toggle('pad-port', pad.portrait);
-  /* 生物那張表跟著直欄寬度降級。直向沒有直欄，那時候面板是橫躺在上帶
-     裡的，寬度有半個畫面，所以直接當成最寬的那一級。 */
-  hud.fit(pad.portrait ? 999 : pad.rail);
-
-  /* 墨線的寬度是「畫面上幾個像素」，所以它得知道畫面多高。墨線是在
-     y 正規化的螢幕座標裡推的（見 critter.js），那個空間橫跨畫面高
-     是 2，所以一個像素是 2/height。 */
-  zoo.setInkPx(2.0, h * dpr);
-}
-addEventListener('resize', resize);
-resize();
+fitView({ renderer, camera, pad, hud, ink: (px, h) => zoo.setInkPx(px, h) });
 
 document.getElementById('boot').remove();
 goto('courtyard');
 requestAnimationFrame(frame);
 
 // 給主控台一個把手，方便手動看東西（這頁沒有存檔，改了重載就回原樣）。
-window.testArea = { scene, camera, renderer, zoo, player, ruins, cam, pad, hud, goto, warp, setLook, doors, setDoor, togglePortalLines };
+window.testArea = { scene, camera, renderer, zoo, player, ruins, cam, pad, hud, goto, warp, setLook: looks.setLook, doors, setDoor, togglePortalLines };

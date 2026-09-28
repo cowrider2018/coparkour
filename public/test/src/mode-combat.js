@@ -24,9 +24,9 @@ import { loadZoo } from './critter.js';
 import { Pad } from './pad.js';
 import { Hud } from './hud.js';
 import { PHYS, solveXZ, supportInfo, steer } from './walk.js';
-import { CAM, makeCam, snapCam, updateCam } from './camera.js';
+import { makeCam, snapCam, updateCam } from './camera.js';
 import { buildVeil } from './veil.js';
-import { lookInfo } from '../../src/cat/looks.js';
+import { Controls, speedFor, fitView, wardrobe } from './controls.js';
 import {
   ARENA, COLS, SPAWN, MODES, DEFAULT_MODE, SWING, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster,
   breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, placeMonster, monsterStep, bites, knock,
@@ -104,16 +104,16 @@ const player = {
    外觀是每一類一個池子，換陣容的時候借用、多的藏起來：一隻 Critter 是一份自己的
    幾何，來回切陣容不該每次重建。 */
 let foes = [];
-const looks = { pool: new Map(), inkPx: null };
+const critters = { pool: new Map(), inkPx: null };
 function lookFor(kind, i) {
-  if (!looks.pool.has(kind)) looks.pool.set(kind, []);
-  const list = looks.pool.get(kind);
+  if (!critters.pool.has(kind)) critters.pool.set(kind, []);
+  const list = critters.pool.get(kind);
   while (list.length <= i) {
     const slot = {
       critter: makeMonsterCritter(zoo, kind), breakFx: breakFx(),
       lane: laneFx(SKILL.orb.radius), circle: circleFx(SKILL.leap.radius), cone: coneFx(SKILL.cone.radius, SKILL.cone.half),
     };
-    if (looks.inkPx) slot.critter.setInkPx(...looks.inkPx);
+    if (critters.inkPx) slot.critter.setInkPx(...critters.inkPx);
     scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node, slot.cone.node);
     list.push(slot);
   }
@@ -172,7 +172,7 @@ function setMode(id) {
   const md = MODES.find((x) => x.id === id);
   if (!md) return;
   mode = id;
-  for (const list of looks.pool.values()) {
+  for (const list of critters.pool.values()) {
     for (const s of list) { s.critter.root.visible = false; s.breakFx.node.visible = false; s.lane.node.visible = false; s.circle.node.visible = false; s.cone.node.visible = false; }
   }
   const used = new Map();
@@ -186,115 +186,21 @@ function setMode(id) {
   resetStance();
 }
 
-/* ── 外觀 ────────────────────────────────────────────────────── */
-function setLook(look) {
-  if (!zoo.setLook(look)) return;
-  blade.follow(zoo.active);
-  hud.flash(lookInfo(look).name);
-  hud.paint();
-}
-function cycleSkin(step) {
-  const { model, skin } = lookInfo(zoo.look);
-  const skins = zoo.critters.get(model).skins;
-  const i = (skins.indexOf(skin) + step + skins.length) % skins.length;
-  setLook(`${model}/${skins[i]}`);
-}
-function cycleModel(step) {
-  const { model, skin } = lookInfo(zoo.look);
-  const ms = zoo.models;
-  const next = ms[(ms.indexOf(model) + step + ms.length) % ms.length];
-  const col = Math.max(0, zoo.critters.get(model).skins.indexOf(skin));
-  const skins = zoo.critters.get(next).skins;
-  setLook(`${next}/${skins[Math.min(col, skins.length - 1)]}`);
-}
-function toggleHat() {
-  zoo.setHat(!zoo.hatOn);
-  hud.flash(zoo.hatOn ? '戴上漁夫帽' : '脫下漁夫帽');
-  hud.paint();
-}
-
-/* ── HUD ─────────────────────────────────────────────────────────
-   試玩場那一份。右邊那塊面板在試玩場是選地形，這裡借它選陣容：同一種按鈕、
-   同一個「選中」的樣子、同一組數字鍵。 */
+/* ── 外觀、HUD、操作 ──────────────────────────────────────────────
+   輸入與版面在 controls.js（每個模式都一樣）；換了動物，刀跟著掛到新那一隻頭上。
+   右邊那塊面板在地形模式是選地形，這裡借它選陣容：同一種按鈕、同一個「選中」的
+   樣子、同一組數字鍵。這個模式自己的鍵：R 重新站位、1–4 陣容。 */
+const looks = wardrobe(zoo, () => hud, () => blade.follow(zoo.active));
 const hud = new Hud({
-  zoo, blocks: MODES, onLook: setLook, onHat: toggleHat,
+  zoo, blocks: MODES, onLook: looks.setLook, onHat: looks.toggleHat,
   onBlock: (id) => { setMode(id); hud.flash(MODES.find((x) => x.id === id).name); hud.paint({ block: id }); },
 });
-
-/* ── 螢幕上的操作與指標路由：照試玩場 ─────────────────────────── */
 const pad = new Pad(document.getElementById('pad'));
-const drag = new Map();
-const owners = new Map();
-canvas.addEventListener('pointerdown', (e) => {
-  const zone = pad.hit(e.clientX, e.clientY);
-  owners.set(e.pointerId, zone || 'view');
-  if (zone) pad.down(zone, e.pointerId, e.clientX, e.clientY);
-  else drag.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  try { canvas.setPointerCapture(e.pointerId); } catch { /* 沒有就算了 */ }
-});
-let pinch = null;
-const pinchSpan = () => {
-  const ps = [...drag.values()];
-  if (ps.length < 2) return null;
-  return Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y);
-};
-canvas.addEventListener('pointermove', (e) => {
-  const who = owners.get(e.pointerId);
-  if (who === 'joy' || who === 'jmp') { pad.move(e.pointerId, e.clientX, e.clientY); return; }
-  const d = drag.get(e.pointerId);
-  if (!d) return;
-  if (drag.size >= 2) {
-    const before = pinch ?? pinchSpan();
-    d.x = e.clientX; d.y = e.clientY;
-    const after = pinchSpan();
-    if (before && after) cam.dist = Math.max(CAM.near, Math.min(CAM.far, cam.dist * (before / after)));
-    pinch = after;
-    return;
-  }
-  cam.yaw -= (e.clientX - d.x) * 0.006;
-  cam.pitch = Math.max(-0.35, Math.min(1.15, cam.pitch + (e.clientY - d.y) * 0.004));
-  d.x = e.clientX; d.y = e.clientY;
-});
-const release = (e) => {
-  pad.up(e.pointerId);
-  owners.delete(e.pointerId);
-  drag.delete(e.pointerId);
-  pinch = drag.size >= 2 ? pinchSpan() : null;
-};
-canvas.addEventListener('pointerup', release);
-canvas.addEventListener('pointercancel', release);
-canvas.addEventListener('wheel', (e) => {
-  e.preventDefault();
-  cam.dist = Math.max(CAM.near, Math.min(CAM.far, cam.dist + Math.sign(e.deltaY) * 0.6));
-}, { passive: false });
-
-/* ── 鍵盤 ────────────────────────────────────────────────────────
-   跳是「按下的那一下」，不是「按著」：試玩場按著空白會落地就再跳，這裡
-   的跳同時是連段的按鍵，按一下就只能算一下。 */
-const keys = new Set();
-const held = (...names) => names.some((n) => keys.has(n));
-let jumpQueued = false;
-addEventListener('keydown', (e) => {
-  if (e.repeat) return;
-  const k = e.key.toLowerCase();
-  keys.add(k);
-  if (k === ' ') jumpQueued = true;
-  if (k === 'h') toggleHat();
-  if (k === 'c') cycleSkin(e.shiftKey ? -1 : 1);
-  if (k === 'x') cycleModel(e.shiftKey ? -1 : 1);
+const controls = new Controls(canvas, pad, cam, (k, e) => {
+  if (looks.key(k, e)) return;
   if (k === 'r') { resetStance(); hud.flash('重新站位'); }
   if (k >= '1' && k <= '9' && MODES[+k - 1]) hud.o.onBlock(MODES[+k - 1].id);
-  if ([' ', 'w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
 });
-addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
-addEventListener('blur', () => keys.clear());
-
-/** 軸的長度 → 想要的速度。試玩場那一條。 */
-function speedFor(mag) {
-  if (mag <= 0) return 0;
-  if (mag <= 0.72) return PHYS.walk * (mag / 0.72);
-  return PHYS.walk + (PHYS.run - PHYS.walk) * ((mag - 0.72) / 0.28);
-}
 
 /** 右上那一行小字：現在在連段的哪裡。 */
 const PHASE_NAME = {
@@ -311,25 +217,12 @@ function frame(now) {
   last = now;
   pad.update(dt);
 
-  let ix = 0, iz = 0;
-  if (held('w', 'arrowup')) iz += 1;
-  if (held('s', 'arrowdown')) iz -= 1;
-  if (held('a', 'arrowleft')) ix -= 1;
-  if (held('d', 'arrowright')) ix += 1;
-  const km = Math.hypot(ix, iz);
-  if (km > 0) {
-    const want = held('shift') ? 1 : 0.72;
-    ix = (ix / km) * want; iz = (iz / km) * want;
-  }
-  if (pad.mag > 0) { ix += pad.axis.x; iz -= pad.axis.y; }
-  let mag = Math.hypot(ix, iz);
-  if (mag > 1) { ix /= mag; iz /= mag; mag = 1; }
+  const input = controls.axis();
 
   /* 連段決定這一下跳是什麼：普通的跳、某一段的出手，或是破防攻擊。站不站在
      地上看的是上一幀的結果，跟試玩場判斷能不能跳是同一個時間點。擺在操控
      之前，因為破防攻擊一發動就接管速度。 */
-  const pressed = pad.takeJump() || jumpQueued;
-  jumpQueued = false;
+  const pressed = controls.jumpPressed();
   const target = breakTarget(player, foes.map((f) => f.m));
   const act = comboStep(combo, dt, {
     pressed, grounded: player.grounded, near: foes.some((f) => inSlash(player, f.m)),
@@ -344,14 +237,10 @@ function frame(now) {
 
   /* 操控。破防攻擊裡不操控：突進與跳離是拋物線，迴旋的位置由 spinStep 擺——
      steer 會把速度投影到搖桿的方向上，那一投影就把突進的速度吃掉了。 */
-  const fwdX = Math.sin(cam.yaw), fwdZ = Math.cos(cam.yaw);
-  const rgtX = -fwdZ, rgtZ = fwdX;
   if (!breaking(combo)) {
-    if (mag > 1e-4) {
-      player.aimX = (fwdX * iz + rgtX * ix) / mag;
-      player.aimZ = (fwdZ * iz + rgtZ * ix) / mag;
-    }
-    [player.vx, player.vz] = steer(player.vx, player.vz, player.aimX, player.aimZ, speedFor(mag), dt);
+    const aim = controls.aim(input);
+    if (aim) [player.aimX, player.aimZ] = aim;
+    [player.vx, player.vz] = steer(player.vx, player.vz, player.aimX, player.aimZ, speedFor(input.mag), dt);
   }
 
   if (combo.phase !== 'spin') {
@@ -480,33 +369,15 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-function safeArea() {
-  const cs = getComputedStyle(document.documentElement);
-  const px = (n) => parseFloat(cs.getPropertyValue(n)) || 0;
-  return { l: px('--sa-l'), r: px('--sa-r'), t: px('--sa-t'), b: px('--sa-b') };
-}
-
-function resize() {
-  const w = window.innerWidth, h = window.innerHeight;
-  const dpr = renderer.getPixelRatio();
-  renderer.setSize(w, h, false);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-  pad.layout(w, h, dpr, safeArea());
-  const st = document.documentElement.style;
-  st.setProperty('--rail', `${pad.rail}px`);
-  st.setProperty('--barT', `${pad.barT}px`);
-  st.setProperty('--barB', `${pad.barB}px`);
-  st.setProperty('--ctrl', `${pad.ctrlTop}px`);
-  document.body.classList.toggle('pad-land', !pad.portrait);
-  document.body.classList.toggle('pad-port', pad.portrait);
-  hud.fit(pad.portrait ? 999 : pad.rail);
-  zoo.setInkPx(2.0, h * dpr);
-  looks.inkPx = [2.0, h * dpr];
-  for (const list of looks.pool.values()) for (const s of list) s.critter.setInkPx(...looks.inkPx);
-}
-addEventListener('resize', resize);
-resize();
+/* 墨線：玩家那一隻，加上池子裡每一隻怪物（之後才借出去的也要，所以記在 critters.inkPx）。 */
+fitView({
+  renderer, camera, pad, hud,
+  ink: (px, h) => {
+    zoo.setInkPx(px, h);
+    critters.inkPx = [px, h];
+    for (const list of critters.pool.values()) for (const s of list) s.critter.setInkPx(px, h);
+  },
+});
 
 document.getElementById('boot').remove();
 setMode(DEFAULT_MODE);
