@@ -17,6 +17,12 @@
    power 越大：注入的塵越濃、起塵的那一圈越大、往外推得越快越遠、留得越久。
    塵是輕的：推得快、散得快（半秒上下），濃度不高，一下就被吃掉。
    每一項都跟著體型或 power 往上走，不會有「更重的落地反而比較淡」的時候。
+
+   ── 扇形地震 ────────────────────────────────────────────────────
+   BOSS 的扇形（skills.js 的 cone）打下去的那一刻，一道震波從牠腳下沿著扇形往外
+   走，走到哪一圈就在那一圈揚起一道塵、往外推。一道比一道濃，而煙鼓多高是跟著
+   濃度走的（fluid.js 的 Sheet），所以越遠的塵越高——看得出震波越走越猛。
+   外圈的塵也比較晚揚起，被流體消散吃掉的比較少，又再高一點。
    ------------------------------------------------------------------ */
 
 import { PHYS } from './walk.js';
@@ -71,5 +77,34 @@ export const PUSH_TIME = 0.06;
 /** 那團塵這一刻還剩幾成（1 → 0）：頭 15% 的時間全在，之後一路散到 life 收掉。 */
 export function dustFade(d, tau) {
   const u = Math.min(1, Math.max(0, (tau - 0.15 * d.life) / (0.85 * d.life)));
+  return 1 - u * u * (3 - 2 * u);
+}
+
+/**
+ * 扇形地震的塵：
+ *
+ *   bands   沿著半徑分幾道揚塵。
+ *   wave    震波從腳下走到扇形最遠處要多久（秒）。
+ *   near／far  最裡面、最外面那一道注入多少濃度（中間照距離內插）。
+ *   inject  每一道注入多久（秒）：震波走到之後這幾幀一直往外推。
+ *   push    往外推多快（公尺 / 秒）。
+ *   life    整片塵從打下去算起留多久（秒）。
+ *   thick   最濃的地方鼓多高（公尺）：外圈的塵大約到這麼高。
+ */
+export const QUAKE = { bands: 6, wave: 0.3, near: 0.2, far: 1.6, inject: 0.06, push: 1.5, life: 1.2, thick: 1.3 };
+
+/**
+ * 第 i 道（0 是最裡面）：在半徑的幾成（u）、打下去之後幾秒震波走到（at）、
+ * 注入多少濃度（amount）。越外面越晚、越濃。
+ */
+export function quakeBand(i) {
+  const u = (i + 0.5) / QUAKE.bands;
+  return { u, at: QUAKE.wave * u, amount: QUAKE.near + (QUAKE.far - QUAKE.near) * u };
+}
+
+/** 那一片地震的塵這一刻還剩幾成（1 → 0）：最外面那一道揚完之前全在，之後散到 life 收掉。 */
+export function quakeFade(tau) {
+  const t0 = QUAKE.wave + QUAKE.inject;
+  const u = Math.min(1, Math.max(0, (tau - t0) / (QUAKE.life - t0)));
   return 1 - u * u * (3 - 2 * u);
 }

@@ -14,7 +14,7 @@
      resolve  怪物追人、放招、球往前飛，然後才判打中——兩個身體都走完這一幀了，
               範圍是對著畫面上的位置判的。打死 BOSS 掉出靈魂，靈魂往下掉、漂，碰到
               就撿起來。回報玩家挨了哪一下、倒下沒有、打死了誰、撿了幾顆靈魂。
-     draw     怪物、劍光（攻擊範圍）與落地的粉塵、BOSS 的預告與球、靈魂、破防的兩圈、刀、
+     draw     怪物、劍光（攻擊範圍）與粉塵（落地、BOSS 的扇形地震）、BOSS 的預告與球、靈魂、破防的兩圈、刀、
               頭頂的愛心。
               在相機擺好之後（破防的兩圈與愛心正對這一幀的鏡頭）；流體場也在這裡
               往前推一幀，所以要在 renderer.render 之前。
@@ -39,7 +39,7 @@ import { Hearts } from './hearts.js';
 import { Fluid, Sheet } from './fluid.js';
 import { TRAILS } from './trail.js';
 import { Qi } from './qi.js';
-import { dustOf, dustFade, DUST_LOOK, PUSH_TIME } from './dust.js';
+import { dustOf, dustFade, DUST_LOOK, PUSH_TIME, QUAKE, quakeBand, quakeFade } from './dust.js';
 
 /** 一團塵：腳下那一圈切成幾段注入。 */
 const DUST_RING = 8;
@@ -105,6 +105,9 @@ export class Fight {
     /** 還看得到的每一團落地的塵，與每一個身體上一幀的高度、往下掉多快、站著沒有。 */
     this._puffs = [];
     this._feet = new WeakMap();
+    /** BOSS 的扇形打下去揚起的地震塵：還看得到的每一片，與這一幀剛打下去、還沒揚的。 */
+    this._quakes = [];
+    this._stomps = [];
     /** 上一幀在哪一段：換段的那一刻起一道劍光。 */
     this._phase = this.combo.phase;
     /** 這一幀在哪一段，它的範圍打不打得到怪物。第二段指著上一次第一段的末端點。 */
@@ -256,6 +259,7 @@ export class Fight {
     lifeStep(player, dt);
     // BOSS 先決定這一幀在不在放招（放招中 monsterStep 讓牠站著），球往前飛。
     const strikes = foes.map(({ m }) => bossStep(m, dt, player, this.world)).filter(Boolean);
+    if (this.fluid) for (const st of strikes) if (st.shape === 'cone') this._stomps.push(st);
     shotsStep(this.world, dt);
     for (const { m } of foes) monsterStep(m, dt, player);
     separate(foes.map((f) => f.m));
@@ -427,15 +431,27 @@ export class Fight {
   _dust(dt, player) {
     const fluid = this.fluid;
     this._land(dt, player);
+    for (const st of this._stomps) this._quakes.push(this._startQuake(st));
+    this._stomps.length = 0;
     for (const pf of this._puffs) {
       if (pf.tau < PUSH_TIME && fluid.owns(pf.tile, pf)) this._kick(pf, dt);
       pf.tau += dt;
+    }
+    for (const q of this._quakes) {
+      if (fluid.owns(q.tile, q)) this._quake(q, dt);
+      q.tau += dt;
     }
     fluid.step(dt);
     this._puffs = this._puffs.filter((pf) => {
       const alive = pf.tau < pf.d.life && fluid.owns(pf.tile, pf);
       if (alive) pf.sheet.show(pf.tile, dustFade(pf.d, pf.tau));
       else this._endPuff(pf);
+      return alive;
+    });
+    this._quakes = this._quakes.filter((q) => {
+      const alive = q.tau < QUAKE.life && fluid.owns(q.tile, q);
+      if (alive) q.sheet.show(q.tile, quakeFade(q.tau));
+      else this._endPuff(q);
       return alive;
     });
   }
@@ -499,7 +515,44 @@ export class Fight {
     }
   }
 
-  /** 收掉一團塵：還格子、收起那一片煙留給下一團借。 */
+  /**
+   * 扇形地震揚一片塵：借一格流體、一片煙，平貼在牠腳下那一層地上，蓋住整個扇形。
+   * 煙片是方的、正中間放在扇形半徑的一半處：扇形上離那裡最遠的是兩個角（0.62 r），
+   * 再留一段往外推的距離。
+   */
+  _startQuake(st) {
+    const sheet = this._sheet();
+    const q = { tau: 0, sheet, st };
+    q.tile = this.fluid.acquire(q);
+    const c = [st.x + (st.dirX * st.r) / 2, st.y + 0.03, st.z + (st.dirZ * st.r) / 2];
+    sheet.place(c, [1, 0, 0], [0, 0, -1], 0.62 * st.r + 0.6, { ...DUST_LOOK, thick: QUAKE.thick });
+    return q;
+  }
+
+  /**
+   * 地震的一幀：震波走到的每一道（quakeBand），在那一段 QUAKE.inject 秒裡沿著扇形的
+   * 那一圈弧注入、往外推。弧切成幾段，越外面的弧越長、段越多。濃度按 dt 分攤，跟
+   * 幀率無關。
+   */
+  _quake(q, dt) {
+    const st = q.st, s = q.sheet, yaw = Math.atan2(st.dirX, st.dirZ);
+    const rad = 0.3 / (2 * s.half);
+    for (let i = 0; i < QUAKE.bands; i++) {
+      const b = quakeBand(i);
+      if (q.tau < b.at || q.tau >= b.at + QUAKE.inject) continue;
+      const r = st.r * b.u, n = 3 + i;
+      const c = (DUST_DYE * b.amount * Math.min(dt, QUAKE.inject)) / QUAKE.inject;
+      const dir = (k) => { const a = yaw - st.half + (2 * st.half * k) / n; return [Math.sin(a), Math.cos(a)]; };
+      const at = ([x, z]) => s.toTile([st.x + x * r, st.y, st.z + z * r]);
+      const vel = ([x, z]) => s.toTileVel([x * QUAKE.push, 0, z * QUAKE.push]);
+      for (let k = 0; k < n; k++) {
+        const d0 = dir(k), d1 = dir(k + 1);
+        this.fluid.splat(q.tile, at(d0), at(d1), vel(d0), vel(d1), c, c, rad);
+      }
+    }
+  }
+
+  /** 收掉一團塵（落地的、地震的）：還格子、收起那一片煙留給下一團借。 */
   _endPuff(pf) {
     this.fluid.release(pf.tile, pf);
     pf.sheet.show(-1, 0);
@@ -513,7 +566,10 @@ export class Fight {
     this._phase = this.combo.phase;
     if (!this.fluid) return;
     for (const pf of this._puffs) this._endPuff(pf);
+    for (const q of this._quakes) this._endPuff(q);
     this._puffs = [];
+    this._quakes = [];
+    this._stomps.length = 0;
   }
 
   /** 右上那一行小字的戰鬥那幾段：每一隻怪物的血與破防、連段在哪。 */

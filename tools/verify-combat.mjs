@@ -71,6 +71,8 @@
     22. 落地粉塵    太輕的落地（比 DUST.min 慢）不起塵；狗普通地跳一下是力道 1；力道有
                     上限；體型越大、落得越重，塵越濃、起塵的那一圈越大、推得越快越遠、
                     留得越久，沒有一項會倒過來；一團塵從全在淡到收掉，不會回來。
+                    BOSS 扇形地震的塵：震波從腳下往外走，越外面那一道越晚揚、越濃
+                    （所以越高）；最外面那一道揚完之前整片不淡，之後淡到收掉。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
@@ -84,7 +86,7 @@ import {
 } from '../public/test/src/combat.js';
 import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
-import { DUST, dustOf, dustFade } from '../public/test/src/dust.js';
+import { DUST, dustOf, dustFade, QUAKE, quakeBand, quakeFade } from '../public/test/src/dust.js';
 import { TRAILS, PIECE, sweepAt, fadeAt, crescentAt, qiAt, along } from '../public/test/src/trail.js';
 
 let fails = 0;
@@ -1259,6 +1261,16 @@ console.log('22. 落地粉塵');
   const d = dustOf(1.5, 9);
   for (let t = 0; t < d.life; t += 0.01) if (dustFade(d, t + 0.01) > dustFade(d, t) + 1e-12) fades = false;
   ok(dustFade(d, 0) === 1 && dustFade(d, d.life) === 0 && fades, `一團塵一開始全在、一路淡下去、${d.life.toFixed(2)} 秒收掉`);
+
+  /* 扇形地震：一道比一道外面、晚、濃。 */
+  const bands = Array.from({ length: QUAKE.bands }, (_, i) => quakeBand(i));
+  ok(bands.every((b, i) => i === 0 || (b.u > bands[i - 1].u && b.at > bands[i - 1].at && b.amount > bands[i - 1].amount)),
+    `地震的塵：${QUAKE.bands} 道，越外面越晚揚、越濃（${bands[0].amount.toFixed(2)} → ${bands.at(-1).amount.toFixed(2)}）`);
+  const last = bands.at(-1).at + QUAKE.inject;
+  let qFades = true;
+  for (let t = 0; t < QUAKE.life; t += 0.01) if (quakeFade(t + 0.01) > quakeFade(t) + 1e-12) qFades = false;
+  ok(quakeFade(0) === 1 && quakeFade(last) === 1 && quakeFade(QUAKE.life) === 0 && qFades && last < QUAKE.life,
+    `地震的塵：最外面那一道 ${last.toFixed(2)} 秒揚完之前整片不淡，之後淡到 ${QUAKE.life} 秒收掉`);
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');
