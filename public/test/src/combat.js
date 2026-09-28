@@ -57,7 +57,8 @@
    一開始 LIFE.start（3）顆心。被咬、被 BOSS 的招打到都扣血，扣多少看是哪一下
    （小怪衝刺 1、BOSS 衝刺 3、BOSS 的其他招 5，見 KINDS 的 `bite` 與 skills.js
    的 SKILL）；扣到 0 才倒下。挨了一下之後 LIFE.guard 秒不再被打中（見 harm）。
-   BOSS 死掉會掉出一顆靈魂（白球），撿起來血 +1（見 SOUL）。
+   BOSS 死掉會掉出一顆靈魂（白球），撿起來最大血量 +1（見 SOUL）。不在戰鬥中的
+   時候（由模式決定，見 regen）很快回血回到最大血量。
 
    從按下去到跳離之後落地，玩家都是無敵的——整招都貼在怪物身上。飛在空中（被擊退、還沒落地）的怪物碰到玩家不算數。
    空中再挨一下就再擊退一次——每一下都是把速度**換成**擊退的那一份，
@@ -173,18 +174,45 @@ export const KINDS = {
 /**
  * 玩家的血。
  *
- *   start  一開始（與倒下之後重來）有幾顆心。
+ *   start  一開始的最大血量（幾顆心）。撿到靈魂才會往上加（gainHeart）。
  *   guard  挨了一下之後幾秒不再被打中。衝刺碰著人是好幾幀、球穿過身體也是，不擋
  *          的話一下會算成好幾下；同一幀被好幾下碰到也只算最重的那一下（呼叫端挑）。
+ *   regen  不在戰鬥中的時候，每幾秒回一顆心（regen），回到最大血量為止。
  *
- * 血與 guard 記在玩家身上（`p.hp`、`p.guard`）。
+ * 血、最大血量、guard、回血的計時記在玩家身上（`p.hp`、`p.max`、`p.guard`、`p.regenT`）。
  */
-export const LIFE = { start: 3, guard: 1 };
+export const LIFE = { start: 3, guard: 1, regen: 0.3 };
 
-/** 血補回 LIFE.start、guard 清掉：開局與倒下之後。 */
+/** 從頭開始：最大血量回到 LIFE.start，血滿。 */
 export function resetLife(p) {
-  p.hp = LIFE.start;
+  p.max = LIFE.start;
+  refill(p);
+}
+
+/** 血補滿（最大血量不變）、guard 清掉：倒下之後。 */
+export function refill(p) {
+  p.hp = p.max;
   p.guard = 0;
+  p.regenT = 0;
+}
+
+/** 撿到一顆靈魂：最大血量 +1，多出來的那一顆是滿的。 */
+export function gainHeart(p) {
+  p.max++;
+  p.hp++;
+}
+
+/**
+ * 不在戰鬥中的一幀：每 LIFE.regen 秒回一顆心，到最大血量為止。在戰鬥中不叫它。
+ * 計時從缺血的那一刻起算，所以一離開戰鬥就是一顆一顆連著回。
+ */
+export function regen(p, dt) {
+  if (p.hp >= p.max) { p.regenT = 0; return; }
+  p.regenT += dt;
+  while (p.regenT >= LIFE.regen && p.hp < p.max) {
+    p.regenT -= LIFE.regen;
+    p.hp++;
+  }
 }
 
 /** guard 倒數。 */
@@ -209,7 +237,7 @@ export function harm(p, dmg) {
  *
  *   從牠（畫成兩倍大的）身體中間那個高度受重力往下掉，落到腳下那一層地板上
  *   `hover` 公尺停住；之後以那個高度為中心、振幅 `bob`、週期 `period` 秒上下
- *   漂浮（簡諧）。碰到玩家的身體（grabs）就被撿起來，血 +1，沒有上限。
+ *   漂浮（簡諧）。碰到玩家的身體（grabs）就被撿起來，最大血量 +1（gainHeart），沒有上限。
  *
  *   r  球的半徑，撿不撿得到也用它量。
  */

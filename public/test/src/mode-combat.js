@@ -28,7 +28,7 @@ import { makeCam, snapCam, updateCam } from './camera.js';
 import { buildVeil } from './veil.js';
 import { hazeMesh } from './stage.js';
 import { Controls, speedFor, fitView, wardrobe } from './controls.js';
-import { ARENA, COLS, SPAWN, MODES, DEFAULT_MODE, KINDS, resetLife } from './combat.js';
+import { ARENA, COLS, SPAWN, MODES, DEFAULT_MODE, KINDS, resetLife, refill } from './combat.js';
 import { Fight, DEATH_TEXT } from './fight.js';
 
 const canvas = document.getElementById('view');
@@ -68,6 +68,7 @@ const player = {
   vx: 0, vy: 0, vz: 0, grounded: true,
   aimX: 0, aimZ: -1,
 };
+resetLife(player);
 
 /* 戰鬥：怪物、連段、打中與被打中、刀。場上有哪幾隻由陣容決定（setMode）；
    這一頁打死的怪物在牠的重生點重生。 */
@@ -79,10 +80,10 @@ let deaths = 0;
 
 const cam = makeCam(0, 0);
 
-/** 回到站位：玩家在中線 2/3、怪物在 1/3，都面向中心，鏡頭在玩家背後。血補滿。 */
+/** 回到站位：玩家在中線 2/3、怪物在 1/3，都面向中心，鏡頭在玩家背後。血補滿（撿到的最大血量留著）。 */
 function resetStance() {
   const s = SPAWN.player;
-  resetLife(player);
+  refill(player);
   player.x = s.x; player.y = 0; player.z = s.z;
   player.vx = player.vy = player.vz = 0;
   player.grounded = true;
@@ -158,7 +159,7 @@ function frame(now) {
   /* 怪物與打中。挨一下扣血；血扣光了雙方回到站位。打死的怪物在牠的重生點重生。 */
   const { hit, died, kills, souls } = fight.resolve(dt, player);
   for (const k of kills) hud.flash(`打死${KINDS[k].name}，牠在重生點重生${KINDS[k].soul ? '，掉出一顆靈魂' : ''}`);
-  if (souls) hud.flash(`撿到靈魂，血 +${souls}`);
+  if (souls) hud.flash(`撿到靈魂，最大血量 +${souls}`);
   if (died) {
     deaths++;
     resetStance();
@@ -189,7 +190,7 @@ function frame(now) {
   let line = null;
   if (hudAcc > 0.25) {
     const st = fight.status();
-    line = `${Math.round(fpsN / fpsAcc)} fps ・ 血 ${player.hp} ・ 倒下 ${deaths} 次 ・ ${st.foeLine} ・ ${st.phase} ・ `
+    line = `${Math.round(fpsN / fpsAcc)} fps ・ 血 ${player.hp}/${player.max} ・ 倒下 ${deaths} 次 ・ ${st.foeLine} ・ ${st.phase} ・ `
       + `x ${player.x.toFixed(1)} y ${player.y.toFixed(1)} z ${player.z.toFixed(1)}`;
     fpsAcc = 0; fpsN = 0; hudAcc = 0;
   }

@@ -58,7 +58,8 @@
                     球飛到它就消失；跳砸落在目標腳下那一塊的頂上，打的是那一層。
     19. 玩家的血    一開始 3 點；小怪咬 1、BOSS 咬 3、BOSS 的三招各 5（球與範圍攻擊
                     身上帶著這個數）；扣到 0 為止、不會變負的；挨一下之後 1 秒內
-                    不再扣，所以一次衝刺從頭衝到尾只扣一次。
+                    不再扣，所以一次衝刺從頭衝到尾只扣一次。撿到靈魂最大血量 +1；
+                    倒下補滿到最大血量；不在戰鬥中每 0.3 秒回一顆、回到滿為止。
     20. 靈魂        只有 BOSS 會掉；從身體中間受重力往下掉，落在腳下那一層地板上
                     0.5 公尺，之後上下 ±0.2 簡諧漂浮、不橫移；碰到身體才撿得到。
    ------------------------------------------------------------------ */
@@ -69,7 +70,7 @@ import {
   BREAK_AT, BREAK_WINDOW, broken,
   FLY, BREAK_ATK, breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, armored,
   makeMonster, monsterStep, touching, bites, knock, inSlash, inFan, inRing, slashTip, fanFrame,
-  makeCombo, comboStep, invulnerable, cueing, FIELD, LIFE, resetLife, lifeStep, harm,
+  makeCombo, comboStep, invulnerable, cueing, FIELD, LIFE, resetLife, lifeStep, harm, refill, gainHeart, regen,
   SOUL, dropSoul, soulStep, grabs,
 } from '../public/test/src/combat.js';
 import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from '../public/test/src/skills.js';
@@ -1079,6 +1080,25 @@ console.log('19. 玩家的血');
     return null;
   };
   ok(dmgOf(0) === 5 && dmgOf(0.5) === 5 && dmgOf(0.9) === 5, '球、跳砸、扇形打出來都帶著 5');
+
+  // 最大血量與回血。
+  const r = {};
+  resetLife(r);
+  gainHeart(r);
+  ok(r.max === 4 && r.hp === 4, '撿到靈魂：最大血量 3 → 4，多的那一顆是滿的');
+  r.guard = 0;
+  harm(r, 3);
+  refill(r);
+  ok(r.hp === 4 && r.max === 4 && r.guard === 0, '倒下補滿：補到最大血量，撿到的那一顆留著');
+  resetLife(r);
+  ok(r.max === LIFE.start && r.hp === LIFE.start, '從頭開始：最大血量回到 3');
+  gainHeart(r); gainHeart(r);
+  r.hp = 0;
+  let tr = 0;
+  while (r.hp < r.max && tr < 5) { regen(r, DT); tr += DT; }
+  ok(r.hp === 5 && near(tr, 5 * LIFE.regen, DT * 1.5), `不在戰鬥中：0 → 5 花 ${tr.toFixed(2)} 秒（每 ${LIFE.regen} 秒一顆）`);
+  for (let k = 0; k < 60; k++) regen(r, DT);
+  ok(r.hp === r.max, '回滿了就停在最大血量');
 }
 
 /* ── 20. 靈魂 ────────────────────────────────────────────────────── */

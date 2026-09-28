@@ -20,7 +20,7 @@
 
 import { PHYS, supportInfo } from './walk.js';
 import {
-  FIELD, SWING, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster, harm, lifeStep,
+  FIELD, SWING, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster, harm, lifeStep, gainHeart,
   SOUL, dropSoul, soulStep, grabs,
   breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, placeMonster, monsterStep, bites, knock,
   inSlash, inFan, inRing, slashTip, fanFrame, makeCombo, comboStep, invulnerable, cueing,
@@ -189,7 +189,7 @@ export class Fight {
    *         都不算。
    *   died  這一下把血扣光了：倒下，怎麼倒的（hit 的 cause）。
    *   kills 這一幀打死的怪物是哪一類（KINDS 的鍵）。
-   *   souls 這一幀撿了幾顆靈魂（血已經加上去了）。
+   *   souls 這一幀撿了幾顆靈魂（最大血量已經加上去了）。
    */
   resolve(dt, player) {
     const combo = this.combo, foes = this.foes;
@@ -242,13 +242,13 @@ export class Fight {
     }
     const died = hit && player.hp <= 0 ? hit.cause : null;
 
-    // 靈魂：往下掉、漂；碰到就撿起來，血 +1。倒下的這一幀不撿（血等一下就重設了）。
+    // 靈魂：往下掉、漂；碰到就撿起來，最大血量 +1。倒下的這一幀不撿（血等一下就補滿了）。
     let souls = 0;
     for (const sl of this.souls) soulStep(sl, dt);
     if (!died) {
       const left = this.souls.filter((sl) => !grabs(player, sl));
       souls = this.souls.length - left.length;
-      player.hp += souls;
+      for (let i = 0; i < souls; i++) gainHeart(player);
       this.souls = left;
     }
     return { hit, died, kills, souls };
@@ -261,9 +261,9 @@ export class Fight {
   draw(dt, camera, player) {
     const combo = this.combo, fx = this._fx;
     this.blade.update();
-    // 剛挨過一下（guard 還開著）：玩家一閃一閃的，頭頂是剩下的血。
+    // 剛挨過一下（guard 還開著）：玩家一閃一閃的。頭頂是最大血量幾顆心、剩下的幾顆是滿的。
     this.zoo.root.visible = !(player.guard > 0) || Math.floor(player.guard * 12) % 2 === 0;
-    this.hearts.show(player.hp, player.x, player.y, player.z, camera.quaternion);
+    this.hearts.show(player.hp, player.max, player.x, player.y, player.z, camera.quaternion);
     for (const { m, critter } of this.foes) {
       critter.root.position.set(m.x, m.y, m.z);
       critter.setFacing(Math.atan2(m.aimX, m.aimZ));

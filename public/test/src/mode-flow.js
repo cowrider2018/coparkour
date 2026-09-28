@@ -8,9 +8,11 @@
    ── 一場的一生 ──────────────────────────────────────────────────
      走進第 k 場的範圍   所有的門關上、所有的傳送不通；一秒後 BOSS 出現。
      打死 BOSS           這一場清完：只開通往下一場的門（route.js 的 OPEN）。
-     挨打                扣血（頭頂的愛心，fight.js）。血一路帶著走，不因為
-                         打完一場補回來；BOSS 死掉掉出的靈魂撿起來 +1。
-     倒下（血扣光）      BOSS 收起來，血補回 3，人回到這一場的入口外面休息、面朝入口
+     挨打                扣血（頭頂的愛心，fight.js）。BOSS 死掉掉出的靈魂撿起來
+                         最大血量 +1，一路帶到後面的場。
+     不在戰鬥中          清完一場之後、還沒走進下一場之前：很快回血到最大血量
+                         （combat.js 的 regen）。
+     倒下（血扣光）      BOSS 收起來，血補滿，人回到這一場的入口外面休息、面朝入口
                          （route.js 的 restAt），門照「還沒打第 k 場」開著。
                          不在同一個房間裡重生；自己走回去，一進房間就重打。
      R                   重玩：回到起點，六場全部重來。
@@ -29,7 +31,7 @@ import { Controls, fitView, wardrobe } from './controls.js';
 import { buildStage } from './stage.js';
 import { makeHero, steerHero, moveHero } from './hero.js';
 import { Fight, DEATH_TEXT } from './fight.js';
-import { resetLife } from './combat.js';
+import { resetLife, refill, regen } from './combat.js';
 import { BLOCKS } from './blocks.js';
 import { STAGES, START, bossPost, inStage, makeRun, doorsFor, portalsOn, restAt } from './route.js';
 
@@ -123,14 +125,14 @@ function clear() {
   run.next++;
   applyDoors();
   const done = run.next >= STAGES.length;
-  hud.flash(done ? '六場全部打完——門全開了' : `打倒 BOSS！撿起牠的靈魂補一點血。下一場：${stageName(run.next)}`);
+  hud.flash(done ? '六場全部打完——門全開了' : `打倒 BOSS！撿起牠的靈魂，最大血量 +1。下一場：${stageName(run.next)}`);
   if (!done) hud.paint({ block: STAGES[run.next].id });
 }
 
 /** 倒下：BOSS 收起來，血補滿，回到這一場的入口外面休息。 */
 function fall(cause) {
   deaths++;
-  resetLife(player);
+  refill(player);
   const k = run.next;
   run.active = false;
   spawnIn = 0;
@@ -200,7 +202,8 @@ function frame(now) {
     }
   }
   const { hit, died, souls } = fight.resolve(dt, player);
-  if (souls) hud.flash(`撿到靈魂，血 +${souls}`);
+  if (souls) hud.flash(`撿到靈魂，最大血量 +${souls}`);
+  if (!run.active) regen(player, dt);     // 不在戰鬥中：很快回血
   if (run.active && spawnIn === 0 && !fight.foes.length) clear();
   if (died) fall(died);
   else if (hit) hud.flash(`${DEATH_TEXT[hit.cause]}，扣 ${hit.dmg} 點血`);
@@ -230,7 +233,7 @@ function frame(now) {
     const st = fight.status();
     const where = run.next >= STAGES.length ? '全部打完'
       : `第 ${run.next + 1} 場 ${stageName(run.next)}・${run.active ? (spawnIn > 0 ? '開打' : '戰鬥中') : '還沒進去'}`;
-    line = `${Math.round(fpsN / fpsAcc)} fps ・ ${where} ・ 血 ${player.hp} ・ 倒下 ${deaths} 次`
+    line = `${Math.round(fpsN / fpsAcc)} fps ・ ${where} ・ 血 ${player.hp}/${player.max} ・ 倒下 ${deaths} 次`
       + `${st.foeLine ? ` ・ ${st.foeLine}` : ''} ・ ${st.phase} ・ `
       + `x ${player.x.toFixed(1)} y ${player.y.toFixed(1)} z ${player.z.toFixed(1)}`;
     fpsAcc = 0; fpsN = 0; hudAcc = 0;
