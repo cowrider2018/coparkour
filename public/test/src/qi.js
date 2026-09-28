@@ -25,14 +25,16 @@
    ── 動 ──────────────────────────────────────────────────────────
      擾動  每一顆的半徑乘上 1 − WOB·noise(沿著月牙的長度, 時間)：單一頻率的
            平滑噪聲，一個起伏 WOBBLE 公尺長——大而少的鼓包。
-     消散  用減的：每一顆點配一顆「挖洞」的球，放在同一個地方（沿著刀的方向
-           隨機偏一點，缺口的邊才不是一條直線），從曲面上挖掉一塊。
-           有一條「前緣」從起點（最早出現的那一端）沿著月牙往刀尖推：掃完 HOLD
-           秒之後出發，剛好在 life 推過刀尖、把最後那一顆挖完。每一顆挖洞的球
-           多大，看它落後前緣多遠——落後 x 公尺就是 SLOPE·x，最大到比那裡的劍氣
-           還大（CUT 倍半寬）。所以缺口從起點開一個口，一路往刀尖吃過去；前緣
-           那一顆是 0、後面一顆比一顆大，相鄰的洞一定連在一起（SLOPE ≥ 1、間距
-           比半寬小），缺口是一個連續的圓頭，不會在前面冒出一個個孤立的小洞。
+     消散  用減的：每一顆點配一根「挖洞」的圓柱（沿著面法線，一定挖得穿），從曲面上挖掉一塊。挖洞的圓柱不在
+           中線上，而是散開的——沿著刀的方向偏到 ±CUT_JITTER 倍半寬、沿著路徑
+           前後偏半個間距——所以洞開在劍氣身上不同的地方。分兩段：
+             破洞  大約 HOLE_P 的點會先開一個洞：時間大多是隨機的（只稍微偏向起點
+                   先開），一下子張到 0.35～0.75 倍半寬就停住。整道劍氣上同時有好幾個
+                   破洞，中間留著橋。
+             崩解  之後每一顆挖洞的球再長到最大（CUT 倍半寬，把那裡整個挖穿），
+                   順序從起點往刀尖，最晚的那一顆剛好在 life 挖完。破洞之間的橋
+                   一條一條斷掉，劍氣碎成幾塊再被吃光。
+           洞要是一開就長到最大，會馬上連成一大片，看不出是好幾個洞。
            組成劍氣的點本身不縮。
    半徑每幀在這裡算好才交給著色器，著色器只管畫。
 
@@ -71,14 +73,21 @@ const WOBBLE = 0.9;
 /** 掃完之後多久開始挖第一口（秒）。 */
 const HOLD = 0.05;
 
-/** 挖洞的球落後前緣 1 公尺，半徑就是幾公尺。≥ 1：前緣後面那一顆的洞一定蓋得到前緣那一顆。 */
-const SLOPE = 1.5;
+/** 幾成的點會先開一個破洞。 */
+const HOLE_P = 0.5;
+
+/** 消散那一段（掃完 HOLD 秒之後到 life）裡，各階段佔幾成：破洞在前 HOLE_SPAN 裡隨機開、
+    每一個張開要 HOLE_OPEN；崩解從 BREAK_AT 開始，從起點到刀尖排 BREAK_SPAN，每一顆
+    挖穿要 BREAK_GROW。BREAK_AT + BREAK_SPAN + BREAK_JITTER + BREAK_GROW = 1。 */
+const HOLE_SPAN = 0.35, HOLE_OPEN = 0.1;
+const BREAK_AT = 0.45, BREAK_SPAN = 0.28, BREAK_JITTER = 0.07, BREAK_GROW = 0.2;
 
 /** 挖洞的球最大是那裡劍氣半寬的幾倍——比 1 大，才挖得穿、跟隔壁的洞連起來。 */
 const CUT = 1.7;
 
-/** 挖洞的球沿著刀的方向最多偏半寬的幾成。偏太多會在另一邊留下細細一條殘邊。 */
-const CUT_JITTER = 0.2;
+/** 挖洞的球沿著刀的方向最多偏半寬的幾成。CUT − CUT_JITTER ≥ 1：長到最大的時候
+    還是蓋得住自己那一顆點。 */
+const CUT_JITTER = 0.45;
 
 /** 一個像素算挖洞的時候，前後各看幾顆（挖洞的球比點大，看得要比 NEAR 遠）。 */
 const NEAR_CUT = 5;
@@ -124,7 +133,7 @@ const FRAG = /* glsl */ `
    在 ANGLE（Windows 上的 Chrome）底下會變成一長串比較，比讀貼圖慢好幾倍。 */
 uniform highp sampler2D uPts;
 uniform int uCount;
-uniform int uCuts;   // 前面這幾顆有挖洞的球（越早出現的越先挖，所以一定是最前面那幾顆）
+uniform int uCuts;   // 有挖洞的球的那幾顆都在這個編號以前（再後面的還沒開始挖）
 vec4 P(int i) { return texelFetch(uPts, ivec2(i, 0), 0); }
 vec3 N(int i) { return texelFetch(uPts, ivec2(i, 1), 0).xyz; }
 vec4 C(int i) { return texelFetch(uPts, ivec2(i, 2), 0); }
@@ -173,7 +182,10 @@ float sdf(vec3 p) {
     if (i >= uCuts) break;
     if (i < 0) continue;
     vec4 q = C(i);
-    if (q.w > 0.0) c = min(c, length(p - q.xyz) - q.w);
+    if (q.w <= 0.0) continue;
+    // 挖洞的是沿著面法線的圓柱，不是球：劍氣是扁的，比它薄的球挖出來是藏在裡面的空腔。
+    vec3 n = N(i), v = p - q.xyz;
+    c = min(c, length(v - n * dot(v, n)) - q.w);
   }
   cut = -c > d;
   return max(d, -c);
@@ -367,34 +379,41 @@ export class Qi {
   _size() {
     const P = this._all(), D = this._data, T = TRAILS[this.kind];
     const fade = fadeAt(this.kind, this.tau);
-    /* 前緣：t1 + HOLD 從起點出發，life 的時候推過刀尖再加上最後那一顆長到最大要的
-       距離。掃完之前整道還在變長，所以用這一刻的全長——出發的時候已經掃完了。 */
-    const total = P.length ? P[P.length - 1].l : 0;
-    const most = Math.max(0, ...P.map((p) => CUT * p.w / 2 + BLEND));
-    const go = T.t1 + HOLD, end = Math.max(go + 0.05, T.life - 0.02);
-    const front = Math.max(0, (this.tau - go) / (end - go)) * (total + most / SLOPE);
+    /* 消散那一段：掃完 HOLD 秒之後到 life，各階段照上面那幾個比例排。掃完之前整道還在
+       變長，所以用這一刻的全長——開挖的時候已經掃完了。 */
+    const total = (P.length && P[P.length - 1].l) || 1;
+    const go = T.t1 + HOLD, A = Math.max(0.05, T.life - 0.02 - go);
+    const ease = (x) => { const u = Math.min(1, Math.max(0, x)); return u * u * (3 - 2 * u); };
     let cuts = 0, gone = 0;
     P.forEach((p, i) => {
-      const full = CUT * p.w / 2 + BLEND;
-      const k = Math.min(full, Math.max(0, front - p.l) * SLOPE);
+      const full = CUT * p.w / 2 + BLEND, h = (n) => hash(i + this._seed, n), f = p.l / total;
+      const hole = h(2.7) < HOLE_P ? (0.35 + 0.4 * h(5.3)) * p.w / 2 : 0;
+      const open = go + A * (HOLE_SPAN * (0.8 * h(8.9) + 0.2 * f));
+      const brk = go + A * (BREAK_AT + BREAK_SPAN * f + BREAK_JITTER * h(3.3));
+      const u = (this.tau - brk) / (A * BREAK_GROW);
+      const k = hole * ease((this.tau - open) / (A * HOLE_OPEN)) + (full - hole) * ease(u);
       if (k > 0) cuts = i + 1;
-      /* 挖洞的球長到最大就把自己那一顆整顆蓋住了（CUT − CUT_JITTER > 1）：那一顆
-         當作不見，不用再算它的距離。 */
-      if (k >= full && gone === i) gone = i + 1;
+      /* 挖洞的球長到最大就把自己那一顆整顆蓋住了：那一顆當作不見，不用再算它的距離。 */
+      if (u >= 1 && gone === i) gone = i + 1;
       const wob = 1 - WOB * noise(p.l / WOBBLE + this._seed, this.tau * 1.4 + this._seed);
-      const r = k >= full ? 0 : Math.max(0, p.w / 2 - BLEND / 4) * wob * (fade > 0 ? 1 : 0);
+      const r = u >= 1 ? 0 : Math.max(0, p.w / 2 - BLEND / 4) * wob * (fade > 0 ? 1 : 0);
       D.set([p.c[0], p.c[1], p.c[2], r], i * 4);
       D.set([p.N[0], p.N[1], p.N[2], 0], (MAXP + i) * 4);
-      const off = (noise(p.l * 3.1 + this._seed, this._seed * 0.7) * 2 - 1) * CUT_JITTER * p.w / 2;
-      D.set([p.c[0] + p.d[0] * off, p.c[1] + p.d[1] * off, p.c[2] + p.d[2] * off, k], (2 * MAXP + i) * 4);
+      /* 散開：沿著刀的方向 ±CUT_JITTER 倍半寬，沿著路徑（N × d）前後半個間距。 */
+      const t = cross(p.N, p.d);
+      const across = (h(1.9) * 2 - 1) * CUT_JITTER * p.w / 2;
+      const along = (h(4.1) - 0.5) * gapAt(p.w);
+      D.set([0, 1, 2].map((c) => p.c[c] + p.d[c] * across + t[c] * along).concat(k), (2 * MAXP + i) * 4);
     });
     this._tex.needsUpdate = true;
     this.material.uniforms.uCount.value = P.length;
     this.material.uniforms.uCuts.value = cuts;
-    /* 殼跟著縮：整顆挖掉的那幾顆不包了，只留最後一顆當缺口那一邊的邊。 */
+    /* 殼跟著縮：前面整顆挖掉的那幾顆不包了，只留最後一顆當缺口那一邊的邊。 */
     const from = Math.max(0, gone - 1);
     if (from !== this._from) this._hull(from);
   }
+
+
 
 
 }
