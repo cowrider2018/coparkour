@@ -52,6 +52,10 @@
                     被擊退往上飛得跟殭屍一樣高，但停在半空、不落下，停了再追；
                     高度夾在地板與蓋子底下；破防攻擊的迴旋之後在原本的高度被
                     推開；在空中被擊退的時候破防攻擊一樣瞄得到。
+    18. 場地        怪物帶著自己的場地（黑牆、碰撞、門）：站在高台上就在台上追、
+                    被擊退落回台上；走出台緣會掉下去、落在底下的地板；踏得上
+                    一級台階；關著的門擋住、開著的不擋；圓的黑牆量得出球道多長、
+                    球飛到它就消失；跳砸落在目標腳下那一塊的頂上，打的是那一層。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
@@ -60,7 +64,7 @@ import {
   BREAK_AT, BREAK_WINDOW, broken,
   FLY, BREAK_ATK, breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, armored,
   makeMonster, monsterStep, touching, bites, knock, inSlash, inFan, inRing, slashTip, fanFrame,
-  makeCombo, comboStep, invulnerable, cueing,
+  makeCombo, comboStep, invulnerable, cueing, FIELD,
 } from '../public/test/src/combat.js';
 import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
@@ -958,6 +962,72 @@ console.log('17. 幽靈');
     }
     ok(hit, '被第三段往上砸、正在飛的幽靈：破防攻擊碰得到');
   }
+}
+
+/* ── 18. 場地 ────────────────────────────────────────────────── */
+console.log('18. 場地');
+{
+  /* 一塊圓的場地（半徑 10）：中間一座 6×6、頂在 2 公尺的高台，東邊一級 0.3 的台階，
+     北邊一扇門（屬於 'g'，關著就是一道牆）。碰撞的欄位跟 geom.js 登記的一樣。 */
+  const arena = { id: 'ring', shape: 'circle', x: 0, z: 0, r: 10, lid: 12 };
+  const box = (x0, y0, z0, x1, y1, z1, more = {}) => ({ kind: 'block', min: [x0, y0, z0], max: [x1, y1, z1], base: y0, ...more });
+  const cols = [
+    { kind: 'bound', ...arena, min: [-10, -2, -10], max: [10, 30, 10], base: -2 },
+    box(-3, 0, -3, 3, 2, 3, { kind: 'floor' }),
+    box(5, 0, -1, 9, 0.3, 1, { kind: 'floor' }),
+    box(-2, 0, -7.2, 2, 3, -6.8, { door: 'g' }),
+  ];
+  const field = { arena, cols, doors: {} };
+  const on = (spawn, f = field) => makeMonster(spawn, f);
+  // 只看走路：追到了也不讓牠停下來衝。
+  const run = (m, target, secs) => {
+    for (let t = 0; t < secs; t += DT) { monsterStep(m, DT, target); if (m.lunge) m.lunge = null; }
+  };
+
+  ok(makeMonster().field === FIELD && FIELD.arena === ARENA, '沒給場地的怪物站在這一頁那塊空地上');
+
+  const up = on({ kind: 'minion', x: -2, y: 2, z: 0, yaw: 0 });
+  run(up, body(2.5, 0, 2), 0.6);
+  ok(near(up.y, 2) && !up.air && up.x > -2, `站在高台上追台上的人：一直在台上（y = ${up.y.toFixed(2)}）`);
+  knock(up, 0, 0, 0, -1);
+  run(up, body(2.5, 0, 2), 1.2);
+  ok(!up.air && near(up.y, 2), '在台上被擊退：落回台上');
+
+  const off = on({ kind: 'minion', x: 0, y: 2, z: 0, yaw: 0 });
+  let fell = false;
+  for (let t = 0; t < 4 && !(off.z > 5 && !off.air); t += DT) {
+    monsterStep(off, DT, body(0, 8));
+    if (off.lunge) off.lunge = null;
+    fell ||= off.air;
+  }
+  ok(fell && !off.air && near(off.y, 0) && off.z > 3, `走出台緣：掉下去、落在地上（y = ${off.y.toFixed(2)}、z = ${off.z.toFixed(2)}）`);
+
+  const step = on({ kind: 'minion', x: 3.8, z: 0, yaw: Math.PI / 2 });
+  run(step, body(8.5, 0, 0.3), 1.0);
+  ok(step.x > 5.5 && near(step.y, 0.3), `踏上 0.3 的一級台階（y = ${step.y.toFixed(2)}）`);
+
+  const shut = on({ kind: 'minion', x: 0, z: -5, yaw: Math.PI });
+  run(shut, body(0, -9), 1.5);
+  ok(shut.z >= -6.8 + PHYS.radius - 1e-3, `門關著：擋在門前（z = ${shut.z.toFixed(2)}）`);
+  const open = on({ kind: 'minion', x: 0, z: -5, yaw: Math.PI }, { ...field, doors: { g: true } });
+  run(open, body(0, -9), 1.5);
+  ok(open.z < -7.2, `門開著：走得過去（z = ${open.z.toFixed(2)}）`);
+
+  ok(near(laneLength(0, 0, 1, 0, arena), 10) && near(laneLength(0, 6, 0, -1, arena), 16), '圓的黑牆：球道從圓心量到牆、從牆邊量到對面');
+  const w = makeWorld(field);
+  w.shots.push({ x: 9.5, y: 0.5, z: 0, vx: 6, vz: 0, r: 0.3 });
+  shotsStep(w, 0.1);
+  ok(w.shots.length === 0, '球飛到圓的黑牆就消失');
+
+  // 跳砸：BOSS 在地上、玩家站在台上。rng 0.5 挑三招的中間那一招（leap）。
+  const boss = on({ kind: 'boss', x: -6, z: 0, yaw: Math.PI / 2 });
+  boss.castT = 0;
+  const p = { ...body(0, 0, 2), vx: 0, vy: 0, vz: 0, grounded: true };
+  let strike = null;
+  for (let t = 0; t < 3 && !strike; t += DT) strike = bossStep(boss, DT, p, makeWorld(field), () => 0.5);
+  ok(strike && strike.shape === 'circle' && near(boss.y, 2) && near(strike.y, 2), `跳砸落在台上（y = ${boss.y.toFixed(2)}）`);
+  ok(strike && strikeHits(strike, p) && !strikeHits(strike, { ...p, y: 2 + PHYS.height + 0.01 }),
+    '打的是台上那一層：站在台上會中、腳離台面超過一個狗高就躲得過');
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

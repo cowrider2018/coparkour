@@ -72,7 +72,7 @@
              高度在身高中間。
    ------------------------------------------------------------------ */
 
-import { PHYS, solveXZ, steer, clampArena } from './walk.js';
+import { PHYS, solveXZ, steer, clampArena, supportInfo } from './walk.js';
 
 /** 狗有多高。攻擊的長度都用它量，所以跟物理的身體是同一個數字。 */
 export const DOG_H = PHYS.height;
@@ -128,6 +128,16 @@ export const COLS = [{
 }];
 
 /**
+ * 怪物站在什麼樣的地方：黑牆（arena，擋路也封頂）、碰撞清單（cols，走路與
+ * 地板都問它，跟玩家同一份）、門開著哪幾扇（doors，關著的門扇會擋）。
+ *
+ * 每一隻怪物帶著自己的那一份（`m.field`），規則一律問牠身上的，不問這個檔案的
+ * 常數——所以同一套規則放得進任何一張圖：這一塊空地是 FIELD，完整流程裡是
+ * 那一張遺跡的黑牆與碰撞。地板不是 0，是腳下那一塊的頂（牆頂的走道在 5.2）。
+ */
+export const FIELD = { arena: ARENA, cols: COLS, doors: {} };
+
+/**
  * 怪物的名冊：每一類怪物一筆數值，住在這裡而不是散在各支函式裡——之後多一類
  * 怪物就是多一筆，規則不動。每一隻怪物身上帶的是牠自己的「狀態」（位置、速度、
  * 挨了幾下…），數值一律回頭查這一張，用 `m.kind` 認類別。
@@ -162,8 +172,23 @@ export const KINDS = {
  */
 export const FLY = { drag: PHYS.gravity, top: ARENA.lid - PHYS.height };
 
-/** 會飛的高度只能在地板與 FLY.top 之間。 */
-const flyY = (y) => Math.min(FLY.top, Math.max(0, y));
+/** 這隻怪物腳下的地板有多高：從 fromY 往下找，踏得上去的那一級也算（walk.js 的 supportInfo）。 */
+const floorAt = (m, fromY = m.y) => supportInfo(m.field.cols, m.x, m.z, fromY).y;
+
+/** 會飛的高度只能在地板與蓋子底下一個身高之間（FLY.top 是這一塊空地的那個數）。 */
+const flyY = (m, y) => Math.min(m.field.arena.lid - PHYS.height, Math.max(floorAt(m), y));
+
+/**
+ * 走路的怪物在地上走完一步：腳跟著地板走——踏上一級就站上去，走出邊緣就掉下去
+ * （跟被擊退一樣是 air，落地才回去追人）。
+ */
+function settle(m) {
+  const f = floorAt(m);
+  if (f >= m.y - 0.05) { m.y = f; return; }
+  m.air = true;
+  m.grounded = false;
+  m.vy = 0;
+}
 
 /** 破防之後的窗口多長（秒）：亮圓從淡圓的大小縮到消失的時間。 */
 export const BREAK_WINDOW = 0.5;
@@ -234,12 +259,14 @@ export const KNOCK_SCALE = {
 
 /**
  * 一隻站在站位上的怪物。`spawn` 是牠自己的站位（{kind, x, z, yaw}，SPAWN.monsters
- * 的一筆）：牠是哪一類看它，回到站位、死了重生都回這裡。
+ * 的一筆；可以帶 y，不帶就是 0）：牠是哪一類看它，回到站位、死了重生都回這裡。
+ * `field` 是牠站在什麼樣的地方（見 FIELD）。
  */
-export function makeMonster(spawn = SPAWN.monsters[0]) {
+export function makeMonster(spawn = SPAWN.monsters[0], field = FIELD) {
   const m = {
     kind: spawn.kind,
     spawn,
+    field,
     x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, grounded: true, aimX: 0, aimZ: 1,
     /* 被擊退、還沒落地。這段時間牠不追人，碰到玩家也不算數。 */
     air: false,
@@ -265,7 +292,7 @@ export function makeMonster(spawn = SPAWN.monsters[0]) {
 /** 怪物回到牠自己的站位。 */
 export function placeMonster(m) {
   const s = m.spawn;
-  m.x = s.x; m.y = 0; m.z = s.z;
+  m.x = s.x; m.y = s.y ?? 0; m.z = s.z;
   m.vx = m.vy = m.vz = 0;
   m.grounded = true;
   m.air = false;
@@ -347,19 +374,22 @@ export function monsterStep(m, dt, target) {
     const ns = Math.max(0, sp - BREAK_ATK.push.decel * dt);
     const k = sp > 1e-9 ? ns / sp : 0;
     m.vx *= k; m.vz *= k;
-    [m.x, m.z] = solveXZ(COLS, m.x + m.vx * dt, m.z + m.vz * dt, m.y);
+    [m.x, m.z] = solveXZ(m.field.cols, m.x + m.vx * dt, m.z + m.vz * dt, m.y, m.field.doors);
     if (ns <= 0) m.slide = false;
+    if (!kindOf(m).fly) settle(m);      // 會飛的在原本的高度滑開
     return;
   }
   if (m.air && kindOf(m).fly) { driftStep(m, dt); return; }
   if (m.air) {
+    const prevY = m.y;
     m.vy -= PHYS.gravity * dt;
     m.y += m.vy * dt;
-    [m.x, m.z] = solveXZ(COLS, m.x + m.vx * dt, m.z + m.vz * dt, m.y);
-    if (m.y <= 0 && m.vy <= 0) {
+    [m.x, m.z] = solveXZ(m.field.cols, m.x + m.vx * dt, m.z + m.vz * dt, m.y, m.field.doors);
+    const f = floorAt(m, prevY);
+    if (m.y <= f && m.vy <= 0) {
       /* 落地：水平的擊退一起停掉，從靜止重新起步追人。不停的話牠落地
          之後還會往後滑一段，而那段時間碰到牠算不算數說不清楚。 */
-      m.y = 0; m.vy = 0; m.vx = 0; m.vz = 0;
+      m.y = f; m.vy = 0; m.vx = 0; m.vz = 0;
       m.air = false;
       m.grounded = true;
     }
@@ -386,11 +416,12 @@ export function monsterStep(m, dt, target) {
   }
   if (fly) {
     [m.vx, m.vy, m.vz] = steer3(m.vx, m.vy, m.vz, dx / d, dy / d, dz / d, kindOf(m).speed, dt);
-    m.y = flyY(m.y + m.vy * dt);
+    m.y = flyY(m, m.y + m.vy * dt);
   } else {
     [m.vx, m.vz] = steer(m.vx, m.vz, m.aimX, m.aimZ, kindOf(m).speed, dt);
   }
-  [m.x, m.z] = solveXZ(COLS, m.x + m.vx * dt, m.z + m.vz * dt, m.y);
+  [m.x, m.z] = solveXZ(m.field.cols, m.x + m.vx * dt, m.z + m.vz * dt, m.y, m.field.doors);
+  if (!fly) settle(m);
 }
 
 /**
@@ -414,9 +445,9 @@ function driftStep(m, dt) {
   const k = sp > 1e-9 ? ns / sp : 0;
   m.vx *= k; m.vy *= k; m.vz *= k;
   const y = m.y + m.vy * dt;
-  m.y = flyY(y);
+  m.y = flyY(m, y);
   if (m.y !== y) m.vy = 0;
-  [m.x, m.z] = solveXZ(COLS, m.x + m.vx * dt, m.z + m.vz * dt, m.y);
+  [m.x, m.z] = solveXZ(m.field.cols, m.x + m.vx * dt, m.z + m.vz * dt, m.y, m.field.doors);
   if (ns <= 0) { m.vx = m.vy = m.vz = 0; m.air = false; }
 }
 
@@ -444,8 +475,9 @@ function lungeStep(m, dt) {
   m.vx = L.dirX * v; m.vy = dy * v; m.vz = L.dirZ * v;
   L.hot = step > 0;
   if (step > 0) {
-    if (dy) m.y = flyY(m.y + dy * step);
-    [m.x, m.z] = solveXZ(COLS, m.x + L.dirX * step, m.z + L.dirZ * step, m.y);
+    if (dy) m.y = flyY(m, m.y + dy * step);
+    [m.x, m.z] = solveXZ(m.field.cols, m.x + L.dirX * step, m.z + L.dirZ * step, m.y, m.field.doors);
+    if (!kindOf(m).fly) settle(m);
   }
 }
 
@@ -485,8 +517,8 @@ export function separate(monsters) {
       const wb = 1 - wa;
       a.x -= dx * gap * wa; a.z -= dz * gap * wa;
       b.x += dx * gap * wb; b.z += dz * gap * wb;
-      [a.x, a.z] = clampArena(ARENA, a.x, a.z, PHYS.radius);
-      [b.x, b.z] = clampArena(ARENA, b.x, b.z, PHYS.radius);
+      [a.x, a.z] = clampArena(a.field.arena, a.x, a.z, PHYS.radius);
+      [b.x, b.z] = clampArena(b.field.arena, b.x, b.z, PHYS.radius);
     }
   }
 }
@@ -792,9 +824,9 @@ function ahead(m, T) {
       const sp = Math.hypot(m.vx, m.vy, m.vz);
       k = sp > 1e-9 ? Math.min(sp * T - 0.5 * FLY.drag * T * T, (sp * sp) / (2 * FLY.drag)) / sp : 0;
     }
-    return [m.x + m.vx * k, flyY(m.y + m.vy * k), m.z + m.vz * k];
+    return [m.x + m.vx * k, flyY(m, m.y + m.vy * k), m.z + m.vz * k];
   }
-  const y = m.air ? Math.max(0, m.y + m.vy * T - 0.5 * PHYS.gravity * T * T) : m.y;
+  const y = m.air ? Math.max(floorAt(m), m.y + m.vy * T - 0.5 * PHYS.gravity * T * T) : m.y;
   return [m.x + m.vx * T, y, m.z + m.vz * T];
 }
 
@@ -868,7 +900,7 @@ export function spinStep(c, p, m) {
   m.vx = c.dashX * BREAK_ATK.push.h;
   m.vz = c.dashZ * BREAK_ATK.push.h;
   m.vy = 0;
-  if (m.y > 0 && !kindOf(m).fly) { m.air = true; m.grounded = false; }   // 在空中被定住的：放開就帶著水平速度落下
+  if (m.y > floorAt(m) + 1e-3 && !kindOf(m).fly) { m.air = true; m.grounded = false; }   // 在空中被定住的：放開就帶著水平速度落下
   else m.slide = true;                                       // 會飛的不落下：在原本的高度滑開
   const died = hurt(m, DAMAGE.break);
   c.phase = 'vault';

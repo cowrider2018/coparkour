@@ -32,8 +32,8 @@
    攻擊）碰到不算。
    ------------------------------------------------------------------ */
 
-import { PHYS, arenaGap } from './walk.js';
-import { ARENA, DOG_H, kindOf } from './combat.js';
+import { PHYS, arenaGap, supportInfo } from './walk.js';
+import { FIELD, DOG_H, kindOf } from './combat.js';
 
 /** 每一招的數值。長度一律用狗高量。 */
 export const SKILL = {
@@ -44,12 +44,15 @@ export const SKILL = {
   recover: 0.5,
 };
 
-/** 範圍攻擊打得到的高度：腳在這以下才算（一個狗高）。 */
+/** 範圍攻擊打得到的高度：腳在打下去的那一塊地板往上這麼高以內才算（一個狗高）。 */
 const REACH_UP = PHYS.height;
 
-/** 場上飛著的東西（球）。每一局一份，回到站位就清空。 */
-export function makeWorld() {
-  return { shots: [] };
+/**
+ * 場上飛著的東西（球）。每一局一份，回到站位就清空。`field` 是這一局的場地
+ * （combat.js 的 FIELD 那一種）：球飛到它的黑牆就消失。
+ */
+export function makeWorld(field = FIELD) {
+  return { shots: [], field };
 }
 
 /**
@@ -63,7 +66,9 @@ function begin(m, skill, target) {
   const dx = target.x - m.x, dz = target.z - m.z;
   const d = Math.hypot(dx, dz);
   const [dirX, dirZ] = d > 1e-6 ? [dx / d, dz / d] : [m.aimX, m.aimZ];
-  m.cast = { skill, t: 0, dirX, dirZ, tx: target.x, tz: target.z, x0: m.x, z0: m.z };
+  /* 目標點的地板：玩家可能在空中，跳砸落在牠腳下那一塊的頂上。 */
+  const ty = supportInfo(m.field.cols, target.x, target.z, target.y).y;
+  m.cast = { skill, t: 0, dirX, dirZ, tx: target.x, tz: target.z, ty, x0: m.x, y0: m.y, z0: m.z };
   m.aimX = dirX; m.aimZ = dirZ;
   m.vx = 0; m.vz = 0;
 }
@@ -76,7 +81,7 @@ const CAST = {
     // 從身體前緣發出去，剛好不跟自己重疊。
     const off = PHYS.radius + S.radius;
     world.shots.push({
-      x: m.x + c.dirX * off, y: S.radius, z: m.z + c.dirZ * off,
+      x: m.x + c.dirX * off, y: m.y + S.radius, z: m.z + c.dirZ * off,
       vx: c.dirX * S.speed, vz: c.dirZ * S.speed, r: S.radius,
     });
     m.cast = null;
@@ -91,21 +96,21 @@ const CAST = {
     if (s < 1) {
       m.x = c.x0 + (c.tx - c.x0) * s;
       m.z = c.z0 + (c.tz - c.z0) * s;
-      m.y = (PHYS.gravity * S.air * S.air / 2) * s * (1 - s);
+      m.y = c.y0 + (c.ty - c.y0) * s + (PHYS.gravity * S.air * S.air / 2) * s * (1 - s);
       m.grounded = false;
       return null;
     }
-    m.x = c.tx; m.z = c.tz; m.y = 0;
+    m.x = c.tx; m.z = c.tz; m.y = c.ty;
     m.grounded = true;
     m.cast = null;
-    return { shape: 'circle', x: c.tx, z: c.tz, r: S.radius };
+    return { shape: 'circle', x: c.tx, y: c.ty, z: c.tz, r: S.radius };
   },
 
   cone(m) {
     const c = m.cast, S = SKILL.cone;
     if (c.t < S.windup) return null;
     m.cast = null;
-    return { shape: 'cone', x: m.x, z: m.z, dirX: c.dirX, dirZ: c.dirZ, r: S.radius, half: S.half };
+    return { shape: 'cone', x: m.x, y: m.y, z: m.z, dirX: c.dirX, dirZ: c.dirZ, r: S.radius, half: S.half };
   },
 };
 
@@ -114,7 +119,7 @@ const CAST = {
  * 形狀碰到身體（身體半徑算進去）、腳又在那個高度以下，才算。
  */
 export function strikeHits(st, p) {
-  if (p.y >= REACH_UP) return false;
+  if (p.y >= (st.y ?? 0) + REACH_UP) return false;
   const d = Math.hypot(p.x - st.x, p.z - st.z);
   if (st.shape === 'circle') return d <= st.r + PHYS.radius;
   // 扇形：跟第一段同一種判法——半徑加身體，角度加上身體在那個距離張開的角度。
@@ -152,7 +157,7 @@ export function bossStep(m, dt, target, world, rng = Math.random) {
 /** 球往前飛，碰到黑牆就消失。 */
 export function shotsStep(world, dt) {
   for (const s of world.shots) { s.x += s.vx * dt; s.z += s.vz * dt; }
-  world.shots = world.shots.filter((s) => arenaGap(ARENA, s.x, s.z) > s.r);
+  world.shots = world.shots.filter((s) => arenaGap(world.field.arena, s.x, s.z) > s.r);
 }
 
 /**
@@ -166,14 +171,19 @@ export function shotHits(s, p) {
 }
 
 /**
- * 從 (x, z) 沿 (dirX, dirZ) 走到黑牆有多遠。球的預告畫到這裡為止——球本來就
- * 在那裡消失。
+ * 從 (x, z) 沿 (dirX, dirZ) 走到黑牆 `arena` 有多遠。球的預告畫到這裡為止——球本來就
+ * 在那裡消失。方的量到四條邊，圓的解射線與圓的交點。
  */
-export function laneLength(x, z, dirX, dirZ) {
+export function laneLength(x, z, dirX, dirZ, arena = FIELD.arena) {
+  if (arena.shape === 'circle') {
+    const ox = x - arena.x, oz = z - arena.z;
+    const b = ox * dirX + oz * dirZ, c = ox * ox + oz * oz - arena.r * arena.r;
+    return Math.max(0, -b + Math.sqrt(Math.max(0, b * b - c)));
+  }
   let t = Infinity;
-  if (dirX > 1e-9) t = Math.min(t, (ARENA.x1 - x) / dirX);
-  if (dirX < -1e-9) t = Math.min(t, (ARENA.x0 - x) / dirX);
-  if (dirZ > 1e-9) t = Math.min(t, (ARENA.z1 - z) / dirZ);
-  if (dirZ < -1e-9) t = Math.min(t, (ARENA.z0 - z) / dirZ);
+  if (dirX > 1e-9) t = Math.min(t, (arena.x1 - x) / dirX);
+  if (dirX < -1e-9) t = Math.min(t, (arena.x0 - x) / dirX);
+  if (dirZ > 1e-9) t = Math.min(t, (arena.z1 - z) / dirZ);
+  if (dirZ < -1e-9) t = Math.min(t, (arena.z0 - z) / dirZ);
   return Math.max(0, t);
 }
