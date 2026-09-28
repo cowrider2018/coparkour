@@ -208,11 +208,18 @@ const BLEND_OUT = 0.16;
 const wrapPi = (a) => a - TAU * Math.round(a / TAU);
 
 /**
- * 主角的動作播放器：每幀給它戰鬥狀態機的 phase 與 t，拿回一份姿勢交給
- * critter.update 的 `move`。
+ * 動作播放器：每幀給它狀態機的 phase 與 t，拿回一份姿勢交給 critter.update
+ * 的 `move`。預設播主角的招（MOVES，照連段的 phase）；給了別的動作表與
+ * 「phase → [哪一招, 第幾秒]」的對應，就播別人的。
  */
 export class Mover {
-  constructor() {
+  /**
+   * @param {object} moves 動作表，長得跟 MOVES 一樣
+   * @param {(phase: string, t: number) => [string | null, number]} of phase → 哪一招、播到第幾秒
+   */
+  constructor(moves = MOVES, of = moveOf) {
+    this.moves = moves;
+    this.moveOf = of;
     this.name = null;       // 正在播哪一招（null = 沒有）
     this.tau = 0;           // 播到第幾秒
     this.age = 0;           // 這一招開始多久了（淡入用，跟 tau 分開：tau 可能從中間開始）
@@ -223,7 +230,7 @@ export class Mover {
 
   /** 正在播一招要鎖住朝向的招，而且還沒播完（收尾也算）。 */
   get holding() {
-    const mv = this.name ? MOVES[this.name] : null;
+    const mv = this.name ? this.moves[this.name] : null;
     return !!mv && !!mv.hold && (!ends(mv) || this.tau < duration(mv));
   }
 
@@ -239,22 +246,22 @@ export class Mover {
 
   /**
    * @param {number} dt
-   * @param {string} phase combat.js 的 combo.phase
-   * @param {number} t     combo.t
+   * @param {string} phase 狀態機的 phase（主角的是 combat.js 的 combo.phase）
+   * @param {number} t     這個 phase 走了幾秒（combo.t）
    * @returns {object} 這一幀的姿勢
    */
   step(dt, phase, t) {
-    let [name, tau] = moveOf(phase, t);
+    let [name, tau] = this.moveOf(phase, t);
     if (!name && this.name) {
       /* 狀態機已經不在這一招裡了。有收尾的招把收尾播完，停在最後一格的招
          直接淡出去。 */
-      const mv = MOVES[this.name];
+      const mv = this.moves[this.name];
       if (ends(mv) && this.tau + dt < duration(mv)) { name = this.name; tau = this.tau + dt; }
     }
     if (name !== this.name || (name && tau < this.tau - 1e-6)) this._switch(name, tau);
     else { this.tau = tau; this.age += dt; }
 
-    const mv = name ? MOVES[name] : null;
+    const mv = name ? this.moves[name] : null;
     const pose = mv ? sample(mv, this.tau, this._pose) : this._pose;
     if (!mv) for (const k of CHANNELS) pose[k] = 0;
     const span = mv ? mv.blend : BLEND_OUT;
@@ -264,7 +271,7 @@ export class Mover {
     /* 一招播完、姿勢回到原點：沒有招了。停在 2π 的轉也收回 0。 */
     if (mv && ends(mv) && this.tau >= duration(mv)) {
       this.out.yaw = wrapPi(this.out.yaw);
-      if (!moveOf(phase, t)[0]) { this.name = null; Object.assign(this.from, this.out); this.age = BLEND_OUT; }
+      if (!this.moveOf(phase, t)[0]) { this.name = null; Object.assign(this.from, this.out); this.age = BLEND_OUT; }
     }
     return this.out;
   }
