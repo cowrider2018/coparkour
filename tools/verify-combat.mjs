@@ -62,6 +62,10 @@
                     倒下補滿到最大血量；不在戰鬥中每 0.3 秒回一顆、回到滿為止。
     20. 靈魂        只有 BOSS 會掉；從身體中間受重力往下掉，落在腳下那一層地板上
                     0.5 公尺，之後上下 ±0.2 簡諧漂浮、不橫移；碰到身體才撿得到。
+    21. 劍氣        三段攻擊的範圍畫成的那一道月牙（trail.js）：掃的角度就是判定的
+                    角度、一路往同一個方向掃；外緣就在 REACH 上、中間寬頭尾尖
+                    （一整圈的不收）；月牙上的每一點都打得到——各種面向、第二段
+                    跳起來高過末端點也一樣；整道都在那片煙的面上、邊以內。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
@@ -75,6 +79,7 @@ import {
 } from '../public/test/src/combat.js';
 import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
+import { TRAILS, HALF, PIECE, sweepAt, fadeAt, crescentAt, sheetFrame, qiAt, along } from '../public/test/src/trail.js';
 
 let fails = 0;
 const ok = (cond, msg) => {
@@ -1127,6 +1132,86 @@ console.log('20. 靈魂');
   const at = (x, y, z) => ({ x, y, z });
   ok(grabs(body(0, 0), at(0.3, 0.5, 0)) && !grabs(body(0, 0), at(PHYS.radius + SOUL.r + 0.01, 0.5, 0)), '水平上碰到身體才撿得到');
   ok(!grabs(body(0, 0, 2), at(0, 0.5, 0)) && grabs(body(0, 0, 0.5), at(0, 0.5, 0)), '跳在牠正上方太高撿不到、碰到就撿得到');
+}
+
+/* ── 21. 劍氣 ────────────────────────────────────────────────────── */
+console.log('21. 劍氣');
+{
+  const range = { slash: inSlash, slam: inRing };
+  ok(sweepAt('slash', 0) === -Math.PI / 3 && near(sweepAt('slash', 1), Math.PI / 3), '第一段：從右 60° 掃到左 60°，就是判定的那 120°');
+  ok(sweepAt('rise', 0) === 0 && near(sweepAt('rise', 1), FAN.sweep), '第二段：從扇形的下緣往上掃 90°，就是判定的那片扇形');
+  ok(TRAILS.slam.to - TRAILS.slam.from >= 2 * Math.PI, '第三段：掃滿一整圈');
+  for (const kind of Object.keys(TRAILS)) {
+    let mono = true;
+    for (let t = 0; t < 1; t += 0.005) if (sweepAt(kind, t + 0.005) < sweepAt(kind, t) - 1e-9) mono = false;
+    ok(mono, `${kind}：一路往同一個方向掃，不回頭`);
+    const T = TRAILS[kind];
+    ok(fadeAt(kind, T.t1) === 1 && fadeAt(kind, T.life) === 0 && fadeAt(kind, (T.t1 + T.life) / 2) < 1,
+      `${kind}：掃的時候全亮，掃完之後淡掉，${T.life} 秒收起來`);
+  }
+
+  // 月牙的形狀：外緣就在判定的半徑上，中間寬、頭尾尖；一整圈的不收。
+  const me = body(0, 0, 0, [0, -1]);
+  const mid = (kind) => (TRAILS[kind].from + TRAILS[kind].to) / 2;
+  const along60 = (kind, k) => TRAILS[kind].from + ((TRAILS[kind].to - TRAILS[kind].from) * k) / 60;
+  const radius = (q) => Math.hypot(...q.p.map((v, i) => v - q.b.o[i]));
+  for (const kind of Object.keys(TRAILS)) {
+    let edge = true;
+    for (let k = 0; k <= 60; k++) {
+      const q = qiAt(kind, along60(kind, k), me, slashTip(me));
+      if (!near(radius(q) + q.w / 2, REACH)) edge = false;
+    }
+    ok(edge, `${kind}：月牙的外緣一路都在 REACH（${REACH.toFixed(2)} 公尺）上`);
+  }
+  ok(near(crescentAt('slash', mid('slash')), 1) && crescentAt('slash', TRAILS.slash.from) < 0.2 && crescentAt('slash', TRAILS.slash.to) < 0.2,
+    '第一段的月牙：中間最寬、頭尾收到兩成以下');
+  ok(crescentAt('slam', TRAILS.slam.from) === 1 && crescentAt('slam', mid('slam')) === 1, '第三段是一整圈，寬度不收');
+
+  /* 劍氣就是範圍：月牙上的每一點（中線與內外兩緣）放一隻怪物，都要打得到。各種
+     面向；第二段各種「上一次第一段的末端點」（正前方、偏一邊、跳起來高過它）。 */
+  const cases = [];
+  for (const a of [0, 1.1, 2.5, -2.0]) {
+    const p = body(0.7, -1.3, 0, [Math.sin(a), Math.cos(a)]);
+    cases.push([p, slashTip(p)]);
+    cases.push([{ ...p, y: 1.4 }, slashTip(p)]);
+    cases.push([p, { x: p.x + 0.5, y: p.y + 0.46, z: p.z - 1.9 }]);
+  }
+  let inside = true, where = '';
+  for (const kind of Object.keys(TRAILS)) {
+    for (const [p, tip] of cases) {
+      for (let k = 0; k <= 60; k++) {
+        const q = qiAt(kind, along60(kind, k), p, tip), r = radius(q);
+        for (const rr of [r - q.w / 2, r, r + q.w / 2 - 1e-6]) {
+          const pt = along(q.b, rr);
+          const m = { x: pt[0], y: pt[1] - PHYS.height / 2, z: pt[2] };
+          const hit = kind === 'rise' ? inFan(p, m, tip) : range[kind](p, m);
+          if (!hit && inside) { inside = false; where = `${kind} 在 (${pt.map((v) => v.toFixed(2))})`; }
+        }
+      }
+    }
+  }
+  ok(inside, `月牙上的每一點都打得到${inside ? '' : `——${where} 打不到`}`);
+
+  /* 那片煙：出招那一刻擺好，人沒動的話整道月牙都在那一片的面上、在它的邊以內。 */
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  let flat = true, fits = true;
+  for (const kind of Object.keys(TRAILS)) {
+    for (const [p, tip] of cases) {
+      const { o, U, V } = sheetFrame(kind, p, tip);
+      const N = [U[1] * V[2] - U[2] * V[1], U[2] * V[0] - U[0] * V[2], U[0] * V[1] - U[1] * V[0]];
+      for (let k = 0; k <= 60; k++) {
+        const q = qiAt(kind, along60(kind, k), p, tip);
+        const d = q.p.map((v, i) => v - o[i]);
+        if (Math.abs(dot(d, N)) > 1e-9) flat = false;
+        if (Math.max(Math.abs(dot(d, U)), Math.abs(dot(d, V))) + q.w / 2 > HALF) fits = false;
+      }
+    }
+  }
+  ok(flat, '月牙整道都在那片煙的面上（第二段是那片鉛直扇形所在的面）');
+  ok(fits, `月牙整道都在那片煙的邊以內（半邊長 ${HALF.toFixed(2)} 公尺）`);
+
+  // 一段線段最多掃過 PIECE：刀尖一段走的距離比月牙最寬處短，弧才不會變成折線。
+  ok(PIECE * REACH < TRAILS.slash.width, `一段線段刀尖最多走 ${(PIECE * REACH).toFixed(2)} 公尺，比月牙最寬處（${TRAILS.slash.width}）短`);
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');
