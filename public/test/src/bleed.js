@@ -42,10 +42,20 @@
    ── 落地 ─────────────────────────────────────────────────────────
    落到那一點底下的地板（floorUnder：一個點的地板，不是 walk.js 那個有半徑的身體的）
    就變成一灘：半徑照那一滴放大 SPLAT.area 倍，順著落地時的水平速度拉長。一灘很快
-   攤開、留一陣子、再縮掉（splatScale）——跟劍光一樣是收掉，不是淡掉。撞進盒子的
+   攤開、留一陣子（看是哪一種血）、再縮掉（splatScale）——跟劍光一樣是收掉，不是淡掉。撞進盒子的
    側面、或飛出黑牆就沒了：那裡本來就被擋住，看不到。
 
    沒扣到血（蓄力中傷害減半、捨去成 0）就不噴。
+
+   ── 血的種類 ─────────────────────────────────────────────────────
+   噴出來的是哪一種（STYLE，每一類怪物是哪一種看 monster.js 的 bloodOf）只改怎麼飛、
+   留多久，不改量與方向：
+     blood  血：只受重力，落地變成一灘。
+     ecto   幽靈的靈質：初速快一截，但空氣阻力大（速度每秒照 e^(−drag) 衰減），沒有
+            重力、落地也不留一灘——噴出去一下就慢下來，停在半空中飄著，留得比血久，
+            最後 fade 秒縮掉（dropSize）。碰到地板就貼著地板停住，不往下穿。
+   阻力照比例減速，停下來的地方是 v₀ / drag 那麼遠：初速快的停得遠，小的照樣噴得比
+   大的遠。
    ------------------------------------------------------------------ */
 
 import { PHYS, nearXZ, roundTop, arenaGap } from './walk.js';
@@ -57,14 +67,13 @@ import { TRAILS, bladeAt } from './trail.js';
  *
  *   drops   幾滴
  *   size    半徑的區間（公尺），每一滴在裡面均勻亂給
- *   speed   初速的區間（公尺／秒）：[最大的那一滴, 最小的那一滴]
+ *   speed   初速的區間（公尺／秒）：[最大的那一滴, 最小的那一滴]，再乘上那一種的 speed
  *   wound   傷口多長（公尺）：起點沿著劍氣散開的那一段
- *   life    一滴最多飛幾秒（掉進坑裡的，不會一直算下去）
  *   volume  一次噴出去的總量（半徑立方和）：drops 滴、半徑在 size 裡均勻分布的期望值
  */
 export const BLEED = {
   drops: 12, size: [0.025, 0.07],
-  speed: [2.5, 6.5], wound: 0.5, life: 1.2,
+  speed: [2.5, 6.5], wound: 0.5,
 };
 {
   const [a, b] = BLEED.size;
@@ -72,7 +81,7 @@ export const BLEED = {
 }
 
 /**
- * 地上的一灘。
+ * 地上的一灘（只有會留一灘的那幾種血，STYLE 的 pool）。
  *
  *   area   半徑是那一滴的幾倍
  *   long   順著落地的水平速度拉長：每 1 m/s 長這麼多成（寬不變）
@@ -82,6 +91,29 @@ export const BLEED = {
  */
 export const SPLAT = { area: 2.4, long: 0.12, grow: 0.06, hold: 1.6, shrink: 0.8 };
 SPLAT.life = SPLAT.grow + SPLAT.hold + SPLAT.shrink;
+
+/**
+ * 每一種血（見檔頭）。
+ *
+ *   speed   初速是 BLEED.speed 的幾倍
+ *   drag    空氣阻力：速度每秒乘 e^(−drag)
+ *   fall    重力是 PHYS.gravity 的幾成
+ *   life    一滴最多留幾秒（血是飛到落地，這只是掉進坑裡的上限；靈質就是留這麼久）
+ *   fade    最後幾秒縮掉（0 = 不縮，飛到落地或 life 為止）
+ *   pool    落地變成一灘；不會的碰到地板就貼著停住
+ */
+export const STYLE = {
+  blood: { speed: 1, drag: 0, fall: 1, life: 1.2, fade: 0, pool: true },
+  ecto: { speed: 1.8, drag: 5, fall: 0, life: 2.4, fade: 0.8, pool: false },
+};
+
+/** 一滴這一刻畫多大：半徑乘上那一種在最後 fade 秒縮掉的那一份。 */
+export function dropSize(o) {
+  const S = STYLE[o.style || 'blood'];
+  if (!S.fade) return o.r;
+  const u = Math.min(1, Math.max(0, ((o.t || 0) - (S.life - S.fade)) / S.fade));
+  return o.r * (1 - u * u * (3 - 2 * u));
+}
 
 /** 體型 s 的一次噴幾滴。 */
 export const dropCount = (s) => Math.max(1, Math.round(BLEED.drops * s ** 1.5));
@@ -132,10 +164,10 @@ export function pushFrame(dx, dz) {
 /** 體型 s 的半徑區間。 */
 export const sizeRange = (s) => BLEED.size.map((r) => r * Math.sqrt(s));
 
-/** 半徑 r 的那一滴初速多快（體型 s）：區間的小頭最快、大頭最慢，中間照比例。 */
-export function speedOf(r, s) {
+/** 半徑 r 的那一滴初速多快（體型 s、哪一種）：區間的小頭最快、大頭最慢，中間照比例。 */
+export function speedOf(r, s, style = 'blood') {
   const [a, b] = sizeRange(s), u = clamp((r - a) / (b - a), 0, 1);
-  return (BLEED.speed[1] + (BLEED.speed[0] - BLEED.speed[1]) * u) * Math.sqrt(s);
+  return (BLEED.speed[1] + (BLEED.speed[0] - BLEED.speed[1]) * u) * Math.sqrt(s) * STYLE[style].speed;
 }
 
 /**
@@ -162,10 +194,11 @@ function radiiOf(s, rng) {
  * @param {{d:number[], t:number[]}} frame hitFrame 或 pushFrame
  * @param {{x:number,y:number,z:number}} m 怪物（這一刻的位置）
  * @param {number} s 怪物的體型（monster.js 的 sizeOf）
+ * @param {string} style 哪一種血（STYLE 的鍵，monster.js 的 bloodOf）
  * @param {() => number} rng
- * @returns {{x,y,z,vx,vy,vz,r}[]}
+ * @returns {{x,y,z,vx,vy,vz,r,style}[]}
  */
-export function spurtOf(frame, m, s, rng = Math.random) {
+export function spurtOf(frame, m, s, style = 'blood', rng = Math.random) {
   const { d, t } = frame;
   const radii = radiiOf(s, rng), n = radii.length, y = waistOf(m, s);
   // 打散：補足總量的那一滴不固定在傷口的哪一頭。
@@ -176,10 +209,10 @@ export function spurtOf(frame, m, s, rng = Math.random) {
   return radii.map((r, i) => {
     // 沿著傷口排開（加一點亂），不是全擠在正中間。
     const side = ((i + rng()) / n - 0.5) * BLEED.wound * s;
-    const sp = speedOf(r, s);
+    const sp = speedOf(r, s, style);
     return {
       x: m.x + t[0] * side, y: y + t[1] * side, z: m.z + t[2] * side,
-      vx: d[0] * sp, vy: d[1] * sp, vz: d[2] * sp, r,
+      vx: d[0] * sp, vy: d[1] * sp, vz: d[2] * sp, r, style,
     };
   });
 }
@@ -220,22 +253,25 @@ export function splatScale(t) {
 }
 
 /**
- * 血的一幀：每一滴照重力飛，落地的變成一灘，撞牆或飛太久的沒了；每一灘長大、
- * 縮掉。drops 與 splats 就地改。
+ * 血的一幀：每一滴照那一種的阻力與重力飛，落地的變成一灘（不留一灘的貼著地板停住），
+ * 撞牆或留太久的沒了；每一灘長大、縮掉。drops 與 splats 就地改。
  *
- * @param {{x,y,z,vx,vy,vz,r,t?,field}[]} drops 每一滴帶著牠噴出來的那一場（field）
+ * @param {{x,y,z,vx,vy,vz,r,style?,t?,field}[]} drops 每一滴帶著牠噴出來的那一場（field）
  * @param {{x,y,z,r,ax,az,long,t}[]} splats
  */
 export function bleedStep(drops, splats, dt) {
   let n = 0;
   for (const o of drops) {
+    const S = STYLE[o.style || 'blood'];
     o.t = (o.t || 0) + dt;
-    o.vy -= PHYS.gravity * dt;
+    if (S.drag) { const k = Math.exp(-S.drag * dt); o.vx *= k; o.vy *= k; o.vz *= k; }
+    if (S.fall) o.vy -= PHYS.gravity * S.fall * dt;
     o.x += o.vx * dt; o.y += o.vy * dt; o.z += o.vz * dt;
-    if (o.t > BLEED.life || arenaGap(o.field.arena, o.x, o.z) < 0) continue;
+    if (o.t > S.life || arenaGap(o.field.arena, o.x, o.z) < 0) continue;
     const f = floorUnder(o.field.cols, o.x, o.z, o.y + Math.max(0, -o.vy * dt));
     if (Number.isNaN(f)) continue;
-    if (o.y <= f && o.vy <= 0) {
+    if (o.y <= f && o.vy <= 0 && !S.pool) { o.y = f; o.vy = 0; }
+    else if (o.y <= f && o.vy <= 0) {
       const h = Math.hypot(o.vx, o.vz);
       splats.push({
         x: o.x, y: f, z: o.z, r: o.r * SPLAT.area,

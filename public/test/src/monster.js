@@ -72,15 +72,17 @@ const ZOMBIE = { body: [0.24, 0.80, 0.22], face: [0.08, 0.36, 0.08] };
 const GHOST = { body: [0.78, 0.88, 0.98], face: [0.34, 0.44, 0.60] };
 /**
  * 每一類的外觀，鍵跟 combat.js 的 KINDS 一樣：毛色、畫多高（公尺）、不透明度
- * （1 = 不透明）。
+ * （1 = 不透明）、挨打噴出來的是哪一種血（bleed.js 的 STYLE）。
  */
 const LOOKS = {
-  minion: { coat: ZOMBIE, height: 1.0, alpha: 1 },
-  boss: { coat: ZOMBIE, height: 2.0, alpha: 1 },
-  ghost: { coat: GHOST, height: 1.0, alpha: 0.5 },
+  minion: { coat: ZOMBIE, height: 1.0, alpha: 1, blood: 'blood' },
+  boss: { coat: ZOMBIE, height: 2.0, alpha: 1, blood: 'blood' },
+  ghost: { coat: GHOST, height: 1.0, alpha: 0.5, blood: 'ecto' },
 };
 /** 這一類畫多高，跟狗（1）比。落地的粉塵照它算（dust.js）。 */
 export const sizeOf = (kind) => LOOKS[kind].height;
+/** 這一類挨打噴出來的是哪一種血（bleed.js 的 STYLE）：幽靈是半透明白色的靈質。 */
+export const bloodOf = (kind) => LOOKS[kind].blood;
 
 const RED = [0.95, 0.08, 0.06];
 

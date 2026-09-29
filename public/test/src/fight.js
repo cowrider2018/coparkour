@@ -27,7 +27,7 @@ import {
   breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, placeMonster, monsterStep, bites, knock,
   inSlash, inFan, inRing, slashTip, makeCombo, comboStep, invulnerable, untouchable, cueing, attacking, taken,
 } from './combat.js';
-import { makeMonsterCritter, sizeOf, Motion, ATTACK_INK } from './monster.js';
+import { makeMonsterCritter, sizeOf, bloodOf, Motion, ATTACK_INK } from './monster.js';
 import { GUARD_INK } from './critter.js';
 import { Blood } from './blood.js';
 import { hitFrame, pushFrame, spurtOf } from './bleed.js';
@@ -151,7 +151,7 @@ export class Fight {
 
   /** 一隻怪物噴一次血：frame 是方向（bleed.js），at 是牠這一刻在哪（帶著 field）。 */
   _bleed(frame, at, kind) {
-    this._blood.spurt(spurtOf(frame, at, sizeOf(kind)), at.field);
+    this._blood.spurt(spurtOf(frame, at, sizeOf(kind), bloodOf(kind)), at.field);
   }
 
   _slot(kind, i) {

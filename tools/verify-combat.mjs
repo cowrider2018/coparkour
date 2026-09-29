@@ -90,10 +90,10 @@ import {
 import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
 import { DUST, dustOf, dustFade, QUAKE, quakeBands, quakeFade } from '../public/test/src/dust.js';
-import { Motion } from '../public/test/src/monster.js';
+import { Motion, bloodOf } from '../public/test/src/monster.js';
 import { TRAILS, PIECE, BANDS, sweepAt, fadeAt, sideAt, qiAt, along, hullOf } from '../public/test/src/trail.js';
 import { bladeAt } from '../public/test/src/trail.js';
-import { BLEED, SPLAT, dropCount, volumeOf, sizeRange, speedOf, hitFrame, pushFrame, spurtOf, floorUnder, splatScale, bleedStep } from '../public/test/src/bleed.js';
+import { BLEED, SPLAT, STYLE, dropSize, dropCount, volumeOf, sizeRange, speedOf, hitFrame, pushFrame, spurtOf, floorUnder, splatScale, bleedStep } from '../public/test/src/bleed.js';
 import { taken } from '../public/test/src/combat.js';
 
 let fails = 0;
@@ -1392,12 +1392,12 @@ console.log('23. 噴血');
   // 出血量：半徑立方和正好是 volume · s³；滴數照 s^1.5。
   let exact = true;
   for (const s of [0.7, 1, 2]) {
-    const sum = spurtOf(pushFrame(1, 0), { x: 0, y: 0, z: 0 }, s, rng).reduce((a, o) => a + o.r ** 3, 0);
+    const sum = spurtOf(pushFrame(1, 0), { x: 0, y: 0, z: 0 }, s, 'blood', rng).reduce((a, o) => a + o.r ** 3, 0);
     if (Math.abs(sum / volumeOf(s) - 1) > 1e-9) exact = false;
   }
   ok(exact, '一次噴出去的血總量正好是 volume · 體型³（0.7、1、2 倍都是）');
   ok(near(volumeOf(2) / volumeOf(1), 8), 'BOSS（體型 2）的出血量是狗的 8 倍');
-  const n1 = spurtOf(pushFrame(1, 0), { x: 0, y: 0, z: 0 }, 1, rng), n2 = spurtOf(pushFrame(1, 0), { x: 0, y: 0, z: 0 }, 2, rng);
+  const n1 = spurtOf(pushFrame(1, 0), { x: 0, y: 0, z: 0 }, 1, 'blood', rng), n2 = spurtOf(pushFrame(1, 0), { x: 0, y: 0, z: 0 }, 2, 'blood', rng);
   ok(n1.length === BLEED.drops && n2.length === dropCount(2) && n2.length === Math.round(BLEED.drops * 2 ** 1.5),
     `滴數跟著體型的 1.5 次方：${n1.length} → ${n2.length}`);
   let inside = true;
@@ -1405,7 +1405,7 @@ console.log('23. 噴血');
   for (let k = 0; k < 200; k++) {
     for (const s of [1, 2]) {
       const [lo, hi] = sizeRange(s);
-      const l = spurtOf(pushFrame(1, 0), { x: 0, y: 0, z: 0 }, s, rng);
+      const l = spurtOf(pushFrame(1, 0), { x: 0, y: 0, z: 0 }, s, 'blood', rng);
       if (Math.abs(l.reduce((x, o) => x + o.r ** 3, 0) / volumeOf(s) - 1) > 1e-9) inside = false;
       for (const o of l) { if (o.r < lo - 1e-12 || o.r > hi + 1e-12) inside = false; if (s === 1) seen.push(o.r); }
     }
@@ -1424,7 +1424,7 @@ console.log('23. 噴血');
   let farther = true, flights = 0;
   for (const f of [pushFrame(0, 1), hitFrame('slash', pw, null, { x: 0.3, y: 0, z: 1.5 }, 1), hitFrame('rise', pw, slashTip(pw), { x: 0, y: 0.6, z: 1.2 }, 1)]) {
     for (const s of [1, 2]) {
-      const land = spurtOf(f, { x: 0, y: 0, z: 0 }, s, rng).map((o) => {
+      const land = spurtOf(f, { x: 0, y: 0, z: 0 }, s, 'blood', rng).map((o) => {
         const one = [{ ...o, x: 0, y: 0.5, z: 0, field: flat }], sp = [];
         for (let t = 0; t < 3 && one.length; t += DT) bleedStep(one, sp, DT);
         return { r: o.r, far: sp.length ? sp[0].x * f.d[0] + sp[0].z * f.d[2] : -1 };
@@ -1455,7 +1455,7 @@ console.log('23. 噴血');
         // 水平上指著怪物（第一段與第三段在水平面上；第二段在那片扇形裡，水平的份也是朝牠）
         const fh = Math.hypot(f.d[0], f.d[2]);
         if (((m.x - p.x) * f.d[0] + (m.z - p.z) * f.d[2]) / (h * fh) < 0.999) aimed = false;
-        for (const o of spurtOf(f, m, s, rng)) {
+        for (const o of spurtOf(f, m, s, 'blood', rng)) {
           const v = [o.vx, o.vy, o.vz];
           if (Math.abs(dot(v, f.t)) > 1e-9) perp = false;
           if (Math.abs(dot(v, nrm)) > 1e-9) plane = false;
@@ -1506,6 +1506,37 @@ console.log('23. 噴血');
     `一灘 ${SPLAT.grow} 秒攤開、留 ${SPLAT.hold} 秒、${SPLAT.shrink} 秒縮掉`);
   for (let t = 0; t < SPLAT.life + 0.1; t += DT) bleedStep(drops, splats, DT);
   ok(splats.length === 0, '縮掉之後收起來');
+
+  // 幽靈的靈質：初速快、減速快、沒有重力、不留一灘，停在半空中留得比血久，最後縮掉。
+  ok(bloodOf('ghost') === 'ecto' && bloodOf('minion') === 'blood' && bloodOf('boss') === 'blood', '幽靈噴的是靈質，殭屍與 BOSS 是血');
+  ok(near(speedOf(0.04, 1, 'ecto'), speedOf(0.04, 1) * STYLE.ecto.speed) && STYLE.ecto.speed > 1, `靈質的初速是血的 ${STYLE.ecto.speed} 倍`);
+  const open = { arena: { shape: 'circle', x: 0, z: 0, r: 50 }, cols: [] };
+  const ecto = spurtOf(pushFrame(1, 0), { x: 0, y: 0, z: 0 }, 1, 'ecto', rng).map((o) => ({ ...o, field: open, y0: o.y, v0: Math.hypot(o.vx, o.vy, o.vz) }));
+  const eSplats = [];
+  const e = ecto.slice();
+  let level = true, slowed = true, lasted = false, shrank = true;
+  for (let t = 0; t < STYLE.ecto.life + 0.2; t += DT) {
+    bleedStep(e, eSplats, DT);
+    for (const o of e) {
+      if (o.y !== o.y0) level = false;
+      if (near(t + DT, 0.5, DT / 2) && Math.hypot(o.vx, o.vy, o.vz) > o.v0 * Math.exp(-STYLE.ecto.drag * 0.5) * 1.001) slowed = false;
+    }
+    if (t > STYLE.blood.life + 0.1 && e.length === ecto.length) lasted = true;
+    if (t > STYLE.ecto.life - 0.05 && e.some((o) => dropSize(o) > o.r * 0.05)) shrank = false;
+  }
+  ok(level, '沒有重力：水平噴出去的靈質一直在同一個高度');
+  ok(slowed, `減速快：0.5 秒後剩不到 e^(−${STYLE.ecto.drag}·0.5) 的速度`);
+  ok(lasted && e.length === 0 && shrank, `停在半空中留得比血久（血最多 ${STYLE.blood.life} 秒，靈質 ${STYLE.ecto.life} 秒），最後縮掉`);
+  ok(eSplats.length === 0, '靈質不留一灘');
+  const down = [{ x: 0, y: 0.3, z: 0, vx: 0, vy: -6, vz: 0, r: 0.05, style: 'ecto', field: open }], dSp = [];
+  for (let t = 0; t < 0.5; t += DT) bleedStep(down, dSp, DT);
+  ok(down.length === 1 && down[0].y === 0 && dSp.length === 0, '往下噴的靈質碰到地板就貼著停住，不穿過去、不留一灘');
+  const reachE = spurtOf(pushFrame(0, 1), { x: 0, y: 0, z: 0 }, 1, 'ecto', rng).map((o) => {
+    const one = [{ ...o, x: 0, z: 0, field: open }];
+    for (let t = 0; t < STYLE.ecto.life - STYLE.ecto.fade; t += DT) bleedStep(one, [], DT);
+    return { r: o.r, far: one[0].z };
+  }).sort((a, b) => a.r - b.r);
+  ok(reachE.every((q, i) => i === 0 || q.far < reachE[i - 1].far), '靈質也是小的噴得比大的遠（停下來的地方 v₀ / drag）');
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');
