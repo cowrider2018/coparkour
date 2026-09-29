@@ -31,13 +31,22 @@
    球轉彎、撞牆消失了，已經噴出去的還是照自己的路散完（球不在了的那幾顆老得快
    一點，ORPHAN）。
 
+   ── 爆炸 ─────────────────────────────────────────────────────────
+   球撞到人、黑牆或場上的東西（規則在 skills.js 的 shotsStep、fight.js 的 resolve）
+   就消失，原地炸開：一顆大的閃光（BOOM.flash，不動、很快縮掉）加一圈往四面八方
+   噴出去的火粒（BOOM.n 顆，方向在球面上均勻）。火粒有阻力（drag，越飛越慢）、
+   往上浮（rise，火往上竄），一邊縮小一邊冷掉。畫法跟尾巴是同一個場——跟還沒散完
+   的尾巴黏在一起，墨線也是同一圈。爆炸的火粒比尾巴熱（BOOM.heat），所以剛炸開
+   的那一下有黃芯，冷下來才轉橙、紅。
+
    形狀的畫法照 blood.js 的血滴：
 
      場    每一顆在一張離屏的圖（畫面一半的解析度）上疊一份場值 (1 − x²)²，
            x 是到那一顆的距離除以影響半徑；順著它相對於球的速度在畫面上拉長一點
            （STRETCH 秒走的距離，最多自己半徑的 ELONG 倍——跟著縮小變短，一直是
            一滴往後拖的水滴形）。另一個通道疊「場值 × 熱度」，除回來就是那一點
-           的平均熱度（剛噴出來是 1，散掉的時候是 0）。
+           的平均熱度（尾巴的火粒剛噴出來是 TAIL_HOT、爆炸的是 BOOM.heat，散掉的
+           時候都是 0）。
      合成  每一顆的方片（放大到蓋得住墨線）再畫一次，讀那張圖：場值過了 ISO 是火，
            差一點是墨線（差多少除以場在畫面上的斜率就是離邊緣幾個像素，所以線寬跟
            狗的一樣），再外面丟掉。方片擺在那一顆自己的深度，照常做深度測試。
@@ -51,9 +60,9 @@
            還是球自己的。「正對鏡頭」大半照沒有鼓包的球面量（FOLLOW），不然
            每一圈都會各自冒出一塊黃。
      尾巴  熱度 = 那裡的平均熱度^0.7 × (TAIL_HEAT[0] + TAIL_HEAT[1] × √場過了 ISO
-           多深)，最多到橙——黃只留給球芯（不然剛噴出來的火粒會在球的紅邊外面
-           冒出一彎黃）。場越深越像正對鏡頭——一團的中間熱、邊緣冷；越老的火粒
-           越冷，所以越往尾巴越紅。
+           多深)。場越深越像正對鏡頭——一團的中間熱、邊緣冷；越老的火粒越冷，所以
+           越往尾巴越紅。尾巴的火粒從 TAIL_HOT 起算，最熱也到不了黃——黃只留給球芯
+           （不然剛噴出來的火粒會在球的紅邊外面冒出一彎黃）；爆炸的火粒更熱，才有黃。
 
    ── 墨線：全火球一圈 ─────────────────────────────────────────────
    球是翻面外殼（跟狗的墨線一樣，critter.js 的 INK_PUSH）：同一份幾何只畫背面，
@@ -95,8 +104,19 @@ const TONGUE = {
 const TONGUES = 3;
 /** 球不在了（撞牆）之後，還沒散完的火粒老得多快（倍）。 */
 const ORPHAN = 3;
-/** 最多同時幾顆（所有火球加起來）。滿了新的不噴。 */
-const MAX_DROPS = 320;
+/** 尾巴的火粒剛噴出來多熱：最熱的地方也剛好到不了黃（見 TAIL_HEAT）。 */
+const TAIL_HOT = 0.72;
+/**
+ * 爆炸。n 幾顆往外噴、r 多大（半徑）、life 活幾秒、speed 初速（半徑 / 秒）、drag 每秒
+ * 慢掉多少（指數）、rise 往上浮的加速度（公尺 / 秒²）、heat 剛炸開多熱；flash 是正中間
+ * 那一顆大的閃光（不動）。
+ */
+const BOOM = {
+  n: 22, r: [0.45, 0.75], life: [0.28, 0.45], speed: [3, 6], drag: 6, rise: 3, heat: 1.6,
+  flash: { r: 1.3, life: 0.22 },
+};
+/** 最多同時幾顆（所有火球與爆炸加起來）。滿了新的不噴。 */
+const MAX_DROPS = 400;
 
 /** 一顆拖多長：畫面上它相對於球的速度這麼多秒走的距離。 */
 const STRETCH = 0.12;
@@ -141,15 +161,13 @@ const bell = (x) => {
   return c * c;
 };
 
-/* 尾巴一個像素的熱度（讀場那張圖）：場過了 ISO 才算，平均熱度^0.7 × (TAIL_HEAT[0] + TAIL_HEAT[1] × √深度)，
-   最多到橙——黃只留給球芯。 */
+/* 尾巴一個像素的熱度（讀場那張圖）：場過了 ISO 才算，平均熱度^0.7 × (TAIL_HEAT[0] + TAIL_HEAT[1] × √深度)。 */
 const TAIL_HEAT_FN = /* glsl */ `
 float tailHeat(vec4 t) {
   float f = t.r / uScale;
   if (f < ${f2(ISO)}) return 0.0;
   float age = t.g / max(t.r, 1e-6);
-  float h = pow(age, 0.7) * (${f2(TAIL_HEAT[0])} + ${f2(TAIL_HEAT[1])} * sqrt(clamp((f - ${f2(ISO)}) / ${f2(DEEP)}, 0.0, 1.0)));
-  return min(h, ${f2(HEAT[1] - 0.01)});
+  return pow(age, 0.7) * (${f2(TAIL_HEAT[0])} + ${f2(TAIL_HEAT[1])} * sqrt(clamp((f - ${f2(ISO)}) / ${f2(DEEP)}, 0.0, 1.0)));
 }`;
 
 /* ── 球 ── */
@@ -179,7 +197,7 @@ void main() {
   /* 後半球上尾巴蓋到的地方取兩者較熱的，但尾巴最多給到橙：球的紅邊不會在尾巴裡面圈出
      一道，黃芯還是球自己的。前半球不理尾巴——從正面看尾巴在球後面。 */
   if (uTail > 0.5) {
-    heat = max(heat, tailHeat(texture2D(uField, gl_FragCoord.xy / uRes)) * vBack);
+    heat = max(heat, min(tailHeat(texture2D(uField, gl_FragCoord.xy / uRes)), ${f2(HEAT[1] - 0.01)}) * vBack);
   }
   gl_FragColor = vec4(${TONE('heat')}, 1.0);
 }`;
@@ -457,24 +475,52 @@ export class Fireballs {
     this.drops.push({
       x: s.x + px * R, y: s.y + py * R, z: s.z + pz * R,
       vx: s.vx + rel[0], vy: rel[1], vz: s.vz + rel[2], rel,
-      r0: r * R, life: pick(kind.life), age: 0, shot: s,
+      r0: r * R, life: pick(kind.life), age: 0, heat: TAIL_HOT, shot: s,
     });
+  }
+
+  /**
+   * 球 s 在它現在的地方炸開：正中間一顆大的閃光，外加一圈往四面八方噴的火粒。球本身
+   * 已經不在 world.shots 裡了（下一幀起不畫），還沒散完的尾巴照舊散掉。
+   */
+  explode(s) {
+    if (!this.renderer) return;
+    const R = this.radius;
+    const add = (d) => { if (this.drops.length < MAX_DROPS) this.drops.push(d); };
+    const still = { x: s.x, y: s.y, z: s.z, vx: 0, vy: 0, vz: 0, rel: null, age: 0, heat: BOOM.heat, boom: true };
+    add({ ...still, r0: BOOM.flash.r * R, life: BOOM.flash.life });
+    for (let i = 0; i < BOOM.n; i++) {
+      // 球面上均勻的方向。
+      const u = Math.random() * 2 - 1, a = Math.random() * Math.PI * 2, h = Math.sqrt(1 - u * u);
+      const v = pick(BOOM.speed) * R;
+      add({
+        ...still, vx: Math.cos(a) * h * v, vy: u * v, vz: Math.sin(a) * h * v,
+        r0: pick(BOOM.r) * R, life: pick(BOOM.life), drag: BOOM.drag, rise: BOOM.rise,
+      });
+    }
   }
 
   /** 推每一顆火粒、收掉散完的，寫進實例屬性。 */
   _step(dt, alive) {
     const A = this._a;
     this.drops = this.drops.filter((d) => {
-      d.age += dt * (alive.has(d.shot) ? 1 : ORPHAN);
+      d.age += dt * (d.boom || alive.has(d.shot) ? 1 : ORPHAN);
+      if (d.drag) {
+        const k = Math.exp(-d.drag * dt);
+        d.vx *= k; d.vy *= k; d.vz *= k;
+      }
+      if (d.rise) d.vy += d.rise * dt;
       d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
       return d.age < d.life;
     });
     this.drops.forEach((d, i) => {
       const k = d.age / d.life;
       A.iPos.setXYZ(i, d.x, d.y, d.z);
-      A.iVel.setXYZ(i, d.rel[0], d.rel[1], d.rel[2]);
-      A.iR.setX(i, d.r0 * Math.pow(1 - k, 0.7));
-      A.iHeat.setX(i, 1 - k);
+      // 尾巴照相對於球的速度拉長，爆炸的照自己的速度（往外噴的方向）。
+      if (d.rel) A.iVel.setXYZ(i, d.rel[0], d.rel[1], d.rel[2]);
+      else A.iVel.setXYZ(i, d.vx, d.vy, d.vz);
+      A.iR.setX(i, d.r0 * Math.pow(1 - k, d.boom ? 1 : 0.7));   // 爆炸的縮得快一點：散的時候不會剩一地小點
+      A.iHeat.setX(i, d.heat * (1 - k));
     });
     for (const k in A) A[k].needsUpdate = true;
     this._g.instanceCount = this.drops.length;

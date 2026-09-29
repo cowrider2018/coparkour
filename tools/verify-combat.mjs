@@ -104,7 +104,7 @@ import {
   makeCombo, comboStep, invulnerable, cueing, FIELD, LIFE, resetLife, lifeStep, harm, refill, gainHeart, regen,
   SOUL, dropSoul, soulStep, grabs,
 } from '../public/test/src/combat.js';
-import { SKILL, WHIRL_LEN, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from '../public/test/src/skills.js';
+import { SKILL, WHIRL_LEN, makeWorld, bossStep, shotsStep, shotHits, shotBlocked, strikeHits, laneLength } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
 import { DUST, dustOf, dustFade, QUAKE, quakeBands, quakeFade } from '../public/test/src/dust.js';
 import { Motion, bloodOf, sizeOf, MOVES as KNIGHT_MOVES } from '../public/test/src/monster.js';
@@ -1135,8 +1135,23 @@ console.log('18. 場地');
   ok(near(laneLength(0, 0, 1, 0, arena), 10) && near(laneLength(0, 6, 0, -1, arena), 16), '圓的黑牆：球道從圓心量到牆、從牆邊量到對面');
   const w = makeWorld(field);
   w.shots.push({ x: 9.5, y: 0.5, z: 0, vx: 6, vz: 0, r: 0.3 });
-  shotsStep(w, 0.1);
-  ok(w.shots.length === 0, '球飛到圓的黑牆就消失');
+  const wall = w.shots[0];
+  const boomed = shotsStep(w, 0.1);
+  ok(w.shots.length === 0 && boomed.length === 1 && boomed[0] === wall, '球飛到圓的黑牆就炸掉消失（回報炸掉的那一顆）');
+  const ball = (x, y, z, r = 0.3) => ({ x, y, z, vx: 0, vz: 0, r });
+  ok(shotBlocked(ball(-3.2, 0.5, 0), field) && !shotBlocked(ball(-3.4, 0.5, 0), field), '球撞到高台的側面：碰到才算');
+  ok(!shotBlocked(ball(0, 2.3, 0), field), '球貼著高台的頂飛（底在台面上）：不算撞到');
+  ok(shotBlocked(ball(5.1, 0.3, 0), field), '貼地飛的球撞上 0.3 的台階側面：炸掉');
+  ok(shotBlocked(ball(0, 0.5, -6.6), field) && !shotBlocked(ball(0, 0.5, -6.6), { ...field, doors: { g: true } }),
+    '門關著：球撞在門上；門開著：穿得過去');
+  const post = { arena, cols: [{ kind: 'block', shape: 'circle', x: 0, z: 0, r: 0.5, cap: 3, dome: 0, min: [-0.5, 0, -0.5], max: [0.5, 3, 0.5], base: 0 }], doors: {} };
+  ok(shotBlocked(ball(0.75, 0.5, 0), post) && !shotBlocked(ball(0.85, 0.5, 0), post) && !shotBlocked(ball(0.7, 3.4, 0), post),
+    '圓柱：碰到柱面才算，從柱頂上面飛過去不算');
+  const wp = makeWorld(field);
+  wp.shots.push({ x: -4, y: 0.5, z: 0, vx: 6, vz: 0, r: 0.3 });
+  let hitAt = -1;
+  for (let i = 0; i < 30 && hitAt < 0; i++) if (shotsStep(wp, DT).length) hitAt = wp.shots.length === 0 ? i : -2;
+  ok(hitAt >= 0, '飛向高台的球：撞上的那一幀炸掉、不再在場上');
 
   // 跳砸：BOSS 在地上、玩家站在台上。rng 0.5 挑三招的中間那一招（leap）。
   const boss = on({ kind: 'boss', x: -6, z: 0, yaw: Math.PI / 2 });

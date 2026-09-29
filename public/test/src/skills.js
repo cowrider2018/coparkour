@@ -21,7 +21,8 @@
    的不算出招，沒有僵直。
 
      orb   倒數 0.75 秒（地上一條往目標延伸的預告），然後朝鎖定的方向直線發射
-           一顆球：半徑 0.75 個狗高、每秒 6 公尺，碰到黑牆就消失。
+           一顆球：半徑 0.75 個狗高、每秒 6 公尺，碰到黑牆或場上的東西（牆、柱子、
+           台階的側面；開著的門不算）就炸掉消失。
      leap  目標點上兩個圓倒數 1.5 秒：淺色的是範圍（半徑 2.5 個狗高），亮色的
            從中心長到邊。最後 0.6 秒 BOSS 起跳、照拋物線飛過去，倒數到 0 的那一
            刻落在目標點上，打那一整圈。
@@ -44,10 +45,10 @@
    玩家的腳比那還高——跳起來了——就躲得過。
 
    碰到扣血：BOSS 的招 5、騎士的 whirl 2、cleave 3（每一招的 `damage`；衝刺咬到的見 combat.js 的 KINDS）。
-   打中人的球就消失。玩家無敵的時候（第三段、破防攻擊）碰到不算。
+   打中人的球就炸掉消失。玩家無敵的時候（第三段、破防攻擊）碰到不算，球穿過去。
    ------------------------------------------------------------------ */
 
-import { PHYS, arenaGap, supportInfo, solveXZ } from './walk.js';
+import { PHYS, arenaGap, supportInfo, solveXZ, overlapXZ, roundTop } from './walk.js';
 import { FIELD, DOG_H, kindOf, busy, settle } from './combat.js';
 
 /** 每一招的數值。長度一律用狗高量；`damage` 是打中玩家扣幾點血。 */
@@ -253,10 +254,41 @@ export function bossStep(m, dt, target, world, rng = Math.random) {
   return hit;
 }
 
-/** 球往前飛，碰到黑牆就消失。 */
+/** 球貼著地板飛（底剛好在發射那一層的頂上）：頂面不比球底高出這麼多的東西不算撞到。 */
+const SKIM = 0.05;
+
+/**
+ * 一顆球撞到場上的東西了嗎：球（用外接方框近似）跟碰撞體重疊。坑與黑牆不在這裡算
+ * （黑牆是 shotsStep 用 arenaGap 量的），開著的門不擋；圓柱照它的頂（圓頂的話照球
+ * 碰得到的那一圈的高度）。
+ */
+export function shotBlocked(s, field) {
+  const doors = field.doors || {};
+  const lo = s.y - s.r + SKIM, hi = s.y + s.r;
+  for (const b of field.cols) {
+    if (b.kind === 'pit' || b.kind === 'bound') continue;
+    if (b.door && doors[b.door]) continue;
+    if (b.min[1] >= hi) continue;
+    if (b.shape === 'circle') {
+      const d = Math.hypot(s.x - b.x, s.z - b.z);
+      if (d < b.r + s.r && roundTop(b, Math.max(0, d - s.r)) > lo) return true;
+      continue;
+    }
+    if (b.max[1] > lo && overlapXZ(s.x, s.z, b, s.r)) return true;
+  }
+  return false;
+}
+
+/** 球往前飛，碰到黑牆或場上的東西就炸掉消失。回傳這一幀炸掉的那幾顆（畫爆炸用）。 */
 export function shotsStep(world, dt) {
-  for (const s of world.shots) { s.x += s.vx * dt; s.z += s.vz * dt; }
-  world.shots = world.shots.filter((s) => arenaGap(world.field.arena, s.x, s.z) > s.r);
+  const gone = [];
+  world.shots = world.shots.filter((s) => {
+    s.x += s.vx * dt; s.z += s.vz * dt;
+    const hit = arenaGap(world.field.arena, s.x, s.z) <= s.r || shotBlocked(s, world.field);
+    if (hit) gone.push(s);
+    return !hit;
+  });
+  return gone;
 }
 
 /**

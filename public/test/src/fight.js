@@ -11,7 +11,7 @@
      lead     按跳交給連段：普通的跳、某一段的出手，或是破防攻擊。在操控之前，
               因為破防攻擊一發動就接管速度。
      （模式自己操控、移動玩家：`breaking` 的時候不操控，`spinning` 的時候不移動）
-     resolve  怪物追人、放招、球往前飛，然後才判打中——兩個身體都走完這一幀了，
+     resolve  怪物追人、放招、球往前飛（撞到東西就炸掉），然後才判打中——兩個身體都走完這一幀了，
               範圍是對著畫面上的位置判的。打死 BOSS 掉出靈魂，靈魂往下掉、漂，碰到
               就撿起來。回報玩家挨了哪一下、倒下沒有、打死了誰、撿了幾顆靈魂。
      draw     怪物、劍光（攻擊範圍）與粉塵（落地、BOSS 範圍攻擊的地震）、BOSS 的預告與球、靈魂、破防的兩圈、刀、
@@ -302,7 +302,8 @@ export class Fight {
       this._stomps.push(st);
       if (st.shape === 'circle') this._quiet.add(m);
     }
-    shotsStep(this.world, dt);
+    // 撞到黑牆或場上東西的球炸掉。
+    for (const s of shotsStep(this.world, dt)) this._fire.explode(s);
     for (const { m } of foes) monsterStep(m, dt, player);
     separate(foes.map((f) => f.m));
     /* 每一隻這一刻在哪：扣到 0 的那一下 hurt 就把牠搬回重生點了，靈魂要掉在死的地方。 */
@@ -345,8 +346,14 @@ export class Fight {
       for (const st of strikes) if (strikeHits(st, player)) take('struck', st.dmg);
       if (hit) {
         harm(player, hit.dmg);
-        // 打中人的球就消失。
-        if (hit.cause === 'shot') this.world.shots = this.world.shots.filter((s) => !shotHits(s, player));
+        // 打中人的球炸掉消失。
+        if (hit.cause === 'shot') {
+          this.world.shots = this.world.shots.filter((s) => {
+            if (!shotHits(s, player)) return true;
+            this._fire.explode(s);
+            return false;
+          });
+        }
       }
     }
     const died = hit && player.hp <= 0 ? hit.cause : null;
