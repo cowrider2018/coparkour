@@ -27,11 +27,12 @@ import {
   breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, placeMonster, monsterStep, bites, knock,
   inSlash, inFan, inRing, slashTip, makeCombo, comboStep, invulnerable, untouchable, cueing, attacking, taken,
 } from './combat.js';
-import { makeMonsterCritter, sizeOf, bloodOf, swordOf, Motion, ATTACK_INK } from './monster.js';
+import { makeMonsterCritter, sizeOf, bloodOf, swordOf, helmOf, Motion, ATTACK_INK } from './monster.js';
 import { GUARD_INK } from './critter.js';
 import { Blood } from './blood.js';
 import { hitFrame, pushFrame, spurtOf } from './bleed.js';
 import { Blade } from './blade.js';
+import { Helm } from './helm.js';
 import { Mover } from './moves.js';
 import {
   cueFx, showFx, breakFx, showBreak, laneFx, showLane, orbMesh, circleFx, showCircle,
@@ -162,10 +163,12 @@ export class Fight {
         critter: makeMonsterCritter(this.zoo, kind), breakFx: breakFx(),
         lane: laneFx(SKILL.orb.radius), circle: circleFx(SKILL.leap.radius), cone: coneFx(SKILL.cone.radius, SKILL.cone.half),
         whirl: stripFx(SKILL.whirl.radius, true), cleave: stripFx(SKILL.cleave.width / 2, false),
-        blade: null,
+        blade: null, helm: null,
       };
       // 咬著劍的那幾類（騎士）：劍掛在牠自己的頭上，跟主角那把一樣每幀跟著頭。
       if (swordOf(kind)) { slot.blade = new Blade(swordOf(kind)); slot.blade.follow(slot.critter); }
+      // 戴頭盔的那幾類（騎士、BOSS）：一樣掛在頭上，墨線跟著牠的墨色換。
+      if (helmOf(kind)) { slot.helm = new Helm(); slot.helm.follow(slot.critter); }
       if (this._inkPx) slot.critter.setInkPx(...this._inkPx);
       this.scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node, slot.cone.node, slot.whirl.node, slot.cleave.node);
       list.push(slot);
@@ -375,7 +378,7 @@ export class Fight {
     // 無敵的時候墨線金色：跟碰到算不算（untouchable）同一個判斷。
     this.zoo.setInkColor(untouchable(combo, player) ? GUARD_INK : null);
     this.hearts.show(player.hp, player.max, player.x, player.y, player.z, camera.quaternion);
-    for (const { m, critter, motion, blade } of this.foes) {
+    for (const { m, critter, motion, blade, helm } of this.foes) {
       /* 衝刺與放招的動作（monster.js 的 Motion）：疊一套動作，跳的那幾段畫成在空中、
          垂直速度照那一跳。 */
       const mo = motion.step(dt, m, player);
@@ -390,6 +393,7 @@ export class Fight {
         move: mo.move,
       });
       if (blade) blade.update();
+      if (helm) helm.update();
     }
 
     // 攻擊範圍：劍光，跟著玩家的腳與出招時鎖住的面向走（騎士的劍迴旋跟著牠）。落地的粉塵。

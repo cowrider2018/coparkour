@@ -88,6 +88,11 @@
                     落在落點上、劈一下、扣 3，僵直 0.5 秒；放招中打不退。長條（加上身體）
                     裡的劈得到、外面的劈不到，跳起來躲得過，倒數裡跑開就劈空；落點在台上
                     就落在台上、劈那一層。動作是 cleaveWind → cleaveAir → cleaveRec。
+    26. 頭盔        騎士與 BOSS 戴、小怪與幽靈不戴。量在狗頭上（頭骨座標、靜置姿勢）：
+                    頭皮與眼睛除了底下的開口與正面的切口，全部包在盔殼內層裡；面罩整片
+                    在盔殼的墨線外殼外面、下緣高過吻部；兩隻眼睛各對著一個洞；臉往鏡頭
+                    推的那一段讓眼睛正面看在頭皮前、面罩後。頭盔跟著頭骨轉；墨線跟著
+                    那隻動物的墨色換（攻擊中轉紅）。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
@@ -108,6 +113,12 @@ import { TRAILS, PIECE, BANDS, sweepAt, fadeAt, sideAt, qiAt, along, hullOf } fr
 import { bladeAt } from '../public/test/src/trail.js';
 import { BLEED, SPLAT, STYLE, dropSize, dropCount, volumeOf, sizeRange, speedOf, hitFrame, pushFrame, spurtOf, floorUnder, splatScale, bleedStep } from '../public/test/src/bleed.js';
 import { taken } from '../public/test/src/combat.js';
+import { readFileSync } from 'node:fs';
+import * as THREE from '../public/test/vendor/three.module.js';
+import { loadZoo } from '../public/test/src/critter.js';
+import { makeMonsterCritter, helmOf, ATTACK_INK } from '../public/test/src/monster.js';
+import { Helm, HELM } from '../public/test/src/helm.js';
+import { Rig } from '../public/src/cat/rig.js';
 
 let fails = 0;
 const ok = (cond, msg) => {
@@ -1746,6 +1757,69 @@ console.log('25. 騎士的跳砍');
     ok(hit && near(hit.y, top) && near(m.y, top) && strikeHits(hit, q), `落點在 ${top} 公尺高的台上：落在台上、劈的是台上那一層`);
   }
   KINDS.knight.skills = keep;
+}
+
+/* ── 26. 頭盔 ────────────────────────────────────────────────── */
+console.log('26. 頭盔');
+{
+  ok(helmOf('knight') && helmOf('boss') && !helmOf('minion') && !helmOf('ghost'), '騎士與 BOSS 戴頭盔，小怪與幽靈不戴');
+  const buf = readFileSync('public/assets/cat.bin');
+  const zoo = await loadZoo({ buffer: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) });
+  const { SHELL, SHELL_FLOOR, NOTCH, VISOR, FACE_LIFT, INK_OUT } = HELM;
+  const fOf = (p, h) => p.reduce((a, x, k) => a + Math.abs((x - SHELL.c[k]) / h[k]) ** SHELL.n, 0);
+  const inShellPart = (p) => p[1] >= SHELL_FLOOR && !(p[2] > NOTCH.z && p[1] < NOTCH.y);
+  for (const kind of ['knight', 'boss']) {
+    const c = makeMonsterCritter(zoo, kind);
+    const helm = new Helm();
+    helm.follow(c);
+    /* 每個頂點換到頭骨座標（靜置姿勢），照骨頭分。 */
+    const rig = new Rig(c.data.header);
+    rig.update();
+    const M = rig.matrices, head = rig.bone('head');
+    const inv = new THREE.Matrix4().fromArray(M, head * 16).invert();
+    const bm = new THREE.Matrix4(), v = new THREE.Vector3(), by = {};
+    for (let i = 0; i < c._boneId.length; i++) {
+      const b = c._boneId[i];
+      v.set(c._posBaked[i * 3], c._posBaked[i * 3 + 1], c._posBaked[i * 3 + 2]).applyMatrix4(bm.fromArray(M, b * 16)).applyMatrix4(inv);
+      (by[rig.names[b]] ||= []).push([v.x, v.y, v.z]);
+    }
+    const face = [...by.head, ...by.eye0, ...by.eye1].filter(inShellPart);
+    const lining = SHELL.h.map((x) => x - SHELL.t);
+    ok(face.length > 1000 && face.every((p) => fOf(p, lining) < 1), `${kind}：頭皮與眼睛（開口與切口以外）全部包在盔殼內層裡`);
+    const visor = helm.node.getObjectByName('visor').geometry.attributes.position.array;
+    const vp = [];
+    for (let i = 0; i < visor.length; i += 3) vp.push([visor[i], visor[i + 1], visor[i + 2]]);
+    const hull = SHELL.h.map((x) => x + INK_OUT);
+    ok(vp.every((p) => fOf(p, hull) > 1), `${kind}：面罩整片在盔殼的墨線外殼外面`);
+    const muzzleTop = Math.max(...by.muzzle.map((p) => p[1]));
+    ok(Math.min(...vp.map((p) => p[1])) > muzzleTop, `${kind}：面罩下緣（y ${VISOR.y[0]}）高過吻部（y ${muzzleTop.toFixed(2)}）`);
+    const hw = VISOR.holeW / 2;
+    const eyes = ['eye0', 'eye1'].map((n) => by[n]);
+    ok(eyes.every((e) => {
+      const x = Math.abs(e.reduce((a, p) => a + p[0], 0) / e.length);
+      return VISOR.holes.some((h) => Math.abs(x - h) < hw);
+    }), `${kind}：兩隻眼睛各對著一個洞`);
+    /* 臉往鏡頭推 lift：正面看，眼睛（九成以上）要在頭皮前、整顆在面罩內面後。 */
+    const lift = c._faceLift.value / c.mesh.scale.x;
+    const eyeAll = eyes.flat();
+    const ax = eyeAll.map((p) => Math.abs(p[0])), ay = eyeAll.map((p) => p[1]);
+    const [x0, x1, y0, y1] = [Math.min(...ax), Math.max(...ax), Math.min(...ay), Math.max(...ay)];
+    const skin = Math.max(...by.head.filter((p) => Math.abs(p[0]) >= x0 && Math.abs(p[0]) <= x1 && p[1] >= y0 && p[1] <= y1).map((p) => p[2]));
+    const plate = Math.min(...vp.filter((p) => Math.abs(p[0]) <= x1 && p[1] >= VISOR.holeY[0] && p[1] <= VISOR.holeY[1]).map((p) => p[2]));
+    const shown = eyeAll.filter((p) => p[2] + lift > skin).length / eyeAll.length;
+    const front = Math.max(...eyeAll.map((p) => p[2]));
+    ok(near(lift, FACE_LIFT) && shown > 0.9 && front + lift < plate,
+      `${kind}：臉推 ${lift.toFixed(2)}：眼睛 ${(shown * 100).toFixed(0)}% 在頭皮（z ${skin.toFixed(2)}）前、前緣（z ${(front + lift).toFixed(2)}）在面罩內面（z ${plate.toFixed(2)}）後`);
+    /* 跟著頭骨：擺一個頭歪、仰的姿勢（跳砍舉劍那一格）。 */
+    for (let i = 0; i < 5; i++) c.update(DT, { speed: 0, grounded: true, vy: 0, viewYaw: 0, move: KNIGHT_MOVES.cleaveWind.keys[1][1] });
+    helm.update();
+    const want = new THREE.Matrix4().fromArray(c.rig.matrices, head * 16);
+    ok(helm.node.matrix.equals(want) && helm.node.parent === c.mesh, `${kind}：頭盔跟著頭骨轉`);
+    c.setInkColor(ATTACK_INK);
+    const red = helm.ink.color.equals(ATTACK_INK);
+    c.setInkColor(null);
+    ok(red && !helm.ink.color.equals(ATTACK_INK), `${kind}：墨線跟著牠的墨色換（攻擊中轉紅、之後換回來）`);
+  }
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');
