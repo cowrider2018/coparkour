@@ -41,8 +41,9 @@ import { TRAILS, PIECE, BANDS, sweepAt, fadeAt, sideAt, bladeAt, along, hullOf }
 /** 一排橫截面切幾格。 */
 const ACROSS = 4;
 
-/** 最多幾排：一整圈多一點、每 PIECE（trail.js）一排是 6.6 / 0.12 ≈ 56，加上起點與刀尖。 */
-const ROWS = 64;
+/** 最多幾排：最長的是騎士的劍迴旋，兩圈多一點、每 PIECE（trail.js）一排是 12.9 / 0.12 ≈ 108，
+    加上起點與刀尖。 */
+const ROWS = 112;
 
 /** 起點收成尖的那一段多長（公尺，沿著外緣量）。 */
 const END = 0.35;
@@ -132,10 +133,14 @@ export class Qi {
     this.kind = null;
   }
 
-  /** 起一道：哪一段、第二段指著的末端點。 */
-  start(kind, tip) {
+  /**
+   * 起一道：哪一段、第二段指著的末端點、畫多大（scale：刀上每一點離刀根的距離乘上它，
+   * 1 是主角那一刀；騎士的劍迴旋照牠的半徑縮放）。
+   */
+  start(kind, tip, scale = 1) {
     this.kind = kind;
     this.tip = tip;
+    this.scale = scale;
     this.tau = 0;
     this.rows = 0;
     this._th = null;
@@ -181,12 +186,12 @@ export class Qi {
   /** 在第 rows 排寫下角度 θ 的合體橫截面。keep：固定下來（rows 往前一格），不然是頭。 */
   _row(theta, player, keep) {
     if (this.rows >= ROWS) return false;
-    const b = bladeAt(this.kind, theta, player, this.tip), edge = along(b, TOP), last = this._last;
+    const b = bladeAt(this.kind, theta, player, this.tip), k = this.scale, edge = along(b, TOP * k), last = this._last;
     const len = last ? this._len + Math.hypot(edge[0] - last[0], edge[1] - last[1], edge[2] - last[2]) : 0;
     const side = sideAt(this.kind, theta) * Math.min(1, len / END), { inner, outer } = hullOf(side);
     const A = this._a;
     for (let j = 0; j <= ACROSS; j++) {
-      const i = this.rows * (ACROSS + 1) + j, r = inner + ((outer - inner) * j) / ACROSS, q = along(b, r);
+      const i = this.rows * (ACROSS + 1) + j, r = inner + ((outer - inner) * j) / ACROSS, q = along(b, r * k);
       A.position.setXYZ(i, q[0], q[1], q[2]);
       A.aR.setX(i, r);
       A.aSide.setX(i, side);

@@ -76,6 +76,13 @@
                     BOSS 範圍攻擊（扇形、跳砸）地震的塵：震波從腳下往外走，越外面
                     那一道越晚揚、越濃（所以越高）；最外面那一道揚完之前整片不淡，
                     之後淡到收掉。
+    24. 騎士        劍迴旋衝刺：離玩家 4.5 公尺以內才放（夠不到就不放、夠得到的那一幀放）；
+                    挑的那一刻鎖定方向；倒數 0.5 秒站著不打；然後朝那個方向衝 3.2 公尺
+                    （跟幀長無關），衝的每一幀打這一幀走過的那一段、外擴迴旋的半徑，
+                    一段接一段；衝完僵直 0.5 秒；放招中是攻擊中、打不退。站在路上、
+                    貼著邊的會被打到，邊外、背後、跳起來的不會；預告那一條就是
+                    整段衝下來打得到的地方。倒數是 whirlWind、衝是 whirlDash，比主角
+                    第三擊多轉一圈，劍光也是兩圈。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
@@ -87,10 +94,11 @@ import {
   makeCombo, comboStep, invulnerable, cueing, FIELD, LIFE, resetLife, lifeStep, harm, refill, gainHeart, regen,
   SOUL, dropSoul, soulStep, grabs,
 } from '../public/test/src/combat.js';
-import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from '../public/test/src/skills.js';
+import { SKILL, WHIRL_LEN, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
 import { DUST, dustOf, dustFade, QUAKE, quakeBands, quakeFade } from '../public/test/src/dust.js';
-import { Motion, bloodOf, sizeOf } from '../public/test/src/monster.js';
+import { Motion, bloodOf, sizeOf, MOVES as KNIGHT_MOVES } from '../public/test/src/monster.js';
+import { MOVES as HERO_MOVES } from '../public/test/src/moves.js';
 import { TRAILS, PIECE, BANDS, sweepAt, fadeAt, sideAt, qiAt, along, hullOf } from '../public/test/src/trail.js';
 import { bladeAt } from '../public/test/src/trail.js';
 import { BLEED, SPLAT, STYLE, dropSize, dropCount, volumeOf, sizeRange, speedOf, hitFrame, pushFrame, spurtOf, floorUnder, splatScale, bleedStep } from '../public/test/src/bleed.js';
@@ -1220,7 +1228,7 @@ console.log('20. 靈魂');
 /* ── 21. 劍光 ────────────────────────────────────────────────────── */
 console.log('21. 劍光');
 {
-  const range = { slash: inSlash, slam: inRing };
+  const range = { slash: inSlash, slam: inRing, whirl: inRing };
   ok(sweepAt('slash', 0) === -Math.PI / 3 && near(sweepAt('slash', 1), Math.PI / 3), '第一段：從右 60° 掃到左 60°，就是判定的那 120°');
   ok(sweepAt('rise', 0) === 0 && near(sweepAt('rise', 1), FAN.sweep), '第二段：從扇形的下緣往上掃 90°，就是判定的那片扇形');
   ok(TRAILS.slam.to - TRAILS.slam.from >= 2 * Math.PI, '第三段：掃滿一整圈');
@@ -1539,6 +1547,104 @@ console.log('23. 噴血');
     return { r: o.r, far: one[0].z };
   }).sort((a, b) => a.r - b.r);
   ok(reachE.every((q, i) => i === 0 || q.far < reachE[i - 1].far), '靈質也是小的噴得比大的遠（停下來的地方 v₀ / drag）');
+}
+
+/* ── 24. 騎士 ────────────────────────────────────────────────── */
+console.log('24. 騎士');
+{
+  const S = SKILL.whirl;
+  ok(KINDS.knight.skills.includes('whirl') && KINDS.knight.every === 2.5, '騎士每 2.5 秒放一招，會劍迴旋衝刺');
+  ok(S.windup === 0.5 && S.damage === 2 && near(WHIRL_LEN, (S.speed * S.time) / 2) && near(WHIRL_LEN, 3.2) && near(S.time, TRAILS.whirl.t1),
+    `劍迴旋衝刺：倒數 0.5 秒、扣 2、衝 ${WHIRL_LEN.toFixed(2)} 公尺、0.4 秒衝完（劍光同樣 0.4 秒掃完）`);
+  const W = TRAILS.whirl, L = TRAILS.slam;
+  ok(near(W.to - W.from, L.to - L.from + 2 * Math.PI) && W.from === L.from && W.ease === L.ease && !W.taper,
+    '劍光比主角第三擊那一圈多轉一圈（兩圈多），起點與加減速一樣');
+  const turn = (mv) => Math.max(...mv.keys.map(([, p]) => p.yaw || 0));
+  ok(near(turn(KNIGHT_MOVES.whirlDash), turn(HERO_MOVES.slam) + 2 * Math.PI) && near(KNIGHT_MOVES.whirlWind.keys.at(-1)[0], S.windup),
+    `動作：蓄力拉長到 ${S.windup} 秒；衝的時候比主角第三擊多轉一圈（最多轉到 ${(turn(KNIGHT_MOVES.whirlDash) / (2 * Math.PI)).toFixed(2)} 圈）`);
+  /** 只讓騎士會這幾招（量一招的時候不讓亂數挑到別招），回傳換回去的那一支。 */
+  const only = (ks) => { const k = KINDS.knight.skills; KINDS.knight.skills = ks; return () => { KINDS.knight.skills = k; }; };
+  const back = only(['whirl']);
+
+  // 夠不到就不放：時間到了、人在 range 外，站著等 1 秒都不放；人走進 range，那一幀就放。
+  {
+    const m = makeMonster({ kind: 'knight', x: 0, z: 0, yaw: 0 });
+    const w = makeWorld();
+    m.castT = 0;
+    const far = body(0, S.range + 0.5);
+    for (let i = 0; i < 60; i++) bossStep(m, DT, far, w, () => 0);
+    const none = !m.cast;
+    bossStep(m, DT, body(0, S.range - 0.1), w, () => 0);
+    ok(none && m.cast && m.cast.skill === 'whirl', `離 ${S.range + 0.5} 公尺不放、走進 ${S.range} 公尺以內那一幀就放`);
+  }
+
+  /** 騎士在原點、人在 (px, pz)，放一次劍迴旋衝刺，記下每一件事。move：倒數中人往哪跑（公尺每秒）。 */
+  const whirl = (px, pz, dt = DT, move = null) => {
+    const m = makeMonster({ kind: 'knight', x: 0, z: 0, yaw: 0 });
+    const w = makeWorld();
+    const q = body(px, pz);
+    m.castT = 0;
+    const out = { m, strikes: [], windStill: true, windHit: false, armor: true, stages: new Set() };
+    const mo = new Motion();
+    let t = 0;
+    while (t < 2) {
+      const had = !!m.cast;
+      const st = bossStep(m, dt, q, w, () => 0);
+      if (st) out.strikes.push(st);
+      if (had && !m.cast) { out.endAt = t + dt; out.stun = m.stun; }
+      const wind = m.cast && m.cast.t < S.windup;
+      if (wind && (m.x !== 0 || m.z !== 0)) out.windStill = false;
+      if (wind && st) out.windHit = true;
+      if (m.cast && !(attacking(m) && armored(m))) out.armor = false;
+      if (m.cast) out.stages.add(mo._stage(m)[0]);
+      if (move && wind) { q.x += move[0] * dt; q.z += move[1] * dt; }
+      monsterStep(m, dt, q);
+      t += dt;
+      if (out.endAt) break;
+    }
+    return out;
+  };
+
+  const a = whirl(0, 3);
+  ok(a.windStill && !a.windHit, '倒數的 0.5 秒站著不動、不打');
+  ok(a.armor, '放招中是攻擊中、打不退（armored）');
+  ok(near(a.m.z, WHIRL_LEN, 1e-6) && near(a.m.x, 0, 1e-9), `朝鎖定的方向衝了 ${a.m.z.toFixed(4)} 公尺`);
+  ok(near(a.endAt, S.windup + S.time, 1.5 * DT) && a.stun === SKILL.recover && !a.m.cast, `${a.endAt.toFixed(2)} 秒衝完，僵直 ${SKILL.recover} 秒`);
+  ok(a.strikes.length > 0 && a.strikes.every((st) => st.shape === 'capsule' && st.r === S.radius && st.dmg === S.damage),
+    `衝的每一幀打一段（${a.strikes.length} 段），半徑 ${S.radius.toFixed(2)}、扣 ${S.damage}`);
+  const chain = a.strikes.every((st, i) => (i === 0 ? near(st.z, 0) : near(st.z, a.strikes[i - 1].z1, 1e-9)));
+  ok(chain && near(a.strikes[a.strikes.length - 1].z1, WHIRL_LEN, 1e-6), '一段接一段，從起步的地方接到衝完的地方');
+  ok([...a.stages].join() === 'whirlWind,whirlDash', `動作：${[...a.stages].join(' → ')}`);
+
+  for (const dt of [DT / 4, 0.037]) {
+    const b = whirl(0, 3, dt);
+    ok(near(b.m.z, WHIRL_LEN, 1e-6), `幀長 ${dt.toFixed(4)}：一樣衝 ${b.m.z.toFixed(4)} 公尺`);
+  }
+
+  // 鎖定：倒數裡人往旁邊跑，牠還是朝一開始的方向衝。
+  const c = whirl(0, 3, DT, [6, 0]);
+  ok(near(c.m.x, 0, 1e-9) && near(c.m.z, WHIRL_LEN, 1e-6), '倒數裡人往旁邊跑，牠照鎖定的方向衝');
+
+  // 打不打得到：整段衝下來的每一段裡有沒有一段碰到。
+  const R = S.radius + PHYS.radius;
+  const hitBy = (strikes, p) => strikes.some((st) => strikeHits(st, p));
+  ok(hitBy(a.strikes, body(0, 3)), '站在路上：被打到');
+  ok(hitBy(a.strikes, body(R - 0.02, 1.5)) && !hitBy(a.strikes, body(R + 0.02, 1.5)), `路邊：${R.toFixed(2)} 公尺以內打到、以外打不到`);
+  ok(hitBy(a.strikes, body(0, -R + 0.02)) && !hitBy(a.strikes, body(0, -R - 0.02)), '背後：起步的地方往後一個半徑以外打不到');
+  ok(!hitBy(a.strikes, { ...body(0, 1.5), y: PHYS.height }), '跳起來（腳高過一個狗高）：躲得過');
+
+  // 預告那一條就是打得到的地方：膠囊（起步 → 衝完、半徑 radius）加上身體，裡外各取一片點。
+  const gap = (x, z) => Math.hypot(x, z - Math.min(WHIRL_LEN, Math.max(0, z)));
+  let agree = true;
+  for (let x = -3; x <= 3; x += 0.25) {
+    for (let z = -3; z <= 7; z += 0.25) {
+      const d = gap(x, z);
+      if (Math.abs(d - R) < 0.03) continue;
+      if (hitBy(a.strikes, body(x, z)) !== d < R) agree = false;
+    }
+  }
+  ok(agree, '預告那一條（起步到衝完、兩頭半圓）裡面的都打得到，外面的都打不到');
+  back();
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

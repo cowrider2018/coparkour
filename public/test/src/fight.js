@@ -22,7 +22,7 @@
 
 import { PHYS, supportInfo } from './walk.js';
 import {
-  FIELD, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster, harm, lifeStep, gainHeart,
+  FIELD, REACH, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster, harm, lifeStep, gainHeart,
   SOUL, dropSoul, soulStep, grabs,
   breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, placeMonster, monsterStep, bites, knock,
   inSlash, inFan, inRing, slashTip, makeCombo, comboStep, invulnerable, untouchable, cueing, attacking, taken,
@@ -35,9 +35,9 @@ import { Blade } from './blade.js';
 import { Mover } from './moves.js';
 import {
   cueFx, showFx, breakFx, showBreak, laneFx, showLane, orbMesh, circleFx, showCircle,
-  coneFx, showCone, soulMesh,
+  coneFx, showCone, stripFx, showStrip, soulMesh,
 } from './fx.js';
-import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from './skills.js';
+import { SKILL, WHIRL_LEN, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from './skills.js';
 import { Hearts } from './hearts.js';
 import { Fluid, Sheet } from './fluid.js';
 import { TRAILS } from './trail.js';
@@ -67,7 +67,7 @@ export const PHASE_NAME = {
 };
 
 /** 玩家挨了哪一下 → 給人看的一句話。 */
-export const DEATH_TEXT = { bitten: '被咬到了', shot: '被球打中了', struck: '被 BOSS 的招打中了' };
+export const DEATH_TEXT = { bitten: '被咬到了', shot: '被球打中了', struck: '被怪物的招打中了' };
 
 export class Fight {
   /**
@@ -161,12 +161,13 @@ export class Fight {
       const slot = {
         critter: makeMonsterCritter(this.zoo, kind), breakFx: breakFx(),
         lane: laneFx(SKILL.orb.radius), circle: circleFx(SKILL.leap.radius), cone: coneFx(SKILL.cone.radius, SKILL.cone.half),
+        whirl: stripFx(SKILL.whirl.radius, true),
         blade: null,
       };
       // 咬著劍的那幾類（騎士）：劍掛在牠自己的頭上，跟主角那把一樣每幀跟著頭。
       if (swordOf(kind)) { slot.blade = new Blade(swordOf(kind)); slot.blade.follow(slot.critter); }
       if (this._inkPx) slot.critter.setInkPx(...this._inkPx);
-      this.scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node, slot.cone.node);
+      this.scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node, slot.cone.node, slot.whirl.node);
       list.push(slot);
     }
     return list[i];
@@ -178,6 +179,7 @@ export class Fight {
     s.lane.node.visible = false;
     s.circle.node.visible = false;
     s.cone.node.visible = false;
+    s.whirl.node.visible = false;
   }
 
   /**
@@ -289,7 +291,8 @@ export class Fight {
       const st = bossStep(m, dt, player, this.world);
       if (!st) continue;
       strikes.push(st);
-      if (!this.fluid) continue;
+      // 地震的塵只有 BOSS 砸下去的那兩種（dust.js 的 QUAKE）。
+      if (!this.fluid || !QUAKE[st.shape]) continue;
       this._stomps.push(st);
       if (st.shape === 'circle') this._quiet.add(m);
     }
@@ -388,7 +391,8 @@ export class Fight {
       if (blade) blade.update();
     }
 
-    // 攻擊範圍：劍光，跟著玩家的腳與出招時鎖住的面向走。落地的粉塵。
+    // 攻擊範圍：劍光，跟著玩家的腳與出招時鎖住的面向走（騎士的劍迴旋跟著牠）。落地的粉塵。
+    this._whirls();
     this._qi(dt, this.body(player));
     this._blood.step(dt, camera);
     if (this.fluid) this._dust(dt, player);
@@ -396,10 +400,16 @@ export class Fight {
     const floor = supportInfo(this.world.field.cols, player.x, player.z, player.y).y;
     showFx(fx.cue, cueing(combo) ? 0 : Infinity, 1, player.x, floor, player.z, 0);
 
-    // BOSS 的預告：貼在牠（或跳砸的落點）那一層地板上。
-    for (const { m, lane, circle, cone } of this.foes) {
+    // 怪物技能的預告：貼在牠（或跳砸的落點）那一層地板上。
+    for (const { m, lane, circle, cone, whirl } of this.foes) {
       const c = m.cast;
       const orb = !!c && c.skill === 'orb', leap = !!c && c.skill === 'leap', fan = !!c && c.skill === 'cone';
+      /* 劍迴旋衝刺：從起步的地方往鎖定的方向，衝得到多遠（黑牆擋住的話到牆前）。衝的時候
+         亮著滿的——那一條就是還會被掃到的地方。 */
+      const wh = !!c && c.skill === 'whirl';
+      showStrip(whirl, wh, wh ? Math.min(1, c.t / SKILL.whirl.windup) : 0, wh ? c.x0 : 0, wh ? c.z0 : 0,
+        wh ? Math.atan2(c.dirX, c.dirZ) : 0,
+        wh ? Math.min(WHIRL_LEN, Math.max(0, laneLength(c.x0, c.z0, c.dirX, c.dirZ, m.field.arena) - PHYS.radius)) : 0, c ? c.y0 : 0);
       showLane(lane, orb, orb ? Math.min(1, c.t / SKILL.orb.windup) : 0, m.x, m.z,
         orb ? Math.atan2(c.dirX, c.dirZ) : 0, orb ? laneLength(m.x, m.z, c.dirX, c.dirZ, m.field.arena) : 0, m.y);
       showCircle(circle, leap, leap ? Math.min(1, c.t / SKILL.leap.windup) : 0, leap ? c.tx : 0, leap ? c.tz : 0, leap ? c.ty : 0);
@@ -438,6 +448,27 @@ export class Fight {
   }
 
   /**
+   * 騎士的劍迴旋衝刺：倒數完、開始衝的那一幀起一道兩圈的劍光（trail.js 的 whirl），
+   * 照迴旋的半徑縮放，跟著牠的腳與鎖定的方向走——牠一邊衝一邊鋪，所以留下來的是
+   * 一圈往前拉開的劍光。高度照牠的體型抬：主角的劍光在身高中間，牠畫得高。
+   */
+  _whirls() {
+    for (const { m } of this.foes) {
+      const c = m.cast;
+      if (!c || c.skill !== 'whirl' || c.t < SKILL.whirl.windup || c.qi) continue;
+      const q = this._spare.pop() || new Qi();
+      if (!q.node.parent) this.scene.add(q.node);
+      q.start('whirl', null, SKILL.whirl.radius / REACH);
+      const lift = (PHYS.height / 2) * (sizeOf(m.kind) - 1), body = { x: 0, y: 0, z: 0, aimX: 0, aimZ: 1 };
+      q.owner = () => Object.assign(body, { x: m.x, y: m.y + lift, z: m.z, aimX: c.dirX, aimZ: c.dirZ });
+      q.cast = c;
+      q.foe = m;
+      c.qi = true;
+      this._qis.push(q);
+    }
+  }
+
+  /**
    * 劍光的一幀：進了新的一段就起一道（掛在出招這一刻），每一道往前一幀——還在掃
    * 就把這一幀掃過的那一截鋪上去——收完了就收起來。
    *
@@ -454,11 +485,16 @@ export class Fight {
           this.scene.add(q.node);
         }
         q.start(combo.phase, combo.tip);
+        q.owner = null;
         this._qis.push(q);
       }
     }
     this._qis = this._qis.filter((q) => {
-      if (q.step(dt, body)) return true;
+      /* 怪物的那一道：招被打斷了（破防攻擊定住、死了重生）就收掉。衝完收招的那一刻
+         進了僵直，劍光照常收完。 */
+      const cut = q.owner && q.foe.cast !== q.cast && !(q.foe.stun > 0);
+      if (!cut && q.step(dt, q.owner ? q.owner() : body)) return true;
+      q.stop();
       this._spare.push(q);
       return false;
     });

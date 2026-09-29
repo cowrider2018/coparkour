@@ -1,5 +1,5 @@
 /* ── test/src/fx.js ───────────────────────────────────────────
-   戰鬥的小外觀：連段的提示圈、破防的兩圈、BOSS 技能的預告與球、靈魂。
+   戰鬥的小外觀：連段的提示圈、破防的兩圈、怪物技能（BOSS、騎士）的預告與球、靈魂。
    主角三段攻擊的範圍是劍氣，在 qi.js（形狀在 trail.js）。
 
    BOSS 預告的形狀直接照 skills.js 的判定畫，所以畫面上那一片就是會被打到的
@@ -155,6 +155,48 @@ export function showCone(f, on, frac, x, z, yaw, y = 0) {
   f.node.rotation.y = yaw;
   const k = Math.max(1e-3, frac);
   f.bright.scale.set(k, 1, k);
+}
+
+/**
+ * 長條的預告：一條寬 2r 的帶子，round 的話兩頭再各接一個半圓（膠囊，劍迴旋衝刺走過的
+ * 那一條）。淺色的整條，亮色從正中間長到整條。長度每一招不一樣（showStrip 給），
+ * 所以帶子是一片縮放 z 的長方形、兩頭的半圓另外擺——整片縮放的話半圓會被拉扁。
+ */
+export function stripFx(r, round) {
+  const body = new THREE.PlaneGeometry(r * 2, 1);
+  body.rotateX(-Math.PI / 2);
+  body.translate(0, 0.03, 0);
+  const cap = round ? fan([0, 0.03, 0], (a) => [Math.sin(a) * r, 0.03, Math.cos(a) * r], -Math.PI / 2, Math.PI / 2) : null;
+  const layer = (opacity) => {
+    const g = new THREE.Group();
+    const mid = decal(body, opacity);
+    const caps = round ? [decal(cap, opacity), decal(cap, opacity)] : [];
+    if (round) caps[1].rotation.y = Math.PI;
+    g.add(mid, ...caps);
+    return { g, mid, caps };
+  };
+  const node = new THREE.Group();
+  const pale = layer(0.2), bright = layer(0.45);
+  node.add(pale.g, bright.g);
+  node.visible = false;
+  return { node, pale, bright };
+}
+
+/**
+ * 擺長條的預告：從 (x, z) 往 yaw 那個方向長 len（兩頭的半圓不算在內）。frac 是倒數走了
+ * 幾成（0 → 1），y 是貼在哪一層地板上。
+ */
+export function showStrip(f, on, frac, x, z, yaw, len, y = 0) {
+  f.node.visible = on;
+  if (!on) return;
+  f.node.position.set(x, y, z);
+  f.node.rotation.y = yaw;
+  for (const [L, k] of [[f.pale, 1], [f.bright, Math.max(1e-3, frac)]]) {
+    L.g.position.z = len / 2;
+    L.g.scale.setScalar(k);
+    L.mid.scale.z = Math.max(1e-3, len);
+    if (L.caps.length) { L.caps[0].position.z = len / 2; L.caps[1].position.z = -len / 2; }
+  }
 }
 
 /** 一顆球的外觀：跟石頭同一套分階著色（palette.js 的 toon），才看得出是一顆球而不是一片圓。 */

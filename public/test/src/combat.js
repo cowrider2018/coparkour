@@ -161,7 +161,8 @@ export const FIELD = { arena: ARENA, cols: COLS, doors: {} };
  *   ghost   幽靈（半透明的小怪）。血、腳程跟殭屍一樣。`fly`：不受重力，
  *           y 跟 x、z 一樣追、一樣衝、被擊退也不落下（見 FLY）。
  *   knight  騎士（殭屍畫成 1.5 倍高，嘴裡咬著一把雙刃劍）。血 10、腳程 3.6。
- *           衝刺跟小怪一樣一打就取消（不是 `steady`）。
+ *           衝刺跟小怪一樣一打就取消（不是 `steady`）。每 `every` 秒從 `skills`
+ *           裡挑一招（skills.js），夠得到才放。
  *
  * 碰撞的身體一樣大（同一個 PHYS 的圓柱）；外觀（同一件毛、BOSS 畫兩倍大、騎士 1.5 倍）在 monster.js。
  *
@@ -175,7 +176,7 @@ export const KINDS = {
   minion: { name: '殭屍', hp: 4, speed: 3.4, breakAt: BREAK_AT, bite: 1 },
   boss: { name: 'BOSS', hp: 20, speed: 4, breakAt: BREAK_AT, bite: 3, soul: true, steady: true, skills: ['orb', 'leap', 'cone'], every: 3 },
   ghost: { name: '幽靈', hp: 4, speed: 3.4, breakAt: BREAK_AT, bite: 1, fly: true },
-  knight: { name: '騎士', hp: 10, speed: 3.6, breakAt: BREAK_AT, bite: 2 },
+  knight: { name: '騎士', hp: 10, speed: 3.6, breakAt: BREAK_AT, bite: 2, skills: ['whirl'], every: 2.5 },
 };
 
 /**
@@ -296,9 +297,9 @@ const flyY = (m, y) => Math.min(m.field.arena.lid - PHYS.height, Math.max(floorA
 
 /**
  * 走路的怪物在地上走完一步：腳跟著地板走——踏上一級就站上去，走出邊緣就掉下去
- * （跟被擊退一樣是 air，落地才回去追人）。
+ * （跟被擊退一樣是 air，落地才回去追人）。會走的招（skills.js 的 whirl）也用它。
  */
-function settle(m) {
+export function settle(m) {
   const f = floorAt(m);
   if (f >= m.y - 0.05) { m.y = f; return; }
   m.air = true;

@@ -1,5 +1,5 @@
 /* ── test/src/skills.js ───────────────────────────────────────
-   BOSS 的技能：規則。
+   怪物的技能（BOSS、騎士）：規則。
 
    跟 combat.js 一樣只算數字——哪一招、打在哪裡、碰到沒有。畫出預告與球是
    fx.js 與 mode-combat.js 的事，而這一支 node 驗得動（tools/verify-combat.mjs）。
@@ -7,7 +7,10 @@
    ── 循環 ────────────────────────────────────────────────────────
    有技能的那一類（KINDS 的 `skills`）每 `every` 秒從自己的技能裡隨機挑一招。
    挑中的那一刻鎖定玩家的水平位置，之後玩家怎麼跑都不改——預告就是給人躲的。
-   放招的這段時間牠站著不動，不追人；放完才回去追。
+   放招的這段時間牠不追人（站著，或照那一招自己的路線走）；放完才回去追。
+
+   帶 `range` 的招只在玩家離牠這麼近（水平、身體中心到身體中心）的時候挑得到：
+   時間到了、沒有一招夠得到，就接著追，哪一幀夠得到了哪一幀放。
 
    倒數期間牠不會被擊退、受到的傷害減半（combat.js 的 armored）。唯一打斷得了
    的是破防攻擊：被定住的那一刻放到一半的招直接取消，不打。倒數照走，下一招
@@ -25,24 +28,42 @@
      cone  站在原地朝鎖定的方向倒數 1 秒：淺色的 60° 扇形（長 4 個狗高）是範圍，
            亮色的扇形從 BOSS 腳下往外長，長滿的那一刻打那一整片。
 
-   範圍攻擊（leap 的那一圈、cone 的那一片）打的是地面上一個狗高以內：玩家的腳比那還高——
-   跳起來了——就躲得過。
+   騎士的招：
 
-   碰到扣 5 點血（每一招的 `damage`；BOSS 衝刺咬到是 3，見 combat.js 的 KINDS）。
+     whirl  劍迴旋衝刺（離玩家 4.5 公尺以內才放）。牠腳下出現一條往目標延伸的
+            膠囊形紅區（寬是迴旋的直徑、長是衝得到的距離），倒數 0.5 秒；然後
+            朝鎖定的方向衝（初速 16、0.4 秒減到 0，3.2 公尺），衝的同時劍掃兩圈
+            （主角第三擊落地那一下的迴旋，多轉一圈）。衝的每一幀打的是這一幀走過的
+            那一段，外擴迴旋的半徑——整段衝下來就是預告的那一條。
+
+   範圍攻擊（leap 的那一圈、cone 的那一片、whirl 的那一條）打的是地面上一個狗高以內：
+   玩家的腳比那還高——跳起來了——就躲得過。
+
+   碰到扣血：BOSS 的招 5、騎士的 whirl 2（每一招的 `damage`；衝刺咬到的見 combat.js 的 KINDS）。
    打中人的球就消失。玩家無敵的時候（第三段、破防攻擊）碰到不算。
    ------------------------------------------------------------------ */
 
-import { PHYS, arenaGap, supportInfo } from './walk.js';
-import { FIELD, DOG_H, kindOf, busy } from './combat.js';
+import { PHYS, arenaGap, supportInfo, solveXZ } from './walk.js';
+import { FIELD, DOG_H, kindOf, busy, settle } from './combat.js';
 
 /** 每一招的數值。長度一律用狗高量；`damage` 是打中玩家扣幾點血。 */
 export const SKILL = {
   orb: { windup: 0.75, radius: 0.75 * DOG_H, speed: 6, damage: 5 },
   leap: { windup: 1.5, air: 0.6, radius: 2.5 * DOG_H, damage: 5 },
   cone: { windup: 1, radius: 4 * DOG_H, half: Math.PI / 6, damage: 5 },
+  /* 騎士的劍迴旋衝刺：倒數 windup，然後 time 秒裡速度從 speed 線性減到 0（衝 speed·time/2
+     = 3.2 公尺），劍掃的半徑是 radius。time 是 trail.js 的 whirl 那兩圈掃完的 0.40 秒
+     （跟主角第三擊那一圈一樣長，轉兩倍快），衝完剛好轉完。range：離玩家這麼近才放。 */
+  whirl: { windup: 0.5, time: 0.4, speed: 16, radius: 1.75 * DOG_H, range: 4.5, damage: 2 },
   /** 出招後僵直幾秒。 */
   recover: 0.5,
 };
+
+/** 劍迴旋衝刺衝出去 s 秒（0 ≤ s ≤ time）走了多遠：速度從 speed 線性減到 0 的積分。 */
+export const whirlDist = (s) => SKILL.whirl.speed * (s - (s * s) / (2 * SKILL.whirl.time));
+
+/** 劍迴旋衝刺整段衝多遠（預告那一條的長度，不算兩頭的半圓）。 */
+export const WHIRL_LEN = whirlDist(SKILL.whirl.time);
 
 /** 範圍攻擊打得到的高度：腳在打下去的那一塊地板往上這麼高以內才算（一個狗高）。 */
 const REACH_UP = PHYS.height;
@@ -109,14 +130,41 @@ const CAST = {
     m.cast = null;
     return { shape: 'cone', x: m.x, y: m.y, z: m.z, dirX: c.dirX, dirZ: c.dirZ, r: S.radius, half: S.half, dmg: S.damage };
   },
+
+  /* 倒數完沿鎖定的方向衝，走多遠是那一段時間的積分（跟幀長無關，一次永遠 3.2 公尺，
+     被牆擋住就沿著牆滑）。每一幀打的是這一幀走過的那一段（膠囊）；衝完那一幀收招。 */
+  whirl(m) {
+    const c = m.cast, S = SKILL.whirl;
+    const s = Math.min(S.time, c.t - S.windup);
+    if (s <= 0) return null;
+    const step = whirlDist(s) - whirlDist(c.s || 0);
+    c.s = s;
+    const x0 = m.x, z0 = m.z;
+    [m.x, m.z] = solveXZ(m.field.cols, m.x + c.dirX * step, m.z + c.dirZ * step, m.y, m.field.doors);
+    settle(m);
+    if (s >= S.time) m.cast = null;
+    return { shape: 'capsule', x: x0, y: m.y, z: z0, x1: m.x, z1: m.z, r: S.radius, dmg: S.damage };
+  },
 };
+
+/** 點 (px, pz) 到線段 (ax, az)–(bx, bz) 的水平距離。 */
+function segGap(px, pz, ax, az, bx, bz) {
+  const ux = bx - ax, uz = bz - az, L2 = ux * ux + uz * uz;
+  const k = L2 > 1e-12 ? Math.min(1, Math.max(0, ((px - ax) * ux + (pz - az) * uz) / L2)) : 0;
+  return Math.hypot(px - ax - ux * k, pz - az - uz * k);
+}
 
 /**
  * 範圍攻擊打到玩家了嗎。範圍是平面上的形狀，高度是地面往上一個狗高：
  * 形狀碰到身體（身體半徑算進去）、腳又在那個高度以下，才算。
+ *
+ *   circle   圓心 (x, z)、半徑 r。
+ *   cone     尖在 (x, z)、朝 (dirX, dirZ)、半角 half、長 r。
+ *   capsule  (x, z)–(x1, z1) 那一段往外擴 r（劍迴旋衝刺這一幀走過的那一段）。
  */
 export function strikeHits(st, p) {
   if (p.y >= (st.y ?? 0) + REACH_UP) return false;
+  if (st.shape === 'capsule') return segGap(p.x, p.z, st.x, st.z, st.x1, st.z1) <= st.r + PHYS.radius;
   const d = Math.hypot(p.x - st.x, p.z - st.z);
   if (st.shape === 'circle') return d <= st.r + PHYS.radius;
   // 扇形：跟第一段同一種判法——半徑加身體，角度加上身體在那個距離張開的角度。
@@ -128,8 +176,11 @@ export function strikeHits(st, p) {
 }
 
 /**
- * BOSS 的一幀：倒數、挑招、推進放到一半的招。沒有技能的那一類什麼都不做。
- * 要在 monsterStep 之前叫——放招中的怪物 monsterStep 讓牠站著不動。
+ * 有技能的那一類（BOSS、騎士）的一幀：倒數、挑招、推進放到一半的招。沒有技能的那一類
+ * 什麼都不做。要在 monsterStep 之前叫——放招中的怪物 monsterStep 讓牠站著不動（要走的招
+ * 自己在 CAST 裡走）。
+ *
+ * 挑招只從夠得到的招裡挑（`range`，見檔頭）；一招都夠不到的話不重新計時，下一幀再看。
  *
  * @param {() => number} rng 挑招用的亂數（離線驗證給固定的）
  * @returns {object|null} 這一幀打下來的範圍攻擊（給 strikeHits），沒有就是 null
@@ -141,8 +192,12 @@ export function bossStep(m, dt, target, world, rng = Math.random) {
   m.castT -= dt;
   // 衝刺（combat.js 的 LUNGE）打完才挑下一招，兩件事不會疊在一起。
   if (!m.cast && m.castT <= 0 && !busy(m) && !(m.stun > 0) && !m.lunge) {
-    m.castT = k.every;
-    begin(m, k.skills[Math.min(k.skills.length - 1, Math.floor(rng() * k.skills.length))], target);
+    const gap = Math.hypot(target.x - m.x, target.z - m.z);
+    const can = k.skills.filter((s) => !(gap > SKILL[s].range));
+    if (can.length) {
+      m.castT = k.every;
+      begin(m, can[Math.min(can.length - 1, Math.floor(rng() * can.length))], target);
+    }
   }
   if (!m.cast) return null;
   m.cast.t += dt;

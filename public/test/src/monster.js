@@ -51,6 +51,12 @@
            最後那一段飛過去的時候跟衝刺一樣是主角的跳躍動作組（在空中、垂直
            速度照那一條拋物線）；落地俯身緩衝，停一下，然後在僵直裡慢慢站起來。
 
+   ── 騎士放招的動作 ──────────────────────────────────────────────
+     whirl  劍迴旋衝刺：主角第三擊的那一套（moves.js 的 leap 與 slam）。倒數的
+            0.5 秒是主角二段跳起來那一下縮成一團、往右擰到底（照 0.5 秒拉長）；
+            衝的時候是主角落地那一下整隻往左轉，但多轉一圈（兩圈多），劍水平伸在
+            外面掃兩圈——衝 0.4 秒，兩圈也是 0.4 秒轉完；收尾在僵直裡播完。
+
    ── 會飛的漂 ──────────────────────────────────────────────────────
    會飛的（幽靈）一直是空中姿勢、不走路，所以移動的時候另外常駐一套漂（DRIFT）：
    四條腿一起慢慢往後擺、往前回，尾巴同一個相位一起擺——腿往後的時候尾巴往上。
@@ -66,7 +72,7 @@ import { Critter } from './critter.js';
 import { LUNGE, kindOf } from './combat.js';
 import { SKILL } from './skills.js';
 import { PHYS } from './walk.js';
-import { Mover } from './moves.js';
+import { Mover, MOVES as HERO } from './moves.js';
 
 /** 毛色：body 身上、face 鼻子與嘴。 */
 const ZOMBIE = { body: [0.24, 0.80, 0.22], face: [0.08, 0.36, 0.08] };
@@ -219,6 +225,18 @@ const LAND = {
 /** 跳砸站著蓄力的那一段有多長（之後 SKILL.leap.air 秒在飛）。 */
 const LEAP_WIND = SKILL.leap.windup - SKILL.leap.air;
 
+/** 主角落地那一下的迴旋多轉一圈：轉過一圈的那幾格（yaw 過了半圈的）再加一圈。 */
+const twice = (mv) => ({
+  blend: mv.blend,
+  keys: mv.keys.map(([t, pose, ease]) => [t, pose.yaw > Math.PI ? { ...pose, yaw: pose.yaw + 2 * Math.PI } : pose, ease]),
+});
+
+/** 主角的一招照 T 秒重新排時間（關鍵影格等比例壓縮或拉長）。 */
+const retime = (mv, T) => {
+  const k = T / mv.keys[mv.keys.length - 1][0];
+  return { blend: mv.blend, keys: mv.keys.map(([t, pose, ease]) => [t * k, pose, ease]) };
+};
+
 /**
  * 頭跟著主角轉：哪幾段要盯（值是盯多用力）、多快轉過去與放掉（秒）、最多轉多少（弳）。
  */
@@ -228,7 +246,7 @@ const LOOK = { stages: { coneWind: 1, leapWind: 1 }, tau: 0.12, max: 1.0 };
  * 怪物的每一套動作（moves.js 的 MOVES 那一種寫法），鍵就是 Motion 挑的那一段：
  * 衝刺的蓄力、衝、僵直，BOSS 每一招的倒數（…Wind）與出招後的僵直（…Rec）。
  */
-const MOVES = {
+export const MOVES = {
   windup: { blend: 0.05, keys: [[0, {}], [0.16, CROUCH, 'out'], [LUNGE.windup, { ...CROUCH, headPitch: 0.86, drop: 0.10 }, 'inOut']] },
   dash: { blend: 0.05, keys: [[0, {}]] },
   recover: { blend: 0.04, keys: shakeKeys() },
@@ -249,6 +267,8 @@ const MOVES = {
   leapWind: { blend: 0.1, keys: [[0, {}], [0.35, COIL, 'out'], [LEAP_WIND, { ...COIL, drop: 0.38, knee: -1.05 }, 'inOut']] },
   leapAir: { blend: 0.06, keys: [[0, {}]] },
   leapRec: { blend: 0.03, keys: [[0, {}], [0.08, LAND, 'out'], [0.18, LAND, 'lin'], [SKILL.recover, {}, 'inOut']] },
+  whirlWind: retime(HERO.leap, SKILL.whirl.windup),
+  whirlDash: twice(HERO.slam),
 };
 
 /**
@@ -355,6 +375,7 @@ export class Motion {
     if (c) {
       this._skill = c.skill;
       if (c.skill === 'leap' && c.t >= LEAP_WIND) return ['leapAir', c.t - LEAP_WIND];
+      if (c.skill === 'whirl' && c.t >= SKILL.whirl.windup) return ['whirlDash', c.t - SKILL.whirl.windup];
       return MOVES[`${c.skill}Wind`] ? [`${c.skill}Wind`, c.t] : [null, 0];
     }
     if (m.stun > 0 && MOVES[`${this._skill}Rec`]) return [`${this._skill}Rec`, SKILL.recover - m.stun];

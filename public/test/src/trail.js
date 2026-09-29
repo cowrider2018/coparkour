@@ -37,6 +37,8 @@
             FAN.sweep。
      slam   身體中間那個高度的水平面，整整一圈多一點，從右後方開始往左轉
             （moves.js：整隻往左轉一圈多）。
+     whirl  騎士（怪物）的劍迴旋衝刺：跟 slam 一樣，只是多轉一圈、同樣 0.40 秒掃完
+            （monster.js 的 whirlDash）。半徑由 qi.js 照騎士的迴旋縮放。
 
    判定每一幀都照玩家現在的位置與面向算，劍氣也是：這一幀鋪上去的那一截從
    玩家這一幀的身上長出來。已經鋪好的不動——留下來的劍氣不該跟著人跑。
@@ -84,6 +86,7 @@ export const TRAILS = {
   slash: { t0: 0.05, t1: 0.17, from: -SLASH_HALF, to: SLASH_HALF, ease: 'strike', life: 0.39, taper: true },
   rise: { t0: 0.04, t1: 0.17, from: 0, to: FAN.sweep, ease: 'strike', life: 0.39, taper: true },
   slam: { t0: 0, t1: 0.40, from: -1.0 - Math.PI / 2, to: -1.0 - Math.PI / 2 + TAU + 0.35, ease: 'out2', life: 0.62, taper: false },
+  whirl: { t0: 0, t1: 0.40, from: -1.0 - Math.PI / 2, to: -1.0 - Math.PI / 2 + 2 * TAU + 0.35, ease: 'out2', life: 0.62, taper: false },
 };
 
 /** 進入那一段 τ 秒時，劍氣掃到哪個角度（還沒開始是 from、掃完是 to）。 */
