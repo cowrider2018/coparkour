@@ -31,7 +31,7 @@
 
    騎士的招：
 
-     whirl  劍迴旋衝刺（離玩家 4.5 公尺以內才放）。牠腳下出現一條往目標延伸的
+     whirl  劍迴旋衝刺（離玩家 3.2 公尺以內才放）。牠腳下出現一條往目標延伸的
             膠囊形紅區（寬是迴旋的直徑、長是衝得到的距離），倒數 0.5 秒；然後
             朝鎖定的方向衝（初速 16、0.4 秒減到 0，3.2 公尺），衝的同時劍掃兩圈
             （主角第三擊落地那一下的迴旋，多轉一圈）。衝的每一幀打的是這一幀走過的
@@ -59,7 +59,7 @@ export const SKILL = {
   /* 騎士的劍迴旋衝刺：倒數 windup，然後 time 秒裡速度從 speed 線性減到 0（衝 speed·time/2
      = 3.2 公尺），劍掃的半徑是 radius。time 是 trail.js 的 whirl 那兩圈掃完的 0.40 秒
      （跟主角第三擊那一圈一樣長，轉兩倍快），衝完剛好轉完。range：離玩家這麼近才放。 */
-  whirl: { windup: 0.5, time: 0.4, speed: 16, radius: 1.75 * DOG_H, range: 4.5, damage: 2 },
+  whirl: { windup: 0.5, time: 0.4, speed: 16, radius: 1.75 * DOG_H, range: 3.2, damage: 2 },
   /* 騎士的跳砍：倒數 windup，然後 air 秒跳一道最高 hop 公尺的弧線落下、劈那一條（長 len、
      寬 width，從落點往前）。range：離玩家這麼近才放。 */
   cleave: { windup: 0.5, air: 0.4, hop: 1.2, len: 2.2 * DOG_H, width: 0.8 * DOG_H, range: 8, damage: 3 },
