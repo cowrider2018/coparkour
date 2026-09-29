@@ -18,13 +18,14 @@
      1 BOSS          中線上。
      2 殭屍 + 1 BOSS BOSS 在中線上，殭屍在左右各 4 公尺（預設）。
      3 幽靈          跟 3 殭屍同樣的站位。
+     1 騎士          中線上。
 
    ── 怪物 ────────────────────────────────────────────────────────
    一直追著玩家跑。身體跟玩家一樣大（同一個 PHYS 的圓柱）。碰到玩家不再
    有事——傷害是一次一次的攻擊（衝刺，見 LUNGE）：追到 LUNGE.range 以內，
    站著發呆（蓄力）0.25 秒，然後朝那時鎖定的方向衝一下（速度 16、0.25 秒內
    減到 0），衝完僵直 0.5 秒才回去追。只有衝的那 0.25 秒裡碰到玩家，玩家
-   才被咬到、扣血（小怪 1、BOSS 3，見 KINDS 的 `bite` 與下面的「玩家的血」）。
+   才被咬到、扣血（小怪 1、騎士 2、BOSS 3，見 KINDS 的 `bite` 與下面的「玩家的血」）。
 
    攻擊中（attacking：放招、或衝刺的蓄力加衝，不含之後的僵直）被打會怎樣看類別
    （KINDS 的 `steady`）：小怪一打就取消；BOSS 不會被打斷——跟放招的倒數一樣
@@ -57,7 +58,7 @@
 
    ── 玩家的血 ────────────────────────────────────────────────────
    一開始 LIFE.start（3）顆心。被咬、被 BOSS 的招打到都扣血，扣多少看是哪一下
-   （小怪衝刺 1、BOSS 衝刺 3、BOSS 的其他招 5，見 KINDS 的 `bite` 與 skills.js
+   （小怪衝刺 1、騎士衝刺 2、BOSS 衝刺 3、BOSS 的其他招 5，見 KINDS 的 `bite` 與 skills.js
    的 SKILL）；扣到 0 才倒下。挨了一下之後 LIFE.guard 秒不再被打中（見 harm）。
    BOSS 死掉會掉出一顆靈魂（白球），撿起來最大血量 +1（見 SOUL）。不在戰鬥中的
    時候（由模式決定，見 regen）很快回血回到最大血量。
@@ -112,6 +113,7 @@ export const MODES = [
   { id: 'boss', name: '1 BOSS', hint: '一隻兩倍大的 BOSS。', monsters: [post('boss', 0)] },
   { id: 'mixed', name: '2 殭屍 + 1 BOSS', hint: '大隻的 BOSS 在中間，兩隻殭屍在左右。', monsters: [post('boss', 0), post('minion', -4), post('minion', 4)] },
   { id: 'ghosts', name: '3 幽靈', hint: '三隻半透明、會飛的幽靈。', monsters: [post('ghost', -4), post('ghost', 0), post('ghost', 4)] },
+  { id: 'knight', name: '1 騎士', hint: '一隻咬著雙刃劍、1.5 倍高的騎士。', monsters: [post('knight', 0)] },
 ];
 
 /** 一開始是哪一個陣容。 */
@@ -158,10 +160,12 @@ export const FIELD = { arena: ARENA, cols: COLS, doors: {} };
  *           衝刺（蓄力與衝）不會被打斷（見 armored）。
  *   ghost   幽靈（半透明的小怪）。血、腳程跟殭屍一樣。`fly`：不受重力，
  *           y 跟 x、z 一樣追、一樣衝、被擊退也不落下（見 FLY）。
+ *   knight  騎士（殭屍畫成 1.5 倍高，嘴裡咬著一把雙刃劍）。血 10、腳程 3.6。
+ *           衝刺跟小怪一樣一打就取消（不是 `steady`）。
  *
- * 碰撞的身體一樣大（同一個 PHYS 的圓柱）；外觀（同一件毛、BOSS 畫兩倍大）在 monster.js。
+ * 碰撞的身體一樣大（同一個 PHYS 的圓柱）；外觀（同一件毛、BOSS 畫兩倍大、騎士 1.5 倍）在 monster.js。
  *
- * `bite` 是衝刺咬到玩家扣幾點血：小怪 1、BOSS 3。`soul`：死掉的時候掉出一顆靈魂（見 SOUL）。
+ * `bite` 是衝刺咬到玩家扣幾點血：小怪 1、騎士 2、BOSS 3。`soul`：死掉的時候掉出一顆靈魂（見 SOUL）。
  *
  * `breakAt` 是破防門檻。現在每一類都是 BREAK_AT，但它是逐類登記的——哪天某一類
  * 要比較硬，改那一筆就好。
@@ -171,6 +175,7 @@ export const KINDS = {
   minion: { name: '殭屍', hp: 4, speed: 3.4, breakAt: BREAK_AT, bite: 1 },
   boss: { name: 'BOSS', hp: 20, speed: 4, breakAt: BREAK_AT, bite: 3, soul: true, steady: true, skills: ['orb', 'leap', 'cone'], every: 3 },
   ghost: { name: '幽靈', hp: 4, speed: 3.4, breakAt: BREAK_AT, bite: 1, fly: true },
+  knight: { name: '騎士', hp: 10, speed: 3.6, breakAt: BREAK_AT, bite: 2 },
 };
 
 /**

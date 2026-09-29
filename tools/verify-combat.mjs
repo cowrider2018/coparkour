@@ -36,7 +36,7 @@
                     瞬間牠被往突進的方向推開（只有水平）；整招無敵；在空中也
                     按得出來——被第二段打破防的那一刻玩家就在空中，接得上。
     13. 怪物不疊    三隻追同一個站著不動的人，身體一直不重疊、不出牆。
-    14. 陣容        四種陣容：3 殭屍、1 BOSS、2 殭屍 + 1 BOSS、3 幽靈，預設是第三種；
+    14. 陣容        五種陣容：3 殭屍、1 BOSS、2 殭屍 + 1 BOSS、3 幽靈、1 騎士，預設是第三種；
                     每一隻都在中線 1/3 那條橫線上、面向中心，不疊在一起。
     15. BOSS 放招   腳程 4；每 3 秒挑一招，挑的那一刻鎖定玩家的位置，放招中站著
                     不動；被擊退、定住、推開就打斷。球：倒數 0.75 秒、半徑 0.75
@@ -58,7 +58,7 @@
                     被擊退落回台上；走出台緣會掉下去、落在底下的地板；踏得上
                     一級台階；關著的門擋住、開著的不擋；圓的黑牆量得出球道多長、
                     球飛到它就消失；跳砸落在目標腳下那一塊的頂上，打的是那一層。
-    19. 玩家的血    一開始 3 點；小怪咬 1、BOSS 咬 3、BOSS 的三招各 5（球與範圍攻擊
+    19. 玩家的血    一開始 3 點；小怪咬 1、騎士咬 2、BOSS 咬 3、BOSS 的三招各 5（球與範圍攻擊
                     身上帶著這個數）；扣到 0 為止、不會變負的；挨一下之後 1 秒內
                     不再扣，所以一次衝刺從頭衝到尾只扣一次。撿到靈魂最大血量 +1；
                     倒下補滿到最大血量；不在戰鬥中每 0.3 秒回一顆、回到滿為止。
@@ -90,7 +90,7 @@ import {
 import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
 import { DUST, dustOf, dustFade, QUAKE, quakeBands, quakeFade } from '../public/test/src/dust.js';
-import { Motion, bloodOf } from '../public/test/src/monster.js';
+import { Motion, bloodOf, sizeOf } from '../public/test/src/monster.js';
 import { TRAILS, PIECE, BANDS, sweepAt, fadeAt, sideAt, qiAt, along, hullOf } from '../public/test/src/trail.js';
 import { bladeAt } from '../public/test/src/trail.js';
 import { BLEED, SPLAT, STYLE, dropSize, dropCount, volumeOf, sizeRange, speedOf, hitFrame, pushFrame, spurtOf, floorUnder, splatScale, bleedStep } from '../public/test/src/bleed.js';
@@ -399,6 +399,8 @@ console.log('9. 打一整套');
 console.log('10. 名冊與血');
 {
   ok(KINDS.minion.hp === 4 && KINDS.boss.hp === 20, '名冊裡兩類：小怪血 4、BOSS 血 20');
+  ok(KINDS.knight.hp === 10 && KINDS.knight.speed === 3.6 && !KINDS.knight.steady && !KINDS.knight.fly && sizeOf('knight') === 1.5,
+    '騎士：血 10、腳程 3.6、衝刺打得斷、不會飛、畫成 1.5 倍高');
   ok(SPAWN.monsters.map((s) => makeMonster(s)).every((q) => q.hp === KINDS[q.kind].hp), '每一隻生出來是自己那一類的滿血');
   const mm = makeMonster(SPAWN.monsters[1]);
   hurt(mm, DAMAGE.slash);
@@ -623,8 +625,8 @@ console.log('13. 怪物不疊');
 console.log('14. 陣容');
 {
   const tally = (md) => md.monsters.reduce((o, s) => ({ ...o, [s.kind]: (o[s.kind] || 0) + 1 }), {});
-  const want = { minions: { minion: 3 }, boss: { boss: 1 }, mixed: { boss: 1, minion: 2 }, ghosts: { ghost: 3 } };
-  ok(MODES.map((md) => md.id).join() === 'minions,boss,mixed,ghosts', '四種陣容，面板上依序是 3 殭屍、1 BOSS、2 殭屍 + 1 BOSS、3 幽靈');
+  const want = { minions: { minion: 3 }, boss: { boss: 1 }, mixed: { boss: 1, minion: 2 }, ghosts: { ghost: 3 }, knight: { knight: 1 } };
+  ok(MODES.map((md) => md.id).join() === 'minions,boss,mixed,ghosts,knight', '五種陣容，面板上依序是 3 殭屍、1 BOSS、2 殭屍 + 1 BOSS、3 幽靈、1 騎士');
   for (const md of MODES) ok(JSON.stringify(tally(md)) === JSON.stringify(want[md.id]), `${md.name}：${JSON.stringify(tally(md))}`);
   ok(DEFAULT_MODE === 'mixed' && SPAWN.monsters === MODES[2].monsters, '預設是 2 殭屍 + 1 BOSS');
   const cx = (ARENA.x0 + ARENA.x1) / 2, cz = (ARENA.z0 + ARENA.z1) / 2;
@@ -1129,7 +1131,7 @@ console.log('19. 玩家的血');
   const p = {};
   resetLife(p);
   ok(LIFE.start === 3 && p.hp === 3 && p.guard === 0, '一開始 3 點血');
-  ok(KINDS.minion.bite === 1 && KINDS.ghost.bite === 1 && KINDS.boss.bite === 3, '小怪咬 1、BOSS 咬 3');
+  ok(KINDS.minion.bite === 1 && KINDS.ghost.bite === 1 && KINDS.knight.bite === 2 && KINDS.boss.bite === 3, '小怪咬 1、騎士咬 2、BOSS 咬 3');
   ok(['orb', 'leap', 'cone'].every((k) => SKILL[k].damage === 5), 'BOSS 的三招各 5');
 
   ok(harm(p, KINDS.minion.bite) && p.hp === 2 && p.guard === LIFE.guard, '被小怪咬到：3 → 2，開 guard');
