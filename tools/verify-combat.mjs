@@ -84,11 +84,10 @@
                     整段衝下來打得到的地方。倒數是 whirlWind、衝是 whirlDash，比主角
                     第三擊多轉一圈，劍光也是兩圈。
     25. 騎士的跳砍  離玩家 8 公尺以內才放；長條的正中間是鎖定的那一點、落點在它前面半條
-                    （比半條還近就原地跳）；倒數 0.25 秒站著；然後跳一道最高 1.2 公尺的弧線
-                    落在落點上、劈一下、扣 3；連跳三次、每一跳重新鎖定玩家，第三跳落地才
-                    僵直 0.5 秒；放招中打不退。長條（加上身體）裡的劈得到、外面的劈不到，
-                    跳起來躲得過，倒數裡跑開就劈空；落點在台上就落在台上、劈那一層。
-                    動作是 cleaveWind → cleaveAir（三次）→ cleaveRec。
+                    （比半條還近就原地跳）；倒數 0.5 秒站著；然後跳一道最高 1.2 公尺的弧線
+                    落在落點上、劈一下、扣 3，僵直 0.5 秒；放招中打不退。長條（加上身體）
+                    裡的劈得到、外面的劈不到，跳起來躲得過，倒數裡跑開就劈空；落點在台上
+                    就落在台上、劈那一層。動作是 cleaveWind → cleaveAir → cleaveRec。
     26. 頭盔        騎士與 BOSS 戴、小怪與幽靈不戴。量在狗頭上（頭骨座標、靜置姿勢）：
                     頭皮與眼睛除了底下的開口與正面的切口，全部包在盔殼內層裡；面罩整片
                     在盔殼的墨線外殼外面、下緣高過吻部；兩隻眼睛各對著一個洞；臉往鏡頭
@@ -1684,7 +1683,7 @@ console.log('25. 騎士的跳砍');
 {
   const S = SKILL.cleave;
   ok(KINDS.knight.skills.includes('cleave'), '騎士會跳砍');
-  ok(S.windup === 0.25 && S.hops === 3 && S.damage === 3 && S.range === 8, '跳砍：每一跳倒數 0.25 秒、連跳三次、扣 3、離玩家 8 公尺以內才放');
+  ok(S.windup === 0.5 && S.damage === 3 && S.range === 8, '跳砍：倒數 0.5 秒、扣 3、離玩家 8 公尺以內才放');
   const keep = KINDS.knight.skills;
   KINDS.knight.skills = ['cleave'];
 
@@ -1694,16 +1693,15 @@ console.log('25. 騎士的跳砍');
     const w = makeWorld();
     const q = body(px, pz);
     m.castT = 0;
-    const out = { m, q, strikes: [], strikeAt: [], strikeQ: [], windStill: true, top: 0, stages: new Set(), armor: true, casts: [] };
+    const out = { m, q, strikes: [], windStill: true, top: 0, stages: new Set(), armor: true, cast: null };
     const mo = new Motion();
     let t = 0;
-    while (t < 5) {
+    while (t < 3) {
       const had = !!m.cast;
       const st = bossStep(m, dt, q, w, () => 0);
-      // 每一跳鎖定的那一份：開始那一幀，與落地重新鎖定（倒數歸 0）的那一幀。
-      if (m.cast && (!had || m.cast.t === 0)) out.casts.push({ ...m.cast });
-      if (st) { out.strikes.push(st); out.strikeAt.push(t + dt); out.strikeQ.push({ ...q }); }
-      if (m.cast && m.cast.t < S.windup && (m.x !== m.cast.x0 || m.z !== m.cast.z0 || m.y !== m.cast.y0)) out.windStill = false;
+      if (m.cast && !out.cast) out.cast = { ...m.cast };
+      if (st) out.strikes.push(st);
+      if (m.cast && m.cast.t < S.windup && (m.x !== 0 || m.z !== 0 || m.y !== 0)) out.windStill = false;
       if (m.cast && !(attacking(m) && armored(m))) out.armor = false;
       out.top = Math.max(out.top, m.y);
       if (m.cast) out.stages.add(mo._stage(m)[0]);
@@ -1713,36 +1711,24 @@ console.log('25. 騎士的跳砍');
       t += dt;
       if (out.endAt) break;
     }
-    out.cast = out.casts[0];
     return out;
   };
 
   const a = cleave(0, 5);
   const land = 5 - S.len / 2;
-  const hopT = S.windup + S.air;
   ok(near(a.cast.lx, 0) && near(a.cast.lz, land) && a.cast.ly === 0, `落點在鎖定那一點前面半條（z = ${land.toFixed(2)}），長條的正中間就是人`);
-  ok(a.windStill, `每一跳倒數的 ${S.windup} 秒站著不動`);
-  ok(a.armor, '放招中（三跳之間也是）是攻擊中、打不退（armored）');
+  ok(a.windStill, '倒數的 0.5 秒站著不動');
+  ok(a.armor, '放招中是攻擊中、打不退（armored）');
   ok(near(a.top, S.hop, 0.02), `飛的時候跳到 ${a.top.toFixed(2)} 公尺高（弧線最高 ${S.hop}）`);
-  ok(a.casts.length === S.hops && a.strikes.length === S.hops && a.strikes.every((st) => st.shape === 'strip' && st.dmg === S.damage),
-    `連跳 ${S.hops} 次，每一跳落地劈一下（扣 ${S.damage}）`);
-  ok(a.strikeAt.every((t, i) => near(t, (i + 1) * hopT, 1.5 * DT)), `劈在 ${a.strikeAt.map((t) => t.toFixed(2)).join('、')} 秒（每 ${hopT.toFixed(2)} 秒一跳）`);
-  ok(near(a.endAt, S.hops * hopT, 1.5 * DT) && near(a.m.x, 0) && near(a.m.z, land) && a.m.y === 0 && a.m.grounded,
-    `${a.endAt.toFixed(2)} 秒第三跳落地、站在地上（人沒動，後兩跳原地跳）`);
-  ok(a.stun === SKILL.recover && a.rec === 'cleaveRec', `第三跳落地之後才僵直 ${SKILL.recover} 秒，播劈到底的收尾`);
-  ok([...a.stages].join() === 'cleaveWind,cleaveAir', `動作：${[...a.stages].join(' → ')}（${S.hops} 次）→ ${a.rec}`);
+  ok(near(a.endAt, S.windup + S.air, 1.5 * DT) && near(a.m.x, 0) && near(a.m.z, land) && a.m.y === 0 && a.m.grounded,
+    `${a.endAt.toFixed(2)} 秒落在落點上、站在地上`);
+  ok(a.strikes.length === 1 && a.strikes[0].shape === 'strip' && a.strikes[0].dmg === S.damage, `落地那一刻劈一下（只有一下、扣 ${S.damage}）`);
+  ok(a.stun === SKILL.recover && a.rec === 'cleaveRec', `落地之後僵直 ${SKILL.recover} 秒，播劈到底的收尾`);
+  ok([...a.stages].join() === 'cleaveWind,cleaveAir', `動作：${[...a.stages].join(' → ')} → ${a.rec}`);
 
   // 比半條還近：原地跳起來劈，長條從牠腳下起。
   const b = cleave(0, S.len / 4);
   ok(near(b.cast.lz, 0) && near(b.m.z, 0), '人比半條還近：原地跳起來劈');
-
-  // 每一跳重新鎖定：人每一跳倒數的時候往旁邊跑，後一跳的落點跟著人現在的位置。
-  {
-    const d = cleave(0, 5, DT, [3, 0]);
-    const aimed = d.casts.every((c) => near(Math.hypot(c.tx - c.x0, c.tz - c.z0) > 1e-6 ? Math.atan2(c.tx - c.x0, c.tz - c.z0) : 0, Math.atan2(c.dirX, c.dirZ)));
-    ok(d.casts.length === S.hops && aimed && d.casts[1].tx > d.casts[0].tx + 0.5 && d.casts[2].tx > d.casts[1].tx + 0.5,
-      `每一跳重新鎖定人現在的位置（鎖在 x = ${d.casts.map((c) => c.tx.toFixed(2)).join('、')}）`);
-  }
 
   // 打不打得到：長條（落點往前 len、寬 width）加上身體。
   const st = a.strikes[0], r = PHYS.radius, half = S.width / 2;
@@ -1762,7 +1748,7 @@ console.log('25. 騎士的跳砍');
 
   // 倒數裡往旁邊跑開就躲得掉：預告鎖在倒數開始的那一刻。
   const c = cleave(0, 5, DT, [3, 0]);
-  ok(near(c.cast.lx, 0) && !strikeHits(c.strikes[0], c.strikeQ[0]), `倒數裡往旁邊跑 ${(3 * S.windup).toFixed(1)} 公尺以上：劈空`);
+  ok(near(c.cast.lx, 0) && !strikeHits(c.strikes[0], c.q), `倒數裡往旁邊跑 ${(3 * S.windup).toFixed(1)} 公尺以上：劈空`);
 
   // 太遠不放。
   {

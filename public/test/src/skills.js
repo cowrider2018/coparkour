@@ -16,7 +16,7 @@
    的是破防攻擊：被定住的那一刻放到一半的招直接取消，不打。倒數照走，下一招
    還是從上一招開始算起的 `every` 秒後。
 
-   出招之後（球射出去、跳砸落地、扇形打下去、跳砍第三跳落地）僵直 SKILL.recover 秒：站著不動、
+   出招之後（球射出去、跳砸落地、扇形打下去）僵直 SKILL.recover 秒：站著不動、
    也不追人，而且跟平常一樣打得退、傷害照算——這是反擊的空檔。被破防攻擊打斷
    的不算出招，沒有僵直。
 
@@ -36,11 +36,10 @@
             朝鎖定的方向衝（初速 16、0.4 秒減到 0，3.2 公尺），衝的同時劍掃兩圈
             （主角第三擊落地那一下的迴旋，多轉一圈）。衝的每一幀打的是這一幀走過的
             那一段，外擴迴旋的半徑——整段衝下來就是預告的那一條。
-     cleave 跳砍（離玩家 8 公尺以內才放），連跳三次。每一跳：玩家腳下出現一條紅色
-            長條（沿著騎士往玩家的方向，玩家在正中間），倒數 0.25 秒；然後騎士跳起來、
-            0.4 秒沿一道弧線（最高 1.2 公尺）落在長條靠牠的那一頭，落地那一刻劍往前
-            劈下，打那一整條。玩家離得比半條還近的話，牠原地跳起來劈（長條從牠腳下起）。
-            落地之後馬上重新鎖定玩家現在的位置、倒數下一跳；第三跳落地才僵直。
+     cleave 跳砍（離玩家 8 公尺以內才放）。玩家腳下出現一條紅色長條（沿著騎士往
+            玩家的方向，玩家在正中間），倒數 0.5 秒；然後騎士跳起來、0.4 秒沿一道
+            弧線（最高 1.2 公尺）落在長條靠牠的那一頭，落地那一刻劍往前劈下，打
+            那一整條。玩家離得比半條還近的話，牠原地跳起來劈（長條從牠腳下起）。
 
    範圍攻擊（leap 的那一圈、cone 的那一片、whirl 與 cleave 的那一條）打的是地面上一個狗高以內：
    玩家的腳比那還高——跳起來了——就躲得過。
@@ -62,9 +61,8 @@ export const SKILL = {
      （跟主角第三擊那一圈一樣長，轉兩倍快），衝完剛好轉完。range：離玩家這麼近才放。 */
   whirl: { windup: 0.5, time: 0.4, speed: 16, radius: 1.75 * DOG_H, range: 3.2, damage: 2 },
   /* 騎士的跳砍：倒數 windup，然後 air 秒跳一道最高 hop 公尺的弧線落下、劈那一條（長 len、
-     寬 width，從落點往前）；這樣連跳 hops 次，每一跳各自重新鎖定。range：離玩家這麼近
-     才放（只看第一跳）。 */
-  cleave: { windup: 0.25, air: 0.4, hop: 1.2, hops: 3, len: 2.2 * DOG_H, width: 0.8 * DOG_H, range: 8, damage: 3 },
+     寬 width，從落點往前）。range：離玩家這麼近才放。 */
+  cleave: { windup: 0.5, air: 0.4, hop: 1.2, len: 2.2 * DOG_H, width: 0.8 * DOG_H, range: 8, damage: 3 },
   /** 出招後僵直幾秒。 */
   recover: 0.5,
 };
@@ -89,27 +87,17 @@ export function makeWorld(field = FIELD) {
 /* 不能開始放招的狀態（combat.js 的 busy）。倒數中不會被擊退（見 armored），
    所以放到一半會碰上的只有「被定住」——破防攻擊打斷得了。 */
 
-/** 開始一招。 */
+/** 開始一招：鎖定玩家現在的水平位置，面向它，停下來。 */
 function begin(m, skill, target) {
-  m.cast = { skill };
-  lock(m, target);
-}
-
-/**
- * 鎖定玩家現在的水平位置，面向它，停下來，倒數從 0 起。開始一招的時候鎖一次；
- * 連跳的跳砍每一跳落地再鎖一次。
- */
-function lock(m, target) {
-  const c = m.cast;
   const dx = target.x - m.x, dz = target.z - m.z;
   const d = Math.hypot(dx, dz);
   const [dirX, dirZ] = d > 1e-6 ? [dx / d, dz / d] : [m.aimX, m.aimZ];
   /* 目標點的地板：玩家可能在空中，跳砸落在牠腳下那一塊的頂上。 */
   const ty = supportInfo(m.field.cols, target.x, target.z, target.y).y;
-  Object.assign(c, { t: 0, dirX, dirZ, tx: target.x, tz: target.z, ty, x0: m.x, y0: m.y, z0: m.z });
+  m.cast = { skill, t: 0, dirX, dirZ, tx: target.x, tz: target.z, ty, x0: m.x, y0: m.y, z0: m.z };
   m.aimX = dirX; m.aimZ = dirZ;
   m.vx = 0; m.vz = 0;
-  if (c.skill === 'cleave') aimCleave(m, d);
+  if (skill === 'cleave') aimCleave(m, d);
 }
 
 /**
@@ -165,9 +153,8 @@ const CAST = {
   },
 
   /* 倒數的時候站著；之後 air 秒沿直線飛向落點、高度是一條最高 hop 的拋物線（疊在起點與
-     落點的高低差上）。飛完那一幀落在落點上，劈那一條；還沒跳滿 hops 次就重新鎖定
-     玩家、倒數下一跳（c.n 是跳完了幾次）。 */
-  cleave(m, world, target) {
+     落點的高低差上）。飛完那一幀落在落點上，劈那一條。 */
+  cleave(m) {
     const c = m.cast, S = SKILL.cleave;
     const s = (c.t - S.windup) / S.air;
     if (s < 0) return null;
@@ -180,11 +167,8 @@ const CAST = {
     }
     m.x = c.lx; m.z = c.lz; m.y = c.ly;
     m.grounded = true;
-    const hit = { shape: 'strip', x: c.lx, y: c.ly, z: c.lz, dirX: c.dirX, dirZ: c.dirZ, len: S.len, w: S.width, dmg: S.damage };
-    c.n = (c.n || 0) + 1;
-    if (c.n < S.hops) lock(m, target);
-    else m.cast = null;
-    return hit;
+    m.cast = null;
+    return { shape: 'strip', x: c.lx, y: c.ly, z: c.lz, dirX: c.dirX, dirZ: c.dirZ, len: S.len, w: S.width, dmg: S.damage };
   },
 
   /* 倒數完沿鎖定的方向衝，走多遠是那一段時間的積分（跟幀長無關，一次永遠 3.2 公尺，
@@ -265,7 +249,7 @@ export function bossStep(m, dt, target, world, rng = Math.random) {
   }
   if (!m.cast) return null;
   m.cast.t += dt;
-  const hit = CAST[m.cast.skill](m, world, target) || null;
+  const hit = CAST[m.cast.skill](m, world) || null;
   if (!m.cast) m.stun = SKILL.recover;                 // 出完了：僵直
   return hit;
 }
