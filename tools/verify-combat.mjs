@@ -90,6 +90,7 @@ import {
 import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
 import { DUST, dustOf, dustFade, QUAKE, quakeBands, quakeFade } from '../public/test/src/dust.js';
+import { Motion } from '../public/test/src/monster.js';
 import { TRAILS, PIECE, BANDS, sweepAt, fadeAt, sideAt, qiAt, along, hullOf } from '../public/test/src/trail.js';
 
 let fails = 0;
@@ -985,6 +986,41 @@ console.log('17. 幽靈');
       hit = breakContact(p, m);
     }
     ok(hit, '被第三段往上砸、正在飛的幽靈：破防攻擊碰得到');
+  }
+  /* 飛的時候常駐的漂（monster.js 的 Motion）：四條腿一直往後、慢慢擺，尾巴同一個
+     相位；停下來淡掉；不會飛的不漂；衝刺的蓄力讓給蓄力那一套。 */
+  {
+    const fly = (kind, speed) => {
+      const mo = new Motion(), m = makeMonster({ kind, x: 0, z: 0, yaw: 0 });
+      m.vz = speed; m.grounded = false;
+      return { mo, m, go: (secs) => { const out = []; for (let t = 0; t < secs - 1e-9; t += DT) out.push({ ...mo.step(DT, m, null).move }); return out; } };
+    };
+    const g = fly('ghost', KINDS.ghost.speed);
+    g.go(3);
+    const rec = g.go(5);
+    const phase = (p) => (p.front - 0.35) / 0.25;
+    let full = true, back = true, sync = true, ups = 0;
+    rec.forEach((p, i) => {
+      if (Math.abs(p.legs - 1) > 1e-3) full = false;
+      if (!(p.front > 0 && p.hind > 0)) back = false;
+      const s = phase(p);
+      if (Math.abs((p.hind - 0.75) / 0.25 - s) > 1e-3 || Math.abs((p.tailPitch - 0.10) / 0.30 - s) > 1e-3) sync = false;
+      if (i && phase(rec[i - 1]) < 0 && s >= 0) ups++;
+    });
+    ok(full && back, '幽靈全速飛：四條腿整個換成漂的姿勢，一直是往後的');
+    ok(sync, '前腿、後腿、膝蓋、尾巴同一個相位');
+    ok(ups >= 2 && ups <= 4, `慢慢擺：5 秒擺 ${ups} 下`);
+    g.m.vz = 0;
+    const still = g.go(1.5).pop();
+    ok(still.legs < 0.02, `停下來 1.5 秒：漂淡到 ${still.legs.toFixed(3)}`);
+    const z = fly('minion', KINDS.minion.speed);
+    ok(z.go(2).every((p) => p.legs === 0 && p.tailPitch === 0), '殭屍（不會飛）走路不漂');
+    const w = fly('ghost', KINDS.ghost.speed);
+    w.go(2);
+    w.m.lunge = { t: 0 };
+    let last;
+    for (let t = 0; t < LUNGE.windup - DT / 2; t += DT) { last = w.mo.step(DT, w.m, null).move; w.m.lunge.t += DT; }
+    ok(Math.abs(last.legs - 0.8) < 0.01, `衝刺蓄力到最後：腿是蓄力那一套的 ${last.legs.toFixed(3)}，漂已經收掉`);
   }
 }
 

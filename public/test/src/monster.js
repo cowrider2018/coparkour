@@ -50,6 +50,12 @@
            最後那一段飛過去的時候跟衝刺一樣是主角的跳躍動作組（在空中、垂直
            速度照那一條拋物線）；落地俯身緩衝，停一下，然後在僵直裡慢慢站起來。
 
+   ── 會飛的漂 ──────────────────────────────────────────────────────
+   會飛的（幽靈）一直是空中姿勢、不走路，所以移動的時候另外常駐一套漂（DRIFT）：
+   四條腿一起慢慢往後擺、往前回，尾巴同一個相位一起擺——腿往後的時候尾巴往上。
+   力道跟著牠飛得多快（速度 / 腳程）追過去，停下來就淡掉，只剩空中姿勢。
+   衝刺、放招、僵直那幾段（還有收尾沒播完的）不漂，讓給那一套動作。
+
    「盯著主角」不只是姿勢裡把頭壓低：放招鎖定的是倒數開始那一刻的方向，主角
    之後還在跑，所以頭另外跟著主角現在的位置左右轉（LOOK，最多 LOOK.max）。
    ------------------------------------------------------------------ */
@@ -234,6 +240,17 @@ const MOVES = {
   leapRec: { blend: 0.03, keys: [[0, {}], [0.08, LAND, 'out'], [0.18, LAND, 'lin'], [SKILL.recover, {}, 'inOut']] },
 };
 
+/**
+ * 會飛的移動時的漂：每一條 [中心, 幅度]（弳；腿正值往後、尾巴正值往上），四條腿
+ * 與尾巴同一個相位。hz 一秒擺幾下（慢）；tau 力道追速度的時間常數（秒）；yield 讓給
+ * 別的動作的時候收得多快（秒）——衝刺的蓄力只有 LUNGE.windup，要在那裡面收乾淨。
+ */
+const DRIFT = {
+  front: [0.35, 0.25], hind: [0.75, 0.25], knee: [0.20, 0.10], tailPitch: [0.10, 0.30],
+  hz: 0.6, tau: 0.25, yield: 0.05,
+};
+const DRIFT_LEGS = ['front', 'hind', 'knee'];
+
 /** 衝的時候畫得跳多高：體型（sizeOf）的這麼多倍，公尺。 */
 const DASH_HOP = 0.25;
 
@@ -249,7 +266,11 @@ export class Motion {
     this._skill = null;
     /** 頭跟著主角轉的那一份現在有多少（0～1，追 LOOK.stages 給的目標）。 */
     this._look = 0;
+    /** 漂的力道（0～1，追速度）與擺到哪（弳）。 */
+    this._drift = 0;
+    this._swing = 0;
     this._pose = {};
+    this._driftPose = {};
     this._out = { move: null, lift: 0, air: false, vy: null };
   }
 
@@ -267,8 +288,31 @@ export class Motion {
     const [stage, t] = this._stage(m);
     if (stage === 'dash') this._hop(o, m, t);
     if (stage === 'leapAir') this._fly(o, m, t);
-    o.move = this._lookAt(dt, stage, m, player, this.mover.step(dt, stage, t));
+    const move = this.mover.step(dt, stage, t);
+    o.move = this._lookAt(dt, stage, m, player, this._float(dt, stage, m, move));
     return o;
+  }
+
+  /**
+   * 會飛的漂（DRIFT）疊到播放器的那一份上：尾巴是加的；腿跟 moveOverlay 一樣是
+   * 「換成那個姿勢多少」，所以跟那一招自己的 legs 合成一份——那一招換多少先算，
+   * 剩下的才是漂的。播放器的那一份不能改，寫在自己的一份上。
+   */
+  _float(dt, stage, m, move) {
+    const K = kindOf(m);
+    const free = !stage && !this.mover.name;
+    const goal = K.fly && free ? Math.min(1, Math.hypot(m.vx, m.vy, m.vz) / K.speed) : 0;
+    this._drift += (goal - this._drift) * (1 - Math.exp(-dt / (free ? DRIFT.tau : DRIFT.yield)));
+    this._swing = (this._swing + 2 * Math.PI * DRIFT.hz * dt) % (2 * Math.PI);
+    const w = this._drift;
+    if (w < 1e-3) return move;
+    const s = Math.sin(this._swing), at = ([c, a]) => c + a * s;
+    const pose = Object.assign(this._driftPose, move);
+    const L0 = Math.min(1, Math.max(0, move.legs)), L = L0 + (1 - L0) * w;
+    for (const k of DRIFT_LEGS) pose[k] = (L0 * move[k] + (1 - L0) * w * at(DRIFT[k])) / L;
+    pose.legs = L;
+    pose.tailPitch = move.tailPitch + w * at(DRIFT.tailPitch);
+    return pose;
   }
 
   /**
