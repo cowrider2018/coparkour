@@ -92,6 +92,9 @@ import { steer } from '../public/test/src/walk.js';
 import { DUST, dustOf, dustFade, QUAKE, quakeBands, quakeFade } from '../public/test/src/dust.js';
 import { Motion } from '../public/test/src/monster.js';
 import { TRAILS, PIECE, BANDS, sweepAt, fadeAt, sideAt, qiAt, along, hullOf } from '../public/test/src/trail.js';
+import { bladeAt } from '../public/test/src/trail.js';
+import { BLEED, SPLAT, dropCount, volumeOf, sizeRange, speedOf, hitFrame, pushFrame, spurtOf, floorUnder, splatScale, bleedStep } from '../public/test/src/bleed.js';
+import { taken } from '../public/test/src/combat.js';
 
 let fails = 0;
 const ok = (cond, msg) => {
@@ -1376,6 +1379,133 @@ console.log('22. 落地粉塵');
   for (let t = 0; t < QUAKE.life; t += 0.01) if (quakeFade(t + 0.01) > quakeFade(t) + 1e-12) qFades = false;
   ok(quakeFade(0) === 1 && quakeFade(last) === 1 && quakeFade(QUAKE.life) === 0 && qFades && last < QUAKE.life,
     `地震的塵：最外面那一道 ${last.toFixed(2)} 秒揚完之前整片不淡，之後淡到 ${QUAKE.life} 秒收掉`);
+}
+
+/* ── 23. 噴血 ────────────────────────────────────────────────── */
+console.log('23. 噴血');
+{
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  let seed = 7;
+  const rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+
+  // 出血量：半徑立方和正好是 volume · s³；滴數照 s^1.5。
+  let exact = true;
+  for (const s of [0.7, 1, 2]) {
+    const sum = spurtOf(pushFrame(1, 0), { x: 0, y: 0, z: 0 }, s, rng).reduce((a, o) => a + o.r ** 3, 0);
+    if (Math.abs(sum / volumeOf(s) - 1) > 1e-9) exact = false;
+  }
+  ok(exact, '一次噴出去的血總量正好是 volume · 體型³（0.7、1、2 倍都是）');
+  ok(near(volumeOf(2) / volumeOf(1), 8), 'BOSS（體型 2）的出血量是狗的 8 倍');
+  const n1 = spurtOf(pushFrame(1, 0), { x: 0, y: 0, z: 0 }, 1, rng), n2 = spurtOf(pushFrame(1, 0), { x: 0, y: 0, z: 0 }, 2, rng);
+  ok(n1.length === BLEED.drops && n2.length === dropCount(2) && n2.length === Math.round(BLEED.drops * 2 ** 1.5),
+    `滴數跟著體型的 1.5 次方：${n1.length} → ${n2.length}`);
+  let inside = true;
+  const seen = [];
+  for (let k = 0; k < 200; k++) {
+    for (const s of [1, 2]) {
+      const [lo, hi] = sizeRange(s);
+      const l = spurtOf(pushFrame(1, 0), { x: 0, y: 0, z: 0 }, s, rng);
+      if (Math.abs(l.reduce((x, o) => x + o.r ** 3, 0) / volumeOf(s) - 1) > 1e-9) inside = false;
+      for (const o of l) { if (o.r < lo - 1e-12 || o.r > hi + 1e-12) inside = false; if (s === 1) seen.push(o.r); }
+    }
+  }
+  ok(inside, `每一滴都在區間裡（體型 1 是 ${BLEED.size.join('～')} 公尺，照 √體型放大），200 批每一批總量都剛好`);
+  ok(Math.min(...seen) < BLEED.size[0] + 0.003 && Math.max(...seen) > BLEED.size[1] - 0.003, '大小在區間裡亂給：兩頭都抽得到');
+  ok(speedOf(BLEED.size[0], 1) === BLEED.speed[1] && speedOf(BLEED.size[1], 1) === BLEED.speed[0] && speedOf(0.04, 1) > speedOf(0.05, 1),
+    `越小越快：最小的 ${BLEED.speed[1]}、最大的 ${BLEED.speed[0]} 公尺／秒`);
+  const vmax = (l) => Math.max(...l.map((o) => Math.hypot(o.vx, o.vy, o.vz)));
+  ok(vmax(n1) <= BLEED.speed[1] + 1e-9 && vmax(n2) <= BLEED.speed[1] * Math.SQRT2 + 1e-9 && vmax(n2) > BLEED.speed[1],
+    '初速照體型的根號放大（射程 v²/g 跟著體型變遠）');
+  // 小的噴得比大的遠：真的讓每一滴飛到落地，量沿著噴的方向走了多遠。起點一律放在同一點，
+  // 比的只是大小（傷口沿著 t 散開，第二段的 t 是立著的，起點高低不一會混進來）。
+  const flat = { arena: { shape: 'circle', x: 0, z: 0, r: 50 }, cols: [] };
+  const pw = { x: 0, y: 0, z: 0, aimX: 0, aimZ: 1 };
+  let farther = true, flights = 0;
+  for (const f of [pushFrame(0, 1), hitFrame('slash', pw, null, { x: 0.3, y: 0, z: 1.5 }, 1), hitFrame('rise', pw, slashTip(pw), { x: 0, y: 0.6, z: 1.2 }, 1)]) {
+    for (const s of [1, 2]) {
+      const land = spurtOf(f, { x: 0, y: 0, z: 0 }, s, rng).map((o) => {
+        const one = [{ ...o, x: 0, y: 0.5, z: 0, field: flat }], sp = [];
+        for (let t = 0; t < 3 && one.length; t += DT) bleedStep(one, sp, DT);
+        return { r: o.r, far: sp.length ? sp[0].x * f.d[0] + sp[0].z * f.d[2] : -1 };
+      }).sort((a, b) => a.r - b.r);
+      for (let i = 1; i < land.length; i++) if (land[i].far >= land[i - 1].far) farther = false;
+      if (land.some((q) => q.far < 0)) farther = false;
+      flights += land.length;
+    }
+  }
+  ok(farther && flights > 0, `小的血滴噴得比大的遠（破防攻擊、第一段、第二段各飛到落地量，${flights} 滴）`);
+
+  // 方向：跟劍氣垂直（沒有沿著掃的方向 t 的份）、躺在劍氣的面上；是劍氣經過怪物那一截的刀。
+  const p = { x: 0, y: 0, z: 0, aimX: 0.6, aimZ: 0.8 };
+  const tip = slashTip(p);
+  let perp = true, plane = true, aimed = true, start = true, count = 0;
+  const cases = [
+    ['slash', [[0.6, 0.8], [1, 0.3], [0.1, 1]]],
+    ['slam', [[0.6, 0.8], [-1, 0.2], [-0.6, -0.8]]],
+    ['rise', [[0.6, 0.8], [0.72, 0.96]]],
+  ];
+  for (const [kind, spots] of cases) {
+    for (const [dx, dz] of spots) {
+      for (const s of [1, 2]) {
+        const m = { x: dx * 1.2, y: kind === 'rise' ? 0.6 : 0, z: dz * 1.2 };
+        const f = hitFrame(kind, p, kind === 'rise' ? tip : null, m, s);
+        const nrm = cross(f.d, f.t);
+        const h = Math.hypot(m.x - p.x, m.z - p.z);
+        // 水平上指著怪物（第一段與第三段在水平面上；第二段在那片扇形裡，水平的份也是朝牠）
+        const fh = Math.hypot(f.d[0], f.d[2]);
+        if (((m.x - p.x) * f.d[0] + (m.z - p.z) * f.d[2]) / (h * fh) < 0.999) aimed = false;
+        for (const o of spurtOf(f, m, s, rng)) {
+          const v = [o.vx, o.vy, o.vz];
+          if (Math.abs(dot(v, f.t)) > 1e-9) perp = false;
+          if (Math.abs(dot(v, nrm)) > 1e-9) plane = false;
+          if (Math.hypot(o.x - m.x, o.z - m.z) > BLEED.wound * s / 2 + 1e-9 || Math.abs(o.y - (m.y + PHYS.height / 2 * s)) > BLEED.wound * s / 2 + 1e-9) start = false;
+          count++;
+        }
+      }
+    }
+  }
+  ok(count > 0 && perp, '血的方向跟劍氣拉長的方向垂直（沒有沿著掃的方向的份）');
+  ok(plane, '血的方向躺在劍氣的面上');
+  ok(aimed, '噴的是劍氣經過怪物的那一截：水平上從玩家指著牠，不是出手那一刻刀掃到哪');
+  ok(start, '起點在怪物身上：腰的高度（體型大的高），沿著傷口散開');
+  const up = hitFrame('rise', p, tip, { x: 0.72, y: 0.6, z: 0.96 }, 1);
+  ok(up.d[1] > 0.1, '第二段斜著往上噴（那片扇形是立起來的）');
+  // 扇形外面一點點（判定有算身體半徑）：夾回掃得到的角度，還是在那個面上。
+  const edge = hitFrame('slash', p, null, { x: -0.8, y: 0, z: -0.2 }, 1);
+  const b0 = bladeAt('slash', TRAILS.slash.from, p, null), b1 = bladeAt('slash', TRAILS.slash.to, p, null);
+  ok(near(dot(edge.d, b0.d), 1) || near(dot(edge.d, b1.d), 1), '在掃得到的角度外面：夾到最近的那一邊');
+  const push = pushFrame(3, -4);
+  ok(near(push.d[0], 0.6) && near(push.d[2], -0.8) && push.d[1] === 0 && near(dot(push.d, push.t), 0), '破防攻擊：往推開的方向水平噴');
+
+  // 蓄力中扣 0 點：不噴。
+  const armoredBoss = makeMonster({ kind: 'boss', x: 0, z: 0, yaw: 0 });
+  armoredBoss.cast = { skill: 'orb', t: 0 };
+  ok(taken(armoredBoss, DAMAGE.slash) === 0 && taken(armoredBoss, DAMAGE.rise) === 1 && taken(makeMonster({ kind: 'boss', x: 0, z: 0, yaw: 0 }), DAMAGE.slash) === 1,
+    '實際扣幾點（taken）：蓄力中第一段扣 0——不噴');
+
+  // 落地：點的地板；落到盒頂變一灘；撞進盒子側面就沒了。
+  const field = { arena: { shape: 'circle', x: 0, z: 0, r: 20 }, cols: [{ kind: 'block', min: [2, 0, -1], max: [3, 0.5, 1], base: 0 }] };
+  ok(floorUnder(field.cols, 2.5, 0, 1) === 0.5 && floorUnder(field.cols, 1.99, 0, 1) === 0 && Number.isNaN(floorUnder(field.cols, 2.5, 0, 0.2)),
+    '一個點的地板：盒頂上是盒頂、差一公分出去是地面、在盒子裡面是撞牆');
+  const drops = [
+    { x: 0, y: 0.5, z: 0, vx: 1, vy: 0, vz: 0, r: 0.05, field },
+    { x: 2.5, y: 1.0, z: 0, vx: 0, vy: 0, vz: 0, r: 0.05, field },
+    { x: 1.5, y: 0.3, z: 0, vx: 8, vy: 0, vz: 0, r: 0.05, field },
+  ];
+  const splats = [];
+  for (let t = 0; t < 1; t += DT) bleedStep(drops, splats, DT);
+  ok(drops.length === 0 && splats.length === 2, `兩滴落地變一灘、一滴撞進盒子側面沒了（${splats.length} 灘）`);
+  const floorSp = splats.find((q) => q.y === 0), boxSp = splats.find((q) => q.y === 0.5);
+  ok(!!floorSp && !!boxSp && near(floorSp.r, 0.05 * SPLAT.area) && floorSp.long > 1 && near(boxSp.long, 1) && near(floorSp.ax, 1),
+    '一灘照那一滴放大、順著落地的水平速度拉長（直直落下的是圓的）');
+  let rises = true, falls = true;
+  for (let t = 0; t < SPLAT.grow; t += 0.005) if (splatScale(t + 0.005) < splatScale(t)) rises = false;
+  for (let t = SPLAT.grow + SPLAT.hold; t < SPLAT.life; t += 0.01) if (splatScale(t + 0.01) > splatScale(t) + 1e-12) falls = false;
+  ok(splatScale(0) === 0 && rises && splatScale(SPLAT.grow + SPLAT.hold / 2) === 1 && falls && splatScale(SPLAT.life) === 0,
+    `一灘 ${SPLAT.grow} 秒攤開、留 ${SPLAT.hold} 秒、${SPLAT.shrink} 秒縮掉`);
+  for (let t = 0; t < SPLAT.life + 0.1; t += DT) bleedStep(drops, splats, DT);
+  ok(splats.length === 0, '縮掉之後收起來');
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

@@ -130,7 +130,7 @@ const TONES = (() => {
 })();
 
 /** 墨色，乘上這個時刻的增益——跟遊戲的 `t.ink` 同一條式子。 */
-const INK_TONED = new THREE.Color(INK).multiplyScalar(TONES.inkGain);
+export const INK_TONED = new THREE.Color(INK).multiplyScalar(TONES.inkGain);
 
 /** 玩家無敵時（combat.js 的 untouchable）的墨線顏色：金色。 */
 export const GUARD_INK = new THREE.Color(0xf2b705);

@@ -453,6 +453,9 @@ export const attacking = (m) => !busy(m)
  */
 export const armored = (m) => attacking(m) && (!!m.cast || !!kindOf(m).steady);
 
+/** 這一下打在牠身上實際扣幾點：放招倒數中（armored）減半、無條件捨去。hurt 扣的就是這一份。 */
+export const taken = (m, dmg) => (armored(m) ? Math.floor(dmg / 2) : dmg);
+
 /**
  * 扣血，並累積破防。扣到 0 就死：記一次，當場回到牠自己的重生點重生——
  * placeMonster 把位置、速度、血、破防、被定住全部重設，所以死前的擊退或迴旋
@@ -466,7 +469,7 @@ export const armored = (m) => attacking(m) && (!!m.cast || !!kindOf(m).steady);
  * @returns {boolean} 這一下把牠打死了
  */
 export function hurt(m, dmg) {
-  if (armored(m)) dmg = Math.floor(dmg / 2);
+  dmg = taken(m, dmg);
   if (!broken(m)) {
     m.gauge += dmg;
     if (m.gauge >= kindOf(m).breakAt) m.breakT = BREAK_WINDOW;
@@ -1015,7 +1018,8 @@ export function latch(c, p, m) {
  * 繞 y 軸轉 a：(x, z) → (x cos a + z sin a, −x sin a + z cos a)，跟 three 的
  * rotation.y 同一個方向，所以怪物的朝向加 a 與玩家繞的方向是一致的。
  *
- * @returns {{done: boolean, died: boolean}} done 這一幀轉完了；died 那一下把牠打死了
+ * @returns {{done: boolean, died: boolean, took: number}} done 這一幀轉完了；died 那一下把牠打死了；
+ *   took 那一下實際扣了幾點（taken）
  */
 export function spinStep(c, p, m) {
   const k = Math.min(1, c.t / BREAK_ATK.spin);
@@ -1027,7 +1031,7 @@ export function spinStep(c, p, m) {
   const rl = Math.hypot(rx, rz);
   if (rl > 0.05) { p.aimX = -rx / rl; p.aimZ = -rz / rl; }   // 一直面向牠
   m.aimX = Math.sin(c.yaw0 + a); m.aimZ = Math.cos(c.yaw0 + a);
-  if (k < 1) return { done: false, died: false };
+  if (k < 1) return { done: false, died: false, took: 0 };
   /* 推開怪物在扣血之前：打死的話重生會把這一份清掉，不會帶到重生點去。 */
   m.held = false;
   m.vx = c.dashX * BREAK_ATK.push.h;
@@ -1035,11 +1039,12 @@ export function spinStep(c, p, m) {
   m.vy = 0;
   if (m.y > floorAt(m) + 1e-3 && !kindOf(m).fly) { m.air = true; m.grounded = false; }   // 在空中被定住的：放開就帶著水平速度落下
   else m.slide = true;                                       // 會飛的不落下：在原本的高度滑開
+  const took = taken(m, DAMAGE.break);
   const died = hurt(m, DAMAGE.break);
   c.phase = 'vault';
   c.t = 0;
   p.vx = -c.dashX * BREAK_ATK.off.h;
   p.vz = -c.dashZ * BREAK_ATK.off.h;
   p.vy = BREAK_ATK.off.v;
-  return { done: true, died };
+  return { done: true, died, took };
 }

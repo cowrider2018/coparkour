@@ -25,10 +25,12 @@ import {
   FIELD, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster, harm, lifeStep, gainHeart,
   SOUL, dropSoul, soulStep, grabs,
   breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, placeMonster, monsterStep, bites, knock,
-  inSlash, inFan, inRing, slashTip, makeCombo, comboStep, invulnerable, untouchable, cueing, attacking,
+  inSlash, inFan, inRing, slashTip, makeCombo, comboStep, invulnerable, untouchable, cueing, attacking, taken,
 } from './combat.js';
 import { makeMonsterCritter, sizeOf, Motion, ATTACK_INK } from './monster.js';
 import { GUARD_INK } from './critter.js';
+import { Blood } from './blood.js';
+import { hitFrame, pushFrame, spurtOf } from './bleed.js';
 import { Blade } from './blade.js';
 import { Mover } from './moves.js';
 import {
@@ -107,6 +109,8 @@ export class Fight {
         每一刀，與收掉的那幾刀（下一刀借）。 */
     this._qis = [];
     this._spare = [];
+    /** 怪物挨打噴出來的血（bleed.js 算、blood.js 畫）。 */
+    this._blood = new Blood(scene, renderer);
     /* 落地的粉塵畫在共用的流體場（fluid.js）上，一團借一格。畫不出流體的機器、或網址
        給了 `?fluid=0`，就沒有粉塵——同一台手機上開關各看一次 fps，就是流體的成本。 */
     const fluidOn = new URLSearchParams(location.search).get('fluid') !== '0';
@@ -142,6 +146,12 @@ export class Fight {
   setInkPx(px, h) {
     this._inkPx = [px, h];
     for (const list of this._pool.values()) for (const s of list) s.critter.setInkPx(px, h);
+    this._blood.setInkPx(px, h);
+  }
+
+  /** 一隻怪物噴一次血：frame 是方向（bleed.js），at 是牠這一刻在哪（帶著 field）。 */
+  _bleed(frame, at, kind) {
+    this._blood.spurt(spurtOf(frame, at, sizeOf(kind)), at.field);
   }
 
   _slot(kind, i) {
@@ -289,8 +299,10 @@ export class Fight {
     if (combo.phase === 'dash' && breakContact(player, combo.target)) latch(combo, player, combo.target);
     const dead = new Set();
     if (combo.phase === 'spin') {
-      const r = spinStep(combo, player, combo.target);
-      if (r.died) dead.add(combo.target);
+      const m = combo.target, r = spinStep(combo, player, m);
+      if (r.died) dead.add(m);
+      // 破防攻擊沒有劍氣：往牠被推開的方向噴，從牠被定住的地方（打死的話已經搬回重生點了）。
+      if (r.took > 0) this._bleed(pushFrame(combo.dashX, combo.dashZ), spot.get(m) || m, m.kind);
     }
     const reach = this._reach[combo.phase];
     const body = this.body(player);
@@ -298,6 +310,7 @@ export class Fight {
       if (reach && !combo.hit.has(m) && reach(body, m)) {
         knock(m, body.x, body.z, body.aimX, body.aimZ, KNOCK_SCALE[combo.phase]);
         combo.hit.add(m);
+        if (taken(m, DAMAGE[combo.phase]) > 0) this._bleed(hitFrame(combo.phase, body, combo.tip, m, sizeOf(m.kind)), m, m.kind);
         if (hurt(m, DAMAGE[combo.phase])) dead.add(m);
       }
     }
@@ -373,6 +386,7 @@ export class Fight {
 
     // 攻擊範圍：劍光，跟著玩家的腳與出招時鎖住的面向走。落地的粉塵。
     this._qi(dt, this.body(player));
+    this._blood.step(dt, camera);
     if (this.fluid) this._dust(dt, player);
     // 提示圈不淡：亮著就是「現在按」。貼在玩家腳下那一層地板上（人可能在空中）。
     const floor = supportInfo(this.world.field.cols, player.x, player.z, player.y).y;
@@ -597,6 +611,7 @@ export class Fight {
   _dropTrails() {
     for (const q of this._qis) { q.stop(); this._spare.push(q); }
     this._qis = [];
+    this._blood.clear();
     this._phase = this.combo.phase;
     if (!this.fluid) return;
     for (const pf of this._puffs) this._endPuff(pf);
