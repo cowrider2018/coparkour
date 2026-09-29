@@ -1,5 +1,13 @@
 /* ── test/src/blade.js ────────────────────────────────────────
-   主角咬著的那把刀。
+   咬在嘴裡的刀劍：主角的單刃刀，與騎士（怪物）的雙刃劍。
+
+   兩把一樣橫咬、一樣刀柄在左頰、刀身在右頰，只有刀身不同（SWORDS）：
+
+     knife   主角的刀。單刃：刃朝前、刀背朝後，刀背那一條暗稜在後緣，
+             刀尖從刃往上斜收到刀背。
+     knight  騎士的劍。雙刃：前後兩邊都開鋒，刀尖收在正中間，暗稜是劍身
+             正中那一道脊；長的十字護手、圓頭的柄頭。一眼看得出跟主角那把
+             不是同一種東西。
 
    橫咬在嘴裡：刀柄從左頰（模型的 +X）伸出去，刀身從右頰（−X）伸出去，
    刃朝前（+Z）、刀背朝後，刀面是水平的。所以頭怎麼轉，刀就怎麼揮——
@@ -117,6 +125,41 @@ function buildKnife() {
   return g;
 }
 
+/* 騎士的劍，模型單位。騎士畫成 1.5 倍高，劍跟著身體一起放大：劍身 4.8 單位
+   在牠身上大約 1.7 公尺。 */
+const SWORD_LEN = 4.8;
+const SWORD_W = 0.42;          // 兩邊刃之間
+const SWORD_TIP = 0.9;         // 劍尖那一段收多長
+const RIDGE = 0.08;            // 正中那一道脊多寬
+const CROSS = [0.16, 0.20, 1.40];
+const HILT_LEN = 1.25;
+const HILT = [0.20, 0.22];
+const POMMEL = [0.28, 0.32, 0.32];
+const SWORD_COL = { steel: 0xdfe6ec, ridge: 0x7f8b97, cross: 0x9aa3ad, grip: 0x4a2f24, pommel: 0xc79a3a };
+
+/** 騎士的雙刃劍，原點在咬的那一點，劍身往 −X，刃在 ±Z 兩邊。 */
+function buildKnightSword() {
+  const g = new THREE.Group();
+  const x0 = GUARD_X, x1 = GUARD_X - SWORD_LEN, h = SWORD_W / 2;
+  const poly = [[x0, -h], [x1 + SWORD_TIP, -h], [x1, 0], [x1 + SWORD_TIP, h], [x0, h]];
+  const blade = new THREE.Mesh(prism(poly, BLADE_T / 2), toon(SWORD_COL.steel));
+  const bladeInk = new THREE.Mesh(prism(poly, BLADE_T / 2, INK_OUT),
+    new THREE.MeshBasicMaterial({ color: INK, side: THREE.BackSide }));
+  /* 正中那一道脊：兩面都看得到，劍尖前一點收掉。 */
+  const r = RIDGE / 2, xr = x1 + SWORD_TIP * 0.6;
+  const ridge = new THREE.Mesh(prism([[x0, -r], [xr + 0.1, -r], [xr, 0], [xr + 0.1, r], [x0, r]], BLADE_T / 2 + 0.004),
+    toon(SWORD_COL.ridge));
+  g.add(blade, bladeInk, ridge);
+  g.add(...box([GUARD_X + CROSS[0] / 2, 0, 0], CROSS, SWORD_COL.cross));
+  g.add(...box([GUARD_X + CROSS[0] + HILT_LEN / 2, 0, 0], [HILT_LEN, HILT[0], HILT[1]], SWORD_COL.grip));
+  g.add(...box([GUARD_X + CROSS[0] + HILT_LEN + POMMEL[0] / 2, 0, 0], POMMEL, SWORD_COL.pommel));
+  g.traverse((o) => { o.frustumCulled = false; });
+  return g;
+}
+
+/** 每一種刀劍怎麼做（見檔頭）。 */
+const SWORDS = { knife: buildKnife, knight: buildKnightSword };
+
 /**
  * 嘴在頭骨座標裡的哪裡：靜置姿勢下頭與吻部的頂點，最前面那 0.7 單位裡
  * 最低的那一圈往上一點、往後一點。
@@ -146,8 +189,9 @@ function mouthOf(critter) {
 }
 
 export class Blade {
-  constructor() {
-    this.node = buildKnife();
+  /** @param {keyof SWORDS} kind 哪一把（見檔頭）：主角是 knife。 */
+  constructor(kind = 'knife') {
+    this.node = SWORDS[kind]();
     this.node.matrixAutoUpdate = false;
     this._host = null;
     this._local = new THREE.Matrix4();

@@ -4,7 +4,7 @@
      minion  殭屍：純綠色，一般大小。
      boss    殭屍 BOSS：同一件綠毛，兩倍大。
      ghost   幽靈：淡藍白，半透明，一般大小。
-     knight  騎士：同一件綠毛，1.5 倍高。
+     knight  騎士：同一件綠毛，1.5 倍高，嘴裡橫咬一把雙刃劍（blade.js 的 knight）。
 
    只是看起來大：碰撞還是 combat.js 那同一個 PHYS 圓柱。
 
@@ -73,18 +73,21 @@ const ZOMBIE = { body: [0.24, 0.80, 0.22], face: [0.08, 0.36, 0.08] };
 const GHOST = { body: [0.78, 0.88, 0.98], face: [0.34, 0.44, 0.60] };
 /**
  * 每一類的外觀，鍵跟 combat.js 的 KINDS 一樣：毛色、畫多高（公尺）、不透明度
- * （1 = 不透明）、挨打噴出來的是哪一種血（bleed.js 的 STYLE）。
+ * （1 = 不透明）、挨打噴出來的是哪一種血（bleed.js 的 STYLE）、嘴裡咬著哪一把
+ * 刀劍（blade.js 的 SWORDS，沒有就是空手）。
  */
 const LOOKS = {
   minion: { coat: ZOMBIE, height: 1.0, alpha: 1, blood: 'blood' },
   boss: { coat: ZOMBIE, height: 2.0, alpha: 1, blood: 'blood' },
   ghost: { coat: GHOST, height: 1.0, alpha: 0.5, blood: 'ecto' },
-  knight: { coat: ZOMBIE, height: 1.5, alpha: 1, blood: 'blood' },
+  knight: { coat: ZOMBIE, height: 1.5, alpha: 1, blood: 'blood', sword: 'knight' },
 };
 /** 這一類畫多高，跟狗（1）比。落地的粉塵照它算（dust.js）。 */
 export const sizeOf = (kind) => LOOKS[kind].height;
 /** 這一類挨打噴出來的是哪一種血（bleed.js 的 STYLE）：幽靈是半透明白色的靈質。 */
 export const bloodOf = (kind) => LOOKS[kind].blood;
+/** 這一類嘴裡咬著哪一把刀劍（blade.js 的 SWORDS），空手是 null。 */
+export const swordOf = (kind) => LOOKS[kind].sword || null;
 
 const RED = [0.95, 0.08, 0.06];
 
