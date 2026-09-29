@@ -83,6 +83,11 @@
                     貼著邊的會被打到，邊外、背後、跳起來的不會；預告那一條就是
                     整段衝下來打得到的地方。倒數是 whirlWind、衝是 whirlDash，比主角
                     第三擊多轉一圈，劍光也是兩圈。
+    25. 騎士的跳砍  離玩家 8 公尺以內才放；長條的正中間是鎖定的那一點、落點在它前面半條
+                    （比半條還近就原地跳）；倒數 0.5 秒站著；然後跳一道最高 1.2 公尺的弧線
+                    落在落點上、劈一下、扣 3，僵直 0.5 秒；放招中打不退。長條（加上身體）
+                    裡的劈得到、外面的劈不到，跳起來躲得過，倒數裡跑開就劈空；落點在台上
+                    就落在台上、劈那一層。動作是 cleaveWind → cleaveAir → cleaveRec。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
@@ -1645,6 +1650,102 @@ console.log('24. 騎士');
   }
   ok(agree, '預告那一條（起步到衝完、兩頭半圓）裡面的都打得到，外面的都打不到');
   back();
+}
+
+/* ── 25. 騎士的跳砍 ──────────────────────────────────────────── */
+console.log('25. 騎士的跳砍');
+{
+  const S = SKILL.cleave;
+  ok(KINDS.knight.skills.includes('cleave'), '騎士會跳砍');
+  ok(S.windup === 0.5 && S.damage === 3 && S.range === 8, '跳砍：倒數 0.5 秒、扣 3、離玩家 8 公尺以內才放');
+  const keep = KINDS.knight.skills;
+  KINDS.knight.skills = ['cleave'];
+
+  /** 騎士在原點、人在 (px, pz)，放一次跳砍，記下每一件事。move：倒數中人往哪跑（公尺每秒）。 */
+  const cleave = (px, pz, dt = DT, move = null) => {
+    const m = makeMonster({ kind: 'knight', x: 0, z: 0, yaw: 0 });
+    const w = makeWorld();
+    const q = body(px, pz);
+    m.castT = 0;
+    const out = { m, q, strikes: [], windStill: true, top: 0, stages: new Set(), armor: true, cast: null };
+    const mo = new Motion();
+    let t = 0;
+    while (t < 3) {
+      const had = !!m.cast;
+      const st = bossStep(m, dt, q, w, () => 0);
+      if (m.cast && !out.cast) out.cast = { ...m.cast };
+      if (st) out.strikes.push(st);
+      if (m.cast && m.cast.t < S.windup && (m.x !== 0 || m.z !== 0 || m.y !== 0)) out.windStill = false;
+      if (m.cast && !(attacking(m) && armored(m))) out.armor = false;
+      out.top = Math.max(out.top, m.y);
+      if (m.cast) out.stages.add(mo._stage(m)[0]);
+      if (had && !m.cast) { out.endAt = t + dt; out.stun = m.stun; out.rec = mo._stage(m)[0]; }
+      if (move && m.cast && m.cast.t < S.windup) { q.x += move[0] * dt; q.z += move[1] * dt; }
+      monsterStep(m, dt, q);
+      t += dt;
+      if (out.endAt) break;
+    }
+    return out;
+  };
+
+  const a = cleave(0, 5);
+  const land = 5 - S.len / 2;
+  ok(near(a.cast.lx, 0) && near(a.cast.lz, land) && a.cast.ly === 0, `落點在鎖定那一點前面半條（z = ${land.toFixed(2)}），長條的正中間就是人`);
+  ok(a.windStill, '倒數的 0.5 秒站著不動');
+  ok(a.armor, '放招中是攻擊中、打不退（armored）');
+  ok(near(a.top, S.hop, 0.02), `飛的時候跳到 ${a.top.toFixed(2)} 公尺高（弧線最高 ${S.hop}）`);
+  ok(near(a.endAt, S.windup + S.air, 1.5 * DT) && near(a.m.x, 0) && near(a.m.z, land) && a.m.y === 0 && a.m.grounded,
+    `${a.endAt.toFixed(2)} 秒落在落點上、站在地上`);
+  ok(a.strikes.length === 1 && a.strikes[0].shape === 'strip' && a.strikes[0].dmg === S.damage, `落地那一刻劈一下（只有一下、扣 ${S.damage}）`);
+  ok(a.stun === SKILL.recover && a.rec === 'cleaveRec', `落地之後僵直 ${SKILL.recover} 秒，播劈到底的收尾`);
+  ok([...a.stages].join() === 'cleaveWind,cleaveAir', `動作：${[...a.stages].join(' → ')} → ${a.rec}`);
+
+  // 比半條還近：原地跳起來劈，長條從牠腳下起。
+  const b = cleave(0, S.len / 4);
+  ok(near(b.cast.lz, 0) && near(b.m.z, 0), '人比半條還近：原地跳起來劈');
+
+  // 打不打得到：長條（落點往前 len、寬 width）加上身體。
+  const st = a.strikes[0], r = PHYS.radius, half = S.width / 2;
+  ok(strikeHits(st, body(0, 5)), '站在鎖定的那一點上：被劈到');
+  ok(strikeHits(st, body(half + r - 0.02, 5)) && !strikeHits(st, body(half + r + 0.02, 5)), `橫向：離中線 ${(half + r).toFixed(2)} 公尺以內劈到、以外劈不到`);
+  ok(strikeHits(st, body(0, land + S.len + r - 0.02)) && !strikeHits(st, body(0, land + S.len + r + 0.02)), '長條的遠端外面劈不到');
+  ok(!strikeHits(st, { ...body(0, 5), y: PHYS.height }), '跳起來（腳高過一個狗高）：躲得過');
+  let agree = true;
+  for (let x = -2; x <= 2; x += 0.1) {
+    for (let z = land - 1; z <= land + S.len + 1; z += 0.1) {
+      const du = Math.max(0, land - z, z - land - S.len), dv = Math.max(0, Math.abs(x) - half), d = Math.hypot(du, dv);
+      if (Math.abs(d - r) < 0.02) continue;
+      if (strikeHits(st, body(x, z)) !== d < r) agree = false;
+    }
+  }
+  ok(agree, '預告那一條（落點往前、寬 width）碰到身體的都劈得到，沒碰到的都劈不到');
+
+  // 倒數裡往旁邊跑開就躲得掉：預告鎖在倒數開始的那一刻。
+  const c = cleave(0, 5, DT, [3, 0]);
+  ok(near(c.cast.lx, 0) && !strikeHits(c.strikes[0], c.q), `倒數裡往旁邊跑 ${(3 * S.windup).toFixed(1)} 公尺以上：劈空`);
+
+  // 太遠不放。
+  {
+    const m = makeMonster({ kind: 'knight', x: 0, z: 0, yaw: 0 });
+    const w = makeWorld();
+    m.castT = 0;
+    for (let i = 0; i < 30; i++) bossStep(m, DT, body(0, S.range + 0.5), w, () => 0);
+    ok(!m.cast, `離 ${S.range + 0.5} 公尺不放`);
+  }
+
+  // 落點在台上：落在那一塊的頂上，打的是那一層。
+  {
+    const top = 0.3;
+    const cols = [...FIELD.cols, { kind: 'floor', min: [-2, 0, 3], max: [2, top, 7], base: 0 }];
+    const m = makeMonster({ kind: 'knight', x: 0, z: 0, yaw: 0 }, { ...FIELD, cols });
+    const w = makeWorld(m.field);
+    const q = body(0, 5.5, top);
+    m.castT = 0;
+    let hit = null;
+    for (let i = 0; i < 90 && !hit; i++) { hit = bossStep(m, DT, q, w, () => 0); if (!hit) monsterStep(m, DT, q); }
+    ok(hit && near(hit.y, top) && near(m.y, top) && strikeHits(hit, q), `落點在 ${top} 公尺高的台上：落在台上、劈的是台上那一層`);
+  }
+  KINDS.knight.skills = keep;
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

@@ -56,6 +56,12 @@
             0.5 秒是主角二段跳起來那一下縮成一團、往右擰到底（照 0.5 秒拉長）；
             衝的時候是主角落地那一下整隻往左轉，但多轉一圈（兩圈多），劍水平伸在
             外面掃兩圈——衝 0.4 秒，兩圈也是 0.4 秒轉完；收尾在僵直裡播完。
+     cleave 跳砍：劍是橫咬的，所以要豎起來才劈得下去——頭側過去（左耳朝上），劍就
+            立起來了，再仰頭就是把劍往後舉過頭（主角第二擊那一招反過來用）。
+            倒數的 0.5 秒蹲低蓄力、頭側過去、劍慢慢舉到頭頂後面；跳起來的時候是
+            主角的跳躍動作組（在空中、垂直速度照那一道弧線），上半身再仰一點、
+            劍舉到最高；落地前最後一下頭往前、往下甩，落地那一刻劍正劈到一半，
+            接著劈到底、整隻壓低停住，然後在僵直裡慢慢站起來、頭轉正。
 
    ── 會飛的漂 ──────────────────────────────────────────────────────
    會飛的（幽靈）一直是空中姿勢、不走路，所以移動的時候另外常駐一套漂（DRIFT）：
@@ -222,6 +228,22 @@ const LAND = {
   pitch: 0.40, headPitch: 0.10, drop: 0.25, tailPitch: 0.40,
   front: -0.30, hind: -0.50, knee: -0.80, legs: 0.9, w: 1,
 };
+/* ── 跳砍 ── 舉劍是 RAISE，跳到最高是 HIGH，劈到一半是 CHOP_MID，劈到底是 CHOP。
+   headTilt −1.1 讓劍立起來；立起來之後 headPitch 負的是往後舉、正的是往前劈。 */
+const RAISE = {
+  headTilt: -1.10, lean: -0.22, headPitch: -0.75, pitch: 0.30, drop: 0.30, tailPitch: 0.45,
+  front: -0.70, hind: -0.55, knee: -0.90, legs: 1, w: 1,
+};
+const HIGH = {
+  headTilt: -1.10, lean: -0.22, headPitch: -0.50, pitch: -0.35, tailPitch: 0.30,
+  front: -1.10, hind: 0.60, knee: 0.20, legs: 0.8, w: 1,
+};
+const CHOP_MID = { headTilt: -1.10, lean: -0.24, headPitch: 0.50, pitch: 0.20, drop: 0.10, tailPitch: 0.10, front: -0.60, legs: 0.6, w: 1 };
+const CHOP = {
+  headTilt: -1.10, lean: -0.26, headPitch: 0.85, pitch: 0.45, drop: 0.28, tailPitch: 0.55,
+  front: -0.30, hind: -0.45, knee: -0.70, legs: 0.9, w: 1,
+};
+
 /** 跳砸站著蓄力的那一段有多長（之後 SKILL.leap.air 秒在飛）。 */
 const LEAP_WIND = SKILL.leap.windup - SKILL.leap.air;
 
@@ -269,6 +291,23 @@ export const MOVES = {
   leapRec: { blend: 0.03, keys: [[0, {}], [0.08, LAND, 'out'], [0.18, LAND, 'lin'], [SKILL.recover, {}, 'inOut']] },
   whirlWind: retime(HERO.leap, SKILL.whirl.windup),
   whirlDash: twice(HERO.slam),
+  cleaveWind: {
+    blend: 0.08,
+    keys: [[0, {}], [0.3, RAISE, 'out'], [SKILL.cleave.windup, { ...RAISE, headPitch: -0.85, drop: 0.34, knee: -0.98 }, 'inOut']],
+  },
+  cleaveAir: {
+    blend: 0.04,
+    keys: [
+      [0, { ...RAISE, headPitch: -0.85, drop: 0.34, knee: -0.98 }],
+      [0.18, HIGH, 'out'],
+      [SKILL.cleave.air - 0.08, HIGH, 'lin'],
+      [SKILL.cleave.air, CHOP_MID, 'in'],
+    ],
+  },
+  cleaveRec: {
+    blend: 0.02,
+    keys: [[0, CHOP_MID], [0.06, CHOP, 'out'], [0.22, { ...CHOP, headPitch: 0.90, drop: 0.30 }, 'lin'], [SKILL.recover, {}, 'inOut']],
+  },
 };
 
 /**
@@ -319,6 +358,7 @@ export class Motion {
     const [stage, t] = this._stage(m);
     if (stage === 'dash') this._hop(o, m, t);
     if (stage === 'leapAir') this._fly(o, m, t);
+    if (stage === 'cleaveAir') this._hopTo(o, m, t);
     const move = this.mover.step(dt, stage, t);
     o.move = this._lookAt(dt, stage, m, player, this._float(dt, stage, m, move));
     return o;
@@ -376,6 +416,7 @@ export class Motion {
       this._skill = c.skill;
       if (c.skill === 'leap' && c.t >= LEAP_WIND) return ['leapAir', c.t - LEAP_WIND];
       if (c.skill === 'whirl' && c.t >= SKILL.whirl.windup) return ['whirlDash', c.t - SKILL.whirl.windup];
+      if (c.skill === 'cleave' && c.t >= SKILL.cleave.windup) return ['cleaveAir', c.t - SKILL.cleave.windup];
       return MOVES[`${c.skill}Wind`] ? [`${c.skill}Wind`, c.t] : [null, 0];
     }
     if (m.stun > 0 && MOVES[`${this._skill}Rec`]) return [`${this._skill}Rec`, SKILL.recover - m.stun];
@@ -394,6 +435,16 @@ export class Motion {
     const c = m.cast, A = SKILL.leap.air, u = Math.min(1, Math.max(0, s / A));
     o.air = true;
     o.vy = ((c.ty - c.y0) + (PHYS.gravity * A * A / 2) * (1 - 2 * u)) / A;
+  }
+
+  /**
+   * 跳砍飛過去的那一段：跟跳砸一樣位置是 skills.js 擺的，垂直速度照那一道弧線
+   * （最高 SKILL.cleave.hop，疊在起點與落點的高低差上）自己算。
+   */
+  _hopTo(o, m, s) {
+    const c = m.cast, S = SKILL.cleave, u = Math.min(1, Math.max(0, s / S.air));
+    o.air = true;
+    o.vy = ((c.ly - c.y0) + 4 * S.hop * (1 - 2 * u)) / S.air;
   }
 
   /**

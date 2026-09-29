@@ -161,13 +161,13 @@ export class Fight {
       const slot = {
         critter: makeMonsterCritter(this.zoo, kind), breakFx: breakFx(),
         lane: laneFx(SKILL.orb.radius), circle: circleFx(SKILL.leap.radius), cone: coneFx(SKILL.cone.radius, SKILL.cone.half),
-        whirl: stripFx(SKILL.whirl.radius, true),
+        whirl: stripFx(SKILL.whirl.radius, true), cleave: stripFx(SKILL.cleave.width / 2, false),
         blade: null,
       };
       // 咬著劍的那幾類（騎士）：劍掛在牠自己的頭上，跟主角那把一樣每幀跟著頭。
       if (swordOf(kind)) { slot.blade = new Blade(swordOf(kind)); slot.blade.follow(slot.critter); }
       if (this._inkPx) slot.critter.setInkPx(...this._inkPx);
-      this.scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node, slot.cone.node, slot.whirl.node);
+      this.scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node, slot.cone.node, slot.whirl.node, slot.cleave.node);
       list.push(slot);
     }
     return list[i];
@@ -180,6 +180,7 @@ export class Fight {
     s.circle.node.visible = false;
     s.cone.node.visible = false;
     s.whirl.node.visible = false;
+    s.cleave.node.visible = false;
   }
 
   /**
@@ -401,7 +402,7 @@ export class Fight {
     showFx(fx.cue, cueing(combo) ? 0 : Infinity, 1, player.x, floor, player.z, 0);
 
     // 怪物技能的預告：貼在牠（或跳砸的落點）那一層地板上。
-    for (const { m, lane, circle, cone, whirl } of this.foes) {
+    for (const { m, lane, circle, cone, whirl, cleave } of this.foes) {
       const c = m.cast;
       const orb = !!c && c.skill === 'orb', leap = !!c && c.skill === 'leap', fan = !!c && c.skill === 'cone';
       /* 劍迴旋衝刺：從起步的地方往鎖定的方向，衝得到多遠（黑牆擋住的話到牆前）。衝的時候
@@ -410,6 +411,10 @@ export class Fight {
       showStrip(whirl, wh, wh ? Math.min(1, c.t / SKILL.whirl.windup) : 0, wh ? c.x0 : 0, wh ? c.z0 : 0,
         wh ? Math.atan2(c.dirX, c.dirZ) : 0,
         wh ? Math.min(WHIRL_LEN, Math.max(0, laneLength(c.x0, c.z0, c.dirX, c.dirZ, m.field.arena) - PHYS.radius)) : 0, c ? c.y0 : 0);
+      // 跳砍：從落點往前的那一條（正中間是主角被鎖定的地方），貼在落點那一層地板上；飛的時候亮著滿的。
+      const cl = !!c && c.skill === 'cleave';
+      showStrip(cleave, cl, cl ? Math.min(1, c.t / SKILL.cleave.windup) : 0, cl ? c.lx : 0, cl ? c.lz : 0,
+        cl ? Math.atan2(c.dirX, c.dirZ) : 0, SKILL.cleave.len, cl ? c.ly : 0);
       showLane(lane, orb, orb ? Math.min(1, c.t / SKILL.orb.windup) : 0, m.x, m.z,
         orb ? Math.atan2(c.dirX, c.dirZ) : 0, orb ? laneLength(m.x, m.z, c.dirX, c.dirZ, m.field.arena) : 0, m.y);
       showCircle(circle, leap, leap ? Math.min(1, c.t / SKILL.leap.windup) : 0, leap ? c.tx : 0, leap ? c.tz : 0, leap ? c.ty : 0);

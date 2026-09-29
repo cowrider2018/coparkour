@@ -35,11 +35,15 @@
             朝鎖定的方向衝（初速 16、0.4 秒減到 0，3.2 公尺），衝的同時劍掃兩圈
             （主角第三擊落地那一下的迴旋，多轉一圈）。衝的每一幀打的是這一幀走過的
             那一段，外擴迴旋的半徑——整段衝下來就是預告的那一條。
+     cleave 跳砍（離玩家 8 公尺以內才放）。玩家腳下出現一條紅色長條（沿著騎士往
+            玩家的方向，玩家在正中間），倒數 0.5 秒；然後騎士跳起來、0.4 秒沿一道
+            弧線（最高 1.2 公尺）落在長條靠牠的那一頭，落地那一刻劍往前劈下，打
+            那一整條。玩家離得比半條還近的話，牠原地跳起來劈（長條從牠腳下起）。
 
-   範圍攻擊（leap 的那一圈、cone 的那一片、whirl 的那一條）打的是地面上一個狗高以內：
+   範圍攻擊（leap 的那一圈、cone 的那一片、whirl 與 cleave 的那一條）打的是地面上一個狗高以內：
    玩家的腳比那還高——跳起來了——就躲得過。
 
-   碰到扣血：BOSS 的招 5、騎士的 whirl 2（每一招的 `damage`；衝刺咬到的見 combat.js 的 KINDS）。
+   碰到扣血：BOSS 的招 5、騎士的 whirl 2、cleave 3（每一招的 `damage`；衝刺咬到的見 combat.js 的 KINDS）。
    打中人的球就消失。玩家無敵的時候（第三段、破防攻擊）碰到不算。
    ------------------------------------------------------------------ */
 
@@ -55,6 +59,9 @@ export const SKILL = {
      = 3.2 公尺），劍掃的半徑是 radius。time 是 trail.js 的 whirl 那兩圈掃完的 0.40 秒
      （跟主角第三擊那一圈一樣長，轉兩倍快），衝完剛好轉完。range：離玩家這麼近才放。 */
   whirl: { windup: 0.5, time: 0.4, speed: 16, radius: 1.75 * DOG_H, range: 4.5, damage: 2 },
+  /* 騎士的跳砍：倒數 windup，然後 air 秒跳一道最高 hop 公尺的弧線落下、劈那一條（長 len、
+     寬 width，從落點往前）。range：離玩家這麼近才放。 */
+  cleave: { windup: 0.5, air: 0.4, hop: 1.2, len: 2.2 * DOG_H, width: 0.8 * DOG_H, range: 8, damage: 3 },
   /** 出招後僵直幾秒。 */
   recover: 0.5,
 };
@@ -89,6 +96,19 @@ function begin(m, skill, target) {
   m.cast = { skill, t: 0, dirX, dirZ, tx: target.x, tz: target.z, ty, x0: m.x, y0: m.y, z0: m.z };
   m.aimX = dirX; m.aimZ = dirZ;
   m.vx = 0; m.vz = 0;
+  if (skill === 'cleave') aimCleave(m, d);
+}
+
+/**
+ * 跳砍的落點：長條的正中間是鎖定的那一點，所以落在它前面半條的地方；比半條還近就
+ * 原地跳。落點的地板照那一點往下找（跳得上去的台也算）。
+ */
+function aimCleave(m, d) {
+  const c = m.cast, S = SKILL.cleave;
+  const k = Math.max(0, d - S.len / 2);
+  c.lx = m.x + c.dirX * k;
+  c.lz = m.z + c.dirZ * k;
+  c.ly = supportInfo(m.field.cols, c.lx, c.lz, Math.max(m.y, c.ty) + PHYS.step).y;
 }
 
 /** 每一招倒數時與倒數完的那一幀要做什麼。 */
@@ -131,6 +151,25 @@ const CAST = {
     return { shape: 'cone', x: m.x, y: m.y, z: m.z, dirX: c.dirX, dirZ: c.dirZ, r: S.radius, half: S.half, dmg: S.damage };
   },
 
+  /* 倒數的時候站著；之後 air 秒沿直線飛向落點、高度是一條最高 hop 的拋物線（疊在起點與
+     落點的高低差上）。飛完那一幀落在落點上，劈那一條。 */
+  cleave(m) {
+    const c = m.cast, S = SKILL.cleave;
+    const s = (c.t - S.windup) / S.air;
+    if (s < 0) return null;
+    if (s < 1) {
+      m.x = c.x0 + (c.lx - c.x0) * s;
+      m.z = c.z0 + (c.lz - c.z0) * s;
+      m.y = c.y0 + (c.ly - c.y0) * s + 4 * S.hop * s * (1 - s);
+      m.grounded = false;
+      return null;
+    }
+    m.x = c.lx; m.z = c.lz; m.y = c.ly;
+    m.grounded = true;
+    m.cast = null;
+    return { shape: 'strip', x: c.lx, y: c.ly, z: c.lz, dirX: c.dirX, dirZ: c.dirZ, len: S.len, w: S.width, dmg: S.damage };
+  },
+
   /* 倒數完沿鎖定的方向衝，走多遠是那一段時間的積分（跟幀長無關，一次永遠 3.2 公尺，
      被牆擋住就沿著牆滑）。每一幀打的是這一幀走過的那一段（膠囊）；衝完那一幀收招。 */
   whirl(m) {
@@ -161,10 +200,18 @@ function segGap(px, pz, ax, az, bx, bz) {
  *   circle   圓心 (x, z)、半徑 r。
  *   cone     尖在 (x, z)、朝 (dirX, dirZ)、半角 half、長 r。
  *   capsule  (x, z)–(x1, z1) 那一段往外擴 r（劍迴旋衝刺這一幀走過的那一段）。
+ *   strip    從 (x, z) 往 (dirX, dirZ) 長 len、寬 w 的長方形（跳砍劈下去的那一條）。
  */
 export function strikeHits(st, p) {
   if (p.y >= (st.y ?? 0) + REACH_UP) return false;
   if (st.shape === 'capsule') return segGap(p.x, p.z, st.x, st.z, st.x1, st.z1) <= st.r + PHYS.radius;
+  if (st.shape === 'strip') {
+    // 長方形到身體中心的距離（裡面是 0），碰到身體就算。
+    const rx = p.x - st.x, rz = p.z - st.z;
+    const u = rx * st.dirX + rz * st.dirZ, v = rz * st.dirX - rx * st.dirZ;
+    const du = Math.max(0, -u, u - st.len), dv = Math.max(0, Math.abs(v) - st.w / 2);
+    return Math.hypot(du, dv) <= PHYS.radius;
+  }
   const d = Math.hypot(p.x - st.x, p.z - st.z);
   if (st.shape === 'circle') return d <= st.r + PHYS.radius;
   // 扇形：跟第一段同一種判法——半徑加身體，角度加上身體在那個距離張開的角度。
