@@ -44,7 +44,7 @@
                     倒數裡橫移一步就躲得掉。跳砸：倒數 1.5 秒、最後 0.6 秒起跳、
                     落在鎖定的點上打半徑 2.5 狗高的一圈，走出圈外或跳起來就躲得過。
                     扇形：倒數 1 秒、朝鎖定的方向打 60°、4 狗高長的一片。三招都
-                    挑得到。倒數中打不退、傷害減半無條件捨去，破防攻擊打斷得了。
+                    挑得到；球不限距離，跳砸 6.9 公尺、扇形 3.68 公尺以內才放。倒數中打不退、傷害減半無條件捨去，破防攻擊打斷得了。
                     出招後僵直 0.5 秒：站著不動、打得退、傷害照算。
     16. 衝刺        碰到不再有事，傷害是一次一次的衝刺：追到 1.8 公尺以內停下來
                     蓄力 0.25 秒，朝那時鎖定的方向衝（16 → 0，0.25 秒，2.0 公尺，
@@ -693,6 +693,23 @@ console.log('15. BOSS 放招');
     `第 ${starts.map((x) => x.toFixed(2)).join('、')} 秒各放一招`);
   ok(still, '放招的時候站著不動');
 
+  // 距離：球不限，跳砸 6.9、扇形 3.68 公尺以內才挑得到。
+  {
+    const picks = (d) => {
+      const got = new Set();
+      for (const r of [0, 0.34, 0.67, 0.99]) {
+        const b = bossAt(0, 0);
+        b.castT = 0;
+        bossStep(b, DT, body(0, d), makeWorld(), () => r);
+        if (b.cast) got.add(b.cast.skill);
+      }
+      return [...got].sort().join();
+    };
+    ok(SKILL.orb.range === undefined && SKILL.leap.range === 6.9 && near(SKILL.cone.range, 3.68), '球不限距離、跳砸 6.9、扇形 3.68');
+    ok(picks(3.6) === 'cone,leap,orb' && picks(3.8) === 'leap,orb' && picks(6.8) === 'leap,orb' && picks(7) === 'orb',
+      `3.6 公尺：${picks(3.6)}；3.8：${picks(3.8)}；6.8：${picks(6.8)}；7：${picks(7)}`);
+  }
+
   // 球：鎖定開始那一刻的位置；站著不動會被打中；倒數裡橫移一步就躲掉。
   const fire = (dodge) => {
     const wb = makeWorld();
@@ -755,7 +772,7 @@ console.log('15. BOSS 放招');
   ok(near(SKILL.leap.radius, 2.5 * DOG_H) && SKILL.leap.windup === 1.5, '跳砸：範圍半徑 2.5 狗高、倒數 1.5 秒');
   const leap = (move) => {
     const wl = makeWorld();
-    const b = bossAt(0, -4);
+    const b = bossAt(0, -3);
     const q = body(0, 3);
     b.castT = 0;
     let st = null, at = -1, tookOff = -1, peak = 0, tt = 0;
@@ -783,16 +800,16 @@ console.log('15. BOSS 放招');
     `跳起來、腳高過一個狗高（${PHYS.height} m）：躲過；低一點就中`);
   // 起跳之後被打：飛行也算倒數，打不退，照樣砸在鎖定的點上。
   const wk = makeWorld();
-  const bk = bossAt(0, -4);
+  const bk = bossAt(0, -4), pk = body(0, 2);
   bk.castT = 0;
   let hitK = null, knocked = false;
   for (let i = 0; i < 150 && !hitK; i++) {
-    const r = bossStep(bk, DT, p, wk, () => 0.5);
+    const r = bossStep(bk, DT, pk, wk, () => 0.5);
     if (r) hitK = r;
     if (bk.cast && bk.y > 0.3 && !knocked) { knock(bk, 0, 4, 0, -1); knocked = true; }
-    monsterStep(bk, DT, p);
+    monsterStep(bk, DT, pk);
   }
-  ok(knocked && hitK && near(hitK.x, p.x) && near(hitK.z, p.z), '飛到一半被打：打不退，照樣砸在鎖定的點上');
+  ok(knocked && hitK && near(hitK.x, pk.x) && near(hitK.z, pk.z), '飛到一半被打：打不退，照樣砸在鎖定的點上');
 
   // 扇形：挑 cone（亂數給 0.99 → 第三招）。
   ok(near(SKILL.cone.radius, 4 * DOG_H) && near(SKILL.cone.half * 2, Math.PI / 3) && SKILL.cone.windup === 1,
@@ -820,12 +837,12 @@ console.log('15. BOSS 放招');
     '長度的邊界在身體碰到扇形的弧');
   ok(!strikeHits(sc, ang(0, 3, PHYS.height + 0.01)), '跳起來、腳高過一個狗高：躲過');
 
-  // 三招都挑得到。
+  // 三招都挑得到（人在扇形的距離以內）。
   const picked = new Set();
   for (const r of [0, 0.34, 0.5, 0.67, 0.99]) {
     const b = bossAt(0, -4);
     b.castT = 0;
-    bossStep(b, DT, p, makeWorld(), () => r);
+    bossStep(b, DT, body(0, -2), makeWorld(), () => r);
     picked.add(b.cast.skill);
   }
   ok(['orb', 'leap', 'cone'].every((k) => picked.has(k)), `亂數涵蓋三招：${[...picked].join('、')}`);

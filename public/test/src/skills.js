@@ -20,13 +20,13 @@
    也不追人，而且跟平常一樣打得退、傷害照算——這是反擊的空檔。被破防攻擊打斷
    的不算出招，沒有僵直。
 
-     orb   倒數 0.75 秒（地上一條往目標延伸的預告），然後朝鎖定的方向直線發射
+     orb   不限距離。倒數 0.75 秒（地上一條往目標延伸的預告），然後朝鎖定的方向直線發射
            一顆球：半徑 0.75 個狗高、每秒 6 公尺，碰到黑牆或場上的東西（牆、柱子、
            台階的側面；開著的門不算）就炸掉消失。
-     leap  目標點上兩個圓倒數 1.5 秒：淺色的是範圍（半徑 2.5 個狗高），亮色的
+     leap  離玩家 6.9 公尺以內才放。目標點上兩個圓倒數 1.5 秒：淺色的是範圍（半徑 2.5 個狗高），亮色的
            從中心長到邊。最後 0.6 秒 BOSS 起跳、照拋物線飛過去，倒數到 0 的那一
            刻落在目標點上，打那一整圈。
-     cone  站在原地朝鎖定的方向倒數 1 秒：淺色的 60° 扇形（長 4 個狗高）是範圍，
+     cone  離玩家 3.68 公尺（扇形的長度）以內才放。站在原地朝鎖定的方向倒數 1 秒：淺色的 60° 扇形（長 4 個狗高）是範圍，
            亮色的扇形從 BOSS 腳下往外長，長滿的那一刻打那一整片。
 
    騎士的招：
@@ -58,8 +58,8 @@ import { FIELD, DOG_H, REACH, SWING, kindOf, busy, settle, inFan } from './comba
 /** 每一招的數值。長度一律用狗高量；`damage` 是打中玩家扣幾點血。 */
 export const SKILL = {
   orb: { windup: 0.75, radius: 0.75 * DOG_H, speed: 6, damage: 5 },
-  leap: { windup: 1.5, air: 0.6, radius: 2.5 * DOG_H, damage: 5 },
-  cone: { windup: 1, radius: 4 * DOG_H, half: Math.PI / 6, damage: 5 },
+  leap: { windup: 1.5, air: 0.6, radius: 2.5 * DOG_H, range: 6.9, damage: 5 },
+  cone: { windup: 1, radius: 4 * DOG_H, half: Math.PI / 6, range: 4 * DOG_H, damage: 5 },
   /* 騎士的劍迴旋衝刺：倒數 windup，然後 time 秒裡速度從 speed 線性減到 0（衝 speed·time/2
      = 3.2 公尺），劍掃的半徑是 radius。time 是 trail.js 的 whirl 那兩圈掃完的 0.40 秒
      （跟主角第三擊那一圈一樣長，轉兩倍快），衝完剛好轉完。range：離玩家這麼近才放。 */
