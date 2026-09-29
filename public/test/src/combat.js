@@ -26,8 +26,10 @@
    減到 0），衝完僵直 0.5 秒才回去追。只有衝的那 0.25 秒裡碰到玩家，玩家
    才被咬到、扣血（小怪 1、BOSS 3，見 KINDS 的 `bite` 與下面的「玩家的血」）。
 
-   蓄力被打會怎樣看類別（KINDS 的 `steady`）：小怪一打就取消；BOSS 蓄力不會
-   被打斷——跟放招的倒數一樣打不退、傷害減半（armored）。
+   攻擊中（attacking：放招、或衝刺的蓄力加衝，不含之後的僵直）被打會怎樣看類別
+   （KINDS 的 `steady`）：小怪一打就取消；BOSS 不會被打斷——跟放招的倒數一樣
+   打不退、傷害減半（armored）。畫面上攻擊中墨線變紅，跟 armored 出自同一個
+   attacking，所以 BOSS 的不可打斷與紅色永遠是同一段。
 
    幽靈（KINDS 的 `fly`）不受重力、會飛：y 跟 x、z 是同一回事。追人是朝玩家
    的腳在三維裡追、衝刺朝三維的方向衝；被擊退的時候速度一樣照那一段給，但不
@@ -153,7 +155,7 @@ export const FIELD = { arena: ARENA, cols: COLS, doors: {} };
  *           走路是 PHYS.walk（4），所以放開手就會被追上。
  *   boss    BOSS（畫成兩倍大）。血 20。腳程 4。不會一直追：每 `every` 秒從 `skills`
  *           裡隨機放一招（規則在 skills.js），放招的時候站著不動。`steady`：
- *           衝刺前的蓄力不會被打斷（見 armored）。
+ *           衝刺（蓄力與衝）不會被打斷（見 armored）。
  *   ghost   幽靈（半透明的小怪）。血、腳程跟殭屍一樣。`fly`：不受重力，
  *           y 跟 x、z 一樣追、一樣衝、被擊退也不落下（見 FLY）。
  *
@@ -427,13 +429,29 @@ export function resetBreak(m) {
 }
 
 /**
- * 蓄力中：不會被擊退，受到的傷害減半。蓄力是
- *   · 放招的倒數（skills.js 的 m.cast 還在）——預告亮著的那一整段，跳砸最後那
- *     0.6 秒的飛行也算在內；
- *   · `steady` 那一類（BOSS）衝刺前發呆的那 0.25 秒。小怪沒有這一條，一打就取消。
+ * 不能開始放招、也不算在攻擊的狀態：擊退在空中、被定住、被推開在滑。放招或衝刺
+ * 在這一幀被它們打斷、還沒被各自的 step 清掉，也已經不算攻擊了。
  */
-export const armored = (m) => !!m.cast
-  || (!!kindOf(m).steady && !!m.lunge && m.lunge.t < LUNGE.windup);
+export const busy = (m) => m.air || m.held || m.slide;
+
+/**
+ * 攻擊中：從蓄力開始，到打完為止，**不含**打完之後的僵直。
+ *   · 放招（skills.js 的 m.cast 還在）——預告亮著的那一整段，跳砸的飛行也算；
+ *   · 衝刺的蓄力與衝（LUNGE.windup + LUNGE.time），衝完的發呆（recover）不算。
+ *
+ * 這是「怪物正在攻擊」的唯一定義。畫面上的紅色墨線（fight.js）與不可打斷
+ * （armored）都從它來，所以兩者不可能對不上：新增一招、改一招的長短，只要
+ * 讓那一招在放的時候是 m.cast（或 m.lunge）而且收招才清掉，兩邊自己就跟著走。
+ */
+export const attacking = (m) => !busy(m)
+  && (!!m.cast || (!!m.lunge && m.lunge.t < LUNGE.windup + LUNGE.time));
+
+/**
+ * 不可打斷：不會被擊退，受到的傷害減半。就是攻擊中——只有
+ *   · 放招（m.cast）一律算；
+ *   · 衝刺只有 `steady` 那一類（BOSS）算。小怪的衝刺一打就取消。
+ */
+export const armored = (m) => attacking(m) && (!!m.cast || !!kindOf(m).steady);
 
 /**
  * 扣血，並累積破防。扣到 0 就死：記一次，當場回到牠自己的重生點重生——

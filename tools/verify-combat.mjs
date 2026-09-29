@@ -82,7 +82,7 @@ import { PHYS } from '../public/test/src/walk.js';
 import {
   MODES, DEFAULT_MODE, LUNGE, lunging, ARENA, SPAWN, DOG_H, REACH, SWING, REST, KNOCK, KNOCK_SCALE, FAN, WINDOW, KINDS, DAMAGE, hurt, placeMonster,
   BREAK_AT, BREAK_WINDOW, broken,
-  FLY, BREAK_ATK, breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, armored,
+  FLY, BREAK_ATK, breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, armored, attacking,
   makeMonster, monsterStep, touching, bites, knock, inSlash, inFan, inRing, slashTip, fanFrame,
   makeCombo, comboStep, invulnerable, cueing, FIELD, LIFE, resetLife, lifeStep, harm, refill, gainHeart, regen,
   SOUL, dropSoul, soulStep, grabs,
@@ -903,6 +903,36 @@ console.log('16. 衝刺');
   const loose = makeMonster({ kind: 'boss', x: 0, z: -4, yaw: 0 });
   loose.lunge = { t: LUNGE.windup + LUNGE.time + 0.1, dirX: 0, dirZ: 1 };
   ok(!armored(loose), 'BOSS 衝完之後的發呆：不是蓄力');
+
+  /* 紅色墨線（fight.js）與不可打斷都從 attacking 來。BOSS 每一招與衝刺輪流放，
+     每一幀：不可打斷＝攻擊中；僵直與衝完的發呆不算；攻擊中一定有 cast 或還沒衝完的 lunge。
+     新增技能時這一條自己會把關。 */
+  {
+    const wm = makeWorld(), bm = makeMonster({ kind: 'boss', x: 0, z: -4, yaw: 0 }), pm = body(0, 0);
+    let seq = 0, mismatch = 0, redStun = 0, redRecover = 0, redFrames = 0, redNoCause = 0;
+    const seen = new Set();
+    for (let t = 0; t < 60; t += DT) {
+      bossStep(bm, DT, pm, wm, () => [0.1, 0.5, 0.9][seq++ % 3]);
+      monsterStep(bm, DT, pm);
+      const red = attacking(bm);
+      if (red !== armored(bm)) mismatch++;
+      if (red) {
+        redFrames++;
+        if (bm.stun > 0) redStun++;
+        if (bm.lunge && !bm.cast && bm.lunge.t >= LUNGE.windup + LUNGE.time) redRecover++;
+        if (!bm.cast && !bm.lunge) redNoCause++;
+        seen.add(bm.cast ? bm.cast.skill : 'lunge');
+      }
+    }
+    ok(mismatch === 0, 'BOSS：不可打斷與紅色（attacking）每一幀都一樣');
+    ok(redStun === 0 && redRecover === 0 && redNoCause === 0 && redFrames > 0, '紅色不含出招後的僵直與衝完的發呆');
+    ok(['orb', 'leap', 'cone', 'lunge'].every((s) => seen.has(s)), `每一招與衝刺都出現過紅色（${[...seen].join('、')}）`);
+    const mn = makeMonster({ kind: 'minion', x: 0, z: 0, yaw: 0 });
+    mn.lunge = { t: LUNGE.windup + LUNGE.time / 2, dirX: 0, dirZ: 1 };
+    ok(attacking(mn) && !armored(mn), '小怪衝的時候也是紅色，但不是不可打斷');
+    mn.lunge.t = LUNGE.windup + LUNGE.time + 0.1;
+    ok(!attacking(mn), '小怪衝完的發呆：不是紅色');
+  }
 }
 
 /* ── 17. 幽靈 ────────────────────────────────────────────────── */

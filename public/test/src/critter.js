@@ -1147,6 +1147,9 @@ export class Critter {
       boneN, partN, inkOut: this._inkOut, shade: 'ink',
     });
 
+    /* 墨線材質的名單：半透明的怪物（monster.js 的 seeThrough）會再加一份自己的，
+       換墨色時全部一起換。 */
+    this._inkMats = [ink];
     this.mesh = new THREE.Mesh(this.geometry, [fur, face, ink]);
     // 骨頭在著色器裡才動，three 算不出正確的邊界球，所以別讓它裁掉。
     this.mesh.frustumCulled = false;
@@ -1260,6 +1263,12 @@ export class Critter {
   setInkPx(px, viewportHeight) {
     this._inkPx = px;
     this._inkOut.value = (2 * px) / Math.max(1, viewportHeight);
+  }
+
+  /** 墨線換成這個顏色；不給就回到平常的墨色。 */
+  setInkColor(color) {
+    const c = color || INK_TONED;
+    for (const m of this._inkMats) if (!m.color.equals(c)) m.color.copy(c);
   }
 
   /** 戴不戴帽子。脫帽＝把帽子那幾根骨頭縮到零。 */

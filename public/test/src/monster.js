@@ -83,6 +83,9 @@ const LOOKS = {
 export const sizeOf = (kind) => LOOKS[kind].height;
 
 const RED = [0.95, 0.08, 0.06];
+
+/** 攻擊中（combat.js 的 attacking）的墨線顏色。 */
+export const ATTACK_INK = new THREE.Color(0xd41414);
 /** 半透明的怪物畫在地上那些預告與攻擊範圍（fx.js，renderOrder 2～4）之後，才透得出它們。 */
 const SEE_THROUGH_ORDER = 5;
 
@@ -117,6 +120,7 @@ function seeThrough(c, alpha) {
     t.depthWrite = false;
     return t;
   });
+  c._inkMats.push(tint[2]);              // 畫出來的墨線是這一份，換墨色要連它一起換
   for (const m of depth.material) { m.transparent = true; m.colorWrite = false; }
   const mesh = new THREE.Mesh(c.geometry, tint);
   mesh.position.copy(depth.position);

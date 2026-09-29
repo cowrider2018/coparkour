@@ -33,7 +33,7 @@
    ------------------------------------------------------------------ */
 
 import { PHYS, arenaGap, supportInfo } from './walk.js';
-import { FIELD, DOG_H, kindOf } from './combat.js';
+import { FIELD, DOG_H, kindOf, busy } from './combat.js';
 
 /** 每一招的數值。長度一律用狗高量；`damage` 是打中玩家扣幾點血。 */
 export const SKILL = {
@@ -55,11 +55,8 @@ export function makeWorld(field = FIELD) {
   return { shots: [], field };
 }
 
-/**
- * 不能開始放招的狀態：擊退在空中、被定住、被推開在滑。倒數中不會被擊退（見
- * armored），所以放到一半會碰上的只有「被定住」——破防攻擊打斷得了。
- */
-const busy = (m) => m.air || m.held || m.slide;
+/* 不能開始放招的狀態（combat.js 的 busy）。倒數中不會被擊退（見 armored），
+   所以放到一半會碰上的只有「被定住」——破防攻擊打斷得了。 */
 
 /** 開始一招：鎖定玩家現在的水平位置，面向它，停下來。 */
 function begin(m, skill, target) {

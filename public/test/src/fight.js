@@ -25,9 +25,9 @@ import {
   FIELD, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster, harm, lifeStep, gainHeart,
   SOUL, dropSoul, soulStep, grabs,
   breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, placeMonster, monsterStep, bites, knock,
-  inSlash, inFan, inRing, slashTip, makeCombo, comboStep, invulnerable, cueing,
+  inSlash, inFan, inRing, slashTip, makeCombo, comboStep, invulnerable, cueing, attacking,
 } from './combat.js';
-import { makeMonsterCritter, sizeOf, Motion } from './monster.js';
+import { makeMonsterCritter, sizeOf, Motion, ATTACK_INK } from './monster.js';
 import { Blade } from './blade.js';
 import { Mover } from './moves.js';
 import {
@@ -358,6 +358,8 @@ export class Fight {
       const mo = motion.step(dt, m, player);
       critter.root.position.set(m.x, m.y + mo.lift, m.z);
       critter.setFacing(Math.atan2(m.aimX, m.aimZ));
+      // 攻擊中墨線紅色：跟不可打斷（armored）同出自 attacking。
+      critter.setInkColor(attacking(m) ? ATTACK_INK : null);
       // 會飛的一直是飄著的姿勢：不踩地、不走路。
       critter.update(dt, {
         speed: Math.hypot(m.vx, m.vz), grounded: m.grounded && !KINDS[m.kind].fly && !mo.air, vy: mo.vy ?? m.vy,
