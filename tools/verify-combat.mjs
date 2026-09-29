@@ -85,9 +85,12 @@
                     第三擊多轉一圈，劍光也是兩圈。
     25. 騎士的跳砍  離玩家 8 公尺以內才放；長條的正中間是鎖定的那一點、落點在它前面半條
                     （比半條還近就原地跳）；倒數 0.5 秒站著；然後跳一道最高 1.2 公尺的弧線
-                    落在落點上、劈一下、扣 3，僵直 0.5 秒；放招中打不退。長條（加上身體）
-                    裡的劈得到、外面的劈不到，跳起來躲得過，倒數裡跑開就劈空；落點在台上
-                    就落在台上、劈那一層。動作是 cleaveWind → cleaveAir → cleaveRec。
+                    落在落點上、劈一下、扣 3；放招中打不退。長條（加上身體）裡的劈得到、
+                    外面的劈不到，跳起來躲得過，倒數裡跑開就劈空；落點在台上就落在台上、
+                    劈那一層。落地轉向主角，0.25 秒後原地起跳上挑（主角第二段那一跳），
+                    起跳後 SWING 秒內那一片直立扇形（左右各厚半條）碰到扣 3——跳起來躲
+                    不掉，旁邊、背後、太遠的不會；上挑落地才僵直 0.5 秒。動作是
+                    cleaveWind → cleaveAir → cleaveLand → cleaveUp（僵直播它的收尾）。
     26. 頭盔        騎士與 BOSS 戴、小怪與幽靈不戴。量在狗頭上（頭骨座標、靜置姿勢）：
                     頭皮與眼睛除了底下的開口與正面的切口，全部包在盔殼內層裡；面罩整片
                     在盔殼的墨線外殼外面、下緣高過吻部；兩隻眼睛各對著一個洞；臉往鏡頭
@@ -104,7 +107,7 @@ import {
   makeCombo, comboStep, invulnerable, cueing, FIELD, LIFE, resetLife, lifeStep, harm, refill, gainHeart, regen,
   SOUL, dropSoul, soulStep, grabs,
 } from '../public/test/src/combat.js';
-import { SKILL, WHIRL_LEN, makeWorld, bossStep, shotsStep, shotHits, shotBlocked, strikeHits, laneLength } from '../public/test/src/skills.js';
+import { SKILL, UP_AIR, WHIRL_LEN, makeWorld, bossStep, shotsStep, shotHits, shotBlocked, strikeHits, laneLength } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
 import { DUST, dustOf, dustFade, QUAKE, quakeBands, quakeFade } from '../public/test/src/dust.js';
 import { Motion, bloodOf, sizeOf, MOVES as KNIGHT_MOVES } from '../public/test/src/monster.js';
@@ -1693,17 +1696,20 @@ console.log('25. 騎士的跳砍');
     const w = makeWorld();
     const q = body(px, pz);
     m.castT = 0;
-    const out = { m, q, strikes: [], windStill: true, top: 0, stages: new Set(), armor: true, cast: null };
+    const out = { m, q, strikes: [], fans: [], windStill: true, top: 0, upTop: 0, stages: new Set(), armor: true, cast: null, up: null };
     const mo = new Motion();
     let t = 0;
-    while (t < 3) {
+    while (t < 4) {
       const had = !!m.cast;
       const st = bossStep(m, dt, q, w, () => 0);
       if (m.cast && !out.cast) out.cast = { ...m.cast };
-      if (st) out.strikes.push(st);
+      if (m.cast && m.cast.up && !out.up) { out.up = { ...m.cast.up }; out.upQ = { ...q }; }
+      if (st && st.shape === 'fan') out.fans.push({ ...st, at: t + dt });
+      else if (st) { out.strikes.push(st); out.strikeAt = t + dt; }
       if (m.cast && m.cast.t < S.windup && (m.x !== 0 || m.z !== 0 || m.y !== 0)) out.windStill = false;
       if (m.cast && !(attacking(m) && armored(m))) out.armor = false;
-      out.top = Math.max(out.top, m.y);
+      if (m.cast && !m.cast.up) out.top = Math.max(out.top, m.y);
+      else out.upTop = Math.max(out.upTop, m.y);
       if (m.cast) out.stages.add(mo._stage(m)[0]);
       if (had && !m.cast) { out.endAt = t + dt; out.stun = m.stun; out.rec = mo._stage(m)[0]; }
       if (move && m.cast && m.cast.t < S.windup) { q.x += move[0] * dt; q.z += move[1] * dt; }
@@ -1720,11 +1726,33 @@ console.log('25. 騎士的跳砍');
   ok(a.windStill, '倒數的 0.5 秒站著不動');
   ok(a.armor, '放招中是攻擊中、打不退（armored）');
   ok(near(a.top, S.hop, 0.02), `飛的時候跳到 ${a.top.toFixed(2)} 公尺高（弧線最高 ${S.hop}）`);
-  ok(near(a.endAt, S.windup + S.air, 1.5 * DT) && near(a.m.x, 0) && near(a.m.z, land) && a.m.y === 0 && a.m.grounded,
-    `${a.endAt.toFixed(2)} 秒落在落點上、站在地上`);
-  ok(a.strikes.length === 1 && a.strikes[0].shape === 'strip' && a.strikes[0].dmg === S.damage, `落地那一刻劈一下（只有一下、扣 ${S.damage}）`);
-  ok(a.stun === SKILL.recover && a.rec === 'cleaveRec', `落地之後僵直 ${SKILL.recover} 秒，播劈到底的收尾`);
-  ok([...a.stages].join() === 'cleaveWind,cleaveAir', `動作：${[...a.stages].join(' → ')} → ${a.rec}`);
+  ok(a.strikes.length === 1 && a.strikes[0].shape === 'strip' && a.strikes[0].dmg === S.damage && near(a.strikeAt, S.windup + S.air, 1.5 * DT),
+    `${a.strikeAt.toFixed(2)} 秒落在落點上劈一下（只有一下、扣 ${S.damage}）`);
+
+  // 上挑：落地 gap 秒後原地起跳，起跳後 swing 秒內打，落地才收招、僵直。
+  const U = S.up, upAt = S.windup + S.air + U.gap;
+  ok(U.gap === 0.25 && U.damage === 3, `上挑：落地 ${U.gap} 秒後、扣 ${U.damage}`);
+  ok(a.fans.length > 0 && a.fans.every((f) => f.dmg === U.damage && f.at > upAt - 1e-9 && f.at <= upAt + U.swing + 1e-9)
+    && near(a.fans[0].at, upAt, 1.5 * DT) && near(a.fans.at(-1).at, upAt + U.swing, 1.5 * DT),
+    `上挑在 ${a.fans[0].at.toFixed(2)}～${a.fans.at(-1).at.toFixed(2)} 秒打（起跳後 ${U.swing} 秒內）`);
+  ok(near(a.upTop, PHYS.jump ** 2 / (2 * PHYS.gravity), 0.02), `上挑原地跳到 ${a.upTop.toFixed(2)} 公尺高（主角的一跳）`);
+  ok(near(a.endAt, upAt + UP_AIR, 1.5 * DT) && near(a.m.x, 0) && near(a.m.z, land) && a.m.y === 0 && a.m.grounded,
+    `${a.endAt.toFixed(2)} 秒上挑落回原地、站在地上`);
+  ok(a.stun === SKILL.recover && a.rec === 'cleaveUp', `上挑落地之後才僵直 ${SKILL.recover} 秒，播上挑的收尾`);
+  ok([...a.stages].join() === 'cleaveWind,cleaveAir,cleaveLand,cleaveUp', `動作：${[...a.stages].join(' → ')}`);
+  ok(near(KNIGHT_MOVES.cleaveLand.keys.at(-1)[0], U.gap) && KNIGHT_MOVES.cleaveLand.keys.at(-1)[1] === HERO_MOVES.rise.keys[0][1]
+    && HERO_MOVES.rise.keys.slice(0, -1).every((k, i) => KNIGHT_MOVES.cleaveUp.keys[i] === k),
+    '上挑就是主角第二段那一套（落地停住的最後一格是它的起手）');
+
+  // 上挑打不打得到：直立扇形，跳起來躲不掉；旁邊、背後、太遠的不會。
+  {
+    const f = a.fans[0], th = U.thick + PHYS.radius;
+    const at = (x, z, y = 0) => a.fans.some((g) => strikeHits(g, body(x, z, y)));
+    ok(near(a.up.dirX, 0) && near(a.up.dirZ, 1) && strikeHits(f, body(0, 5)), '轉向主角；站在劈的那一點上：被挑到');
+    ok(at(0, 5, 1.0), '跳起來（腳 1 公尺高）：一樣被挑到');
+    ok(at(th - 0.03, 5) && !at(th + 0.03, 5), `橫向：離中線 ${th.toFixed(2)} 公尺以內挑到、以外挑不到`);
+    ok(!at(0, land - 0.5) && !at(0, land + REACH + PHYS.radius + 0.1), '背後、比 REACH 還遠：挑不到');
+  }
 
   // 比半條還近：原地跳起來劈，長條從牠腳下起。
   const b = cleave(0, S.len / 4);
@@ -1769,7 +1797,10 @@ console.log('25. 騎士的跳砍');
     m.castT = 0;
     let hit = null;
     for (let i = 0; i < 90 && !hit; i++) { hit = bossStep(m, DT, q, w, () => 0); if (!hit) monsterStep(m, DT, q); }
+    let back = null;
+    for (let i = 0; i < 90 && m.cast; i++) { bossStep(m, DT, q, w, () => 0); monsterStep(m, DT, q); back = m.y; }
     ok(hit && near(hit.y, top) && near(m.y, top) && strikeHits(hit, q), `落點在 ${top} 公尺高的台上：落在台上、劈的是台上那一層`);
+    ok(near(back, top) && m.grounded, '上挑落回台上');
   }
   KINDS.knight.skills = keep;
 }

@@ -776,15 +776,19 @@ function inFanAt(f, u, a0, a1) {
  * 那個面多遠；高一個身高）。長方形與扇形重疊就算中：長方形上取一片格點
  * 看有沒有落在扇形裡，再沿扇形的兩條直邊看有沒有穿過長方形——後者是給
  * 「扇形的邊從格點之間切過去」那種擦邊用的。
+ *
+ * `thick`：扇形往面的左右各有這麼厚（公尺，預設 0 就是上面那一片平面）。騎士的上挑
+ * （skills.js）用它——身體碰到那一塊厚片就算，切出來的長方形取最靠近面的那一刀。
  */
-export function inFan(p, m, tip) {
+export function inFan(p, m, tip, thick = 0) {
   const { dirX, dirZ, a0, a1 } = fanFrame(p, tip);
   const r = PHYS.radius;
   const dx = m.x - p.x, dz = m.z - p.z;
   const s = dz * dirX - dx * dirZ;                   // 偏離鉛直面多遠
-  if (Math.abs(s) >= r) return false;
+  if (Math.abs(s) >= r + thick) return false;
   const f = dx * dirX + dz * dirZ;                   // 在面上往前多遠
-  const w = Math.sqrt(r * r - s * s);
+  const e = Math.max(0, Math.abs(s) - thick);        // 離厚片多遠
+  const w = Math.sqrt(r * r - e * e);
   const f0 = f - w, f1 = f + w;
   const u0 = m.y - p.y, u1 = u0 + PHYS.height;
   for (let i = 0; i <= 4; i++) {

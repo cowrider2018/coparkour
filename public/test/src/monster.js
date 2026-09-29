@@ -62,7 +62,10 @@
             倒數的 0.5 秒蹲低蓄力、頭側過去、劍慢慢舉到頭頂後面；跳起來的時候是
             主角的跳躍動作組（在空中、垂直速度照那一道弧線），上半身再仰一點、
             劍舉到最高；落地前最後一下頭往前、往下甩，落地那一刻劍正劈到一半，
-            接著劈到底、整隻壓低停住，然後在僵直裡慢慢站起來、頭轉正。
+            接著劈到底、整隻壓低（cleaveLand），停到上挑之前換成主角第二擊的起手。
+            上挑（cleaveUp）就是主角第二擊那一套（moves.js 的 rise）：起跳是主角的
+            跳躍動作組（在空中、垂直速度照那一跳），劍從下往上挑；收尾拉長到
+            上挑落地之後的僵直結束。
 
    ── 會飛的漂 ──────────────────────────────────────────────────────
    會飛的（幽靈）一直是空中姿勢、不走路，所以移動的時候另外常駐一套漂（DRIFT）：
@@ -77,7 +80,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { Critter } from './critter.js';
 import { LUNGE, kindOf } from './combat.js';
-import { SKILL } from './skills.js';
+import { SKILL, UP_AIR } from './skills.js';
 import { PHYS } from './walk.js';
 import { Mover, MOVES as HERO } from './moves.js';
 
@@ -269,7 +272,8 @@ const LOOK = { stages: { coneWind: 1, leapWind: 1 }, tau: 0.12, max: 1.0 };
 
 /**
  * 怪物的每一套動作（moves.js 的 MOVES 那一種寫法），鍵就是 Motion 挑的那一段：
- * 衝刺的蓄力、衝、僵直，BOSS 每一招的倒數（…Wind）與出招後的僵直（…Rec）。
+ * 衝刺的蓄力、衝、僵直，BOSS 每一招的倒數（…Wind）與出招後的僵直（…Rec）。騎士的跳砍
+ * 沒有 …Rec：落地是 cleaveLand、上挑是 cleaveUp，僵直接著播 cleaveUp 的收尾。
  */
 export const MOVES = {
   windup: { blend: 0.05, keys: [[0, {}], [0.16, CROUCH, 'out'], [LUNGE.windup, { ...CROUCH, headPitch: 0.86, drop: 0.10 }, 'inOut']] },
@@ -307,10 +311,12 @@ export const MOVES = {
       [SKILL.cleave.air, CHOP_MID, 'in'],
     ],
   },
-  cleaveRec: {
+  cleaveLand: {
     blend: 0.02,
-    keys: [[0, CHOP_MID], [0.06, CHOP, 'out'], [0.22, { ...CHOP, headPitch: 0.90, drop: 0.30 }, 'lin'], [SKILL.recover, {}, 'inOut']],
+    keys: [[0, CHOP_MID], [0.06, CHOP, 'out'], [SKILL.cleave.up.gap, HERO.rise.keys[0][1], 'inOut']],
   },
+  /* 主角的第二擊，收尾（回到原本的樣子那一格）拉到上挑落地之後的僵直結束。 */
+  cleaveUp: { blend: 0.03, keys: [...HERO.rise.keys.slice(0, -1), [UP_AIR + SKILL.recover, {}, 'inOut']] },
 };
 
 /**
@@ -362,6 +368,7 @@ export class Motion {
     if (stage === 'dash') this._hop(o, m, t);
     if (stage === 'leapAir') this._fly(o, m, t);
     if (stage === 'cleaveAir') this._hopTo(o, m, t);
+    if (stage === 'cleaveUp' && t < UP_AIR) { o.air = true; o.vy = PHYS.jump - PHYS.gravity * t; }
     const move = this.mover.step(dt, stage, t);
     o.move = this._lookAt(dt, stage, m, player, this._float(dt, stage, m, move));
     return o;
@@ -419,9 +426,15 @@ export class Motion {
       this._skill = c.skill;
       if (c.skill === 'leap' && c.t >= LEAP_WIND) return ['leapAir', c.t - LEAP_WIND];
       if (c.skill === 'whirl' && c.t >= SKILL.whirl.windup) return ['whirlDash', c.t - SKILL.whirl.windup];
+      if (c.skill === 'cleave' && c.up) {
+        const S = SKILL.cleave, u = c.t - S.windup - S.air - S.up.gap;
+        return u < 0 ? ['cleaveLand', u + S.up.gap] : ['cleaveUp', u];
+      }
       if (c.skill === 'cleave' && c.t >= SKILL.cleave.windup) return ['cleaveAir', c.t - SKILL.cleave.windup];
       return MOVES[`${c.skill}Wind`] ? [`${c.skill}Wind`, c.t] : [null, 0];
     }
+    // 跳砍的僵直接著播上挑那一套的收尾。
+    if (m.stun > 0 && this._skill === 'cleave') return ['cleaveUp', UP_AIR + SKILL.recover - m.stun];
     if (m.stun > 0 && MOVES[`${this._skill}Rec`]) return [`${this._skill}Rec`, SKILL.recover - m.stun];
     const L = m.lunge;
     if (!L) return [null, 0];

@@ -16,7 +16,7 @@
    的是破防攻擊：被定住的那一刻放到一半的招直接取消，不打。倒數照走，下一招
    還是從上一招開始算起的 `every` 秒後。
 
-   出招之後（球射出去、跳砸落地、扇形打下去）僵直 SKILL.recover 秒：站著不動、
+   出招之後（球射出去、跳砸落地、扇形打下去、跳砍的上挑落地）僵直 SKILL.recover 秒：站著不動、
    也不追人，而且跟平常一樣打得退、傷害照算——這是反擊的空檔。被破防攻擊打斷
    的不算出招，沒有僵直。
 
@@ -40,16 +40,20 @@
             玩家的方向，玩家在正中間），倒數 0.5 秒；然後騎士跳起來、0.4 秒沿一道
             弧線（最高 1.2 公尺）落在長條靠牠的那一頭，落地那一刻劍往前劈下，打
             那一整條。玩家離得比半條還近的話，牠原地跳起來劈（長條從牠腳下起）。
+            落地之後轉向玩家現在的位置，牠腳下再出一條同樣寬、長 REACH 的紅色長條，
+            0.25 秒後上挑：跟主角第二段一樣原地起跳、劍往上掃一片直立扇形（combat.js
+            的 fanFrame，下緣指著長條的遠端，往左右各厚半條長條寬），起跳後 SWING 秒內
+            碰到就算——這一下跳起來躲不掉。上挑落地才僵直。
 
    範圍攻擊（leap 的那一圈、cone 的那一片、whirl 與 cleave 的那一條）打的是地面上一個狗高以內：
-   玩家的腳比那還高——跳起來了——就躲得過。
+   玩家的腳比那還高——跳起來了——就躲得過。跳砍之後的上挑例外：那一片是立起來的。
 
-   碰到扣血：BOSS 的招 5、騎士的 whirl 2、cleave 3（每一招的 `damage`；衝刺咬到的見 combat.js 的 KINDS）。
+   碰到扣血：BOSS 的招 5、騎士的 whirl 2、cleave 3、上挑 3（每一招的 `damage`；衝刺咬到的見 combat.js 的 KINDS）。
    打中人的球就炸掉消失。玩家無敵的時候（第三段、破防攻擊）碰到不算，球穿過去。
    ------------------------------------------------------------------ */
 
 import { PHYS, arenaGap, supportInfo, solveXZ, overlapXZ, roundTop } from './walk.js';
-import { FIELD, DOG_H, kindOf, busy, settle } from './combat.js';
+import { FIELD, DOG_H, REACH, SWING, kindOf, busy, settle, inFan } from './combat.js';
 
 /** 每一招的數值。長度一律用狗高量；`damage` 是打中玩家扣幾點血。 */
 export const SKILL = {
@@ -61,8 +65,13 @@ export const SKILL = {
      （跟主角第三擊那一圈一樣長，轉兩倍快），衝完剛好轉完。range：離玩家這麼近才放。 */
   whirl: { windup: 0.5, time: 0.4, speed: 16, radius: 1.75 * DOG_H, range: 3.2, damage: 2 },
   /* 騎士的跳砍：倒數 windup，然後 air 秒跳一道最高 hop 公尺的弧線落下、劈那一條（長 len、
-     寬 width，從落點往前）。range：離玩家這麼近才放。 */
-  cleave: { windup: 0.5, air: 0.4, hop: 1.2, len: 2.2 * DOG_H, width: 0.8 * DOG_H, range: 8, damage: 3 },
+     寬 width，從落點往前）。range：離玩家這麼近才放。
+     up：落地 gap 秒後上挑——主角第二段那一跳（初速 PHYS.jump），起跳後 swing 秒內打；
+     扇形往左右各厚 thick（預告那一條的半寬）。 */
+  cleave: {
+    windup: 0.5, air: 0.4, hop: 1.2, len: 2.2 * DOG_H, width: 0.8 * DOG_H, range: 8, damage: 3,
+    up: { gap: 0.25, swing: SWING, thick: 0.4 * DOG_H, damage: 3 },
+  },
   /** 出招後僵直幾秒。 */
   recover: 0.5,
 };
@@ -72,6 +81,9 @@ export const whirlDist = (s) => SKILL.whirl.speed * (s - (s * s) / (2 * SKILL.wh
 
 /** 劍迴旋衝刺整段衝多遠（預告那一條的長度，不算兩頭的半圓）。 */
 export const WHIRL_LEN = whirlDist(SKILL.whirl.time);
+
+/** 上挑那一跳在空中多久：初速 PHYS.jump 起跳、落回同一層。 */
+export const UP_AIR = (2 * PHYS.jump) / PHYS.gravity;
 
 /** 範圍攻擊打得到的高度：腳在打下去的那一塊地板往上這麼高以內才算（一個狗高）。 */
 const REACH_UP = PHYS.height;
@@ -153,8 +165,8 @@ const CAST = {
   },
 
   /* 倒數的時候站著；之後 air 秒沿直線飛向落點、高度是一條最高 hop 的拋物線（疊在起點與
-     落點的高低差上）。飛完那一幀落在落點上，劈那一條。 */
-  cleave(m) {
+     落點的高低差上）。飛完那一幀落在落點上，劈那一條，轉向玩家；接著是上挑（upper）。 */
+  cleave(m, world, target) {
     const c = m.cast, S = SKILL.cleave;
     const s = (c.t - S.windup) / S.air;
     if (s < 0) return null;
@@ -165,9 +177,10 @@ const CAST = {
       m.grounded = false;
       return null;
     }
+    if (c.up) return upper(m);
     m.x = c.lx; m.z = c.lz; m.y = c.ly;
     m.grounded = true;
-    m.cast = null;
+    aimUp(m, target);
     return { shape: 'strip', x: c.lx, y: c.ly, z: c.lz, dirX: c.dirX, dirZ: c.dirZ, len: S.len, w: S.width, dmg: S.damage };
   },
 
@@ -187,6 +200,38 @@ const CAST = {
   },
 };
 
+/**
+ * 跳砍落地：轉向玩家現在的位置，記下上挑的方向與那一片扇形的末端點（起跳那一層、
+ * 往前 REACH——預告那一條的遠端，fanFrame 的下緣指著它）。
+ */
+function aimUp(m, target) {
+  const c = m.cast;
+  const dx = target.x - m.x, dz = target.z - m.z, d = Math.hypot(dx, dz);
+  const [dirX, dirZ] = d > 1e-6 ? [dx / d, dz / d] : [c.dirX, c.dirZ];
+  c.up = { dirX, dirZ, x: m.x, y: m.y, z: m.z, tip: { x: m.x + dirX * REACH, y: m.y, z: m.z + dirZ * REACH } };
+  m.aimX = dirX; m.aimZ = dirZ;
+}
+
+/**
+ * 上挑：落地之後站 gap 秒，然後原地起跳（初速 PHYS.jump 的拋物線，UP_AIR 秒落回同一層），
+ * 起跳後 swing 秒內每一幀打那一片扇形（跟主角第二段一樣照這一幀的位置），落地收招。
+ */
+function upper(m) {
+  const c = m.cast, S = SKILL.cleave, U = S.up, up = c.up;
+  const u = c.t - S.windup - S.air - U.gap;
+  if (u < 0) return null;
+  if (u < UP_AIR) {
+    m.y = up.y + PHYS.jump * u - (PHYS.gravity * u * u) / 2;
+    m.grounded = false;
+    if (u > U.swing) return null;
+    return { shape: 'fan', x: m.x, y: m.y, z: m.z, aimX: up.dirX, aimZ: up.dirZ, tip: up.tip, thick: U.thick, dmg: U.damage };
+  }
+  m.y = up.y;
+  m.grounded = true;
+  m.cast = null;
+  return null;
+}
+
 /** 點 (px, pz) 到線段 (ax, az)–(bx, bz) 的水平距離。 */
 function segGap(px, pz, ax, az, bx, bz) {
   const ux = bx - ax, uz = bz - az, L2 = ux * ux + uz * uz;
@@ -202,8 +247,11 @@ function segGap(px, pz, ax, az, bx, bz) {
  *   cone     尖在 (x, z)、朝 (dirX, dirZ)、半角 half、長 r。
  *   capsule  (x, z)–(x1, z1) 那一段往外擴 r（劍迴旋衝刺這一幀走過的那一段）。
  *   strip    從 (x, z) 往 (dirX, dirZ) 長 len、寬 w 的長方形（跳砍劈下去的那一條）。
+ *   fan      腳在 (x, y, z)、下緣指著 tip 的直立扇形，左右各厚 thick（跳砍之後的上挑，
+ *            combat.js 的 inFan）。立起來的，所以不看高度——跳起來躲不掉。
  */
 export function strikeHits(st, p) {
+  if (st.shape === 'fan') return inFan(st, p, st.tip, st.thick);
   if (p.y >= (st.y ?? 0) + REACH_UP) return false;
   if (st.shape === 'capsule') return segGap(p.x, p.z, st.x, st.z, st.x1, st.z1) <= st.r + PHYS.radius;
   if (st.shape === 'strip') {
@@ -249,7 +297,7 @@ export function bossStep(m, dt, target, world, rng = Math.random) {
   }
   if (!m.cast) return null;
   m.cast.t += dt;
-  const hit = CAST[m.cast.skill](m, world) || null;
+  const hit = CAST[m.cast.skill](m, world, target) || null;
   if (!m.cast) m.stun = SKILL.recover;                 // 出完了：僵直
   return hit;
 }

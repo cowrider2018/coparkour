@@ -424,10 +424,18 @@ export class Fight {
       showStrip(whirl, wh, wh ? Math.min(1, c.t / SKILL.whirl.windup) : 0, wh ? c.x0 : 0, wh ? c.z0 : 0,
         wh ? Math.atan2(c.dirX, c.dirZ) : 0,
         wh ? Math.min(WHIRL_LEN, Math.max(0, laneLength(c.x0, c.z0, c.dirX, c.dirZ, m.field.arena) - PHYS.radius)) : 0, c ? c.y0 : 0);
-      // 跳砍：從落點往前的那一條（正中間是主角被鎖定的地方），貼在落點那一層地板上；飛的時候亮著滿的。
-      const cl = !!c && c.skill === 'cleave';
-      showStrip(cleave, cl, cl ? Math.min(1, c.t / SKILL.cleave.windup) : 0, cl ? c.lx : 0, cl ? c.lz : 0,
-        cl ? Math.atan2(c.dirX, c.dirZ) : 0, SKILL.cleave.len, cl ? c.ly : 0);
+      /* 跳砍：從落點往前的那一條（正中間是主角被鎖定的地方），貼在落點那一層地板上；飛的時候
+         亮著滿的。落地之後換成上挑那一條（從牠腳下往主角、長 REACH），等的那 gap 秒從牠腳下長滿，
+         打得到的那 swing 秒亮著滿的，之後收掉。 */
+      const cl = !!c && c.skill === 'cleave', CL = SKILL.cleave;
+      if (cl && c.up) {
+        const u = c.t - CL.windup - CL.air;
+        showStrip(cleave, u <= CL.up.gap + CL.up.swing, Math.min(1, u / CL.up.gap), c.up.x, c.up.z,
+          Math.atan2(c.up.dirX, c.up.dirZ), REACH, c.up.y);
+      } else {
+        showStrip(cleave, cl, cl ? Math.min(1, c.t / CL.windup) : 0, cl ? c.lx : 0, cl ? c.lz : 0,
+          cl ? Math.atan2(c.dirX, c.dirZ) : 0, CL.len, cl ? c.ly : 0);
+      }
       showLane(lane, orb, orb ? Math.min(1, c.t / SKILL.orb.windup) : 0, m.x, m.z,
         orb ? Math.atan2(c.dirX, c.dirZ) : 0, orb ? laneLength(m.x, m.z, c.dirX, c.dirZ, m.field.arena) : 0, m.y);
       showCircle(circle, leap, leap ? Math.min(1, c.t / SKILL.leap.windup) : 0, leap ? c.tx : 0, leap ? c.tz : 0, leap ? c.ty : 0);
@@ -459,10 +467,12 @@ export class Fight {
    * 騎士的劍迴旋衝刺：倒數完、開始衝的那一幀起一道兩圈的劍光（trail.js 的 whirl），
    * 照迴旋的半徑縮放，跟著牠的腳與鎖定的方向走——牠一邊衝一邊鋪，所以留下來的是
    * 一圈往前拉開的劍光。高度照牠的體型抬：主角的劍光在身高中間，牠畫得高。
+   * 跳砍之後的上挑交給 _upper。
    */
   _whirls() {
     for (const { m } of this.foes) {
       const c = m.cast;
+      if (c && c.skill === 'cleave') { this._upper(m, c); continue; }
       if (!c || c.skill !== 'whirl' || c.t < SKILL.whirl.windup || c.qi) continue;
       const q = this._spare.pop() || new Qi();
       if (!q.node.parent) this.scene.add(q.node);
@@ -474,6 +484,24 @@ export class Fight {
       c.qi = true;
       this._qis.push(q);
     }
+  }
+
+  /**
+   * 騎士跳砍之後的上挑：起跳那一幀起一道主角第二段的劍光（trail.js 的 rise），末端點是
+   * 那一片扇形的（skills.js 的 aimUp），跟著牠的腳走——跟判定同一片。
+   */
+  _upper(m, c) {
+    const S = SKILL.cleave;
+    if (!c.up || c.qi || c.t < S.windup + S.air + S.up.gap) return;
+    const q = this._spare.pop() || new Qi();
+    if (!q.node.parent) this.scene.add(q.node);
+    q.start('rise', c.up.tip);
+    const body = { x: 0, y: 0, z: 0, aimX: c.up.dirX, aimZ: c.up.dirZ };
+    q.owner = () => Object.assign(body, { x: m.x, y: m.y, z: m.z });
+    q.cast = c;
+    q.foe = m;
+    c.qi = true;
+    this._qis.push(q);
   }
 
   /**
