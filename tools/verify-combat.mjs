@@ -90,7 +90,8 @@
                     劈那一層。落地轉向主角，0.25 秒後原地起跳上挑（主角第二段那一跳），
                     起跳後 SWING 秒內那一片直立扇形（左右各厚半條）碰到扣 3——跳起來躲
                     不掉，旁邊、背後、太遠的不會；上挑落地才僵直 0.5 秒。動作是
-                    cleaveWind → cleaveAir → cleaveLand → cleaveUp（僵直播它的收尾）。
+                    cleaveWind → cleaveAir → cleaveLand（頭翻到另一側）→ cleaveUp（主角
+                    第二段的左右鏡像，僵直播它的收尾）。
     26. 頭盔        騎士與 BOSS 戴、小怪與幽靈不戴。量在狗頭上（頭骨座標、靜置姿勢）：
                     頭皮與眼睛除了底下的開口與正面的切口，全部包在盔殼內層裡；面罩整片
                     在盔殼的墨線外殼外面、下緣高過吻部；兩隻眼睛各對著一個洞；臉往鏡頭
@@ -110,7 +111,7 @@ import {
 import { SKILL, UP_AIR, WHIRL_LEN, makeWorld, bossStep, shotsStep, shotHits, shotBlocked, strikeHits, laneLength } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
 import { DUST, dustOf, dustFade, QUAKE, quakeBands, quakeFade } from '../public/test/src/dust.js';
-import { Motion, bloodOf, sizeOf, MOVES as KNIGHT_MOVES } from '../public/test/src/monster.js';
+import { Motion, bloodOf, sizeOf, mirror, MOVES as KNIGHT_MOVES } from '../public/test/src/monster.js';
 import { MOVES as HERO_MOVES } from '../public/test/src/moves.js';
 import { TRAILS, PIECE, BANDS, sweepAt, fadeAt, sideAt, qiAt, along, hullOf } from '../public/test/src/trail.js';
 import { bladeAt } from '../public/test/src/trail.js';
@@ -1740,9 +1741,15 @@ console.log('25. 騎士的跳砍');
     `${a.endAt.toFixed(2)} 秒上挑落回原地、站在地上`);
   ok(a.stun === SKILL.recover && a.rec === 'cleaveUp', `上挑落地之後才僵直 ${SKILL.recover} 秒，播上挑的收尾`);
   ok([...a.stages].join() === 'cleaveWind,cleaveAir,cleaveLand,cleaveUp', `動作：${[...a.stages].join(' → ')}`);
-  ok(near(KNIGHT_MOVES.cleaveLand.keys.at(-1)[0], U.gap) && KNIGHT_MOVES.cleaveLand.keys.at(-1)[1] === HERO_MOVES.rise.keys[0][1]
-    && HERO_MOVES.rise.keys.slice(0, -1).every((k, i) => KNIGHT_MOVES.cleaveUp.keys[i] === k),
-    '上挑就是主角第二段那一套（落地停住的最後一格是它的起手）');
+  {
+    const same = (a, b) => Object.keys({ ...a, ...b }).every((k) => near(a[k] || 0, b[k] || 0));
+    const hero = HERO_MOVES.rise.keys.slice(0, -1), up = KNIGHT_MOVES.cleaveUp.keys;
+    const land = KNIGHT_MOVES.cleaveLand.keys, chop = land[1][1];
+    ok(hero.every(([t, p, e], i) => up[i][0] === t && up[i][2] === e && same(up[i][1], mirror(p)) && near(up[i][1].headTilt, -(p.headTilt || 0))),
+      '上挑是主角第二段那一套左右鏡像（頭側、側倒、扭、轉反號，其他照舊）');
+    ok(near(land.at(-1)[0], U.gap) && same(land.at(-1)[1], up[0][1]) && Math.sign(chop.headTilt) === -Math.sign(up[0][1].headTilt),
+      `落地之後頭翻到另一側（headTilt ${chop.headTilt} → ${up[0][1].headTilt}），停在上挑的起手`);
+  }
 
   // 上挑打不打得到：直立扇形，跳起來躲不掉；旁邊、背後、太遠的不會。
   {

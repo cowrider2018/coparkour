@@ -62,9 +62,10 @@
             倒數的 0.5 秒蹲低蓄力、頭側過去、劍慢慢舉到頭頂後面；跳起來的時候是
             主角的跳躍動作組（在空中、垂直速度照那一道弧線），上半身再仰一點、
             劍舉到最高；落地前最後一下頭往前、往下甩，落地那一刻劍正劈到一半，
-            接著劈到底、整隻壓低（cleaveLand），停到上挑之前換成主角第二擊的起手。
-            上挑（cleaveUp）就是主角第二擊那一套（moves.js 的 rise）：起跳是主角的
-            跳躍動作組（在空中、垂直速度照那一跳），劍從下往上挑；收尾拉長到
+            接著劈到底、整隻壓低（cleaveLand），頭從這一側翻到另一側（右耳朝上
+            換成左耳朝上），換成劍柄那一側朝上，停在上挑的起手。上挑（cleaveUp）是
+            主角第二擊那一套（moves.js 的 rise）左右鏡像過來（mirror）：起跳是主角的
+            跳躍動作組（在空中、垂直速度照那一跳），頭從低往上仰；收尾拉長到
             上挑落地之後的僵直結束。
 
    ── 會飛的漂 ──────────────────────────────────────────────────────
@@ -253,6 +254,16 @@ const CHOP = {
 /** 跳砸站著蓄力的那一段有多長（之後 SKILL.leap.air 秒在飛）。 */
 const LEAP_WIND = SKILL.leap.windup - SKILL.leap.air;
 
+/** 左右向的欄位（整隻轉、上半身扭與側倒、頭的轉與側、尾巴的擺）：鏡像的時候反號。 */
+const SIDEWAYS = ['yaw', 'twist', 'lean', 'headYaw', 'headTilt', 'tailYaw'];
+
+/** 一個姿勢左右鏡像過來。 */
+export const mirror = (pose) => {
+  const out = { ...pose };
+  for (const k of SIDEWAYS) if (k in out) out[k] = -out[k];
+  return out;
+};
+
 /** 主角落地那一下的迴旋多轉一圈：轉過一圈的那幾格（yaw 過了半圈的）再加一圈。 */
 const twice = (mv) => ({
   blend: mv.blend,
@@ -313,10 +324,13 @@ export const MOVES = {
   },
   cleaveLand: {
     blend: 0.02,
-    keys: [[0, CHOP_MID], [0.06, CHOP, 'out'], [SKILL.cleave.up.gap, HERO.rise.keys[0][1], 'inOut']],
+    keys: [[0, CHOP_MID], [0.06, CHOP, 'out'], [SKILL.cleave.up.gap, mirror(HERO.rise.keys[0][1]), 'inOut']],
   },
-  /* 主角的第二擊，收尾（回到原本的樣子那一格）拉到上挑落地之後的僵直結束。 */
-  cleaveUp: { blend: 0.03, keys: [...HERO.rise.keys.slice(0, -1), [UP_AIR + SKILL.recover, {}, 'inOut']] },
+  /* 主角的第二擊左右鏡像（頭換到另一側），收尾（回到原本的樣子那一格）拉到上挑落地之後的僵直結束。 */
+  cleaveUp: {
+    blend: 0.03,
+    keys: [...HERO.rise.keys.slice(0, -1).map(([t, pose, ease]) => [t, mirror(pose), ease]), [UP_AIR + SKILL.recover, {}, 'inOut']],
+  },
 };
 
 /**
