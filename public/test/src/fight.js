@@ -25,9 +25,10 @@ import {
   FIELD, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster, harm, lifeStep, gainHeart,
   SOUL, dropSoul, soulStep, grabs,
   breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, placeMonster, monsterStep, bites, knock,
-  inSlash, inFan, inRing, slashTip, makeCombo, comboStep, invulnerable, cueing, attacking,
+  inSlash, inFan, inRing, slashTip, makeCombo, comboStep, invulnerable, untouchable, cueing, attacking,
 } from './combat.js';
 import { makeMonsterCritter, sizeOf, Motion, ATTACK_INK } from './monster.js';
+import { GUARD_INK } from './critter.js';
 import { Blade } from './blade.js';
 import { Mover } from './moves.js';
 import {
@@ -312,7 +313,7 @@ export class Fight {
     }
 
     let hit = null;
-    if (!invulnerable(combo) && !(player.guard > 0)) {
+    if (!untouchable(combo, player)) {
       const take = (cause, dmg) => { if (!hit || dmg > hit.dmg) hit = { cause, dmg }; };
       for (const { m } of this.foes) if (bites(player, m)) take('bitten', KINDS[m.kind].bite);
       for (const s of this.world.shots) if (shotHits(s, player)) take('shot', s.dmg);
@@ -351,6 +352,8 @@ export class Fight {
     this.blade.update();
     // 剛挨過一下（guard 還開著）：玩家一閃一閃的。頭頂是最大血量幾顆心、剩下的幾顆是滿的。
     this.zoo.root.visible = !(player.guard > 0) || Math.floor(player.guard * 12) % 2 === 0;
+    // 無敵的時候墨線金色：跟碰到算不算（untouchable）同一個判斷。
+    this.zoo.setInkColor(untouchable(combo, player) ? GUARD_INK : null);
     this.hearts.show(player.hp, player.max, player.x, player.y, player.z, camera.quaternion);
     for (const { m, critter, motion } of this.foes) {
       /* 衝刺與放招的動作（monster.js 的 Motion）：疊一套動作，跳的那幾段畫成在空中、

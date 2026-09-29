@@ -132,6 +132,9 @@ const TONES = (() => {
 /** 墨色，乘上這個時刻的增益——跟遊戲的 `t.ink` 同一條式子。 */
 const INK_TONED = new THREE.Color(INK).multiplyScalar(TONES.inkGain);
 
+/** 玩家無敵時（combat.js 的 untouchable）的墨線顏色：金色。 */
+export const GUARD_INK = new THREE.Color(0xf2b705);
+
 /**
  * 主光的方向（世界空間，指向光源）。
  *
@@ -518,6 +521,8 @@ export class Zoo {
   setHat(on) { this._hat = !!on; this.active.setHat(on); }
   get hatOn() { return this._hat !== false; }
   setInkPx(px, h) { this._inkPx = [px, h]; for (const c of this.critters.values()) c.setInkPx(px, h); }
+  /** 墨色換掉（不給就是平常的）。每一隻都換，換模型的那一刻才不會露出舊色。 */
+  setInkColor(color) { for (const c of this.critters.values()) c.setInkColor(color); }
   setFacing(yaw) { this.active.setFacing(yaw); }
   update(dt, st) { this.active.update(dt, st); }
   get height() { return this.active.height; }
