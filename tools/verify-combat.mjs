@@ -180,8 +180,8 @@ console.log('3. 擊退');
   s.x = 1; s.z = 1;
   knock(s, 1, 1, 1, 0);
   ok(near(s.vx, KNOCK.h) && near(s.vz, 0), '疊在出手點上就往面向推');
-  // 每一段的倍率：第一段水平 0.7、垂直 0.5；第三段水平 0.5、垂直 2。
-  const want = { slash: [0.7, 0.5], rise: [1, 1], slam: [0.5, 2] };
+  // 每一段的倍率：第一段水平 0.7、垂直 0.5；第二段水平 0.5、垂直 1.5；第三段水平 1.5、垂直 0.5。
+  const want = { slash: [0.7, 0.5], rise: [0.5, 1.5], slam: [1.5, 0.5] };
   for (const [stage, [h, v]] of Object.entries(want)) {
     const k = makeMonster();
     k.x = 0; k.z = 2;
@@ -976,7 +976,7 @@ console.log('17. 幽靈');
       if (m.air) { monsterStep(m, DT, body(0, 20)); top = Math.max(top, m.y); if (!m.air) stopAt = t; }
       t += DT;
     }
-    ok(Math.abs(top - zTop) < 0.05, `第二段挑起來：幽靈最高 ${top.toFixed(2)}、殭屍最高 ${zTop.toFixed(2)}`);
+    ok(Math.abs(top - zTop) < 0.05, `基準擊退挑起來：幽靈最高 ${top.toFixed(2)}、殭屍最高 ${zTop.toFixed(2)}`);
     ok(stopAt > 0 && near(m.y, top) && m.vy === 0, `${stopAt.toFixed(2)} 秒停在 ${m.y.toFixed(2)} 公尺的半空，不落下`);
     const y0 = m.y, z0 = m.z;
     for (let i = 0; i < 10; i++) monsterStep(m, DT, body(0, 20, y0));
@@ -985,7 +985,7 @@ console.log('17. 幽靈');
   // 高度夾在地板與蓋子底下。
   {
     const hi = ghost(0, 0, FLY.top - 0.5);
-    knock(hi, 0, 0, 0, -1, KNOCK_SCALE.slam);
+    knock(hi, 0, 0, 0, -1, KNOCK_SCALE.rise);
     for (let i = 0; i < 120 && hi.air; i++) monsterStep(hi, DT, body(0, 20));
     const lo = ghost(0, 0, 0.2);
     lo.vy = -10; lo.air = true;

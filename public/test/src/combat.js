@@ -278,7 +278,7 @@ export function grabs(p, s) {
  *
  *   drag  被擊退之後，速度沿著它自己的方向每秒減掉這麼多（公尺每秒²），三個軸
  *         一起。取重力那個數，所以垂直往上的那一份飛得跟殭屍一樣高（第二段
- *         1.1 公尺、第三段 4.5 公尺）——差別是停在那裡，不掉下來。
+ *         2.5 公尺、第三段 0.28 公尺）——差別是停在那裡，不掉下來。
  *   top   腳最高到哪：黑牆的蓋子底下一個身高。
  */
 export const FLY = { drag: PHYS.gravity, top: ARENA.lid - PHYS.height };
@@ -348,7 +348,7 @@ export const SLASH_HALF = Math.PI / 3;
 export const SWING = 0.2;
 
 /**
- * 擊退的基準：水平（遠離玩家）與垂直的初速，公尺每秒。第二段就是這一份；
+ * 擊退的基準：水平（遠離玩家）與垂直的初速，公尺每秒。各段再乘 KNOCK_SCALE；
  * 7.0 在重力 22 底下飛 0.64 秒、最高 1.1 公尺，水平帶走 1.3 公尺。
  */
 export const KNOCK = { h: 2.0, v: 7.0 };
@@ -358,14 +358,15 @@ export const KNOCK = { h: 2.0, v: 7.0 };
  *
  *   第一段  水平 0.7、垂直 0.5：1.4 m/s、3.5 m/s，飛 0.32 秒、只離地 0.28——
  *           挑一下，不是打飛。
- *   第二段  1 倍。
- *   第三段  水平 0.5、垂直 2：1 m/s、14 m/s，飛 1.27 秒、最高 4.5 公尺——
- *           幾乎是往正上方砸上去。
+ *   第二段  水平 0.5、垂直 1.5：1 m/s、10.5 m/s，飛 0.95 秒、最高 2.5 公尺——
+ *           往上挑起來。
+ *   第三段  水平 1.5、垂直 0.5：3 m/s、3.5 m/s，飛 0.32 秒、只離地 0.28、
+ *           水平帶走 0.95 公尺——往前推出去。
  */
 export const KNOCK_SCALE = {
   slash: { h: 0.7, v: 0.5 },
-  rise: { h: 1, v: 1 },
-  slam: { h: 0.5, v: 2 },
+  rise: { h: 0.5, v: 1.5 },
+  slam: { h: 1.5, v: 0.5 },
 };
 
 /**
@@ -664,11 +665,11 @@ export const bites = (p, m) => !m.air && lunging(m) && touching(p, m);
  * 換掉而不是加上去——理由見檔頭。
  *
  * 正好疊在出手點上（沒有「遠離」可言）的時候，往 (awayX, awayZ) 推，
- * 呼叫端給的是玩家面向的方向。`scale` 是這一段的倍率（KNOCK_SCALE）。
+ * 呼叫端給的是玩家面向的方向。`scale` 是這一段的倍率（KNOCK_SCALE），不給就是基準的 1 倍。
  *
  * 放招倒數中（armored）不會被擊退：這一下照樣算打中，速度一點都不動。
  */
-export function knock(m, fromX, fromZ, awayX, awayZ, scale = KNOCK_SCALE.rise) {
+export function knock(m, fromX, fromZ, awayX, awayZ, scale = { h: 1, v: 1 }) {
   m.hits++;
   if (armored(m)) return;
   m.lunge = null;                         // 衝刺被打（小怪的蓄力、任何一類的衝與衝完）：這一下取消
