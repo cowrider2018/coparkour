@@ -1,13 +1,12 @@
 /* ── test/src/fx.js ───────────────────────────────────────────
-   戰鬥的小外觀：連段的提示圈、破防的兩圈、怪物技能（BOSS、騎士）的預告與球、靈魂。
-   主角三段攻擊的範圍是劍氣，在 qi.js（形狀在 trail.js）。
+   戰鬥的小外觀：連段的提示圈、破防的兩圈、怪物技能（BOSS、騎士）的預告、靈魂。
+   主角三段攻擊的範圍是劍氣，在 qi.js（形狀在 trail.js）；BOSS 的火球在 fireball.js。
 
    BOSS 預告的形狀直接照 skills.js 的判定畫，所以畫面上那一片就是會被打到的
    地方，不是「看起來差不多」的另一個形狀。
    ------------------------------------------------------------------ */
 
 import * as THREE from '../vendor/three.module.js';
-import { toon } from './palette.js';
 
 const SEG = 32;
 
@@ -197,14 +196,6 @@ export function showStrip(f, on, frac, x, z, yaw, len, y = 0) {
     L.mid.scale.z = Math.max(1e-3, len);
     if (L.caps.length) { L.caps[0].position.z = len / 2; L.caps[1].position.z = -len / 2; }
   }
-}
-
-/** 一顆球的外觀：跟石頭同一套分階著色（palette.js 的 toon），才看得出是一顆球而不是一片圓。 */
-const ORB_MAT = toon(0xff4fd8);
-export function orbMesh(radius) {
-  const m = new THREE.Mesh(new THREE.SphereGeometry(radius, 24, 16), ORB_MAT);
-  m.visible = false;
-  return m;
 }
 
 /**

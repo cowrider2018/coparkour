@@ -30,12 +30,13 @@ import {
 import { makeMonsterCritter, sizeOf, bloodOf, swordOf, helmOf, Motion, ATTACK_INK } from './monster.js';
 import { GUARD_INK } from './critter.js';
 import { Blood } from './blood.js';
+import { Fireballs } from './fireball.js';
 import { hitFrame, pushFrame, spurtOf } from './bleed.js';
 import { Blade } from './blade.js';
 import { Helm } from './helm.js';
 import { Mover } from './moves.js';
 import {
-  cueFx, showFx, breakFx, showBreak, laneFx, showLane, orbMesh, circleFx, showCircle,
+  cueFx, showFx, breakFx, showBreak, laneFx, showLane, circleFx, showCircle,
   coneFx, showCone, stripFx, showStrip, soulMesh,
 } from './fx.js';
 import { SKILL, WHIRL_LEN, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from './skills.js';
@@ -98,9 +99,9 @@ export class Fight {
     this._pool = new Map();
     this._inkPx = null;
 
-    /* BOSS 放出來的球。一顆球一個 mesh，不夠就多做。 */
+    /* BOSS 放出來的球：畫成火球（fireball.js）；尾巴的火粒要 renderer 畫場。 */
     this.world = makeWorld();
-    this._orbs = [];
+    this._fire = new Fireballs(scene, SKILL.orb.radius, renderer);
 
     /* 連段的狀態與按鍵的提示圈。 */
     this.combo = makeCombo();
@@ -148,6 +149,7 @@ export class Fight {
     this._inkPx = [px, h];
     for (const list of this._pool.values()) for (const s of list) s.critter.setInkPx(px, h);
     this._blood.setInkPx(px, h);
+    this._fire.setInkPx(px, h);
   }
 
   /** 一隻怪物噴一次血：frame 是方向（bleed.js），at 是牠這一刻在哪（帶著 field）。 */
@@ -425,18 +427,8 @@ export class Fight {
       showCone(cone, fan, fan ? Math.min(1, c.t / SKILL.cone.windup) : 0, m.x, m.z, fan ? Math.atan2(c.dirX, c.dirZ) : 0, m.y);
     }
 
-    // 飛著的球。
-    const shots = this.world.shots;
-    while (this._orbs.length < shots.length) {
-      const o = orbMesh(SKILL.orb.radius);
-      this.scene.add(o);
-      this._orbs.push(o);
-    }
-    this._orbs.forEach((o, i) => {
-      const s = shots[i];
-      o.visible = !!s;
-      if (s) o.position.set(s.x, s.y, s.z);
-    });
+    // 飛著的球（火球）。
+    this._fire.draw(dt, this.world.shots, camera);
 
     // 靈魂。
     while (this._soulMeshes.length < this.souls.length) {
