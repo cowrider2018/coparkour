@@ -407,8 +407,8 @@ console.log('9. 打一整套');
 console.log('10. 名冊與血');
 {
   ok(KINDS.minion.hp === 4 && KINDS.boss.hp === 20, '名冊裡兩類：小怪血 4、BOSS 血 20');
-  ok(KINDS.knight.hp === 10 && KINDS.knight.speed === 3.6 && !KINDS.knight.steady && !KINDS.knight.fly && sizeOf('knight') === 1.5,
-    '騎士：血 10、腳程 3.6、衝刺打得斷、不會飛、畫成 1.5 倍高');
+  ok(KINDS.knight.hp === 10 && KINDS.knight.speed === 3.6 && !KINDS.knight.steady && !KINDS.knight.fly && sizeOf('knight') === 1.2,
+    '騎士：血 10、腳程 3.6、衝刺打得斷、不會飛、畫成 1.2 倍高');
   ok(SPAWN.monsters.map((s) => makeMonster(s)).every((q) => q.hp === KINDS[q.kind].hp), '每一隻生出來是自己那一類的滿血');
   const mm = makeMonster(SPAWN.monsters[1]);
   hurt(mm, DAMAGE.slash);

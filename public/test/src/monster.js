@@ -4,7 +4,7 @@
      minion  殭屍：純綠色，一般大小。
      boss    殭屍 BOSS：同一件綠毛，兩倍大。
      ghost   幽靈：淡藍白，半透明，一般大小。
-     knight  騎士：同一件綠毛，1.5 倍高，嘴裡橫咬一把雙刃劍（blade.js 的 knight）。
+     knight  騎士：同一件綠毛，1.2 倍高，嘴裡橫咬一把雙刃劍（blade.js 的 knight）。
 
    只是看起來大：碰撞還是 combat.js 那同一個 PHYS 圓柱。
 
@@ -86,7 +86,7 @@ const LOOKS = {
   minion: { coat: ZOMBIE, height: 1.0, alpha: 1, blood: 'blood' },
   boss: { coat: ZOMBIE, height: 2.0, alpha: 1, blood: 'blood' },
   ghost: { coat: GHOST, height: 1.0, alpha: 0.5, blood: 'ecto' },
-  knight: { coat: ZOMBIE, height: 1.5, alpha: 1, blood: 'blood', sword: 'knight' },
+  knight: { coat: ZOMBIE, height: 1.2, alpha: 1, blood: 'blood', sword: 'knight' },
 };
 /** 這一類畫多高，跟狗（1）比。落地的粉塵照它算（dust.js）。 */
 export const sizeOf = (kind) => LOOKS[kind].height;

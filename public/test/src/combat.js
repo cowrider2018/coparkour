@@ -113,7 +113,7 @@ export const MODES = [
   { id: 'boss', name: '1 BOSS', hint: '一隻兩倍大的 BOSS。', monsters: [post('boss', 0)] },
   { id: 'mixed', name: '2 殭屍 + 1 BOSS', hint: '大隻的 BOSS 在中間，兩隻殭屍在左右。', monsters: [post('boss', 0), post('minion', -4), post('minion', 4)] },
   { id: 'ghosts', name: '3 幽靈', hint: '三隻半透明、會飛的幽靈。', monsters: [post('ghost', -4), post('ghost', 0), post('ghost', 4)] },
-  { id: 'knight', name: '1 騎士', hint: '一隻咬著雙刃劍、1.5 倍高的騎士。', monsters: [post('knight', 0)] },
+  { id: 'knight', name: '1 騎士', hint: '一隻咬著雙刃劍、1.2 倍高的騎士。', monsters: [post('knight', 0)] },
 ];
 
 /** 一開始是哪一個陣容。 */
@@ -160,11 +160,11 @@ export const FIELD = { arena: ARENA, cols: COLS, doors: {} };
  *           衝刺（蓄力與衝）不會被打斷（見 armored）。
  *   ghost   幽靈（半透明的小怪）。血、腳程跟殭屍一樣。`fly`：不受重力，
  *           y 跟 x、z 一樣追、一樣衝、被擊退也不落下（見 FLY）。
- *   knight  騎士（殭屍畫成 1.5 倍高，嘴裡咬著一把雙刃劍）。血 10、腳程 3.6。
+ *   knight  騎士（殭屍畫成 1.2 倍高，嘴裡咬著一把雙刃劍）。血 10、腳程 3.6。
  *           衝刺跟小怪一樣一打就取消（不是 `steady`）。每 `every` 秒從 `skills`
  *           裡挑一招（skills.js），夠得到才放。
  *
- * 碰撞的身體一樣大（同一個 PHYS 的圓柱）；外觀（同一件毛、BOSS 畫兩倍大、騎士 1.5 倍）在 monster.js。
+ * 碰撞的身體一樣大（同一個 PHYS 的圓柱）；外觀（同一件毛、BOSS 畫兩倍大、騎士 1.2 倍）在 monster.js。
  *
  * `bite` 是衝刺咬到玩家扣幾點血：小怪 1、騎士 2、BOSS 3。`soul`：死掉的時候掉出一顆靈魂（見 SOUL）。
  *
