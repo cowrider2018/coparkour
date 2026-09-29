@@ -102,8 +102,8 @@ export class Fight {
     this.combo = makeCombo();
     this._fx = { cue: cueFx() };
     scene.add(this._fx.cue.node);
-    /** 劍光：三段攻擊的範圍，一道細的月牙（trail.js 算形狀、qi.js 畫）。還看得到的
-        每一道，與收掉的那幾道（下一道借）。 */
+    /** 劍光：三段攻擊的範圍，同心的三道劍氣（trail.js 算形狀、qi.js 畫）。還看得到的
+        每一刀，與收掉的那幾刀（下一刀借）。 */
     this._qis = [];
     this._spare = [];
     /* 落地的粉塵畫在共用的流體場（fluid.js）上，一團借一格。畫不出流體的機器、或網址

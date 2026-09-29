@@ -64,10 +64,12 @@
                     倒下補滿到最大血量；不在戰鬥中每 0.3 秒回一顆、回到滿為止。
     20. 靈魂        只有 BOSS 會掉；從身體中間受重力往下掉，落在腳下那一層地板上
                     0.5 公尺，之後上下 ±0.2 簡諧漂浮、不橫移；碰到身體才撿得到。
-    21. 劍光        三段攻擊的範圍畫成的那一道月牙（trail.js）：掃的角度就是判定的
-                    角度、一路往同一個方向掃；外緣就在 REACH 上、中間寬頭尾尖
-                    （一整圈的不收）；月牙上的每一點都打得到——各種面向、第二段
-                    跳起來高過末端點也一樣；整道在同一個面上。
+    21. 劍光        三段攻擊的範圍畫成的同心三道劍氣（trail.js）：掃的角度就是判定的
+                    角度、一路往同一個方向掃；最外那一道的外緣在 REACH 上、最粗，
+                    往內一道比一道靠內、一道比一道細，相鄰兩道疊在一起；每一道起點
+                    尖、往刀那一頭變寬到全寬（一整圈的不收）；合起來的外框框得住三道、
+                    全寬時併成一塊；每一道上的每一點都打得到——各種面向、
+                    第二段跳起來高過末端點也一樣；整道在同一個面上。
     22. 落地粉塵    太輕的落地（比 DUST.min 慢）不起塵；狗普通地跳一下是力道 1；力道有
                     上限；體型越大、落得越重，塵越濃、起塵的那一圈越大、推得越快越遠、
                     留得越久，沒有一項會倒過來；一團塵從全在淡到收掉，不會回來。
@@ -88,7 +90,7 @@ import {
 import { SKILL, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
 import { DUST, dustOf, dustFade, QUAKE, quakeBands, quakeFade } from '../public/test/src/dust.js';
-import { TRAILS, PIECE, sweepAt, fadeAt, crescentAt, qiAt, along } from '../public/test/src/trail.js';
+import { TRAILS, PIECE, BANDS, sweepAt, fadeAt, sideAt, qiAt, along, hullOf } from '../public/test/src/trail.js';
 
 let fails = 0;
 const ok = (cond, msg) => {
@@ -1160,24 +1162,52 @@ console.log('21. 劍光');
       `${kind}：掃的時候全亮，掃完之後淡掉，${T.life} 秒收起來`);
   }
 
-  // 月牙的形狀：外緣就在判定的半徑上，中間寬、頭尾尖；一整圈的不收。
+  /* 三道的形狀：最外那一道的外緣就在判定的半徑上、最粗；往內一道比一道靠內、
+     一道比一道細；相鄰兩道疊在一起；最裡面那一道也不過身體中心。 */
   const me = body(0, 0, 0, [0, -1]);
   const mid = (kind) => (TRAILS[kind].from + TRAILS[kind].to) / 2;
   const along60 = (kind, k) => TRAILS[kind].from + ((TRAILS[kind].to - TRAILS[kind].from) * k) / 60;
   const radius = (q) => Math.hypot(...q.p.map((v, i) => v - q.b.o[i]));
+  let order = BANDS.length === 3 && BANDS[0].out === REACH;
+  for (let b = 1; b < BANDS.length; b++) {
+    const o = BANDS[b - 1], i = BANDS[b];
+    if (!(i.out < o.out && i.wide < o.wide && i.out > o.out - o.wide)) order = false;
+  }
+  const last = BANDS[BANDS.length - 1];
+  ok(order && last.out - last.wide > 0,
+    `一刀三道：最外那一道貼 REACH、最粗（${BANDS.map((b) => b.wide.toFixed(2)).join(' → ')} 公尺），往內一道比一道細，相鄰兩道疊在一起`);
   for (const kind of Object.keys(TRAILS)) {
     let edge = true;
     for (let k = 0; k <= 60; k++) {
-      const q = qiAt(kind, along60(kind, k), me, slashTip(me));
-      if (!near(radius(q) + q.w / 2, REACH)) edge = false;
+      for (let b = 0; b < BANDS.length; b++) {
+        const q = qiAt(kind, along60(kind, k), me, slashTip(me), b);
+        if (!near(radius(q) + q.w / 2, BANDS[b].out)) edge = false;
+      }
     }
-    ok(edge, `${kind}：月牙的外緣一路都在 REACH（${REACH.toFixed(2)} 公尺）上`);
+    ok(edge, `${kind}：每一道的外緣一路都在它的 out 上（最外那一道在 REACH ${REACH.toFixed(2)} 公尺）`);
   }
-  ok(near(crescentAt('slash', mid('slash')), 1) && crescentAt('slash', TRAILS.slash.from) < 0.2 && crescentAt('slash', TRAILS.slash.to) < 0.2,
-    '第一段的月牙：中間最寬、頭尾收到兩成以下');
-  ok(crescentAt('slam', TRAILS.slam.from) === 1 && crescentAt('slam', mid('slam')) === 1, '第三段是一整圈，寬度不收');
+  /* 合起來的外框（qi.js 鋪的就是它，光影照它算）：每一截三道都在框裡，框的內緣就是
+     最靠內的那一道的內緣、外緣就是 REACH；全寬的時候三道併成一塊、中間沒有空。 */
+  let hull = true;
+  for (let s = 0; s <= 1.0001; s += 0.05) {
+    const h = hullOf(s), ins = BANDS.map((B) => B.out - B.wide * s);
+    if (!near(h.outer, REACH) || !near(h.inner, Math.min(...ins)) || ins.some((v) => v < h.inner - 1e-12)) hull = false;
+  }
+  const full = [...BANDS].sort((a, b) => a.out - b.out);
+  let joined = true;
+  for (let i = 1; i < full.length; i++) if (full[i].out - full[i].wide > full[i - 1].out) joined = false;
+  ok(hull && joined, '三道合起來的外框框得住每一道、外緣在 REACH，全寬的時候併成一塊');
 
-  /* 劍氣就是範圍：月牙上的每一點（中線與內外兩緣）放一隻怪物，都要打得到。各種
+  // 一側寬：起點尖、往刀那一頭只變寬不變窄，刀那一頭是全寬的平邊。
+  for (const kind of ['slash', 'rise']) {
+    let grow = true;
+    for (let k = 0; k < 60; k++) if (sideAt(kind, along60(kind, k + 1)) < sideAt(kind, along60(kind, k)) - 1e-12) grow = false;
+    ok(grow && sideAt(kind, TRAILS[kind].from) < 0.2 && sideAt(kind, TRAILS[kind].to) === 1 && sideAt(kind, mid(kind)) > 0.9,
+      `${kind}：一側寬——起點收到兩成以下、往刀那一頭只變寬，刀那一頭全寬`);
+  }
+  ok(sideAt('slam', TRAILS.slam.from) === 1 && sideAt('slam', mid('slam')) === 1, '第三段是一整圈，寬度不收');
+
+  /* 劍氣就是範圍：三道上的每一點（中線與內外兩緣）放一隻怪物，都要打得到。各種
      面向；第二段各種「上一次第一段的末端點」（正前方、偏一邊、跳起來高過它）。 */
   const cases = [];
   for (const a of [0, 1.1, 2.5, -2.0]) {
@@ -1190,20 +1220,22 @@ console.log('21. 劍光');
   for (const kind of Object.keys(TRAILS)) {
     for (const [p, tip] of cases) {
       for (let k = 0; k <= 60; k++) {
-        const q = qiAt(kind, along60(kind, k), p, tip), r = radius(q);
-        for (const rr of [r - q.w / 2, r, r + q.w / 2 - 1e-6]) {
-          const pt = along(q.b, rr);
-          const m = { x: pt[0], y: pt[1] - PHYS.height / 2, z: pt[2] };
-          const hit = kind === 'rise' ? inFan(p, m, tip) : range[kind](p, m);
-          if (!hit && inside) { inside = false; where = `${kind} 在 (${pt.map((v) => v.toFixed(2))})`; }
+        for (let b = 0; b < BANDS.length; b++) {
+          const q = qiAt(kind, along60(kind, k), p, tip, b), r = radius(q);
+          for (const rr of [r - q.w / 2, r, r + q.w / 2 - 1e-6]) {
+            const pt = along(q.b, rr);
+            const m = { x: pt[0], y: pt[1] - PHYS.height / 2, z: pt[2] };
+            const hit = kind === 'rise' ? inFan(p, m, tip) : range[kind](p, m);
+            if (!hit && inside) { inside = false; where = `${kind} 第 ${b + 1} 道在 (${pt.map((v) => v.toFixed(2))})`; }
+          }
         }
       }
     }
   }
-  ok(inside, `月牙上的每一點都打得到${inside ? '' : `——${where} 打不到`}`);
+  ok(inside, `三道上的每一點都打得到${inside ? '' : `——${where} 打不到`}`);
 
-  /* 整道月牙在同一個面上：人沒動的話每一截的面法線（刀的方向 × 掃的方向）都一樣，
-     而且每一截都在那個面上。qi.js 照這個法線把月牙往兩面鼓、算明暗。 */
+  /* 整道劍氣在同一個面上：人沒動的話每一截的面法線（刀的方向 × 掃的方向）都一樣，
+     而且每一截都在那個面上。三道是同一把刀上不同的半徑，所以也在這個面上。 */
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
   let flat = true;
@@ -1216,10 +1248,11 @@ console.log('21. 劍光');
       }
     }
   }
-  ok(flat, '整道月牙在同一個面上、每一截的面法線都一樣（第二段是那片鉛直扇形所在的面）');
+  ok(flat, '整道劍氣在同一個面上、每一截的面法線都一樣（第二段是那片鉛直扇形所在的面）');
 
-  // 一排最多掃過 PIECE：刀尖兩排之間走的距離比月牙最寬處短，弧才不會變成折線。
-  ok(PIECE * REACH < TRAILS.slash.width, `刀尖兩排之間最多走 ${(PIECE * REACH).toFixed(2)} 公尺，比月牙最寬處（${TRAILS.slash.width}）短`);
+  // 一排最多掃過 PIECE：每一道的外緣兩排之間走的距離比那一道最寬處短，弧才不會變成折線。
+  ok(BANDS.every((B) => PIECE * B.out < B.wide),
+    `兩排之間每一道的外緣最多走 ${BANDS.map((B) => (PIECE * B.out).toFixed(2)).join(' / ')} 公尺，比那一道最寬處（${BANDS.map((B) => B.wide.toFixed(2)).join(' / ')}）短`);
 }
 
 /* ── 22. 落地粉塵 ──────────────────────────────────────────────────── */
