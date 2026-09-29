@@ -1283,6 +1283,13 @@ console.log('21. 劍光');
   const range = { slash: inSlash, slam: inRing, whirl: inRing };
   ok(sweepAt('slash', 0) === -Math.PI / 3 && near(sweepAt('slash', 1), Math.PI / 3), '第一段：從右 60° 掃到左 60°，就是判定的那 120°');
   ok(sweepAt('rise', 0) === 0 && near(sweepAt('rise', 1), FAN.sweep), '第二段：從扇形的下緣往上掃 90°，就是判定的那片扇形');
+  {
+    // 騎士的跳砍：同一片扇形反過來，從正上方劈到下緣（指著劈的那一條的遠端）。
+    const p = body(0, 0), tip = { x: 0, y: 0, z: SKILL.cleave.len };
+    const top = bladeAt('cleave', TRAILS.cleave.from, p, tip).d, end = bladeAt('cleave', TRAILS.cleave.to, p, tip).d;
+    ok(near(top[1], 1) && near(end[2], 1) && near(end[1], 0) && TRAILS.cleave.taper,
+      '騎士跳砍：從正上方往下劈到指著那一條，起點尖');
+  }
   ok(TRAILS.slam.to - TRAILS.slam.from >= 2 * Math.PI, '第三段：掃滿一整圈');
   for (const kind of Object.keys(TRAILS)) {
     let mono = true;
@@ -1330,7 +1337,7 @@ console.log('21. 劍光');
   ok(hull && joined, '三道合起來的外框框得住每一道、外緣在 REACH，全寬的時候併成一塊');
 
   // 一側寬：起點尖、往刀那一頭只變寬不變窄，刀那一頭是全寬的平邊。
-  for (const kind of ['slash', 'rise']) {
+  for (const kind of ['slash', 'rise', 'cleave']) {
     let grow = true;
     for (let k = 0; k < 60; k++) if (sideAt(kind, along60(kind, k + 1)) < sideAt(kind, along60(kind, k)) - 1e-12) grow = false;
     ok(grow && sideAt(kind, TRAILS[kind].from) < 0.2 && sideAt(kind, TRAILS[kind].to) === 1 && sideAt(kind, mid(kind)) > 0.9,
@@ -1356,7 +1363,7 @@ console.log('21. 劍光');
           for (const rr of [r - q.w / 2, r, r + q.w / 2 - 1e-6]) {
             const pt = along(q.b, rr);
             const m = { x: pt[0], y: pt[1] - PHYS.height / 2, z: pt[2] };
-            const hit = kind === 'rise' ? inFan(p, m, tip) : range[kind](p, m);
+            const hit = kind === 'rise' || kind === 'cleave' ? inFan(p, m, tip) : range[kind](p, m);
             if (!hit && inside) { inside = false; where = `${kind} 第 ${b + 1} 道在 (${pt.map((v) => v.toFixed(2))})`; }
           }
         }

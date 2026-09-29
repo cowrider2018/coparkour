@@ -251,6 +251,9 @@ const CHOP = {
   front: -0.30, hind: -0.45, knee: -0.70, legs: 0.9, w: 1,
 };
 
+/** 跳砍落地前頭往前甩的那一下多長（秒）：落地那一刻劍正劈到一半。劍光（fight.js）從這一下開始掃。 */
+export const CHOP_LEAD = 0.08;
+
 /** 跳砸站著蓄力的那一段有多長（之後 SKILL.leap.air 秒在飛）。 */
 const LEAP_WIND = SKILL.leap.windup - SKILL.leap.air;
 
@@ -318,7 +321,7 @@ export const MOVES = {
     keys: [
       [0, { ...RAISE, headPitch: -0.85, drop: 0.34, knee: -0.98 }],
       [0.18, HIGH, 'out'],
-      [SKILL.cleave.air - 0.08, HIGH, 'lin'],
+      [SKILL.cleave.air - CHOP_LEAD, HIGH, 'lin'],
       [SKILL.cleave.air, CHOP_MID, 'in'],
     ],
   },

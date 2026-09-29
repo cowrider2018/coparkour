@@ -37,6 +37,9 @@
             FAN.sweep。
      slam   身體中間那個高度的水平面，整整一圈多一點，從右後方開始往左轉
             （moves.js：整隻往左轉一圈多）。
+     cleave 騎士（怪物）的跳砍：跟 rise 同一片鉛直扇形，反過來從正上方往下劈到下緣
+            （下緣指著劈的那一條的遠端，半徑由 qi.js 照那一條的長度縮放）。
+            θ 一樣從 0 往上數，量的是從正上方往下劈了多少。
      whirl  騎士（怪物）的劍迴旋衝刺：跟 slam 一樣，只是多轉一圈、同樣 0.40 秒掃完
             （monster.js 的 whirlDash）。半徑由 qi.js 照騎士的迴旋縮放。
 
@@ -86,6 +89,7 @@ export const TRAILS = {
   slash: { t0: 0.05, t1: 0.17, from: -SLASH_HALF, to: SLASH_HALF, ease: 'strike', life: 0.39, taper: true },
   rise: { t0: 0.04, t1: 0.17, from: 0, to: FAN.sweep, ease: 'strike', life: 0.39, taper: true },
   slam: { t0: 0, t1: 0.40, from: -1.0 - Math.PI / 2, to: -1.0 - Math.PI / 2 + TAU + 0.35, ease: 'out2', life: 0.62, taper: false },
+  cleave: { t0: 0, t1: 0.14, from: 0, to: FAN.sweep, ease: 'strike', life: 0.36, taper: true },
   whirl: { t0: 0, t1: 0.40, from: -1.0 - Math.PI / 2, to: -1.0 - Math.PI / 2 + 2 * TAU + 0.35, ease: 'out2', life: 0.62, taper: false },
 };
 
@@ -128,6 +132,11 @@ export function bladeAt(kind, theta, p, tip) {
     const { dirX, dirZ, a0 } = fanFrame(p, tip);
     const a = a0 + theta, c = Math.cos(a), s = Math.sin(a);
     return { o: [p.x, p.y, p.z], d: [dirX * c, s, dirZ * c], t: [-dirX * s, c, -dirZ * s] };
+  }
+  if (kind === 'cleave') {
+    const { dirX, dirZ, a1 } = fanFrame(p, tip);
+    const a = a1 - theta, c = Math.cos(a), s = Math.sin(a);
+    return { o: [p.x, p.y, p.z], d: [dirX * c, s, dirZ * c], t: [dirX * s, -c, dirZ * s] };
   }
   const a = Math.atan2(p.aimX, p.aimZ) + theta, c = Math.cos(a), s = Math.sin(a);
   return { o: waist(p), d: [s, 0, c], t: [c, 0, -s] };

@@ -27,7 +27,7 @@ import {
   breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, placeMonster, monsterStep, bites, knock,
   inSlash, inFan, inRing, slashTip, makeCombo, comboStep, invulnerable, untouchable, cueing, attacking, taken,
 } from './combat.js';
-import { makeMonsterCritter, sizeOf, bloodOf, swordOf, helmOf, Motion, ATTACK_INK } from './monster.js';
+import { makeMonsterCritter, sizeOf, bloodOf, swordOf, helmOf, Motion, ATTACK_INK, CHOP_LEAD } from './monster.js';
 import { GUARD_INK } from './critter.js';
 import { Blood } from './blood.js';
 import { Fireballs } from './fireball.js';
@@ -467,12 +467,12 @@ export class Fight {
    * 騎士的劍迴旋衝刺：倒數完、開始衝的那一幀起一道兩圈的劍光（trail.js 的 whirl），
    * 照迴旋的半徑縮放，跟著牠的腳與鎖定的方向走——牠一邊衝一邊鋪，所以留下來的是
    * 一圈往前拉開的劍光。高度照牠的體型抬：主角的劍光在身高中間，牠畫得高。
-   * 跳砍之後的上挑交給 _upper。
+   * 跳砍與之後的上挑交給 _cleave。
    */
   _whirls() {
     for (const { m } of this.foes) {
       const c = m.cast;
-      if (c && c.skill === 'cleave') { this._upper(m, c); continue; }
+      if (c && c.skill === 'cleave') { this._cleave(m, c); continue; }
       if (!c || c.skill !== 'whirl' || c.t < SKILL.whirl.windup || c.qi) continue;
       const q = this._spare.pop() || new Qi();
       if (!q.node.parent) this.scene.add(q.node);
@@ -487,20 +487,34 @@ export class Fight {
   }
 
   /**
-   * 騎士跳砍之後的上挑：起跳那一幀起一道主角第二段的劍光（trail.js 的 rise），末端點是
-   * 那一片扇形的（skills.js 的 aimUp），跟著牠的腳走——跟判定同一片。
+   * 騎士的跳砍兩道劍光，跟著牠的腳走：
+   *   劈  落地前 CHOP_LEAD 秒（頭往前甩的那一下）起一道 cleave，從正上方劈到指著
+   *       那一條的遠端，照那一條的長度縮放——劍光的終點就是劈的那一條。
+   *   上挑 起跳那一幀起一道主角第二段的劍光（rise），末端點是那一片扇形的
+   *       （skills.js 的 aimUp）——跟判定同一片。
    */
-  _upper(m, c) {
+  _cleave(m, c) {
     const S = SKILL.cleave;
-    if (!c.up || c.qi || c.t < S.windup + S.air + S.up.gap) return;
+    if (!c.chopQi && c.t >= S.windup + S.air - CHOP_LEAD) {
+      const tip = { x: c.lx + c.dirX * S.len, y: c.ly, z: c.lz + c.dirZ * S.len };
+      this._foeQi(m, c, 'cleave', tip, S.len / REACH, c.dirX, c.dirZ);
+      c.chopQi = true;
+    }
+    if (c.up && !c.qi && c.t >= S.windup + S.air + S.up.gap) {
+      this._foeQi(m, c, 'rise', c.up.tip, 1, c.up.dirX, c.up.dirZ);
+      c.qi = true;
+    }
+  }
+
+  /** 怪物身上起一道劍光：跟著牠的腳，朝 (aimX, aimZ)，招被打斷就收（見 _qi）。 */
+  _foeQi(m, c, kind, tip, scale, aimX, aimZ) {
     const q = this._spare.pop() || new Qi();
     if (!q.node.parent) this.scene.add(q.node);
-    q.start('rise', c.up.tip);
-    const body = { x: 0, y: 0, z: 0, aimX: c.up.dirX, aimZ: c.up.dirZ };
+    q.start(kind, tip, scale);
+    const body = { x: 0, y: 0, z: 0, aimX, aimZ };
     q.owner = () => Object.assign(body, { x: m.x, y: m.y, z: m.z });
     q.cast = c;
     q.foe = m;
-    c.qi = true;
     this._qis.push(q);
   }
 
