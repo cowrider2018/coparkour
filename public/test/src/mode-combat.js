@@ -110,7 +110,7 @@ function setMode(id) {
 /* ── 外觀、HUD、操作 ──────────────────────────────────────────────
    輸入與版面在 controls.js（每個模式都一樣）；換了動物，刀跟著掛到新那一隻頭上。
    右邊那塊面板在地形模式是選地形，這裡借它選陣容：同一種按鈕、同一個「選中」的
-   樣子、同一組數字鍵。這個模式自己的鍵：R 重新站位、1–4 陣容。 */
+   樣子、同一組數字鍵。這個模式自己的鍵：R 重新站位、1–6 陣容。 */
 const looks = wardrobe(zoo, () => hud, () => fight.follow());
 const hud = new Hud({
   zoo, blocks: MODES, onLook: looks.setLook, onHat: looks.toggleHat,
@@ -163,7 +163,7 @@ function frame(now) {
 
   /* 怪物與打中。挨一下扣血；血扣光了雙方回到站位。打死的怪物在牠的重生點重生。 */
   const { hit, died, kills, souls } = fight.resolve(dt, player);
-  for (const k of kills) hud.flash(`打死${KINDS[k].name}，牠在重生點重生${KINDS[k].soul ? '，掉出一顆靈魂' : ''}`);
+  for (const k of kills) hud.flash(`打死${KINDS[k].name}，牠在重生點重生${KINDS[k].soul ? '，掉出一顆靈魂' : ''}${KINDS[k].skills?.includes('summon') ? '，牠召喚的一起消失' : ''}`);
   if (souls) hud.flash(`撿到靈魂，最大血量 +${souls}`);
   if (died) {
     deaths++;
