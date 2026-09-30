@@ -45,6 +45,7 @@ import { makeCam, snapCam, updateCam } from './camera.js';
 import { Controls, fitView, wardrobe } from './controls.js';
 import { buildStage } from './stage.js';
 import { makeHero, steerHero, moveHero } from './hero.js';
+import { Transit } from './transit.js';
 
 const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -85,10 +86,15 @@ const player = { ...makeHero(ruins.spawns.courtyard[0], 0, ruins.spawns.courtyar
    靠看。這裡只有玩家的輸入寫進 yaw／pitch／dist。 */
 const cam = makeCam(0, 0);
 
+/** 穿過感測區的那一下暗下去再亮回來（transit.js）。 */
+const transit = new Transit(document.getElementById('fade'));
+const STILL = { ix: 0, iz: 0, mag: 0 };
+
 /** 把角色放到某個區塊的出生點。 */
 function goto(id) {
   const s = ruins.spawns[id];
   if (!s) return;
+  transit.cancel();
   player.x = s[0]; player.y = s[1] + 0.2; player.z = s[2];
   player.vx = player.vy = player.vz = 0;
   player.block = id;
@@ -151,23 +157,27 @@ function frame(now) {
   last = now;
   pad.update(dt);
 
-  const input = controls.axis();
+  // 快被送走的那一段（畫面正在暗下去）不操作：身體照慣性停下。
+  const input = transit.busy ? STILL : controls.axis();
 
   const locked = steerHero(player, dt, controls, input);
 
   const jumped = controls.jumpHeld();
-  if (jumped && player.grounded && !locked) {
+  if (jumped && player.grounded && !locked && !transit.busy) {
     player.vy = PHYS.jump;
     player.grounded = false;
   }
 
   const realSpeed = moveHero(player, dt, COLS, ruins.portals, doors);
 
-  /* 感測區（井底、沒入黑霧的路、開著的門）：走進去就被送到它的目的地。
-     判斷在 walk.js，驗證器淹水的時候問的是同一支；門關著的那幾個不算。 */
+  /* 感測區（井底、沒入黑霧的路、開著的門）：走進去就被送到它的目的地——
+     畫面先暗下去，全黑的時候才送（transit.js）。判斷在 walk.js，驗證器淹水
+     的時候問的是同一支；門關著的那幾個不算。 */
   {
-    const gate = portalAt(ruins.portals, player.x, player.y, player.z, doors);
-    if (gate) warp(gate.dest);
+    const due = transit.update(dt);
+    if (due) warp(due);
+    const gate = !transit.busy && portalAt(ruins.portals, player.x, player.y, player.z, doors);
+    if (gate) transit.go(gate.dest);
   }
 
   // 走到哪個區塊了。用出生點最近的那一個，不用方框——區塊之間是連著的。

@@ -30,6 +30,7 @@ import { makeCam, snapCam, updateCam } from './camera.js';
 import { Controls, fitView, wardrobe } from './controls.js';
 import { buildStage } from './stage.js';
 import { makeHero, steerHero, moveHero } from './hero.js';
+import { Transit } from './transit.js';
 import { Fight, DEATH_TEXT } from './fight.js';
 import { resetLife, refill, regen } from './combat.js';
 import { BLOCKS } from './blocks.js';
@@ -65,6 +66,10 @@ const fight = new Fight(scene, zoo, { respawn: false, renderer });
 
 const cam = makeCam(0, 0);
 
+/** 穿過感測區的那一下暗下去再亮回來（transit.js）。 */
+const transit = new Transit(document.getElementById('fade'));
+const STILL = { ix: 0, iz: 0, mag: 0 };
+
 /* ── 路線 ────────────────────────────────────────────────────────
    run 是路線的狀態（route.js 的 makeRun）：下一場是第幾場、是不是正在打。
    `spawnIn` 是開打之後離 BOSS 出現還有幾秒（0 = 已經出現或沒在打）。 */
@@ -99,6 +104,7 @@ function place(at) {
  * R（重玩）就是從第 0 場開始。
  */
 function startFrom(k) {
+  transit.cancel();
   run = makeRun(k);
   spawnIn = 0;
   deaths = 0;
@@ -131,6 +137,7 @@ function clear() {
 
 /** 倒下：BOSS 收起來，血補滿，回到這一場的入口外面休息。 */
 function fall(cause) {
+  transit.cancel();
   deaths++;
   refill(player);
   const k = run.next;
@@ -176,18 +183,21 @@ function frame(now) {
 
   /* 連段先決定這一下跳是什麼（破防攻擊一發動就接管速度），然後操控、移動——
      破防攻擊裡不操控、迴旋中不移動（見 fight.js）。滑落的時候不能跳。 */
-  const input = controls.axis();
-  const pressed = controls.jumpPressed();
+  // 快被送走的那一段（畫面正在暗下去）不操作：身體照慣性停下。
+  const input = transit.busy ? STILL : controls.axis();
+  const pressed = controls.jumpPressed() && !transit.busy;
   const sliding = player.grounded && player.slip === 'fall';
   fight.lead(dt, player, pressed && !sliding);
   if (!fight.breaking) steerHero(player, dt, controls, input);
   const portals = portalsOn(run) ? ruins.portals : NO_PORTALS;
   const speed = fight.spinning ? 0 : moveHero(player, dt, COLS, portals, doors);
 
-  // 感測區：打的時候全部不通。
+  // 感測區：打的時候全部不通。畫面先暗下去，全黑的時候才送（transit.js）。
   {
-    const gate = portalAt(portals, player.x, player.y, player.z, doors);
-    if (gate) warp(gate.dest);
+    const due = transit.update(dt);
+    if (due) warp(due);
+    const gate = !transit.busy && portalAt(portals, player.x, player.y, player.z, doors);
+    if (gate) transit.go(gate.dest);
   }
   player.block = arenaAt(player.x, player.z).id;
 
