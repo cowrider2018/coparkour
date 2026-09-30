@@ -105,6 +105,10 @@
                     躲過第一下的被第二下咬到；蓄力被打就整套取消。三面盾：挨打先用掉一面、那一下
                     整個不算（不扣血、不擊退、不累積破防、衝刺不斷）；挨打（擋沒擋都算）之後 8 秒
                     沒再挨打補一面、補到滿；破防突進碰到有盾的國王：被擋掉、不定住、直接跳離。
+    29. 直線劈砍    國王每 3 秒放一招，劈砍不限距離；挑的那一刻鎖定方向；倒數 0.5 秒站著不打；
+                    然後原地劈一條從腳下到黑牆、寬 0.8 狗高的長條，扣 5；僵直只有 0.25 秒；放招中
+                    打不退。長條（加上身體）裡的劈得到、外面與背後的劈不到，跳起來躲得過，倒數裡
+                    往旁邊跑開就劈空。動作是 hewWind → hewRec，收尾照 0.25 秒的僵直走。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
@@ -116,7 +120,7 @@ import {
   makeCombo, comboStep, invulnerable, cueing, FIELD, LIFE, resetLife, lifeStep, harm, refill, gainHeart, regen,
   SOUL, dropSoul, soulStep, grabs,
 } from '../public/test/src/combat.js';
-import { SKILL, UP_AIR, WHIRL_LEN, makeWorld, bossStep, shotsStep, shotHits, shotBlocked, strikeHits, laneLength } from '../public/test/src/skills.js';
+import { SKILL, UP_AIR, WHIRL_LEN, makeWorld, bossStep, shotsStep, shotHits, shotBlocked, strikeHits, laneLength, recoverOf } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
 import { DUST, dustOf, dustFade, QUAKE, quakeBands, quakeFade } from '../public/test/src/dust.js';
 import { Motion, bloodOf, sizeOf, mirror, MOVES as KNIGHT_MOVES } from '../public/test/src/monster.js';
@@ -2067,6 +2071,59 @@ console.log('28. 國王');
     d.phase = 'dash';
     ok(!contact(d, q, n) && d.phase === 'spin' && n.held, '沒盾：照常定住、進迴旋');
   }
+}
+
+/* ── 29. 直線劈砍 ────────────────────────────────────────────── */
+console.log('29. 直線劈砍');
+{
+  const S = SKILL.hew;
+  ok(KINDS.king.skills.includes('hew') && KINDS.king.every === 3 && S.range === undefined, '國王每 3 秒放一招，會直線劈砍、不限距離');
+  ok(S.windup === 0.5 && S.damage === 5 && S.recover === 0.25 && recoverOf('hew') === 0.25 && recoverOf('orb') === SKILL.recover,
+    '倒數 0.5 秒、扣 5、僵直 0.25 秒（其他招照 SKILL.recover）');
+  const keep = KINDS.king.skills;
+  KINDS.king.skills = ['hew'];
+  /* 國王在場地北邊、玩家在南邊：放一次劈砍，記下打下來的那一條、倒數裡有沒有動、有沒有打、
+     放招中是不是打不退、放完的僵直、動作的每一段。move：倒數裡玩家每秒往哪跑。 */
+  const hew = (px, pz, move = null) => {
+    const m = makeMonster({ kind: 'king', x: 0, z: -10, yaw: 0 });
+    const w = makeWorld();
+    const q = body(px, pz);
+    m.castT = 0;
+    const out = { m, q, strikes: [], windStill: true, windHit: false, armor: true, stages: new Set() };
+    const mo = new Motion();
+    for (let t = 0; t < 2; t += DT) {
+      const had = !!m.cast;
+      const st = bossStep(m, DT, q, w, () => 0);
+      if (st) out.strikes.push(st);
+      if (had && !m.cast) { out.endAt = t + DT; out.stun = m.stun; }
+      const wind = m.cast && m.cast.t < S.windup;
+      if (wind && (m.x !== 0 || m.z !== -10)) out.windStill = false;
+      if (wind && st) out.windHit = true;
+      if (m.cast && !(attacking(m) && armored(m))) out.armor = false;
+      const [stage] = mo._stage(m);
+      if (stage) out.stages.add(stage);
+      if (move && wind) { q.x += move[0] * DT; q.z += move[1] * DT; }
+      if (had || m.cast || m.stun > 0) monsterStep(m, DT, q);
+      if (out.endAt && !(m.stun > 0)) break;
+    }
+    return out;
+  };
+  const a = hew(0, 11);
+  ok(a.windStill && !a.windHit, '隔著 21 公尺也放；倒數的 0.5 秒站著不動、不打');
+  ok(a.armor, '放招中是攻擊中、打不退（armored）');
+  ok(near(a.endAt, S.windup, 1.5 * DT) && a.stun === S.recover, `${a.endAt.toFixed(2)} 秒劈下去，僵直 ${S.recover} 秒`);
+  const st = a.strikes[0], r = PHYS.radius, half = S.width / 2;
+  ok(a.strikes.length === 1 && st.shape === 'strip' && st.dmg === S.damage && near(st.w, S.width), `劈一下：一條寬 ${S.width.toFixed(2)} 的長條，扣 ${S.damage}`);
+  ok(near(st.z, -10) && near(st.dirZ, 1) && near(st.len, ARENA.z1 + 10), `從牠腳下往玩家的方向一直到黑牆（長 ${st.len.toFixed(1)} 公尺）`);
+  ok(strikeHits(st, a.q), '站在鎖定的那一點上（21 公尺外）：被劈到');
+  ok(strikeHits(st, body(half + r - 0.02, 0)) && !strikeHits(st, body(half + r + 0.02, 0)), `橫向：離中線 ${(half + r).toFixed(2)} 公尺以內劈到、以外劈不到`);
+  ok(!strikeHits(st, body(0, -10 - r - 0.02)), '背後劈不到');
+  ok(!strikeHits(st, { ...a.q, y: PHYS.height }), '跳起來（腳高過一個狗高）：躲得過');
+  const b = hew(0, 11, [3, 0]);
+  ok(!strikeHits(b.strikes[0], b.q), `倒數裡往旁邊跑 ${(3 * S.windup).toFixed(1)} 公尺：劈空`);
+  ok([...a.stages].join() === 'hewWind,hewRec', `動作：${[...a.stages].join(' → ')}`);
+  ok(near(KNIGHT_MOVES.hewRec.keys[KNIGHT_MOVES.hewRec.keys.length - 1][0], S.recover), '收尾照 0.25 秒的僵直走完');
+  KINDS.king.skills = keep;
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

@@ -45,10 +45,16 @@
             的 fanFrame，下緣指著長條的遠端，往左右各厚半條長條寬），起跳後 SWING 秒內
             碰到就算——這一下跳起來躲不掉。上挑落地才僵直。
 
-   範圍攻擊（leap 的那一圈、cone 的那一片、whirl 與 cleave 的那一條）打的是地面上一個狗高以內：
+   國王的招：
+
+     hew    直線劈砍（不限距離）。牠腳下出現一條往鎖定方向一直延伸到黑牆的紅色長條
+            （寬 0.8 個狗高），倒數 0.5 秒；然後站在原地往前劈，打那一整條。出招後
+            只僵直 0.25 秒（SKILL.hew.recover，其他招是 SKILL.recover）。
+
+   範圍攻擊（leap 的那一圈、cone 的那一片、whirl、cleave 與 hew 的那一條）打的是地面上一個狗高以內：
    玩家的腳比那還高——跳起來了——就躲得過。跳砍之後的上挑例外：那一片是立起來的。
 
-   碰到扣血：BOSS 的招 5、騎士的 whirl 2、cleave 3、上挑 3（每一招的 `damage`；衝刺咬到的見 combat.js 的 KINDS）。
+   碰到扣血：BOSS 的招 5、騎士的 whirl 2、cleave 3、上挑 3、國王的 hew 5（每一招的 `damage`；衝刺咬到的見 combat.js 的 KINDS）。
    打中人的球就炸掉消失。玩家無敵的時候（第三段、破防攻擊）碰到不算，球穿過去。
    ------------------------------------------------------------------ */
 
@@ -72,9 +78,15 @@ export const SKILL = {
     windup: 0.5, air: 0.4, hop: 1.2, len: 2.2 * DOG_H, width: 0.8 * DOG_H, range: 8, damage: 3,
     up: { gap: 0.25, swing: SWING, thick: 0.4 * DOG_H, damage: 3 },
   },
-  /** 出招後僵直幾秒。 */
+  /* 國王的直線劈砍：倒數 windup，劈一條從牠腳下往鎖定方向到黑牆、寬 width 的長條。不限距離。
+     出招後的僵直是自己的 recover（比別招短）。 */
+  hew: { windup: 0.5, width: 0.8 * DOG_H, damage: 5, recover: 0.25 },
+  /** 出招後僵直幾秒（那一招沒有自己的 `recover` 的話）。 */
   recover: 0.5,
 };
+
+/** 這一招出完僵直幾秒：那一招自己的 `recover`，沒有就是 SKILL.recover。 */
+export const recoverOf = (skill) => SKILL[skill].recover ?? SKILL.recover;
 
 /** 劍迴旋衝刺衝出去 s 秒（0 ≤ s ≤ time）走了多遠：速度從 speed 線性減到 0 的積分。 */
 export const whirlDist = (s) => SKILL.whirl.speed * (s - (s * s) / (2 * SKILL.whirl.time));
@@ -198,6 +210,15 @@ const CAST = {
     if (s >= S.time) m.cast = null;
     return { shape: 'capsule', x: x0, y: m.y, z: z0, x1: m.x, z1: m.z, r: S.radius, dmg: S.damage };
   },
+
+  /* 倒數的時候站著；倒數完站在原地劈那一條：從牠腳下往鎖定的方向一直到黑牆。 */
+  hew(m) {
+    const c = m.cast, S = SKILL.hew;
+    if (c.t < S.windup) return null;
+    m.cast = null;
+    const len = laneLength(m.x, m.z, c.dirX, c.dirZ, m.field.arena);
+    return { shape: 'strip', x: m.x, y: m.y, z: m.z, dirX: c.dirX, dirZ: c.dirZ, len, w: S.width, dmg: S.damage };
+  },
 };
 
 /**
@@ -297,8 +318,9 @@ export function bossStep(m, dt, target, world, rng = Math.random) {
   }
   if (!m.cast) return null;
   m.cast.t += dt;
-  const hit = CAST[m.cast.skill](m, world, target) || null;
-  if (!m.cast) m.stun = SKILL.recover;                 // 出完了：僵直
+  const skill = m.cast.skill;
+  const hit = CAST[skill](m, world, target) || null;
+  if (!m.cast) m.stun = recoverOf(skill);              // 出完了：僵直
   return hit;
 }
 

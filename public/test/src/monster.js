@@ -70,6 +70,11 @@
             跳躍動作組（在空中、垂直速度照那一跳），頭從低往上仰；收尾拉長到
             上挑落地之後的僵直結束。
 
+   ── 國王放招的動作 ──────────────────────────────────────────────
+     hew    直線劈砍：國王沒有劍，是用頭劈。倒數的 0.5 秒上半身往後仰、頭抬到朝天、
+            前腳微微離地；最後那一下頭往前、往下砸，劈下去的那一刻正砸到一半；收尾在
+            0.25 秒的僵直裡砸到底、停一下、站回來。
+
    ── 會飛的漂 ──────────────────────────────────────────────────────
    會飛的（幽靈）一直是空中姿勢、不走路，所以移動的時候另外常駐一套漂（DRIFT）：
    四條腿一起慢慢往後擺、往前回，尾巴同一個相位一起擺——腿往後的時候尾巴往上。
@@ -83,7 +88,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { Critter } from './critter.js';
 import { LUNGE, kindOf } from './combat.js';
-import { SKILL, UP_AIR } from './skills.js';
+import { SKILL, UP_AIR, recoverOf } from './skills.js';
 import { PHYS } from './walk.js';
 import { Mover, MOVES as HERO } from './moves.js';
 
@@ -259,6 +264,17 @@ const CHOP = {
   front: -0.30, hind: -0.45, knee: -0.70, legs: 0.9, w: 1,
 };
 
+/* ── 直線劈砍 ── 仰頭蓄力是 HEW_UP，劈到一半是 HEW_MID，砸到底是 HEW_DOWN。 */
+const HEW_UP = {
+  pitch: -0.35, headPitch: -0.75, drop: 0.08, tailPitch: 0.45,
+  front: -0.55, hind: -0.30, knee: -0.50, legs: 0.8, w: 1,
+};
+const HEW_MID = { pitch: 0.05, headPitch: 0.15, drop: 0.10, tailPitch: 0.30, front: -0.40, legs: 0.6, w: 1 };
+const HEW_DOWN = {
+  pitch: 0.35, headPitch: 0.80, drop: 0.20, tailPitch: 0.40,
+  front: -0.30, hind: -0.40, knee: -0.60, legs: 0.9, w: 1,
+};
+
 /** 跳砍落地前頭往前甩的那一下多長（秒）：落地那一刻劍正劈到一半。劍光（fight.js）從這一下開始掃。 */
 export const CHOP_LEAD = 0.08;
 
@@ -342,6 +358,11 @@ export const MOVES = {
     blend: 0.03,
     keys: [...HERO.rise.keys.slice(0, -1).map(([t, pose, ease]) => [t, mirror(pose), ease]), [UP_AIR + SKILL.recover, {}, 'inOut']],
   },
+  hewWind: {
+    blend: 0.08,
+    keys: [[0, {}], [0.3, HEW_UP, 'out'], [SKILL.hew.windup - 0.06, { ...HEW_UP, headPitch: -0.85, pitch: -0.40 }, 'inOut'], [SKILL.hew.windup, HEW_MID, 'in']],
+  },
+  hewRec: { blend: 0.02, keys: [[0, HEW_MID], [0.05, HEW_DOWN, 'out'], [0.12, HEW_DOWN, 'lin'], [SKILL.hew.recover, {}, 'inOut']] },
 };
 
 /**
@@ -460,7 +481,7 @@ export class Motion {
     }
     // 跳砍的僵直接著播上挑那一套的收尾。
     if (m.stun > 0 && this._skill === 'cleave') return ['cleaveUp', UP_AIR + SKILL.recover - m.stun];
-    if (m.stun > 0 && MOVES[`${this._skill}Rec`]) return [`${this._skill}Rec`, SKILL.recover - m.stun];
+    if (m.stun > 0 && MOVES[`${this._skill}Rec`]) return [`${this._skill}Rec`, recoverOf(this._skill) - m.stun];
     const L = m.lunge;
     if (!L) return [null, 0];
     if (L.t < LUNGE.windup) return ['windup', L.t];

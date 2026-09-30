@@ -174,7 +174,8 @@ export const FIELD = { arena: ARENA, cols: COLS, doors: {} };
  *           裡挑一招（skills.js），夠得到才放。
  *   king    國王（垂耳狗，幽靈那一件毛、半透明，畫成 1.4 倍高）。血 40、腳程 3.8，走路、
  *           受重力。`lunges`：一次衝刺衝兩下才僵直（見 LUNGE）。`shields`：身邊幾面盾，
- *           每 `shieldEvery` 秒沒挨打補一面（見 parry）。衝刺跟小怪一樣一打就取消。
+ *           每 `shieldEvery` 秒沒挨打補一面（見 parry）。衝刺跟小怪一樣一打就取消。每 `every`
+ *           秒從 `skills` 裡挑一招（skills.js）。
  *
  * 碰撞的身體一樣大（同一個 PHYS 的圓柱）；外觀（同一件毛、BOSS 畫兩倍大、騎士 1.2 倍）在 monster.js。
  *
@@ -189,7 +190,7 @@ export const KINDS = {
   boss: { name: 'BOSS', hp: 20, speed: 4, breakAt: BREAK_AT, bite: 3, soul: true, steady: true, skills: ['orb', 'leap', 'cone'], every: 3 },
   ghost: { name: '幽靈', hp: 4, speed: 3.4, breakAt: BREAK_AT, bite: 1, fly: true },
   knight: { name: '騎士', hp: 10, speed: 3.6, breakAt: BREAK_AT, bite: 2, skills: ['whirl', 'cleave'], every: 2.5 },
-  king: { name: '國王', hp: 40, speed: 3.8, breakAt: BREAK_AT, bite: 2, lunges: 2, shields: 3, shieldEvery: 8 },
+  king: { name: '國王', hp: 40, speed: 3.8, breakAt: BREAK_AT, bite: 2, lunges: 2, shields: 3, shieldEvery: 8, skills: ['hew'], every: 3 },
 };
 
 /**

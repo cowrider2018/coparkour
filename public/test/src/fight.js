@@ -169,6 +169,7 @@ export class Fight {
         critter: makeMonsterCritter(this.zoo, kind), breakFx: breakFx(),
         lane: laneFx(SKILL.orb.radius), circle: circleFx(SKILL.leap.radius), cone: coneFx(SKILL.cone.radius, SKILL.cone.half),
         whirl: stripFx(SKILL.whirl.radius, true), cleave: stripFx(SKILL.cleave.width / 2, false),
+        hew: stripFx(SKILL.hew.width / 2, false),
         blade: null, helm: null, crown: null,
       };
       // 咬著劍的那幾類（騎士）：劍掛在牠自己的頭上，跟主角那把一樣每幀跟著頭。
@@ -178,7 +179,7 @@ export class Fight {
       // 戴王冠的（國王）：一樣掛在頭上。
       if (crownOf(kind)) { slot.crown = new Crown(); slot.crown.follow(slot.critter); }
       if (this._inkPx) slot.critter.setInkPx(...this._inkPx);
-      this.scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node, slot.cone.node, slot.whirl.node, slot.cleave.node);
+      this.scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node, slot.cone.node, slot.whirl.node, slot.cleave.node, slot.hew.node);
       list.push(slot);
     }
     return list[i];
@@ -192,6 +193,7 @@ export class Fight {
     s.cone.node.visible = false;
     s.whirl.node.visible = false;
     s.cleave.node.visible = false;
+    s.hew.node.visible = false;
   }
 
   /**
@@ -210,7 +212,7 @@ export class Fight {
       const slot = this._slot(s.kind, i);
       slot.critter.root.visible = true;
       slot.critter.setFacing(s.yaw);
-      return { m: makeMonster(s, field), motion: new Motion(), ...slot };
+      return { m: makeMonster(s, field), motion: new Motion(), hewHit: null, ...slot };
     });
     this.world = makeWorld(field);
     Object.assign(this.combo, makeCombo());
@@ -223,6 +225,7 @@ export class Fight {
       placeMonster(f.m);
       f.critter.setFacing(f.m.spawn.yaw);
       f.motion = new Motion();
+      f.hewHit = null;
     }
     Object.assign(this.combo, makeCombo());
     this._face = null;
@@ -299,10 +302,13 @@ export class Fight {
     lifeStep(player, dt);
     // BOSS 先決定這一幀在不在放招（放招中 monsterStep 讓牠站著），球往前飛。
     const strikes = [];
-    for (const { m } of foes) {
+    for (const f of foes) {
+      const m = f.m, skill = m.cast && m.cast.skill;
       const st = bossStep(m, dt, player, this.world);
       if (!st) continue;
       strikes.push(st);
+      // 直線劈砍劈下去的那一條：僵直的那一段亮著（draw）。
+      if (skill === 'hew') f.hewHit = { st, t: 0 };
       // 地震的塵只有 BOSS 砸下去的那兩種（dust.js 的 QUAKE）。
       if (!this.fluid || !QUAKE[st.shape]) continue;
       this._stomps.push(st);
@@ -423,8 +429,10 @@ export class Fight {
     showFx(fx.cue, cueing(combo) ? 0 : Infinity, 1, player.x, floor, player.z, 0);
 
     // 怪物技能的預告：貼在牠（或跳砸的落點）那一層地板上。
-    for (const { m, lane, circle, cone, whirl, cleave } of this.foes) {
+    for (const f of this.foes) {
+      const { m, lane, circle, cone, whirl, cleave } = f;
       const c = m.cast;
+      this._hew(dt, f);
       const orb = !!c && c.skill === 'orb', leap = !!c && c.skill === 'leap', fan = !!c && c.skill === 'cone';
       /* 劍迴旋衝刺：從起步的地方往鎖定的方向，衝得到多遠（黑牆擋住的話到牆前）。衝的時候
          亮著滿的——那一條就是還會被掃到的地方。 */
@@ -466,6 +474,25 @@ export class Fight {
     for (const { m, breakFx: bf } of this.foes) {
       showBreak(bf, m.breakT / BREAK_WINDOW, m.x, m.y + PHYS.height / 2, m.z, camera.quaternion);
     }
+  }
+
+  /**
+   * 國王的直線劈砍：倒數的時候是一條從牠腳下往鎖定方向一直到黑牆的長條，亮色從腳下長到
+   * 那一頭；劈下去之後同一條整條亮著，亮 SKILL.hew.recover 秒（出招後的僵直）就收掉。
+   * 被打斷（破防攻擊定住、死了重生）就收掉。
+   */
+  _hew(dt, f) {
+    const { m, hew } = f, c = m.cast, S = SKILL.hew;
+    if (c && c.skill === 'hew') {
+      f.hewHit = null;
+      showStrip(hew, true, Math.min(1, c.t / S.windup), m.x, m.z, Math.atan2(c.dirX, c.dirZ),
+        laneLength(m.x, m.z, c.dirX, c.dirZ, m.field.arena), m.y);
+      return;
+    }
+    const h = f.hewHit;
+    if (h) h.t += dt;
+    if (!h || h.t >= S.recover || m.held || m.air) { f.hewHit = null; showStrip(hew, false); return; }
+    showStrip(hew, true, 1, h.st.x, h.st.z, Math.atan2(h.st.dirX, h.st.dirZ), h.st.len, h.st.y);
   }
 
   /**
