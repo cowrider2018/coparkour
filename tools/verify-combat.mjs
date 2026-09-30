@@ -100,6 +100,7 @@
     27. 王冠        只有國王戴；國王是垂耳狗、1.4 倍高、半透明、噴靈質。量在垂耳狗頭上（頭骨座標、
                     靜置姿勢）：冠環的底是圓角矩形，下緣低過頭頂（坐在頭上、不是浮著），頭頂那一截
                     整個包在冠環內面裡；垂下來的耳朵在冠環底下；王冠跟著頭骨轉、墨線跟著墨色換。
+                    國王咬的是騎士那一把劍，只有劍萼與劍柄（還有柄頭）是金色的。
     28. 國王        血 40、腳程 3.8、咬 2、走路受重力。一次衝兩下：第一下衝完不僵直，重新蓄力
                     0.25 秒、朝那時的玩家再衝，第二下衝完才僵直；站著不動的只被第一下扣血（guard），
                     躲過第一下的被第二下咬到；蓄力被打就整套取消。三面盾：挨打先用掉一面、那一下
@@ -144,6 +145,8 @@ import { Helm, HELM } from '../public/test/src/helm.js';
 import { Crown, CROWN } from '../public/test/src/crown.js';
 import { crownOf } from '../public/test/src/monster.js';
 import { ShieldRing, SHIELD } from '../public/test/src/shield.js';
+import { Blade } from '../public/test/src/blade.js';
+import { swordOf } from '../public/test/src/monster.js';
 import { Rig } from '../public/src/cat/rig.js';
 
 let fails = 0;
@@ -1970,6 +1973,20 @@ console.log('27. 王冠');
   const red = crown.ink.color.equals(ATTACK_INK);
   c.setInkColor(null);
   ok(red && !crown.ink.color.equals(ATTACK_INK), '墨線跟著牠的墨色換（攻擊中轉紅、之後換回來）');
+
+  /* 劍：跟騎士那一把同一個形狀，劍身一樣，劍萼、劍柄、柄頭換成金色。 */
+  ok(swordOf('king') === 'king', '國王嘴裡咬著劍');
+  const kn = new Blade('knight').node, kg = new Blade('king').node;
+  const same = kn.children.length === kg.children.length && kn.children.every((o, i) => {
+    const a = o.geometry.attributes.position.array, b = kg.children[i].geometry.attributes.position.array;
+    return a.length === b.length && a.every((x, j) => x === b[j]);
+  });
+  ok(same, '跟騎士那一把是同一個形狀');
+  const gold = (o) => { const h = {}; o.material.color.getHSL(h, THREE.SRGBColorSpace); return h.h > 0.08 && h.h < 0.17 && h.s > 0.5 && h.l > 0.4; };
+  const part = (n, name) => n.getObjectByName(name);
+  ok(['cross', 'grip', 'pommel'].every((k) => gold(part(kg, k))), '劍萼、劍柄、柄頭是金色的');
+  ok(!gold(part(kn, 'cross')) && !gold(part(kn, 'grip')) && kn.children[0].material.color.equals(kg.children[0].material.color),
+    '騎士那一把的劍萼、劍柄不是金色；劍身兩把一樣');
 }
 
 /* ── 28. 國王 ────────────────────────────────────────────────── */

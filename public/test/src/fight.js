@@ -174,7 +174,7 @@ export class Fight {
         marks: Array.from({ length: SKILL.summon.each }, () => circleFx(SKILL.summon.mark)),
         blade: null, helm: null, crown: null, shields: null,
       };
-      // 咬著劍的那幾類（騎士）：劍掛在牠自己的頭上，跟主角那把一樣每幀跟著頭。
+      // 咬著劍的那幾類（騎士、國王）：劍掛在牠自己的頭上，跟主角那把一樣每幀跟著頭。
       if (swordOf(kind)) { slot.blade = new Blade(swordOf(kind)); slot.blade.follow(slot.critter); }
       // 戴頭盔的那幾類（騎士、BOSS）：一樣掛在頭上，墨線跟著牠的墨色換。
       if (helmOf(kind)) { slot.helm = new Helm(); slot.helm.follow(slot.critter); }

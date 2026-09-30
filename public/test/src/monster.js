@@ -7,7 +7,7 @@
      knight  騎士：同一件綠毛，1.2 倍高，嘴裡橫咬一把雙刃劍（blade.js 的 knight），
              戴頭盔（helm.js）。
      king    國王：垂耳狗（其他幾類是立耳犬），幽靈那一件淡藍白、一樣半透明，1.4 倍高，
-             戴王冠（crown.js）。
+             戴王冠（crown.js），嘴裡橫咬騎士那一把劍、劍萼與劍柄是金色的（blade.js 的 king）。
 
    只是看起來大：碰撞還是 combat.js 那同一個 PHYS 圓柱。
 
@@ -110,7 +110,7 @@ const LOOKS = {
   boss: { coat: ZOMBIE, height: 2.0, alpha: 1, blood: 'blood', helm: true },
   ghost: { coat: GHOST, height: 1.0, alpha: GHOST_ALPHA, blood: 'ecto' },
   knight: { coat: ZOMBIE, height: 1.2, alpha: 1, blood: 'blood', sword: 'knight', helm: true },
-  king: { coat: GHOST, height: 1.4, alpha: GHOST_ALPHA, blood: 'ecto', crown: true, model: 'dog-drop' },
+  king: { coat: GHOST, height: 1.4, alpha: GHOST_ALPHA, blood: 'ecto', sword: 'king', crown: true, model: 'dog-drop' },
 };
 /** 這一類畫多高，跟狗（1）比。落地的粉塵照它算（dust.js）。 */
 export const sizeOf = (kind) => LOOKS[kind].height;
