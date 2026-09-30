@@ -31,7 +31,7 @@ import { makeMonsterCritter, sizeOf, bloodOf, swordOf, helmOf, crownOf, riseLift
 import { GUARD_INK } from './critter.js';
 import { Blood } from './blood.js';
 import { Fireballs } from './fireball.js';
-import { hitFrame, pushFrame, spurtOf } from './bleed.js';
+import { hitFrame, burstFrame, hurtFrame, spurtOf } from './bleed.js';
 import { Blade } from './blade.js';
 import { Helm } from './helm.js';
 import { Crown } from './crown.js';
@@ -114,7 +114,7 @@ export class Fight {
         每一刀，與收掉的那幾刀（下一刀借）。 */
     this._qis = [];
     this._spare = [];
-    /** 怪物挨打噴出來的血（bleed.js 算、blood.js 畫）。 */
+    /** 怪物與玩家挨打噴出來的血（bleed.js 算、blood.js 畫）。 */
     this._blood = new Blood(scene, renderer);
     /* 落地的粉塵畫在共用的流體場（fluid.js）上，一團借一格。畫不出流體的機器、或網址
        給了 `?fluid=0`，就沒有粉塵——同一台手機上開關各看一次 fps，就是流體的成本。 */
@@ -394,8 +394,8 @@ export class Fight {
     if (combo.phase === 'spin') {
       const m = combo.target, r = spinStep(combo, player, m);
       if (r.died) dead.add(m);
-      // 破防攻擊沒有劍氣：往牠被推開的方向噴，從牠被定住的地方（打死的話已經搬回重生點了）。
-      if (r.took > 0) this._bleed(pushFrame(combo.dashX, combo.dashZ), spot.get(m) || m, m.kind);
+      // 破防攻擊沒有劍氣：往全方向噴，從牠被定住的地方（打死的話已經搬回重生點了）。
+      if (r.took > 0) this._bleed(burstFrame(), spot.get(m) || m, m.kind);
     }
     const reach = this._reach[combo.phase];
     const body = this.body(player);
@@ -417,15 +417,17 @@ export class Fight {
        死了，牠召喚的一起離場。 */
     if (dead.size) this._drop(({ m }) => (dead.has(m) && (!this.respawn || m.by)) || (m.by && dead.has(m.by)));
 
-    let hit = null;
+    let hit = null, by = null;
     if (!untouchable(combo, player)) {
-      const take = (cause, dmg) => { if (!hit || dmg > hit.dmg) hit = { cause, dmg }; };
-      for (const { m } of this.foes) if (bites(player, m)) take('bitten', KINDS[m.kind].bite);
-      for (const s of this.world.shots) if (shotHits(s, player)) take('shot', s.dmg);
-      for (const st of strikes) if (strikeHits(st, player)) take('struck', st.dmg);
-      for (const w of this.world.waves) if (strikeHits(w, player)) take('struck', w.dmg);
+      // by：打中他的那一個（咬的怪物、球、那一下），噴血的形狀與方向照它（bleed.js 的 hurtFrame）。
+      const take = (cause, dmg, src) => { if (!hit || dmg > hit.dmg) { hit = { cause, dmg }; by = src; } };
+      for (const { m } of this.foes) if (bites(player, m)) take('bitten', KINDS[m.kind].bite, m);
+      for (const s of this.world.shots) if (shotHits(s, player)) take('shot', s.dmg, s);
+      for (const st of strikes) if (strikeHits(st, player)) take('struck', st.dmg, st);
+      for (const w of this.world.waves) if (strikeHits(w, player)) take('struck', w.dmg, w);
       if (hit) {
-        harm(player, hit.dmg);
+        // 玩家跟狗一樣大（體型 1），噴的是血；剛挨過一下（guard）沒扣到就不噴。
+        if (harm(player, hit.dmg)) this._blood.spurt(spurtOf(hurtFrame(hit.cause, by, player), player, 1, 'blood'), this.world.field);
         // 打中人的球炸掉消失。
         if (hit.cause === 'shot') {
           this.world.shots = this.world.shots.filter((s) => {

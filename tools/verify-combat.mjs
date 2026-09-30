@@ -138,7 +138,7 @@ import { Motion, bloodOf, sizeOf, mirror, riseLift, MOVES as KNIGHT_MOVES } from
 import { MOVES as HERO_MOVES } from '../public/test/src/moves.js';
 import { TRAILS, PIECE, BANDS, sweepAt, fadeAt, sideAt, qiAt, along, hullOf } from '../public/test/src/trail.js';
 import { bladeAt } from '../public/test/src/trail.js';
-import { BLEED, SPLAT, STYLE, dropSize, dropCount, volumeOf, sizeRange, speedOf, hitFrame, pushFrame, spurtOf, floorUnder, splatScale, bleedStep } from '../public/test/src/bleed.js';
+import { BLEED, LUMP, SPLAT, STYLE, dropSize, dropCount, volumeOf, sizeRange, speedOf, hitFrame, burstFrame, lumpFrame, hurtFrame, spurtOf, floorUnder, splatScale, bleedStep } from '../public/test/src/bleed.js';
 import { taken } from '../public/test/src/combat.js';
 import { readFileSync } from 'node:fs';
 import * as THREE from '../public/test/vendor/three.module.js';
@@ -1537,16 +1537,21 @@ console.log('23. 噴血');
   const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
   let seed = 7;
   const rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  // 水平的一片：往 (dx, dz) 噴、面是水平面（量與遠近那幾項用）。
+  const sheetOf = (dx, dz) => {
+    const h = Math.hypot(dx, dz) || 1, d = [dx / h, 0, dz / h];
+    return { d, t: [d[2], 0, -d[0]] };
+  };
 
   // 出血量：半徑立方和正好是 volume · s³；滴數照 s^1.5。
   let exact = true;
   for (const s of [0.7, 1, 2]) {
-    const sum = spurtOf(pushFrame(1, 0), { x: 0, y: 0, z: 0 }, s, 'blood', rng).reduce((a, o) => a + o.r ** 3, 0);
+    const sum = spurtOf(sheetOf(1, 0), { x: 0, y: 0, z: 0 }, s, 'blood', rng).reduce((a, o) => a + o.r ** 3, 0);
     if (Math.abs(sum / volumeOf(s) - 1) > 1e-9) exact = false;
   }
   ok(exact, '一次噴出去的血總量正好是 volume · 體型³（0.7、1、2 倍都是）');
   ok(near(volumeOf(2) / volumeOf(1), 8), 'BOSS（體型 2）的出血量是狗的 8 倍');
-  const n1 = spurtOf(pushFrame(1, 0), { x: 0, y: 0, z: 0 }, 1, 'blood', rng), n2 = spurtOf(pushFrame(1, 0), { x: 0, y: 0, z: 0 }, 2, 'blood', rng);
+  const n1 = spurtOf(sheetOf(1, 0), { x: 0, y: 0, z: 0 }, 1, 'blood', rng), n2 = spurtOf(sheetOf(1, 0), { x: 0, y: 0, z: 0 }, 2, 'blood', rng);
   ok(n1.length === BLEED.drops && n2.length === dropCount(2) && n2.length === Math.round(BLEED.drops * 2 ** 1.5),
     `滴數跟著體型的 1.5 次方：${n1.length} → ${n2.length}`);
   let inside = true;
@@ -1554,7 +1559,7 @@ console.log('23. 噴血');
   for (let k = 0; k < 200; k++) {
     for (const s of [1, 2]) {
       const [lo, hi] = sizeRange(s);
-      const l = spurtOf(pushFrame(1, 0), { x: 0, y: 0, z: 0 }, s, 'blood', rng);
+      const l = spurtOf(sheetOf(1, 0), { x: 0, y: 0, z: 0 }, s, 'blood', rng);
       if (Math.abs(l.reduce((x, o) => x + o.r ** 3, 0) / volumeOf(s) - 1) > 1e-9) inside = false;
       for (const o of l) { if (o.r < lo - 1e-12 || o.r > hi + 1e-12) inside = false; if (s === 1) seen.push(o.r); }
     }
@@ -1571,7 +1576,7 @@ console.log('23. 噴血');
   const flat = { arena: { shape: 'circle', x: 0, z: 0, r: 50 }, cols: [] };
   const pw = { x: 0, y: 0, z: 0, aimX: 0, aimZ: 1 };
   let farther = true, flights = 0;
-  for (const f of [pushFrame(0, 1), hitFrame('slash', pw, null, { x: 0.3, y: 0, z: 1.5 }, 1), hitFrame('rise', pw, slashTip(pw), { x: 0, y: 0.6, z: 1.2 }, 1)]) {
+  for (const f of [sheetOf(0, 1), hitFrame('slash', pw, null, { x: 0.3, y: 0, z: 1.5 }, 1), hitFrame('rise', pw, slashTip(pw), { x: 0, y: 0.6, z: 1.2 }, 1)]) {
     for (const s of [1, 2]) {
       const land = spurtOf(f, { x: 0, y: 0, z: 0 }, s, 'blood', rng).map((o) => {
         const one = [{ ...o, x: 0, y: 0.5, z: 0, field: flat }], sp = [];
@@ -1583,7 +1588,7 @@ console.log('23. 噴血');
       flights += land.length;
     }
   }
-  ok(farther && flights > 0, `小的血滴噴得比大的遠（破防攻擊、第一段、第二段各飛到落地量，${flights} 滴）`);
+  ok(farther && flights > 0, `小的血滴噴得比大的遠（水平一片、第一段、第二段各飛到落地量，${flights} 滴）`);
 
   // 方向：跟劍氣垂直（沒有沿著掃的方向 t 的份）、躺在劍氣的面上；是劍氣經過怪物那一截的刀。
   const p = { x: 0, y: 0, z: 0, aimX: 0.6, aimZ: 0.8 };
@@ -1624,8 +1629,74 @@ console.log('23. 噴血');
   const edge = hitFrame('slash', p, null, { x: -0.8, y: 0, z: -0.2 }, 1);
   const b0 = bladeAt('slash', TRAILS.slash.from, p, null), b1 = bladeAt('slash', TRAILS.slash.to, p, null);
   ok(near(dot(edge.d, b0.d), 1) || near(dot(edge.d, b1.d), 1), '在掃得到的角度外面：夾到最近的那一邊');
-  const push = pushFrame(3, -4);
-  ok(near(push.d[0], 0.6) && near(push.d[2], -0.8) && push.d[1] === 0 && near(dot(push.d, push.t), 0), '破防攻擊：往推開的方向水平噴');
+  const push = sheetOf(3, -4);
+
+  // 破防攻擊是例外：往全方向噴——上下、四個水平方向都有，平均起來不偏哪一邊；量一樣。
+  let ups = 0, downs = 0, mean = [0, 0, 0], total = 0, burstVol = true;
+  const quads = new Set();
+  for (let k = 0; k < 50; k++) {
+    const l = spurtOf(burstFrame(), { x: 0, y: 0, z: 0 }, 1, 'blood', rng);
+    if (Math.abs(l.reduce((x, o) => x + o.r ** 3, 0) / volumeOf(1) - 1) > 1e-9) burstVol = false;
+    for (const o of l) {
+      const sp = Math.hypot(o.vx, o.vy, o.vz), v = [o.vx / sp, o.vy / sp, o.vz / sp];
+      if (v[1] > 0.5) ups++;
+      if (v[1] < -0.5) downs++;
+      quads.add(`${Math.sign(v[0])},${Math.sign(v[2])}`);
+      mean = mean.map((x, i) => x + v[i]);
+      total++;
+    }
+  }
+  ok(ups > 0 && downs > 0 && quads.size === 4 && Math.hypot(...mean) / total < 0.1,
+    `破防攻擊：往全方向噴（往上 ${ups}、往下 ${downs} 滴，四個水平方向都有，平均方向長 ${(Math.hypot(...mean) / total).toFixed(3)}）`);
+  ok(burstVol, '破防攻擊：量跟別的一樣');
+
+  // 塊狀：起點擠在一小團、方向在圓錐裡往四面散；形狀不改量。
+  const lump = lumpFrame(3, -4);
+  ok(lump.lump && near(Math.hypot(...lump.d), 1) && near(lump.d[1], Math.sin(LUMP.lift)) && near(lump.d[0] / lump.d[2], -0.75),
+    '塊狀：往撞過來的方向（水平）噴、往上抬 LUMP.lift');
+  let same = true, cone = true, core = true, flatL = 0, flatS = 0;
+  for (let k = 0; k < 50; k++) {
+    for (const s of [1, 2]) {
+      const at = { x: 1, y: 0.2, z: -1 }, wy = at.y + (PHYS.height / 2) * s;
+      const L = spurtOf(lump, at, s, 'blood', rng), S = spurtOf(push, at, s, 'blood', rng);
+      const vol = (l) => l.reduce((x, o) => x + o.r ** 3, 0);
+      if (L.length !== S.length || Math.abs(vol(L) / volumeOf(s) - 1) > 1e-9) same = false;
+      for (const o of L) {
+        const v = [o.vx, o.vy, o.vz], sp = Math.hypot(...v);
+        if (!near(sp, speedOf(o.r, s))) same = false;
+        if (dot(v, lump.d) / sp < Math.cos(LUMP.cone) - 1e-9) cone = false;
+        if (Math.hypot(o.x - at.x, o.y - wy, o.z - at.z) > LUMP.core * s + 1e-9) core = false;
+        flatL += Math.abs(dot(v, cross(push.d, push.t))) / sp;
+      }
+      for (const o of S) flatS += Math.abs(dot([o.vx, o.vy, o.vz], cross(push.d, push.t)));
+    }
+  }
+  ok(same, '塊狀與片狀：滴數、每一滴的快慢、總量都一樣（形狀不改血量）');
+  ok(cone && flatL > 0.1 * 50 * (BLEED.drops + dropCount(2)) && flatS < 1e-6,
+    `塊狀的方向都在 ${LUMP.cone} 弧度的圓錐裡、往四面散（片狀的全躺在那個面上）`);
+  ok(core, `塊狀的起點擠在腰那一點周圍 ${LUMP.core} 公尺（照體型放大）的一團裡`);
+
+  // 主角挨打：劍是片狀（劍氣經過他的那一截的刀），撞的、球、震波是塊狀。
+  const hero = { x: 1.2, y: 0, z: 0.9 };
+  const knight = { x: 0, y: 0, z: 0 };
+  ok(hurtFrame('bitten', knight, hero).lump && near(hurtFrame('bitten', knight, hero).d[0] / hurtFrame('bitten', knight, hero).d[2], 1.2 / 0.9),
+    '被咬：塊狀，從怪物指著主角');
+  const ball = { x: 0, y: 0.3, z: 0, vx: 0, vz: -6 };
+  ok(hurtFrame('shot', ball, hero).lump && hurtFrame('shot', ball, hero).d[2] < 0 && near(hurtFrame('shot', ball, hero).d[0], 0), '被球打：塊狀，往球飛的方向');
+  const quake = { shape: 'circle', x: 0, y: 0, z: 0, r: 5, dmg: 5 };
+  ok(hurtFrame('struck', quake, hero).lump && hurtFrame('struck', quake, hero).d[0] > 0, '震波：塊狀，從震央往外');
+  const whirlF = hurtFrame('struck', { shape: 'capsule', x: -0.5, y: 0, z: 0, x1: 0, z1: 0, r: 1.5, waist: 0.35 }, hero);
+  ok(!whirlF.lump && whirlF.d[1] === 0 && near(whirlF.d[0] / whirlF.d[2], 1.2 / 0.9) && near(dot(whirlF.d, whirlF.t), 0),
+    '劍迴旋：片狀，水平、從騎士（這一幀的位置）往外');
+  const chop = { shape: 'strip', x: 0, y: 0, z: 0, dirX: 0, dirZ: 1, len: 2, w: 0.5, dmg: 3 };
+  const chopF = hurtFrame('struck', chop, { x: 0.1, y: 0, z: 1.5 });
+  ok(!chopF.lump && Math.abs(chopF.d[0]) < 1e-9 && Math.abs(chopF.t[0]) < 1e-9 && chopF.d[2] > 0.5 && near(dot(chopF.d, chopF.t), 0),
+    '跳砍、直線劈砍：片狀，躺在往前劈下來的那個立著的面上、往前噴');
+  const upF = hurtFrame('struck', { shape: 'fan', x: 0, y: 0, z: 0, aimX: 0, aimZ: 1, tip: { x: 0, y: 0, z: REACH }, thick: 0.3, dmg: 3 }, { x: 0, y: 0.6, z: 1.2 });
+  ok(!upF.lump && upF.d[1] > 0.1 && Math.abs(upF.d[0]) < 1e-9, '上挑：片狀，斜著往上噴（跟主角第二段同一片扇形）');
+  const heroDrops = spurtOf(chopF, hero, 1, 'blood', rng);
+  ok(Math.abs(heroDrops.reduce((x, o) => x + o.r ** 3, 0) / volumeOf(1) - 1) < 1e-9 && heroDrops.every((o) => o.style === 'blood'),
+    '主角跟狗一樣大（體型 1），噴的是血');
 
   // 蓄力中扣 0 點：不噴。
   const armoredBoss = makeMonster({ kind: 'boss', x: 0, z: 0, yaw: 0 });
@@ -1660,7 +1731,7 @@ console.log('23. 噴血');
   ok(bloodOf('ghost') === 'ecto' && bloodOf('minion') === 'blood' && bloodOf('boss') === 'blood', '幽靈噴的是靈質，殭屍與 BOSS 是血');
   ok(near(speedOf(0.04, 1, 'ecto'), speedOf(0.04, 1) * STYLE.ecto.speed) && STYLE.ecto.speed > 1, `靈質的初速是血的 ${STYLE.ecto.speed} 倍`);
   const open = { arena: { shape: 'circle', x: 0, z: 0, r: 50 }, cols: [] };
-  const ecto = spurtOf(pushFrame(1, 0), { x: 0, y: 0, z: 0 }, 1, 'ecto', rng).map((o) => ({ ...o, field: open, y0: o.y, v0: Math.hypot(o.vx, o.vy, o.vz) }));
+  const ecto = spurtOf(sheetOf(1, 0), { x: 0, y: 0, z: 0 }, 1, 'ecto', rng).map((o) => ({ ...o, field: open, y0: o.y, v0: Math.hypot(o.vx, o.vy, o.vz) }));
   const eSplats = [];
   const e = ecto.slice();
   let level = true, slowed = true, lasted = false, shrank = true;
@@ -1680,7 +1751,7 @@ console.log('23. 噴血');
   const down = [{ x: 0, y: 0.3, z: 0, vx: 0, vy: -6, vz: 0, r: 0.05, style: 'ecto', field: open }], dSp = [];
   for (let t = 0; t < 0.5; t += DT) bleedStep(down, dSp, DT);
   ok(down.length === 1 && down[0].y === 0 && dSp.length === 0, '往下噴的靈質碰到地板就貼著停住，不穿過去、不留一灘');
-  const reachE = spurtOf(pushFrame(0, 1), { x: 0, y: 0, z: 0 }, 1, 'ecto', rng).map((o) => {
+  const reachE = spurtOf(sheetOf(0, 1), { x: 0, y: 0, z: 0 }, 1, 'ecto', rng).map((o) => {
     const one = [{ ...o, x: 0, z: 0, field: open }];
     for (let t = 0; t < STYLE.ecto.life - STYLE.ecto.fade; t += DT) bleedStep(one, [], DT);
     return { r: o.r, far: one[0].z };

@@ -1,5 +1,5 @@
 /* ── test/src/bleed.js ───────────────────────────────────────────────
-   怪物挨打噴出來的血：規則——噴多少、往哪裡噴、落到哪裡。
+   挨打噴出來的血（怪物與主角）：規則——噴多少、往哪裡噴、落到哪裡。
 
    跟 trail.js 一樣只算數字；畫出來是 blood.js 的事，而這一支 node 驗得動
    （tools/verify-combat.mjs 的「噴血」那一節）。
@@ -19,7 +19,24 @@
 
    起點是怪物的身體：腰的高度（體型大的高），沿著傷口那一條線散開。
 
-   破防攻擊沒有劍氣：方向是怪物被推開的方向（水平），面是水平面（pushFrame）。
+   破防攻擊沒有劍氣，是例外：往全方向噴（burstFrame，見下面的塊狀）。
+
+   ── 片狀與塊狀 ───────────────────────────────────────────────────
+   上面那樣噴成一片（sheet）的，是被劍氣——一片薄薄的東西——劃到的。被一整塊東西撞到
+   的噴成一塊（lump，lumpFrame）：起點擠在傷口的一小團裡（LUMP.core），每一滴的初速
+   在 d 周圍一個圓錐（LUMP.cone）裡亂給，往四面散開、不躺在哪一個面上。d 是撞過來的
+   方向（水平），再往上抬 LUMP.lift。破防攻擊的圓錐張到整個球（burstFrame）：往全方向噴，
+   往下的那幾滴就近落在牠腳邊。
+
+   形狀只改每一滴的起點與方向：大小、滴數、初速快慢、總量都跟片狀的一樣。
+
+   ── 主角挨打 ─────────────────────────────────────────────────────
+   主角跟狗一樣大（體型 1），噴的是血。哪一下是片狀、哪一下是塊狀，照打中他的是什麼
+   （hurtFrame）：
+     片狀  怪物的劍：騎士的劍迴旋（whirl 那一圈，水平）、跳砍劈下去那一條與國王的直線劈砍
+           （cleave，從正上方劈下來的那個立著的面）、上挑（rise 那片扇形）。跟主角砍怪物
+           同一套：劍氣經過他的那一截的刀（hitFrame）。
+     塊狀  衝過來咬（從怪物指著他）、BOSS 的球（球飛的方向）、地震的震波（從震央往外）。
 
    ── 大小與遠近 ───────────────────────────────────────────────────
    每一滴的半徑在 BLEED.size 那個區間裡均勻亂給。初速照半徑定：最小的那一端是
@@ -81,6 +98,15 @@ export const BLEED = {
 }
 
 /**
+ * 塊狀的噴法（體型 1 的那一份；core 照體型放大）。
+ *
+ *   cone  初速在 d 周圍多大的圓錐裡（半角，弧度）
+ *   lift  d 從撞過來的水平方向往上抬多少（弧度）
+ *   core  起點擠在多大的一團裡（半徑，公尺）
+ */
+export const LUMP = { cone: 0.6, lift: 0.35, core: 0.08 };
+
+/**
  * 地上的一灘（只有會留一灘的那幾種血，STYLE 的 pool）。
  *
  *   area   半徑是那一滴的幾倍
@@ -133,9 +159,9 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
  *
  * @param {string} kind 哪一段（trail.js 的 TRAILS 的鍵）
  * @param {object} body 玩家這一幀（fight.body，出招時是鎖住的面向）
- * @param {object|null} tip 第二段指著的末端點（combo.tip）
- * @param {object} m 怪物
- * @param {number} s 怪物的體型
+ * @param {object|null} tip 第二段（combo.tip）或劈（cleave）指著的末端點
+ * @param {object} m 挨打的那一個
+ * @param {number} s 牠的體型
  */
 export function hitFrame(kind, body, tip, m, s) {
   const T = TRAILS[kind], y = waistOf(m, s);
@@ -144,6 +170,10 @@ export function hitFrame(kind, body, tip, m, s) {
     const { dirX, dirZ, a0 } = fanFrame(body, tip);
     const h = (m.x - body.x) * dirX + (m.z - body.z) * dirZ;
     theta = Math.atan2(y - body.y, h) - a0;
+  } else if (kind === 'cleave') {
+    const { dirX, dirZ, a1 } = fanFrame(body, tip);
+    const h = (m.x - body.x) * dirX + (m.z - body.z) * dirZ;
+    theta = a1 - Math.atan2(y - body.y, h);
   } else {
     theta = wrap(Math.atan2(m.x - body.x, m.z - body.z) - Math.atan2(body.aimX, body.aimZ));
   }
@@ -154,11 +184,37 @@ export function hitFrame(kind, body, tip, m, s) {
   return { d, t };
 }
 
-/** 破防攻擊：往怪物被推開的方向（水平）噴，面是水平面。 */
-export function pushFrame(dx, dz) {
-  const h = Math.hypot(dx, dz) || 1;
-  const d = [dx / h, 0, dz / h];
-  return { d, t: [d[2], 0, -d[0]] };
+/** 破防攻擊：塊狀，但圓錐張到整個球——往全方向噴。 */
+export const burstFrame = () => ({ d: [0, 1, 0], lump: true, cone: Math.PI });
+
+/** 塊狀：被一整塊東西從 (dx, dz)（水平）撞過來，往那個方向、抬高 LUMP.lift 噴一團。 */
+export function lumpFrame(dx, dz) {
+  const h = Math.hypot(dx, dz) || 1, c = Math.cos(LUMP.lift);
+  return { d: [(dx / h) * c, Math.sin(LUMP.lift), (dz / h) * c], lump: true };
+}
+
+/**
+ * 主角挨的那一下噴成什麼樣（見檔頭「主角挨打」）。
+ *
+ * @param {string} cause 'bitten'、'shot'、'struck'（fight.js 的 resolve）
+ * @param {object} src 打中他的那一個：咬的是怪物、球是 world.shots 的那一顆、其餘是
+ *   bossStep 打下去的那一下（skills.js，strike 或震波）
+ * @param {{x,y,z}} p 主角
+ */
+export function hurtFrame(cause, src, p) {
+  if (cause === 'bitten') return lumpFrame(p.x - src.x, p.z - src.z);
+  if (cause === 'shot') return lumpFrame(src.vx, src.vz);
+  if (src.shape === 'fan') return hitFrame('rise', src, src.tip, p, 1);
+  if (src.shape === 'capsule') {
+    // 劍光畫在牠腰那麼高（bladeAt 從身體的 y 往上半個身高量）。
+    const body = { x: src.x1, y: src.waist - PHYS.height / 2, z: src.z1, aimX: 0, aimZ: 1 };
+    return hitFrame('whirl', body, null, p, 1);
+  }
+  if (src.shape === 'strip') {
+    const body = { x: src.x, y: src.y, z: src.z, aimX: src.dirX, aimZ: src.dirZ };
+    return hitFrame('cleave', body, { x: src.x + src.dirX, y: src.y, z: src.z + src.dirZ }, p, 1);
+  }
+  return lumpFrame(p.x - src.x, p.z - src.z);
 }
 
 /** 體型 s 的半徑區間。 */
@@ -191,8 +247,8 @@ function radiiOf(s, rng) {
 /**
  * 一次噴血：每一滴的起點、初速與半徑。
  *
- * @param {{d:number[], t:number[]}} frame hitFrame 或 pushFrame
- * @param {{x:number,y:number,z:number}} m 怪物（這一刻的位置）
+ * @param {{d:number[], t?:number[], lump?:boolean}} frame hitFrame（片狀）、lumpFrame 或 burstFrame（塊狀）
+ * @param {{x:number,y:number,z:number}} m 挨打的那一個（這一刻的位置）
  * @param {number} s 怪物的體型（monster.js 的 sizeOf）
  * @param {string} style 哪一種血（STYLE 的鍵，monster.js 的 bloodOf）
  * @param {() => number} rng
@@ -206,6 +262,7 @@ export function spurtOf(frame, m, s, style = 'blood', rng = Math.random) {
     const j = Math.floor(rng() * (i + 1));
     [radii[i], radii[j]] = [radii[j], radii[i]];
   }
+  if (frame.lump) return radii.map((r) => lumpDrop(d, frame.cone ?? LUMP.cone, m, y, s, r, style, rng));
   return radii.map((r, i) => {
     // 沿著傷口排開（加一點亂），不是全擠在正中間。
     const side = ((i + rng()) / n - 0.5) * BLEED.wound * s;
@@ -215,6 +272,29 @@ export function spurtOf(frame, m, s, style = 'blood', rng = Math.random) {
       vx: d[0] * sp, vy: d[1] * sp, vz: d[2] * sp, r, style,
     };
   });
+}
+
+/**
+ * 塊狀的一滴：起點在腰那一點周圍 LUMP.core · s 的球裡，方向在 d 周圍半角 cone 的圓錐裡
+ * （立體角上均勻：cos 在 [cos cone, 1] 裡均勻），快慢照半徑，跟片狀的一樣。
+ */
+function lumpDrop(d, cone, m, y, s, r, style, rng) {
+  // 跟 d 垂直的兩個單位向量。
+  const a = Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+  let u = [d[1] * a[2] - d[2] * a[1], d[2] * a[0] - d[0] * a[2], d[0] * a[1] - d[1] * a[0]];
+  const ul = Math.hypot(...u);
+  u = u.map((v) => v / ul);
+  const w = [d[1] * u[2] - d[2] * u[1], d[2] * u[0] - d[0] * u[2], d[0] * u[1] - d[1] * u[0]];
+  const cz = 1 - (1 - Math.cos(cone)) * rng(), sz = Math.sqrt(1 - cz * cz), phi = 2 * Math.PI * rng();
+  const cu = Math.cos(phi) * sz, cw = Math.sin(phi) * sz;
+  const v = [0, 1, 2].map((k) => d[k] * cz + u[k] * cu + w[k] * cw);
+  // 起點：球裡均勻（半徑照立方根給）。
+  const cr = Math.cbrt(rng()) * LUMP.core * s, oz = 2 * rng() - 1, oo = Math.sqrt(1 - oz * oz), op = 2 * Math.PI * rng();
+  const sp = speedOf(r, s, style);
+  return {
+    x: m.x + cr * oo * Math.cos(op), y: y + cr * oz, z: m.z + cr * oo * Math.sin(op),
+    vx: v[0] * sp, vy: v[1] * sp, vz: v[2] * sp, r, style,
+  };
 }
 
 /**
