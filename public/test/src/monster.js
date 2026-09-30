@@ -87,7 +87,9 @@ import { Mover, MOVES as HERO } from './moves.js';
 
 /** 毛色：body 身上、face 鼻子與嘴。 */
 const ZOMBIE = { body: [0.24, 0.80, 0.22], face: [0.08, 0.36, 0.08] };
-const GHOST = { body: [0.78, 0.88, 0.98], face: [0.34, 0.44, 0.60] };
+/** 幽靈的毛色與不透明度。靈魂（soul.js）也照這一份畫。 */
+export const GHOST = { body: [0.78, 0.88, 0.98], face: [0.34, 0.44, 0.60] };
+export const GHOST_ALPHA = 0.5;
 /**
  * 每一類的外觀，鍵跟 combat.js 的 KINDS 一樣：毛色、畫多高（公尺）、不透明度
  * （1 = 不透明）、挨打噴出來的是哪一種血（bleed.js 的 STYLE）、嘴裡咬著哪一把
@@ -96,7 +98,7 @@ const GHOST = { body: [0.78, 0.88, 0.98], face: [0.34, 0.44, 0.60] };
 const LOOKS = {
   minion: { coat: ZOMBIE, height: 1.0, alpha: 1, blood: 'blood' },
   boss: { coat: ZOMBIE, height: 2.0, alpha: 1, blood: 'blood', helm: true },
-  ghost: { coat: GHOST, height: 1.0, alpha: 0.5, blood: 'ecto' },
+  ghost: { coat: GHOST, height: 1.0, alpha: GHOST_ALPHA, blood: 'ecto' },
   knight: { coat: ZOMBIE, height: 1.2, alpha: 1, blood: 'blood', sword: 'knight', helm: true },
 };
 /** 這一類畫多高，跟狗（1）比。落地的粉塵照它算（dust.js）。 */

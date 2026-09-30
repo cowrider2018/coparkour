@@ -1271,6 +1271,15 @@ console.log('20. 靈魂');
   for (let k = 0; k < 120 && a.base === null; k++) soulStep(a, DT);
   ok(near(a.base, 2 + SOUL.hover), `在高台上空死掉：落在台面上 ${SOUL.hover} 公尺（${a.base.toFixed(2)}）`);
 
+  // 一直繞 Y 軸轉，每 SOUL.spin 秒一圈；往下掉的時候也轉。
+  const w = dropSoul({ x: 0, y: 4, z: 0, field: FIELD });
+  const turn = (x) => Math.min(x, 2 * Math.PI - x);
+  for (let k = 0; k < Math.round(1 / DT); k++) soulStep(w, DT);
+  const q = w.yaw;
+  for (let k = 0; k < Math.round((SOUL.spin - 1) / DT); k++) soulStep(w, DT);
+  ok(near(q, Math.PI / 2 * (4 / SOUL.spin), 0.01) && turn(w.yaw) < 0.01 && w.yaw >= 0,
+    `一直轉，每 ${SOUL.spin} 秒一圈（1 秒轉到 ${(q * 180 / Math.PI).toFixed(0)}°，${SOUL.spin} 秒回到正面），掉下來的時候也在轉`);
+
   // 撿：碰到身體才撿得到。
   const at = (x, y, z) => ({ x, y, z });
   ok(grabs(body(0, 0), at(0.3, 0.5, 0)) && !grabs(body(0, 0), at(PHYS.radius + SOUL.r + 0.01, 0.5, 0)), '水平上碰到身體才撿得到');

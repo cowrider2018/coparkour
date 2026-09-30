@@ -23,7 +23,7 @@
 import { PHYS, supportInfo } from './walk.js';
 import {
   FIELD, REACH, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster, harm, lifeStep, gainHeart,
-  SOUL, dropSoul, soulStep, grabs,
+  dropSoul, soulStep, grabs,
   breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, placeMonster, monsterStep, bites, knock,
   inSlash, inFan, inRing, slashTip, makeCombo, comboStep, invulnerable, untouchable, cueing, attacking, taken,
 } from './combat.js';
@@ -37,8 +37,9 @@ import { Helm } from './helm.js';
 import { Mover } from './moves.js';
 import {
   cueFx, showFx, breakFx, showBreak, laneFx, showLane, circleFx, showCircle,
-  coneFx, showCone, stripFx, showStrip, soulMesh,
+  coneFx, showCone, stripFx, showStrip,
 } from './fx.js';
+import { SoulLook } from './soul.js';
 import { SKILL, WHIRL_LEN, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from './skills.js';
 import { Hearts } from './hearts.js';
 import { Fluid, Sheet } from './fluid.js';
@@ -138,7 +139,9 @@ export class Fight {
     /* BOSS 掉出來的靈魂（combat.js 的 dropSoul）。換陣容不清——完整流程裡打完一場就換
        下一場，沒撿的留在原地；回到站位（reset）才清。一顆一個 mesh，不夠就多做。 */
     this.souls = [];
-    this._soulMeshes = [];
+    this._soulViews = [];
+    /** 靈魂的外觀（soul.js 的狗頭），第一顆掉出來的時候才建。 */
+    this._soulLook = null;
   }
 
   /** 換了動物：刀掛到新那一隻頭上。 */
@@ -445,17 +448,14 @@ export class Fight {
     // 飛著的球（火球）。
     this._fire.draw(dt, this.world.shots, camera);
 
-    // 靈魂。
-    while (this._soulMeshes.length < this.souls.length) {
-      const o = soulMesh(SOUL.r);
-      this.scene.add(o);
-      this._soulMeshes.push(o);
+    // 靈魂：頭、光暈、冒出來的小球（soul.js）。
+    while (this._soulViews.length < this.souls.length) {
+      this._soulLook ??= new SoulLook(this.zoo);
+      const o = this._soulLook.make();
+      this.scene.add(o.root);
+      this._soulViews.push(o);
     }
-    this._soulMeshes.forEach((o, i) => {
-      const sl = this.souls[i];
-      o.visible = !!sl;
-      if (sl) o.position.set(sl.x, sl.y, sl.z);
-    });
+    this._soulViews.forEach((o, i) => o.show(this.souls[i] || null, dt, camera));
 
     // 破防的兩圈：套在怪物身體的中間，正對這一幀的鏡頭。
     for (const { m, breakFx: bf } of this.foes) {

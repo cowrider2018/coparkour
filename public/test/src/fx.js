@@ -1,5 +1,6 @@
 /* ── test/src/fx.js ───────────────────────────────────────────
-   戰鬥的小外觀：連段的提示圈、破防的兩圈、怪物技能（BOSS、騎士）的預告、靈魂。
+   戰鬥的小外觀：連段的提示圈、破防的兩圈、怪物技能（BOSS、騎士）的預告。
+   靈魂（BOSS 掉出來的狗頭）在 soul.js。
    主角三段攻擊的範圍是劍氣，在 qi.js（形狀在 trail.js）；BOSS 的火球在 fireball.js。
 
    BOSS 預告的形狀直接照 skills.js 的判定畫，所以畫面上那一片就是會被打到的
@@ -196,24 +197,6 @@ export function showStrip(f, on, frac, x, z, yaw, len, y = 0) {
     L.mid.scale.z = Math.max(1e-3, len);
     if (L.caps.length) { L.caps[0].position.z = len / 2; L.caps[1].position.z = -len / 2; }
   }
-}
-
-/**
- * 一顆靈魂（BOSS 死掉掉出來的）的外觀：半透明的白球，裡面一顆比較實的芯、外面
- * 一層淡淡的光暈。不吃霧、不寫深度。
- */
-export function soulMesh(radius) {
-  const ball = (r, opacity) => {
-    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), new THREE.MeshBasicMaterial({
-      color: 0xffffff, transparent: true, opacity, depthWrite: false, fog: false,
-    }));
-    m.renderOrder = 3;
-    return m;
-  };
-  const node = new THREE.Group();
-  node.add(ball(radius * 0.6, 0.7), ball(radius, 0.35), ball(radius * 1.5, 0.12));
-  node.visible = false;
-  return node;
 }
 
 /**
