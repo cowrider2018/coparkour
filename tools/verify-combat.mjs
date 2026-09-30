@@ -113,8 +113,10 @@
                     收尾照 0.25 秒的僵直走。
     30. 召喚        國王會召喚；場上牠召喚的 0～2 隻時召 2 隻、3 隻時召 1 隻、滿 4 隻挑不到這一招。
                     挑的那一刻在牠身邊 near～3 公尺內隨機挑點（夾在黑牆裡、落在地板上）；倒數 0.5 秒
-                    不冒、不打；倒數完每個點冒一隻幽靈（記著是誰召的、面向玩家被鎖定的那一點），
-                    不打人；僵直 0.5 秒。動作是 summonWind → summonRec。
+                    不上場、不打；倒數完每個點上場一隻幽靈（記著是誰召的、面向玩家被鎖定的那一點），
+                    不打人；僵直 0.5 秒。動作是 summonWind → summonRec。倒數的時候幽靈從地底升上來：
+                    一開始整隻（連耳朵）在地板底下，一路往上、先快後慢，倒數完的那一刻腳剛好
+                    在地板上——跟上場、開始動是同一刻。
     31. 盾的外觀    剩幾面就畫幾面，平均分在一圈上、盾面朝外，那一圈照體型放大、離身體夠遠
                     （不穿過國王的身體）；用掉一面：那一面縮到沒有、其他的滑到新的平均間隔；
                     墨線跟著國王的墨色換。
@@ -132,7 +134,7 @@ import {
 import { SKILL, UP_AIR, WHIRL_LEN, makeWorld, bossStep, shotsStep, shotHits, shotBlocked, strikeHits, laneLength, recoverOf, summonCount } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
 import { DUST, dustOf, dustFade, QUAKE, quakeBands, quakeFade } from '../public/test/src/dust.js';
-import { Motion, bloodOf, sizeOf, mirror, MOVES as KNIGHT_MOVES } from '../public/test/src/monster.js';
+import { Motion, bloodOf, sizeOf, mirror, riseLift, MOVES as KNIGHT_MOVES } from '../public/test/src/monster.js';
 import { MOVES as HERO_MOVES } from '../public/test/src/moves.js';
 import { TRAILS, PIECE, BANDS, sweepAt, fadeAt, sideAt, qiAt, along, hullOf } from '../public/test/src/trail.js';
 import { bladeAt } from '../public/test/src/trail.js';
@@ -2196,7 +2198,7 @@ console.log('30. 召喚');
   ok(a.spots.length === 2 && !a.early && !a.hit, '場上沒有：挑兩個點；倒數裡不冒、整招不打人');
   ok(near(a.endAt, S.windup, 1.5 * DT) && a.stun === SKILL.recover, `${a.endAt.toFixed(2)} 秒冒出來，僵直 ${SKILL.recover} 秒`);
   ok(a.w.spawns.length === 2 && a.w.spawns.every((sp, i) => sp.kind === 'ghost' && sp.by === a.m && near(sp.x, a.spots[i].x) && near(sp.z, a.spots[i].z)),
-    '倒數完每個紅圈冒一隻幽靈，記著是國王召的');
+    '倒數完每個點上場一隻幽靈，記著是國王召的');
   ok(a.w.spawns.every((sp) => near(Math.sin(sp.yaw), (0 - sp.x) / Math.hypot(sp.x, 11 - sp.z))), '冒出來面向玩家被鎖定的那一點');
   let inRing = true;
   for (let i = 0; i < 40; i++) {
@@ -2214,6 +2216,21 @@ console.log('30. 召喚');
   ok(!full.spots && full.w.spawns.length === 0, '場上滿 4 隻：挑不到召喚');
   ok([...a.stages].join() === 'summonWind,summonRec', `動作：${[...a.stages].join(' → ')}`);
   KINDS.king.skills = keep;
+
+  /* 從地底升上來：量幽靈（靜置、空中姿勢）畫出來最高到哪。 */
+  const buf = readFileSync('public/assets/cat.bin');
+  const zoo = await loadZoo({ buffer: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) });
+  const g = makeMonsterCritter(zoo, 'ghost');
+  g.update(DT, { speed: 0, grounded: false, vy: 0, viewYaw: 0 });
+  const s = g.mesh.scale.x, gp = g._posBaked;
+  let top = -Infinity;
+  for (let i = 1; i < gp.length; i += 3) top = Math.max(top, gp[i] * s + g.mesh.position.y);
+  ok(riseLift(0, 'ghost') + top < 0, `倒數一開始：幽靈最高那一點（腳上 ${top.toFixed(2)} 公尺）還在地板底下（${(riseLift(0, 'ghost') + top).toFixed(2)}）`);
+  ok(riseLift(1, 'ghost') === 0 && riseLift(1.2, 'ghost') === 0, '倒數完的那一刻：腳剛好在地板上（之後也不會再往上）');
+  let up = true, prev = -Infinity;
+  for (let u = 0; u <= 1 + 1e-9; u += 0.05) { const y = riseLift(u, 'ghost'); if (y < prev) up = false; prev = y; }
+  const early = riseLift(0.5, 'ghost') - riseLift(0, 'ghost'), late = riseLift(1, 'ghost') - riseLift(0.5, 'ghost');
+  ok(up && early > late, `一路往上、先快後慢（前半升 ${early.toFixed(2)}、後半升 ${late.toFixed(2)} 公尺）`);
 }
 
 /* ── 31. 盾的外觀 ────────────────────────────────────────────── */

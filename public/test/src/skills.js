@@ -50,8 +50,10 @@
      hew    直線劈砍（不限距離）。牠腳下出現一條往鎖定方向一直延伸到黑牆的紅色長條
             （寬 0.8 個狗高），倒數 0.5 秒；然後站在原地往前劈，打那一整條。出招後
             只僵直 0.25 秒（SKILL.hew.recover，其他招是 SKILL.recover）。
-     summon 召喚。挑的那一刻在牠身邊半徑 3 公尺內隨機挑幾個點（地板上），每個點一個小紅圈，
-            倒數 0.5 秒；倒數完每個點冒出一隻幽靈（不打人）。場上牠召喚出來、還活著的
+     summon 召喚。挑的那一刻在牠身邊半徑 3 公尺內隨機挑幾個點（地板上），倒數 0.5 秒——
+            這段時間每個點上一隻幽靈從地底升上來（畫面，fight.js；沒有紅圈），還不算上場、
+            不動、打不到也打不到人；倒數完的那一刻整隻離開地面，就在那一點上場、開始追人
+            （不打人的招）。場上牠召喚出來、還活著的
             （`m.brood`，呼叫端每幀數好寫進來）最多 4 隻：0～2 隻的時候召兩隻，3 隻的時候
             召一隻，滿 4 隻就挑不到這一招。召出來的放進 world.spawns，由呼叫端接上場。
 
@@ -86,8 +88,8 @@ export const SKILL = {
      出招後的僵直是自己的 recover（比別招短）。 */
   hew: { windup: 0.5, width: 0.8 * DOG_H, damage: 5, recover: 0.25 },
   /* 國王的召喚：倒數 windup，在身邊 radius 公尺內（離牠至少 near，不疊在牠身上）的點上各冒出
-     一隻 kind；紅圈半徑 mark。場上牠召喚的最多 cap 隻，一次最多召 each 隻（補到 cap 為止）。 */
-  summon: { windup: 0.5, radius: 3, near: 2 * PHYS.radius, mark: 0.35, cap: 4, each: 2, kind: 'ghost' },
+     一隻 kind（倒數的時候從地底升上來）。場上牠召喚的最多 cap 隻，一次最多召 each 隻（補到 cap 為止）。 */
+  summon: { windup: 0.5, radius: 3, near: 2 * PHYS.radius, cap: 4, each: 2, kind: 'ghost' },
   /** 出招後僵直幾秒（那一招沒有自己的 `recover` 的話）。 */
   recover: 0.5,
 };
@@ -249,7 +251,7 @@ const CAST = {
     return { shape: 'strip', x: m.x, y: m.y, z: m.z, dirX: c.dirX, dirZ: c.dirZ, len, w: S.width, dmg: S.damage };
   },
 
-  /* 倒數的時候站著；倒數完每一個紅圈冒出一隻（面向玩家被鎖定的那一點），交給呼叫端接上場。
+  /* 倒數的時候站著；倒數完每一個點上場一隻（面向玩家被鎖定的那一點），交給呼叫端接上場。
      不打人。 */
   summon(m, world) {
     const c = m.cast, S = SKILL.summon;

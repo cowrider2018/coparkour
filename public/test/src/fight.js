@@ -27,7 +27,7 @@ import {
   breaking, breakTarget, startBreak, breakContact, contact, parry, spinStep, separate, placeMonster, monsterStep, bites, knock,
   inSlash, inFan, inRing, slashTip, makeCombo, comboStep, invulnerable, untouchable, cueing, attacking, taken,
 } from './combat.js';
-import { makeMonsterCritter, sizeOf, bloodOf, swordOf, helmOf, crownOf, Motion, ATTACK_INK, CHOP_LEAD } from './monster.js';
+import { makeMonsterCritter, sizeOf, bloodOf, swordOf, helmOf, crownOf, riseLift, Motion, ATTACK_INK, CHOP_LEAD } from './monster.js';
 import { GUARD_INK } from './critter.js';
 import { Blood } from './blood.js';
 import { Fireballs } from './fireball.js';
@@ -171,7 +171,6 @@ export class Fight {
         lane: laneFx(SKILL.orb.radius), circle: circleFx(SKILL.leap.radius), cone: coneFx(SKILL.cone.radius, SKILL.cone.half),
         whirl: stripFx(SKILL.whirl.radius, true), cleave: stripFx(SKILL.cleave.width / 2, false),
         hew: stripFx(SKILL.hew.width / 2, false),
-        marks: Array.from({ length: SKILL.summon.each }, () => circleFx(SKILL.summon.mark)),
         blade: null, helm: null, crown: null, shields: null,
       };
       // 咬著劍的那幾類（騎士、國王）：劍掛在牠自己的頭上，跟主角那把一樣每幀跟著頭。
@@ -183,7 +182,7 @@ export class Fight {
       // 有盾的（國王）：幾面盾繞著牠轉，墨線一樣跟著牠的墨色換。
       if (KINDS[kind].shields) { slot.shields = new ShieldRing(KINDS[kind].shields); slot.shields.follow(slot.critter); this.scene.add(slot.shields.node); }
       if (this._inkPx) slot.critter.setInkPx(...this._inkPx);
-      this.scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node, slot.cone.node, slot.whirl.node, slot.cleave.node, slot.hew.node, ...slot.marks.map((k) => k.node));
+      this.scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node, slot.cone.node, slot.whirl.node, slot.cleave.node, slot.hew.node);
       list.push(slot);
     }
     return list[i];
@@ -198,7 +197,6 @@ export class Fight {
     s.whirl.node.visible = false;
     s.cleave.node.visible = false;
     s.hew.node.visible = false;
-    for (const k of s.marks) k.node.visible = false;
     if (s.shields) s.shields.hide();
   }
 
@@ -208,26 +206,53 @@ export class Fight {
     slot.critter.setFacing(spawn.yaw);
     const m = makeMonster(spawn, field);
     if (slot.shields) slot.shields.snap(m.shields);
-    return { m, motion: new Motion(), hewHit: null, ...slot };
+    return { m, motion: new Motion(), hewHit: null, rising: null, ...slot };
+  }
+
+  /** 借一份這一類沒在用的外觀：場上的與正在升上來的都不借。 */
+  _free(kind) {
+    const busy = new Set(this.foes.map((f) => f.critter));
+    for (const f of this.foes) for (const r of f.rising || []) busy.add(r.slot.critter);
+    const list = this._pool.get(kind) || [];
+    const i = list.findIndex((s) => !busy.has(s.critter));
+    return this._slot(kind, i < 0 ? list.length : i);
   }
 
   /**
-   * 召喚出來的一隻上場（skills.js 的 world.spawns 的一筆）：借一份這一類沒在用的外觀，
-   * 站在那個紅圈上、跟召喚牠的那一隻（`m.by`）站在同一塊場地。
+   * 召喚：倒數一開始，每一個召喚點借一份外觀（f.rising），倒數的時候從地底升上來（draw）；
+   * 倒數完那一幀 skills.js 把牠們放進 world.spawns，這裡照順序接上場——用的就是升上來的
+   * 那一份外觀，站在那一點、跟召喚牠的那一隻（`m.by`）同一塊場地。招被打斷（沒冒出來）
+   * 的話，升到一半的那幾份收起來。
    */
-  _summon(sp) {
-    const busy = new Set(this.foes.map((f) => f.critter));
-    const list = this._pool.get(sp.kind) || [];
-    let i = list.findIndex((s) => !busy.has(s.critter));
-    if (i < 0) i = list.length;
-    const f = Fight._enter(this._slot(sp.kind, i), sp, sp.by.field);
-    f.m.by = sp.by;
-    this.foes.push(f);
+  _rise() {
+    for (const sp of this.world.spawns) {
+      const host = this.foes.find((f) => f.m === sp.by);
+      const r = host && host.rising && host.rising.shift();
+      const f = Fight._enter(r ? r.slot : this._free(sp.kind), sp, sp.by.field);
+      f.m.by = sp.by;
+      this.foes.push(f);
+    }
+    this.world.spawns.length = 0;
+    for (const f of this.foes) {
+      const c = f.m.cast, on = !!c && c.skill === 'summon';
+      if (!on) { Fight._sink(f); continue; }
+      if (f.rising) continue;
+      f.rising = [];
+      for (const spot of c.spots) {
+        f.rising.push({ slot: this._free(SKILL.summon.kind), spot, yaw: Math.atan2(c.tx - spot.x, c.tz - spot.z) });
+      }
+    }
   }
 
-  /** 讓符合條件的那幾隻離場：外觀藏起來，下一幀起不在清單裡。 */
+  /** 升到一半的外觀收起來（招被打斷、召喚的那一隻離場、回到站位）。 */
+  static _sink(f) {
+    for (const r of f.rising || []) Fight._hide(r.slot);
+    f.rising = null;
+  }
+
+  /** 讓符合條件的那幾隻離場：外觀（連同牠正在召喚、升到一半的）藏起來，下一幀起不在清單裡。 */
   _drop(gone) {
-    for (const f of this.foes) if (gone(f)) Fight._hide(f);
+    for (const f of this.foes) if (gone(f)) { Fight._hide(f); Fight._sink(f); }
     this.foes = this.foes.filter((f) => !gone(f));
   }
 
@@ -260,6 +285,7 @@ export class Fight {
       f.motion = new Motion();
       f.hewHit = null;
       f.m.brood = 0;
+      Fight._sink(f);
       if (f.shields) f.shields.snap(f.m.shields);
     }
     Object.assign(this.combo, makeCombo());
@@ -353,9 +379,8 @@ export class Fight {
       this._stomps.push(st);
       if (st.shape === 'circle') this._quiet.add(m);
     }
-    // 召喚出來的上場（這一幀起就追人）。
-    for (const sp of this.world.spawns) this._summon(sp);
-    this.world.spawns.length = 0;
+    // 召喚：倒數完的上場（這一幀起就追人）；剛開始倒數的借外觀，準備從地底升上來。
+    this._rise();
     // 撞到黑牆或場上東西的球炸掉。
     for (const s of shotsStep(this.world, dt)) this._fire.explode(s);
     for (const { m } of foes) monsterStep(m, dt, player);
@@ -460,6 +485,19 @@ export class Fight {
       // 盾繞著牠的腳轉（衝的時候畫得跳起來，盾跟著）。
       if (shields) shields.show(dt, m.shields, m.x, m.y + mo.lift, m.z, sizeOf(m.kind));
     }
+    // 召喚中：幽靈從地底升上來，倒數完的那一刻剛好整隻離開地面（monster.js 的 riseLift）。
+    for (const f of this.foes) {
+      if (!f.rising || !f.m.cast) continue;
+      const u = f.m.cast.t / SKILL.summon.windup;
+      for (const { slot, spot, yaw } of f.rising) {
+        const c = slot.critter;
+        c.root.visible = true;
+        c.root.position.set(spot.x, spot.y + riseLift(u, SKILL.summon.kind), spot.z);
+        c.setFacing(yaw);
+        c.setInkColor(null);
+        c.update(dt, { speed: 0, grounded: false, vy: 0, viewYaw: Math.atan2(camera.position.x - spot.x, camera.position.z - spot.z), move: null });
+      }
+    }
 
     // 攻擊範圍：劍光，跟著玩家的腳與出招時鎖住的面向走（騎士的劍迴旋跟著牠）。落地的粉塵。
     this._whirls();
@@ -475,12 +513,6 @@ export class Fight {
       const { m, lane, circle, cone, whirl, cleave } = f;
       const c = m.cast;
       this._hew(dt, f);
-      // 召喚：每一個會冒出一隻的點一個小紅圈，亮色從中心長到邊，長滿就冒出來。
-      const sm = !!c && c.skill === 'summon';
-      f.marks.forEach((k, i) => {
-        const s = sm && c.spots[i];
-        showCircle(k, !!s, s ? Math.min(1, c.t / SKILL.summon.windup) : 0, s ? s.x : 0, s ? s.z : 0, s ? s.y : 0);
-      });
       const orb = !!c && c.skill === 'orb', leap = !!c && c.skill === 'leap', fan = !!c && c.skill === 'cone';
       /* 劍迴旋衝刺：從起步的地方往鎖定的方向，衝得到多遠（黑牆擋住的話到牆前）。衝的時候
          亮著滿的——那一條就是還會被掃到的地方。 */

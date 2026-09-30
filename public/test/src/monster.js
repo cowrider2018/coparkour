@@ -78,6 +78,9 @@
             騎士跳砍那一道（fight.js）。
      summon 召喚：仰頭嚎叫——BOSS 蓄火球那一套（胸口挺起、頭仰到朝天、尾巴翹起來），
             倒數的 0.5 秒仰到最高，冒出來的那一刻停在那裡，僵直裡慢慢回到原本的樣子。
+            召出來的幽靈在同一段 0.5 秒裡從地底升上來（riseLift）：一開始整隻在地板底下，
+            先快後慢，倒數完的那一刻腳剛好離開地面——也就是牠進場、開始動的那一刻。
+            埋在地板底下的那一截被地板的深度擋掉，不必另外裁。
 
    ── 會飛的漂 ──────────────────────────────────────────────────────
    會飛的（幽靈）一直是空中姿勢、不走路，所以移動的時候另外常駐一套漂（DRIFT）：
@@ -126,6 +129,18 @@ export const helmOf = (kind) => !!LOOKS[kind].helm;
 export const crownOf = (kind) => !!LOOKS[kind].crown;
 
 const RED = [0.95, 0.08, 0.06];
+
+/** 召喚的幽靈從多深的地方升上來：畫出來的身高（連耳朵）的這麼多倍，整隻埋得住。 */
+const RISE_DEPTH = 1.3;
+
+/**
+ * 召喚的幽靈升到哪：倒數走了 u（0～1），腳比那一點的地板低多少（公尺，負的）。先快後慢
+ * （ease-out），u = 1 的時候剛好 0——整隻離開地面。
+ */
+export function riseLift(u, kind) {
+  const k = 1 - Math.min(1, Math.max(0, u));
+  return -RISE_DEPTH * PHYS.height * sizeOf(kind) * k * k;
+}
 
 /** 攻擊中（combat.js 的 attacking）的墨線顏色。 */
 export const ATTACK_INK = new THREE.Color(0xd41414);
