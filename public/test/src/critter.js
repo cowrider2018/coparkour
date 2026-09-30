@@ -129,6 +129,21 @@ const TONES = (() => {
   };
 })();
 
+/**
+ * 毛色要寫多少（sRGB，0～1），最亮那一階才畫得出 lit（sRGB）：把 aces(albedo × keyLit)
+ * 倒回去。ACES 先大幅提亮再壓回來，同一個色碼寫在毛上會比道具亮很多，所以要跟道具
+ * 同色得照這個換（palette.js 的 litOf 給道具那一邊）。中間與陰影那兩階兩邊的階距不同，
+ * 只有最亮那一階對得上。
+ */
+export function furFor(lit) {
+  const srgb = (v) => (v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055);
+  return lit.map((y, k) => {
+    let lo = 0, hi = 64;                  // acesTone 單調遞增：二分
+    for (let i = 0; i < 48; i++) { const m = (lo + hi) / 2; if (acesTone(m) < y) lo = m; else hi = m; }
+    return srgb(Math.min(1, lo / TONES.keyLit[k]));
+  });
+}
+
 /** 墨色，乘上這個時刻的增益——跟遊戲的 `t.ink` 同一條式子。 */
 export const INK_TONED = new THREE.Color(INK).multiplyScalar(TONES.inkGain);
 

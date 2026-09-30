@@ -342,6 +342,16 @@ export const toonVC = (o = {}) => banded(new THREE.MeshBasicMaterial({
  */
 export const toon = (color, surf = false) => banded(new THREE.MeshBasicMaterial({ color }), { surf });
 
+/**
+ * toon(color) 最亮那一階畫出來是什麼顏色（sRGB，0～1）。別的著色（critter.js 的毛皮）
+ * 要跟某一件道具同色，照這個對。
+ */
+export function litOf(color) {
+  const c = new THREE.Color(color);
+  const srgb = (v) => (v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055);
+  return [c.r * TONES[0], c.g * TONES[1], c.b * TONES[2]].map((v) => srgb(Math.min(1, v)));
+}
+
 /* ── 顏色 → 材料 ──────────────────────────────────────────────────
    零件只說「這塊是什麼顏色」，材料由顏色認：石材四階都是石、兩階木料
    都是木……零件的呼叫端因此一行都不用改，而新加一個顏色時，它在這張表裡

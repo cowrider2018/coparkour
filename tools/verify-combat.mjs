@@ -144,7 +144,10 @@ import { readFileSync } from 'node:fs';
 import * as THREE from '../public/test/vendor/three.module.js';
 import { loadZoo } from '../public/test/src/critter.js';
 import { makeMonsterCritter, helmOf, ATTACK_INK } from '../public/test/src/monster.js';
-import { Helm, HELM } from '../public/test/src/helm.js';
+import { Helm, HELM, EAR_COLOR } from '../public/test/src/helm.js';
+import { litOf } from '../public/test/src/palette.js';
+import { BAND_KEY as CAT_BAND_KEY, BAND_AMB as CAT_BAND_AMB, SHADE_KEY_GAIN, SHADE_AMB_GAIN } from '../public/src/cat/cat.js';
+import { skyAt, acesTone } from '../public/src/gfx/daycycle.js';
 import { Crown, CROWN } from '../public/test/src/crown.js';
 import { crownOf } from '../public/test/src/monster.js';
 import { ShieldRing, SHIELD } from '../public/test/src/shield.js';
@@ -2060,6 +2063,37 @@ console.log('26. 頭盔');
     c.setInkColor(null);
     ok(red && !helm.ink.color.equals(ATTACK_INK), `${kind}：墨線跟著牠的墨色換（攻擊中轉紅、之後換回來）`);
   }
+
+  /* 戴頭盔的立耳狗：戴上的那一刻耳朵的頂點色改成盔殼色（照毛皮的著色換算，最亮那一階跟盔殼
+     同色），形狀不變；沒戴的、垂耳的不改。 */
+  const colOf = (c, want) => {
+    const out = [];
+    for (let i = 0; i < c._boneId.length; i++) if (want(c.rig.names[c._boneId[i]])) out.push([0, 1, 2].map((k) => c._colorAttr.array[i * 3 + k]));
+    return out;
+  };
+  const isEar = (n) => n === 'earL' || n === 'earR';
+  const allAre = (l, col) => l.length > 1000 && l.every((c) => c.every((x, k) => x === Math.fround(col[k])));
+  const minion = makeMonsterCritter(zoo, 'minion'), coat = colOf(minion, (n) => n === 'body')[0];
+  for (const kind of ['knight', 'boss']) {
+    const c = makeMonsterCritter(zoo, kind);
+    const before = allAre(colOf(c, isEar), coat);
+    new Helm().follow(c);
+    const n = colOf(c, isEar).length;
+    ok(before && allAre(colOf(c, isEar), EAR_COLOR) && allAre(colOf(c, (b) => b === 'body'), coat),
+      `${kind}：戴上頭盔，耳朵（${n} 個頂點）整片改成盔殼色，身體還是毛色`);
+    ok(c._posBaked.length === minion._posBaked.length && c._posBaked.every((x, i) => x === minion._posBaked[i]),
+      `${kind}：耳朵沒有加厚——頂點跟沒戴頭盔的狗一模一樣`);
+  }
+  // 毛皮最亮那一階：aces(線性毛色 × keyLit)，keyLit 照 cat.js 正午那一格另外算一次。
+  const lin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const sky = skyAt(12), keyLit = [0, 1, 2].map((k) => sky.tint[k] * SHADE_KEY_GAIN * CAT_BAND_KEY[0] + sky.ambient[k] * SHADE_AMB_GAIN * CAT_BAND_AMB[0]);
+  const shell = litOf(new Helm().node.getObjectByName('shell').material.color);   // 盔殼材質本身的顏色
+  ok(EAR_COLOR.every((x, k) => near(acesTone(lin(x) * keyLit[k]), shell[k], 1e-6)) && shell.every((x) => x > 0.3 && x < 0.9),
+    `耳朵在毛皮最亮那一階畫出來跟盔殼最亮那一階同色（sRGB ${shell.map((x) => Math.round(x * 255)).join(',')}）`);
+  ok(allAre(colOf(minion, isEar), coat), '沒戴頭盔的（小怪）耳朵還是毛色');
+  const drop = makeMonsterCritter(zoo, 'king'), dropEar = colOf(drop, isEar)[0];
+  new Helm().follow(drop);
+  ok(colOf(drop, isEar).every((c) => c.every((x, k) => x === dropEar[k])), '垂耳狗戴上頭盔：耳朵垂在盔殼外面，不改色');
 }
 
 /* ── 27. 王冠 ────────────────────────────────────────────────── */

@@ -21,10 +21,19 @@
    兩層之間那條縫從切口看進去就是墨色的外殼——切口的厚度就畫成一條粗一點的線。
    墨線的材質交給那隻動物的墨色一起換（攻擊中轉紅），不然頭盔一蓋，頭上那一圈
    紅就不見了。
+
+   ── 耳朵 ─────────────────────────────────────────────────────────
+   立耳犬（THROUGH）的耳朵從盔頂穿出去：戴上頭盔（follow）的那一刻，耳朵那兩根骨頭
+   上的頂點色就改成盔殼色，看起來是頭盔的一部分——只改顏色，不另外套一層，耳朵一點
+   都沒變厚。改色跟著頭盔走，誰戴上誰的耳朵就變，不必在每一類怪物那裡各寫一次。
+   毛皮跟頭盔是兩套著色（critter.js 的毛皮先大幅提亮再用 ACES 壓回來），同一個色碼
+   寫在毛上會亮很多，所以照 critter.js 的 furFor 換算：最亮那一階跟盔殼的最亮那一階
+   同色。垂耳犬的耳朵垂在盔殼外面，不改。
    ------------------------------------------------------------------ */
 
 import * as THREE from '../vendor/three.module.js';
-import { toon, INK } from './palette.js';
+import { toon, litOf, INK } from './palette.js';
+import { furFor } from './critter.js';
 
 /** 盔殼：中心、半徑、指數（越大越方）、厚度。 */
 const SHELL = { c: [0, 1.14, 0.10], h: [1.34, 1.06, 1.40], n: 4.5, t: 0.07 };
@@ -61,6 +70,11 @@ const INK_OUT = 0.05;
 /** 尺寸（驗證器量頭盔跟狗頭的相對位置用）。 */
 export const HELM = { SHELL, SHELL_FLOOR, NOTCH, VISOR, FACE_LIFT, INK_OUT };
 const COL = { shell: 0xb7c0c9, visor: 0x98a3ae, rivet: 0xc79a3a };
+/** 耳朵從盔頂穿出去的模型（Zoo 的模型 id）：戴上頭盔，耳朵漆成盔殼色。 */
+const THROUGH = new Set(['dog-prick']);
+const EAR_BONES = new Set(['earL', 'earR']);
+/** 耳朵漆成的顏色（寫進頂點色的 sRGB，見檔頭）。 */
+export const EAR_COLOR = furFor(litOf(COL.shell));
 
 /* ── 盔殼 ── */
 
@@ -295,6 +309,7 @@ export class Helm {
     if (!critter._inkMats.includes(this.ink)) critter._inkMats.push(this.ink);
     this._headBone = critter.rig.bone('head');
     critter._faceLift.value = FACE_LIFT * critter.mesh.scale.x;
+    if (THROUGH.has(critter.modelId)) paintEars(critter);
   }
 
   /** 這一幀的頭在哪，頭盔就在哪。要在 critter.update 之後叫。 */
@@ -303,4 +318,14 @@ export class Helm {
     this.node.matrix.fromArray(this._host.rig.matrices, this._headBone * 16);
     this.node.matrixWorldNeedsUpdate = true;
   }
+}
+
+/** 耳朵那兩根骨頭上的頂點改成盔殼色（Critter 沒有這個入口，直接寫它的顏色屬性）。 */
+function paintEars(c) {
+  const out = c._colorAttr.array;
+  for (let v = 0; v < c._boneId.length; v++) {
+    if (!EAR_BONES.has(c.rig.names[c._boneId[v]])) continue;
+    out[v * 3] = EAR_COLOR[0]; out[v * 3 + 1] = EAR_COLOR[1]; out[v * 3 + 2] = EAR_COLOR[2];
+  }
+  c._colorAttr.needsUpdate = true;
 }
