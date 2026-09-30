@@ -19,13 +19,21 @@
      2 殭屍 + 1 BOSS BOSS 在中線上，殭屍在左右各 4 公尺（預設）。
      3 幽靈          跟 3 殭屍同樣的站位。
      1 騎士          中線上。
+     1 國王          中線上。
 
    ── 怪物 ────────────────────────────────────────────────────────
    一直追著玩家跑。身體跟玩家一樣大（同一個 PHYS 的圓柱）。碰到玩家不再
    有事——傷害是一次一次的攻擊（衝刺，見 LUNGE）：追到 LUNGE.range 以內，
    站著發呆（蓄力）0.25 秒，然後朝那時鎖定的方向衝一下（速度 16、0.25 秒內
    減到 0），衝完僵直 0.5 秒才回去追。只有衝的那 0.25 秒裡碰到玩家，玩家
-   才被咬到、扣血（小怪 1、騎士 2、BOSS 3，見 KINDS 的 `bite` 與下面的「玩家的血」）。
+   才被咬到、扣血（小怪 1、騎士 2、BOSS 3、國王 2，見 KINDS 的 `bite` 與下面的「玩家的血」）。
+   國王（KINDS 的 `lunges`）一次衝兩下：衝完第一下不僵直，重新蓄力 0.25 秒、朝玩家那時
+   的位置再衝一下，第二下衝完才僵直。兩下之間不到 LIFE.guard，所以第一下咬到的話第二下
+   不再扣血——第二下是給躲過第一下的人的。
+
+   國王身邊有三面盾（KINDS 的 `shields`）：挨打的時候先用掉一面，那一下整個不算——
+   不扣血、不擊退、不累積破防、衝刺也不取消（parry）。挨打（不管擋沒擋）之後
+   `shieldEvery` 秒沒再挨打，補回一面，補到滿為止。
 
    攻擊中（attacking：放招、或衝刺的蓄力加衝，不含之後的僵直）被打會怎樣看類別
    （KINDS 的 `steady`）：小怪一打就取消；BOSS 不會被打斷——跟放招的倒數一樣
@@ -114,6 +122,7 @@ export const MODES = [
   { id: 'mixed', name: '2 殭屍 + 1 BOSS', hint: '大隻的 BOSS 在中間，兩隻殭屍在左右。', monsters: [post('boss', 0), post('minion', -4), post('minion', 4)] },
   { id: 'ghosts', name: '3 幽靈', hint: '三隻半透明、會飛的幽靈。', monsters: [post('ghost', -4), post('ghost', 0), post('ghost', 4)] },
   { id: 'knight', name: '1 騎士', hint: '一隻咬著雙刃劍、1.2 倍高的騎士。', monsters: [post('knight', 0)] },
+  { id: 'king', name: '1 國王', hint: '一隻戴王冠、半透明、1.4 倍高的國王，身邊三面盾。', monsters: [post('king', 0)] },
 ];
 
 /** 一開始是哪一個陣容。 */
@@ -163,6 +172,9 @@ export const FIELD = { arena: ARENA, cols: COLS, doors: {} };
  *   knight  騎士（殭屍畫成 1.2 倍高，嘴裡咬著一把雙刃劍）。血 10、腳程 3.6。
  *           衝刺跟小怪一樣一打就取消（不是 `steady`）。每 `every` 秒從 `skills`
  *           裡挑一招（skills.js），夠得到才放。
+ *   king    國王（垂耳狗，幽靈那一件毛、半透明，畫成 1.4 倍高）。血 40、腳程 3.8，走路、
+ *           受重力。`lunges`：一次衝刺衝兩下才僵直（見 LUNGE）。`shields`：身邊幾面盾，
+ *           每 `shieldEvery` 秒沒挨打補一面（見 parry）。衝刺跟小怪一樣一打就取消。
  *
  * 碰撞的身體一樣大（同一個 PHYS 的圓柱）；外觀（同一件毛、BOSS 畫兩倍大、騎士 1.2 倍）在 monster.js。
  *
@@ -177,6 +189,7 @@ export const KINDS = {
   boss: { name: 'BOSS', hp: 20, speed: 4, breakAt: BREAK_AT, bite: 3, soul: true, steady: true, skills: ['orb', 'leap', 'cone'], every: 3 },
   ghost: { name: '幽靈', hp: 4, speed: 3.4, breakAt: BREAK_AT, bite: 1, fly: true },
   knight: { name: '騎士', hp: 10, speed: 3.6, breakAt: BREAK_AT, bite: 2, skills: ['whirl', 'cleave'], every: 2.5 },
+  king: { name: '國王', hp: 40, speed: 3.8, breakAt: BREAK_AT, bite: 2, lunges: 2, shields: 3, shieldEvery: 8 },
 };
 
 /**
@@ -425,8 +438,33 @@ export function placeMonster(m) {
   m.cast = null;                          // 放到一半的招（skills.js）
   m.castT = kindOf(m).every || 0;         // 離下一招還有幾秒
   m.stun = 0;                             // 出招後的僵直還剩幾秒（skills.js）
-  m.lunge = null;                         // 衝刺：{ t, dirX, dirZ }，見 LUNGE
+  m.lunge = null;                         // 衝刺：{ t, n, dirX, dirZ }，見 LUNGE
+  m.shields = kindOf(m).shields || 0;     // 還剩幾面盾（國王，見 parry）
+  m.shieldT = 0;                          // 上一次挨打之後過了幾秒（補盾用）
   m.aimX = Math.sin(s.yaw); m.aimZ = Math.cos(s.yaw);
+}
+
+/**
+ * 這一下被盾擋掉了嗎（有盾的那一類，國王）。有盾就用掉一面，回 true：呼叫端這一下
+ * 什麼都不做——不扣血、不擊退、不累積破防、衝刺不取消。不管擋沒擋，補盾的計時都
+ * 從頭算（挨打就重算）。沒有盾的那幾類一律 false、什麼都不動。
+ */
+export function parry(m) {
+  if (!kindOf(m).shields) return false;
+  m.shieldT = 0;
+  if (m.shields <= 0) return false;
+  m.shields--;
+  return true;
+}
+
+/** 補盾：沒滿的時候，距離上一次挨打每過 shieldEvery 秒補一面。滿的時候不計時。 */
+function shieldStep(m, dt) {
+  const K = kindOf(m);
+  if (!K.shields || m.shields >= K.shields) { m.shieldT = 0; return; }
+  m.shieldT += dt;
+  if (m.shieldT < K.shieldEvery) return;
+  m.shields++;
+  m.shieldT = 0;
 }
 
 /** 這隻怪物現在是不是破防中（窗口還開著）。 */
@@ -500,6 +538,7 @@ export function hurt(m, dmg) {
  */
 export function monsterStep(m, dt, target) {
   if (m.stun > 0) m.stun = Math.max(0, m.stun - dt);
+  shieldStep(m, dt);
   // 破防窗口：時間到了還沒用上就是錯過，累積歸零。
   if (broken(m)) {
     m.breakT -= dt;
@@ -537,6 +576,10 @@ export function monsterStep(m, dt, target) {
   }
   // 放招中、出招後的僵直（skills.js）：站著不動。
   if (m.cast || m.stun > 0) { m.vx = 0; m.vy = 0; m.vz = 0; return; }
+  /* 一次衝好幾下的那一類（國王）：這一下衝完、還沒到 `lunges` 下，不發呆，重新蓄力
+     朝玩家現在的位置再衝。衝完的那一幀（hot）照常算咬，下一幀才換成下一下。 */
+  const L0 = m.lunge;
+  if (L0 && L0.t >= LUNGE.windup + LUNGE.time && L0.n < (kindOf(m).lunges || 1)) { lockLunge(m, target, L0.n + 1); return; }
   /* 衝完、再發呆 recover 秒之後收掉。收掉的這一幀站著不動、不接著衝下一次：
      BOSS 的 bossStep 在 monsterStep 之前，牠要看到一幀「沒在衝」才挑得了招，
      不然貼著人的 BOSS 會一次接一次地衝，永遠輪不到放招。 */
@@ -550,8 +593,7 @@ export function monsterStep(m, dt, target) {
   if (h > 1e-6) { m.aimX = dx / h; m.aimZ = dz / h; }
   if (d <= LUNGE.range) {
     // 追到了：停下來發呆，方向在這一刻鎖定。
-    m.lunge = d > 1e-6 ? { t: 0, dirX: dx / d, dirY: dy / d, dirZ: dz / d } : { t: 0, dirX: m.aimX, dirY: 0, dirZ: m.aimZ };
-    m.vx = 0; m.vy = 0; m.vz = 0;
+    lockLunge(m, target, 1);
     return;
   }
   if (fly) {
@@ -562,6 +604,18 @@ export function monsterStep(m, dt, target) {
   }
   [m.x, m.z] = solveXZ(m.field.cols, m.x + m.vx * dt, m.z + m.vz * dt, m.y, m.field.doors);
   if (!fly) settle(m);
+}
+
+/**
+ * 開始一下衝刺（第 n 下）：站住蓄力，方向在這一刻朝玩家的腳鎖定——會飛的連高低一起
+ * （三維的方向），走路的只看水平。正好疊在玩家身上的時候朝自己的面向。
+ */
+function lockLunge(m, target, n) {
+  const fly = !!kindOf(m).fly;
+  const dx = target.x - m.x, dy = fly ? target.y - m.y : 0, dz = target.z - m.z;
+  const d = Math.hypot(dx, dy, dz);
+  m.lunge = d > 1e-6 ? { t: 0, n, dirX: dx / d, dirY: dy / d, dirZ: dz / d } : { t: 0, n, dirX: m.aimX, dirY: 0, dirZ: m.aimZ };
+  m.vx = 0; m.vy = 0; m.vz = 0;
 }
 
 /**
@@ -1013,6 +1067,26 @@ export function breakContact(p, m) {
   return p.y <= m.y + PHYS.height + 0.3 && p.y + PHYS.height > m.y;
 }
 
+/**
+ * 突進碰到目標：有盾（國王，parry）的話這一下被擋掉——不定住、不扣血，玩家直接跳離
+ * （vault）；沒盾就 latch。回傳這一下有沒有被擋掉。
+ */
+export function contact(c, p, m) {
+  if (!parry(m)) { latch(c, p, m); return false; }
+  vault(c, p);
+  return true;
+}
+
+/** 跳離：玩家往突進的反方向、往上跳，連段進 vault（落地回 idle）。 */
+function vault(c, p) {
+  c.phase = 'vault';
+  c.t = 0;
+  p.vx = -c.dashX * BREAK_ATK.off.h;
+  p.vz = -c.dashZ * BREAK_ATK.off.h;
+  p.vy = BREAK_ATK.off.v;
+  p.grounded = false;
+}
+
 /** 碰到了：記下相對位置，把怪物定住，進迴旋。 */
 export function latch(c, p, m) {
   c.phase = 'spin';
@@ -1055,10 +1129,6 @@ export function spinStep(c, p, m) {
   else m.slide = true;                                       // 會飛的不落下：在原本的高度滑開
   const took = taken(m, DAMAGE.break);
   const died = hurt(m, DAMAGE.break);
-  c.phase = 'vault';
-  c.t = 0;
-  p.vx = -c.dashX * BREAK_ATK.off.h;
-  p.vz = -c.dashZ * BREAK_ATK.off.h;
-  p.vy = BREAK_ATK.off.v;
+  vault(c, p);
   return { done: true, died, took };
 }

@@ -24,7 +24,7 @@ import { PHYS, supportInfo } from './walk.js';
 import {
   FIELD, REACH, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster, harm, lifeStep, gainHeart,
   dropSoul, soulStep, grabs,
-  breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, placeMonster, monsterStep, bites, knock,
+  breaking, breakTarget, startBreak, breakContact, contact, parry, spinStep, separate, placeMonster, monsterStep, bites, knock,
   inSlash, inFan, inRing, slashTip, makeCombo, comboStep, invulnerable, untouchable, cueing, attacking, taken,
 } from './combat.js';
 import { makeMonsterCritter, sizeOf, bloodOf, swordOf, helmOf, crownOf, Motion, ATTACK_INK, CHOP_LEAD } from './monster.js';
@@ -314,8 +314,8 @@ export class Fight {
     separate(foes.map((f) => f.m));
     /* 每一隻這一刻在哪：扣到 0 的那一下 hurt 就把牠搬回重生點了，靈魂要掉在死的地方。 */
     const spot = new Map(foes.map(({ m }) => [m, { x: m.x, y: m.y, z: m.z, field: m.field }]));
-    // 破防攻擊：突進碰到目標就定住牠、進迴旋；迴旋轉完就扣血、跳離。
-    if (combo.phase === 'dash' && breakContact(player, combo.target)) latch(combo, player, combo.target);
+    // 破防攻擊：突進碰到目標就定住牠、進迴旋（有盾的話被擋掉、直接跳離）；迴旋轉完就扣血、跳離。
+    if (combo.phase === 'dash' && breakContact(player, combo.target)) contact(combo, player, combo.target);
     const dead = new Set();
     if (combo.phase === 'spin') {
       const m = combo.target, r = spinStep(combo, player, m);
@@ -327,8 +327,9 @@ export class Fight {
     const body = this.body(player);
     for (const { m } of foes) {
       if (reach && !combo.hit.has(m) && reach(body, m)) {
-        knock(m, body.x, body.z, body.aimX, body.aimZ, KNOCK_SCALE[combo.phase]);
         combo.hit.add(m);
+        if (parry(m)) continue;              // 盾擋掉了（國王）：這一下整個不算
+        knock(m, body.x, body.z, body.aimX, body.aimZ, KNOCK_SCALE[combo.phase]);
         if (taken(m, DAMAGE[combo.phase]) > 0) this._bleed(hitFrame(combo.phase, body, combo.tip, m, sizeOf(m.kind)), m, m.kind);
         if (hurt(m, DAMAGE[combo.phase])) dead.add(m);
       }
@@ -719,6 +720,7 @@ export class Fight {
   /** 右上那一行小字的戰鬥那幾段：每一隻怪物的血與破防、連段在哪。 */
   status() {
     const foeLine = this.foes.map(({ m }) => `${KINDS[m.kind].name} 血 ${m.hp}/${KINDS[m.kind].hp}`
+      + `${KINDS[m.kind].shields ? ` 盾 ${m.shields}/${KINDS[m.kind].shields}` : ''}`
       + `${m.deaths ? `（打死 ${m.deaths}）` : ''} 破防 ${m.breakT > 0 ? '中' : `${m.gauge}/${KINDS[m.kind].breakAt}`}`).join(' ・ ');
     const phase = `${PHASE_NAME[this.combo.phase]}${invulnerable(this.combo) ? '（無敵）' : ''}`;
     return { foeLine, phase };

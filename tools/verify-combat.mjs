@@ -36,7 +36,7 @@
                     瞬間牠被往突進的方向推開（只有水平）；整招無敵；在空中也
                     按得出來——被第二段打破防的那一刻玩家就在空中，接得上。
     13. 怪物不疊    三隻追同一個站著不動的人，身體一直不重疊、不出牆。
-    14. 陣容        五種陣容：3 殭屍、1 BOSS、2 殭屍 + 1 BOSS、3 幽靈、1 騎士，預設是第三種；
+    14. 陣容        六種陣容：3 殭屍、1 BOSS、2 殭屍 + 1 BOSS、3 幽靈、1 騎士、1 國王，預設是第三種；
                     每一隻都在中線 1/3 那條橫線上、面向中心，不疊在一起。
     15. BOSS 放招   腳程 4；每 3 秒挑一招，挑的那一刻鎖定玩家的位置，放招中站著
                     不動；被擊退、定住、推開就打斷。球：倒數 0.75 秒、半徑 0.75
@@ -100,13 +100,18 @@
     27. 王冠        只有國王戴；國王是垂耳狗、1.4 倍高、半透明、噴靈質。量在垂耳狗頭上（頭骨座標、
                     靜置姿勢）：冠環的下緣低過頭頂（坐在頭上、不是浮著），頭頂那一截整個包在
                     冠環內面裡；垂下來的耳朵在冠環底下；王冠跟著頭骨轉、墨線跟著墨色換。
+    28. 國王        血 40、腳程 3.8、咬 2、走路受重力。一次衝兩下：第一下衝完不僵直，重新蓄力
+                    0.25 秒、朝那時的玩家再衝，第二下衝完才僵直；站著不動的只被第一下扣血（guard），
+                    躲過第一下的被第二下咬到；蓄力被打就整套取消。三面盾：挨打先用掉一面、那一下
+                    整個不算（不扣血、不擊退、不累積破防、衝刺不斷）；挨打（擋沒擋都算）之後 8 秒
+                    沒再挨打補一面、補到滿；破防突進碰到有盾的國王：被擋掉、不定住、直接跳離。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
 import {
   MODES, DEFAULT_MODE, LUNGE, lunging, ARENA, SPAWN, DOG_H, REACH, SWING, REST, KNOCK, KNOCK_SCALE, FAN, WINDOW, KINDS, DAMAGE, hurt, placeMonster,
   BREAK_AT, BREAK_WINDOW, broken,
-  FLY, BREAK_ATK, breaking, breakTarget, startBreak, breakContact, latch, spinStep, separate, armored, attacking,
+  FLY, BREAK_ATK, breaking, breakTarget, startBreak, breakContact, latch, contact, parry, spinStep, separate, armored, attacking,
   makeMonster, monsterStep, touching, bites, knock, inSlash, inFan, inRing, slashTip, fanFrame,
   makeCombo, comboStep, invulnerable, cueing, FIELD, LIFE, resetLife, lifeStep, harm, refill, gainHeart, regen,
   SOUL, dropSoul, soulStep, grabs,
@@ -658,8 +663,8 @@ console.log('13. 怪物不疊');
 console.log('14. 陣容');
 {
   const tally = (md) => md.monsters.reduce((o, s) => ({ ...o, [s.kind]: (o[s.kind] || 0) + 1 }), {});
-  const want = { minions: { minion: 3 }, boss: { boss: 1 }, mixed: { boss: 1, minion: 2 }, ghosts: { ghost: 3 }, knight: { knight: 1 } };
-  ok(MODES.map((md) => md.id).join() === 'minions,boss,mixed,ghosts,knight', '五種陣容，面板上依序是 3 殭屍、1 BOSS、2 殭屍 + 1 BOSS、3 幽靈、1 騎士');
+  const want = { minions: { minion: 3 }, boss: { boss: 1 }, mixed: { boss: 1, minion: 2 }, ghosts: { ghost: 3 }, knight: { knight: 1 }, king: { king: 1 } };
+  ok(MODES.map((md) => md.id).join() === 'minions,boss,mixed,ghosts,knight,king', '六種陣容，面板上依序是 3 殭屍、1 BOSS、2 殭屍 + 1 BOSS、3 幽靈、1 騎士、1 國王');
   for (const md of MODES) ok(JSON.stringify(tally(md)) === JSON.stringify(want[md.id]), `${md.name}：${JSON.stringify(tally(md))}`);
   ok(DEFAULT_MODE === 'mixed' && SPAWN.monsters === MODES[2].monsters, '預設是 2 殭屍 + 1 BOSS');
   const cx = (ARENA.x0 + ARENA.x1) / 2, cz = (ARENA.z0 + ARENA.z1) / 2;
@@ -1952,6 +1957,116 @@ console.log('27. 王冠');
   const red = crown.ink.color.equals(ATTACK_INK);
   c.setInkColor(null);
   ok(red && !crown.ink.color.equals(ATTACK_INK), '墨線跟著牠的墨色換（攻擊中轉紅、之後換回來）');
+}
+
+/* ── 28. 國王 ────────────────────────────────────────────────── */
+console.log('28. 國王');
+{
+  const K = KINDS.king;
+  ok(K.hp === 40 && K.speed === 3.8 && K.bite === 2 && !K.fly && !K.steady && !K.soul,
+    '國王：血 40、腳程 3.8、咬 2、走路受重力、衝刺打得斷、不掉靈魂');
+  const king = () => makeMonster({ kind: 'king', x: 0, z: 0, yaw: 0 });
+  const hero = (x, z) => ({ ...body(x, z), hp: 10, max: 10, guard: 0 });
+
+  /* 跑一次衝刺：每一幀 monsterStep、guard 倒數、被咬到就扣血。move(t, m) 可以在衝的途中
+     搬動玩家。回報每一下開始衝的那一刻（第幾下、方向）、整套收掉的時間。 */
+  const lunge = (p, move = () => {}) => {
+    const m = king(), dashes = [];
+    let prev = false, done = null;
+    for (let t = 0; t < 3; t += DT) {
+      move(t, m, p);
+      monsterStep(m, DT, p);
+      lifeStep(p, DT);
+      if (bites(p, m)) harm(p, K.bite);
+      const hot = lunging(m);
+      if (hot && !prev) dashes.push({ t, n: m.lunge.n, dirX: m.lunge.dirX, dirZ: m.lunge.dirZ });
+      prev = hot;
+      if (dashes.length && !m.lunge) { done = t; break; }
+    }
+    return { dashes, done };
+  };
+
+  {
+    const p = hero(0, 1.5);
+    const { dashes, done } = lunge(p);
+    const T = LUNGE.windup + LUNGE.time;
+    ok(dashes.length === 2 && dashes[0].n === 1 && dashes[1].n === 2, `一次衝兩下（第 ${dashes.map((d) => d.n).join('、')} 下）`);
+    // 換下一下的那一幀、蓄力落在格點上，各差一幀。
+    ok(near(dashes[1].t - dashes[0].t, T, DT * 2.5), `第二下在第一下開始衝之後 ${(dashes[1].t - dashes[0].t).toFixed(2)} 秒開始衝：衝完直接重新蓄力 ${LUNGE.windup} 秒`);
+    ok(near(done - dashes[1].t, LUNGE.time + LUNGE.recover, DT * 1.5), '第二下衝完才僵直、僵直完收掉');
+    ok(dashes[0].dirZ > 0.99 && dashes[1].dirZ < -0.99, '第二下朝玩家那時的位置重新瞄（衝過頭之後轉回來）');
+    ok(p.hp === 10 - K.bite, `站著不動：第一下咬到扣 ${K.bite}，第二下在 guard 裡不扣（剩 ${p.hp}）`);
+  }
+  {
+    /* 第一下開始衝的那一刻往旁邊跳開，第二下蓄力之前站回原處。 */
+    const p = hero(0, 1.5);
+    const { dashes } = lunge(p, (t, m, q) => {
+      if (m.lunge && m.lunge.n === 1 && m.lunge.t >= LUNGE.windup) q.x = 2;
+      if (m.lunge && m.lunge.n === 2) q.x = 0;
+    });
+    ok(dashes.length === 2 && p.hp === 10 - K.bite, `躲過第一下：第二下咬到，扣 ${K.bite}（剩 ${p.hp}）`);
+  }
+  {
+    const m = king(), p = hero(0, 1.5);
+    for (let i = 0; i < 40 && !(m.lunge && m.lunge.n === 2); i++) monsterStep(m, DT, p);
+    m.shields = 0;
+    knock(m, 0, 3, 0, -1);
+    ok(m.lunge === null && m.air, '第二下蓄力中被打（沒盾）：整套取消、被擊退');
+  }
+
+  /* 盾：照 fight.js 的順序打——先問盾，擋掉就什麼都不做。 */
+  const strike = (m, dmg) => {
+    if (parry(m)) return 'parried';
+    knock(m, 0, 2, 0, -1);
+    hurt(m, dmg);
+    return 'hit';
+  };
+  {
+    const m = king(), p = hero(0, 1.5);
+    ok(m.shields === 3, '生出來三面盾');
+    for (let i = 0; i < 5; i++) monsterStep(m, DT, p);
+    const L = m.lunge;
+    const r = [strike(m, DAMAGE.rise), strike(m, DAMAGE.rise), strike(m, DAMAGE.rise)];
+    ok(r.every((x) => x === 'parried') && m.shields === 0, '前三下各用掉一面盾');
+    ok(m.hp === K.hp && m.gauge === 0 && !m.air && m.lunge === L, '擋掉的三下：不扣血、不累積破防、不擊退、衝刺照走');
+    ok(strike(m, DAMAGE.rise) === 'hit' && m.hp === K.hp - DAMAGE.rise && m.air && m.gauge === DAMAGE.rise, '盾用完了：第四下照常扣血、擊退、累積破防');
+    placeMonster(m);
+    ok(m.shields === 3 && m.shieldT === 0, '回到站位（死了重生也是）：盾補滿');
+  }
+  {
+    const m = king(), p = hero(0, 11);
+    m.shields = 0;
+    const wait = (s) => { for (let t = 0; t < s - 1e-9; t += DT) { m.stun = 1; monsterStep(m, DT, p); } };
+    wait(7.9);
+    ok(m.shields === 0, '沒盾、7.9 秒沒挨打：還沒補');
+    wait(0.2);
+    ok(m.shields === 1, '滿 8 秒：補一面');
+    m.shieldT = 7;
+    parry(m);
+    wait(7.9);
+    ok(m.shields === 0, '擋掉一下（用掉最後一面）：計時從那一下重算，7.9 秒還沒補');
+    m.shieldT = 7;
+    parry(m);
+    wait(7.9);
+    ok(m.shields === 0, '沒盾時挨打（沒擋到）：計時一樣重算');
+    wait(0.2 + 8 + 8 + 8);
+    ok(m.shields === 3, '一直沒挨打：每 8 秒一面，補到 3 面為止');
+  }
+  {
+    const p = hero(0, 3), m = king(), c = makeCombo();
+    m.breakT = BREAK_WINDOW;
+    startBreak(c, p, m);
+    c.phase = 'dash';
+    const blocked = contact(c, p, m);
+    ok(blocked && c.phase === 'vault' && !m.held && m.hp === K.hp && m.shields === 2 && p.vy === BREAK_ATK.off.v,
+      '破防突進碰到有盾的國王：擋掉一面、不定住、不扣血、玩家直接跳離');
+    const q = hero(0, 3), n = king(), d = makeCombo();
+    n.shields = 0;
+    n.breakT = BREAK_WINDOW;
+    startBreak(d, q, n);
+    d.phase = 'dash';
+    ok(!contact(d, q, n) && d.phase === 'spin' && n.held, '沒盾：照常定住、進迴旋');
+  }
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');
