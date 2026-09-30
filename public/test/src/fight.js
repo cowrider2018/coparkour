@@ -553,6 +553,7 @@ export class Fight {
     for (const { m } of this.foes) {
       const c = m.cast;
       if (c && c.skill === 'cleave') { this._cleave(m, c); continue; }
+      if (c && c.skill === 'hew') { this._hewQi(m, c); continue; }
       if (!c || c.skill !== 'whirl' || c.t < SKILL.whirl.windup || c.qi) continue;
       const q = this._spare.pop() || new Qi();
       if (!q.node.parent) this.scene.add(q.node);
@@ -584,6 +585,18 @@ export class Fight {
       this._foeQi(m, c, 'rise', c.up.tip, 1, c.up.dirX, c.up.dirZ);
       c.qi = true;
     }
+  }
+
+  /**
+   * 國王的直線劈砍：跟騎士跳砍劈下去那一道一樣——頭往下甩的那一刻（出手前 CHOP_LEAD 秒）
+   * 起一道 cleave，從正上方劈到前面，照跳砍那一條的長度縮放（劍光是那一刀本身，不是
+   * 一路到牆邊的那一條；那一條是地上的長條）。
+   */
+  _hewQi(m, c) {
+    const S = SKILL.hew, L = SKILL.cleave.len;
+    if (c.chopQi || c.t < S.windup - CHOP_LEAD) return;
+    this._foeQi(m, c, 'cleave', { x: m.x + c.dirX * L, y: m.y, z: m.z + c.dirZ * L }, L / REACH, c.dirX, c.dirZ);
+    c.chopQi = true;
   }
 
   /** 怪物身上起一道劍光：跟著牠的腳，朝 (aimX, aimZ)，招被打斷就收（見 _qi）。 */

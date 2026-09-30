@@ -109,7 +109,8 @@
     29. 直線劈砍    國王每 3 秒放一招，劈砍不限距離；挑的那一刻鎖定方向；倒數 0.5 秒站著不打；
                     然後原地劈一條從腳下到黑牆、寬 0.8 狗高的長條，扣 5；僵直只有 0.25 秒；放招中
                     打不退。長條（加上身體）裡的劈得到、外面與背後的劈不到，跳起來躲得過，倒數裡
-                    往旁邊跑開就劈空。動作是 hewWind → hewRec，收尾照 0.25 秒的僵直走。
+                    往旁邊跑開就劈空。動作是 hewWind → hewRec：騎士跳砍的蓄力與劈（不跳），
+                    收尾照 0.25 秒的僵直走。
     30. 召喚        國王會召喚；場上牠召喚的 0～2 隻時召 2 隻、3 隻時召 1 隻、滿 4 隻挑不到這一招。
                     挑的那一刻在牠身邊 near～3 公尺內隨機挑點（夾在黑牆裡、落在地板上）；倒數 0.5 秒
                     不冒、不打；倒數完每個點冒一隻幽靈（記著是誰召的、面向玩家被鎖定的那一點），
@@ -2149,6 +2150,13 @@ console.log('29. 直線劈砍');
   ok(!strikeHits(b.strikes[0], b.q), `倒數裡往旁邊跑 ${(3 * S.windup).toFixed(1)} 公尺：劈空`);
   ok([...a.stages].join() === 'hewWind,hewRec', `動作：${[...a.stages].join(' → ')}`);
   ok(near(KNIGHT_MOVES.hewRec.keys[KNIGHT_MOVES.hewRec.keys.length - 1][0], S.recover), '收尾照 0.25 秒的僵直走完');
+  {
+    const KM = KNIGHT_MOVES, cw = KM.cleaveWind.keys, hw = KM.hewWind.keys;
+    const lastAir = KM.cleaveAir.keys[KM.cleaveAir.keys.length - 1][1];
+    ok(S.windup === SKILL.cleave.windup && hw[1][1] === cw[1][1] && hw[2][1] === cw[2][1] && hw[3][1] === lastAir,
+      '劈砍的蓄力是騎士跳砍那幾格（一樣長、一樣舉劍），最後甩到騎士落地那一刻的劈到一半');
+    ok(KM.hewRec.keys[0][1] === lastAir && KM.hewRec.keys[1][1] === KM.cleaveLand.keys[1][1], '收尾是騎士落地那一下：劈到底');
+  }
   KINDS.king.skills = keep;
 }
 
