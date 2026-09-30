@@ -42,7 +42,7 @@ import {
   coneFx, showCone, stripFx, showStrip,
 } from './fx.js';
 import { SoulLook } from './soul.js';
-import { SKILL, WHIRL_LEN, makeWorld, bossStep, shotsStep, shotHits, strikeHits, laneLength } from './skills.js';
+import { SKILL, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, shotHits, strikeHits, laneLength } from './skills.js';
 import { Hearts } from './hearts.js';
 import { Fluid, Sheet } from './fluid.js';
 import { TRAILS } from './trail.js';
@@ -371,14 +371,15 @@ export class Fight {
       const m = f.m, skill = m.cast && m.cast.skill;
       const st = bossStep(m, dt, player, this.world);
       if (!st) continue;
-      strikes.push(st);
       // 直線劈砍劈下去的那一條：僵直的那一段亮著（draw）。
       if (skill === 'hew') f.hewHit = { st, t: 0 };
-      // 地震的塵只有 BOSS 砸下去的那兩種（dust.js 的 QUAKE）。
-      if (!this.fluid || !QUAKE[st.shape]) continue;
+      // 地震（dust.js 的 QUAKE）是震波，放在 world.waves 一圈圈往外推；其餘的這一幀一次打完。
+      if (!QUAKE[st.shape]) { strikes.push(st); continue; }
+      if (!this.fluid) continue;
       this._stomps.push(st);
       if (st.shape === 'circle') this._quiet.add(m);
     }
+    wavesStep(this.world, dt);
     // 召喚：倒數完的上場（這一幀起就追人）；剛開始倒數的借外觀，準備從地底升上來。
     this._rise();
     // 撞到黑牆或場上東西的球炸掉。
@@ -422,6 +423,7 @@ export class Fight {
       for (const { m } of this.foes) if (bites(player, m)) take('bitten', KINDS[m.kind].bite);
       for (const s of this.world.shots) if (shotHits(s, player)) take('shot', s.dmg);
       for (const st of strikes) if (strikeHits(st, player)) take('struck', st.dmg);
+      for (const w of this.world.waves) if (strikeHits(w, player)) take('struck', w.dmg);
       if (hit) {
         harm(player, hit.dmg);
         // 打中人的球炸掉消失。

@@ -131,9 +131,9 @@ import {
   makeCombo, comboStep, invulnerable, cueing, FIELD, LIFE, resetLife, lifeStep, harm, refill, gainHeart, regen,
   SOUL, dropSoul, soulStep, grabs,
 } from '../public/test/src/combat.js';
-import { SKILL, UP_AIR, WHIRL_LEN, makeWorld, bossStep, shotsStep, shotHits, shotBlocked, strikeHits, laneLength, recoverOf, summonCount } from '../public/test/src/skills.js';
+import { SKILL, UP_AIR, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, shotHits, shotBlocked, strikeHits, laneLength, recoverOf, summonCount } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
-import { DUST, dustOf, dustFade, QUAKE, quakeBands, quakeFade } from '../public/test/src/dust.js';
+import { DUST, dustOf, dustFade, QUAKE, quakeBands, quakeFade, quakeTop } from '../public/test/src/dust.js';
 import { Motion, bloodOf, sizeOf, mirror, riseLift, MOVES as KNIGHT_MOVES } from '../public/test/src/monster.js';
 import { MOVES as HERO_MOVES } from '../public/test/src/moves.js';
 import { TRAILS, PIECE, BANDS, sweepAt, fadeAt, sideAt, qiAt, along, hullOf } from '../public/test/src/trail.js';
@@ -820,12 +820,52 @@ console.log('15. BOSS 放招');
     `第 ${L.tookOff.toFixed(2)} 秒起跳、第 ${L.at.toFixed(2)} 秒落地打下去，最高 ${L.peak.toFixed(2)} 公尺`);
   ok(near(L.b.x, 0) && near(L.b.z, 3) && L.b.y === 0 && !L.b.cast, 'BOSS 落在目標點上，放完了');
   ok(strikeHits(L.st, L.q), '站著不動：被砸到');
-  ok(strikeHits(L.st, body(SKILL.leap.radius + PHYS.radius - 0.01, 3)) && !strikeHits(L.st, body(SKILL.leap.radius + PHYS.radius + 0.01, 3)),
+  const swept = (st) => ({ ...st, from: 0, to: st.r });              // 震波走完了整片
+  const Lf = swept(L.st);
+  ok(strikeHits(Lf, body(SKILL.leap.radius + PHYS.radius - 0.01, 3)) && !strikeHits(Lf, body(SKILL.leap.radius + PHYS.radius + 0.01, 3)),
     '邊界在身體碰到圈的邊');
   const out = leap((q, b) => { if (b.cast && b.cast.t > 0.2) q.x = 3; });
   ok(!strikeHits(out.st, out.q), '倒數裡走出圈外 3 公尺：躲過');
-  ok(!strikeHits(L.st, body(0, 3, PHYS.height + 0.01)) && strikeHits(L.st, body(0, 3, PHYS.height - 0.01)),
-    `跳起來、腳高過一個狗高（${PHYS.height} m）：躲過；低一點就中`);
+  // 高度：那一道塵鼓多高就打多高，越外面越高（dust.js 的 quakeTop）。
+  const topIn = quakeTop('circle', 0), topOut = quakeTop('circle', 1);
+  ok(near(topIn, 0.2) && near(topOut, 1.5) && !strikeHits(L.st, body(0, 3, topIn + 0.01)) && strikeHits(L.st, body(0, 3, topIn - 0.01)),
+    `圓心那一道 ${topIn} 公尺高：腳高過它跳得過、低一點就中`);
+  const R1 = SKILL.leap.radius;
+  ok(strikeHits(Lf, body(R1, 3, topOut - 0.01)) && !strikeHits(Lf, body(R1, 3, topOut + 0.01)),
+    `最外圈 ${topOut} 公尺高：比裡圈高得多（不是一律一個狗高 ${PHYS.height} m）`);
+  ok(!strikeHits(Lf, body(R1 / 2, 3, -PHYS.height - 0.01)) && strikeHits(Lf, body(R1 / 2, 3, -PHYS.height + 0.01)), '腳下更低的一層（整個身體在地板以下）：不挨');
+  // 依序：站著不動的人，離圓心越遠越晚挨，剛好在震波走到的那一刻；走過去之後不再挨、波收掉。
+  {
+    const wv = makeWorld(), b = bossAt(0, -3), q = body(0, 3);
+    b.castT = 0;
+    let st = null;
+    for (let i = 0; i < 200 && !st; i++) st = bossStep(b, DT, q, wv, () => 0.5);
+    const probes = [0.3, 0.9, 1.6, R1].map((d) => body(d, 3));
+    const first = probes.map(() => -1), last = probes.map(() => -1);
+    let t = 0, gone = -1;
+    for (let i = 0; i < 90; i++, t += DT) {
+      if (i) wavesStep(wv, DT);
+      if (!wv.waves.length && gone < 0) gone = t;
+      probes.forEach((pr, k) => {
+        if (wv.waves.some((w) => strikeHits(w, pr))) { if (first[k] < 0) first[k] = t; last[k] = t; }
+      });
+    }
+    const arrive = [0.3, 0.9, 1.6, R1].map((d) => (d / R1) * QUAKE.wave);
+    ok(first.every((f, k) => f >= 0 && Math.abs(f - Math.max(0, arrive[k] - 0.05)) < 0.06) && first.every((f, k) => k === 0 || f > first[k - 1]),
+      `依序挨到：離圓心 0.3／0.9／1.6／${R1.toFixed(2)} 公尺的人分別在第 ${first.map((f) => f.toFixed(2)).join('／')} 秒（震波 ${QUAKE.wave} 秒走完）`);
+    const cross = (2 * PHYS.radius + QUAKE.circle.width) / (R1 / QUAKE.wave) + 2 * DT;   // 前緣掃過一個身體要多久
+    ok(last.every((l, k) => l - first[k] <= cross) && gone > 0 && gone <= QUAKE.wave + 3 * DT,
+      `每個人只在前緣經過的那一小段（最多 ${cross.toFixed(2)} 秒）挨，震波第 ${gone.toFixed(2)} 秒收掉`);
+    // 前緣過去之後還站在原地也不會再挨；高處（塵頂以上）的人一路都不挨。
+    const hi = body(1.6, 3, quakeTop('circle', 1.6 / R1) + 0.02);
+    const wv2 = makeWorld(), b2 = bossAt(0, -3);
+    b2.castT = 0;
+    let s2 = null;
+    for (let i = 0; i < 200 && !s2; i++) s2 = bossStep(b2, DT, q, wv2, () => 0.5);
+    let everHit = false;
+    for (let i = 0; i < 60; i++) { if (i) wavesStep(wv2, DT); if (wv2.waves.some((w) => strikeHits(w, hi))) everHit = true; }
+    ok(!everHit, '腳高過前緣那一道塵：整段震波走過都不挨（跳得過）');
+  }
   // 起跳之後被打：飛行也算倒數，打不退，照樣砸在鎖定的點上。
   const wk = makeWorld();
   const bk = bossAt(0, -4), pk = body(0, 2);
@@ -859,11 +899,14 @@ console.log('15. BOSS 放招');
   ok(sc && sc.shape === 'cone' && near(sc.dirX, 0) && near(sc.dirZ, 1) && Math.abs(atc - SKILL.cone.windup) < 2 * DT && !moved,
     `第 ${atc.toFixed(2)} 秒打下去，方向是開始那一刻鎖定的，放的時候站著不動`);
   const ang = (deg, d, y = 0) => body(Math.sin(deg * Math.PI / 180) * d, Math.cos(deg * Math.PI / 180) * d, y);
-  ok(strikeHits(sc, ang(0, 3)) && strikeHits(sc, ang(29, 3)), '正前方 3 公尺、偏 29°：中');
-  ok(!strikeHits(sc, ang(40, 3)) && !strikeHits(sc, ang(180, 1.5)), '偏 40°、背後：不中');
-  ok(strikeHits(sc, ang(0, SKILL.cone.radius + PHYS.radius - 0.01)) && !strikeHits(sc, ang(0, SKILL.cone.radius + PHYS.radius + 0.01)),
+  const scf = { ...sc, from: 0, to: sc.r };                               // 震波走完了整片
+  ok(strikeHits(scf, ang(0, 3)) && strikeHits(scf, ang(29, 3)), '正前方 3 公尺、偏 29°：中');
+  ok(!strikeHits(scf, ang(40, 3)) && !strikeHits(scf, ang(180, 1.5)), '偏 40°、背後：不中');
+  ok(strikeHits(scf, ang(0, SKILL.cone.radius + PHYS.radius - 0.01, 0)) && !strikeHits(scf, ang(0, SKILL.cone.radius + PHYS.radius + 0.01)),
     '長度的邊界在身體碰到扇形的弧');
-  ok(!strikeHits(sc, ang(0, 3, PHYS.height + 0.01)), '跳起來、腳高過一個狗高：躲過');
+  const cTop = quakeTop('cone', 3 / SKILL.cone.radius);
+  ok(strikeHits(scf, ang(0, 3, cTop - 0.01)) && !strikeHits(scf, ang(0, 3, cTop + 0.01)) && quakeTop('cone', 1) > 1.4 * PHYS.height,
+    `扇形 3 公尺處塵高 ${cTop.toFixed(2)} 公尺：腳高過它躲過；最外圈 ${quakeTop('cone', 1)} 公尺，高過一個狗高 ${PHYS.height} m`);
 
   // 三招都挑得到（人在扇形的距離以內）。
   const picked = new Set();
@@ -1727,6 +1770,18 @@ console.log('24. 騎士');
   ok(hitBy(a.strikes, body(0, 3)), '站在路上：被打到');
   ok(hitBy(a.strikes, body(R - 0.02, 1.5)) && !hitBy(a.strikes, body(R + 0.02, 1.5)), `路邊：${R.toFixed(2)} 公尺以內打到、以外打不到`);
   ok(hitBy(a.strikes, body(0, -R + 0.02)) && !hitBy(a.strikes, body(0, -R - 0.02)), '背後：起步的地方往後一個半徑以外打不到');
+  const waist = a.strikes[0].waist;
+  ok(near(S.waist, (sizeOf('knight') * PHYS.height) / 2) && a.strikes.every((st) => near(st.waist, S.waist)),
+    `移動的圓盤跟主角第三擊那一圈同一種：沒有厚度，在騎士的腰高 ${S.waist.toFixed(2)} 公尺（${sizeOf('knight')} × 狗高 / 2）`);
+  // 跟 inRing 同一個判法：主角放那一圈、騎士站在同一點，高度上打不打得到要一樣。
+  let same = true;
+  for (let y = -1.2; y <= 1.2; y += 0.05) {
+    const p = { ...body(0, 1.5), y: y + 0.013 };
+    const ring = p.y + PHYS.height >= waist && p.y <= waist;
+    if (hitBy(a.strikes, p) !== ring) same = false;
+  }
+  ok(same, '高度上：那片平面切得到身體的圓柱才中（腳高過腰高、或頭低過腰高都不中）');
+  ok(hitBy(a.strikes, { ...body(0, 1.5), y: waist - 0.01 }) && !hitBy(a.strikes, { ...body(0, 1.5), y: waist + 0.01 }), `腳高過 ${waist.toFixed(2)} 公尺躲得過、低一點就中`);
   ok(!hitBy(a.strikes, { ...body(0, 1.5), y: PHYS.height }), '跳起來（腳高過一個狗高）：躲得過');
 
   // 預告那一條就是打得到的地方：膠囊（起步 → 衝完、半徑 radius）加上身體，裡外各取一片點。

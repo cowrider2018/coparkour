@@ -57,8 +57,16 @@
             （`m.brood`，呼叫端每幀數好寫進來）最多 4 隻：0～2 隻的時候召兩隻，3 隻的時候
             召一隻，滿 4 隻就挑不到這一招。召出來的放進 world.spawns，由呼叫端接上場。
 
-   範圍攻擊（leap 的那一圈、cone 的那一片、whirl、cleave 與 hew 的那一條）打的是地面上一個狗高以內：
-   玩家的腳比那還高——跳起來了——就躲得過。跳砍之後的上挑例外：那一片是立起來的。
+   範圍攻擊照畫面上看得到的東西判，不是一次打完貼地的一片：
+
+     leap、cone  地震。打下去那一刻起一道震波從腳下往外走，QUAKE.wave 秒走完半徑（dust.js 的
+                 塵就是它揚起來的）：前緣掃到哪、哪裡才挨，站在已經過去的地方不會；高度是那一道
+                 塵鼓多高（quakeTop，越外面越高，最外圈扇形 2 公尺）。每一幀的前緣放在 world.waves，
+                 wavesStep 推進。
+     whirl       移動的圓盤：跟主角第三擊那一圈同一種判法（一片在腰高 waist、沒有厚度的水平圓盤，
+                 碰到身體的圓柱才算），只是衝的每一幀從這一幀的起點掃到終點（膠囊），像球一樣一路移動。
+     cleave、hew 貼地的長條，打的是地面上一個狗高以內：玩家的腳比那還高——跳起來了——就躲得過。
+     跳砍之後的上挑例外：那一片是立起來的。
 
    碰到扣血：BOSS 的招 5、騎士的 whirl 2、cleave 3、上挑 3、國王的 hew 5（每一招的 `damage`；衝刺咬到的見 combat.js 的 KINDS）。
    打中人的球就炸掉消失。玩家無敵的時候（第三段、破防攻擊）碰到不算，球穿過去。
@@ -66,6 +74,7 @@
 
 import { PHYS, arenaGap, supportInfo, solveXZ, overlapXZ, roundTop, clampArena } from './walk.js';
 import { FIELD, DOG_H, REACH, SWING, kindOf, busy, settle, inFan } from './combat.js';
+import { QUAKE, quakeTop } from './dust.js';
 
 /** 每一招的數值。長度一律用狗高量；`damage` 是打中玩家扣幾點血。 */
 export const SKILL = {
@@ -74,8 +83,11 @@ export const SKILL = {
   cone: { windup: 1, radius: 4 * DOG_H, half: Math.PI / 6, range: 4 * DOG_H, damage: 5 },
   /* 騎士的劍迴旋衝刺：倒數 windup，然後 time 秒裡速度從 speed 線性減到 0（衝 speed·time/2
      = 3.2 公尺），劍掃的半徑是 radius。time 是 trail.js 的 whirl 那兩圈掃完的 0.40 秒
-     （跟主角第三擊那一圈一樣長，轉兩倍快），衝完剛好轉完。range：離玩家這麼近才放。 */
-  whirl: { windup: 0.5, time: 0.4, speed: 16, radius: 1.75 * DOG_H, range: 3.2, damage: 2 },
+     （跟主角第三擊那一圈一樣長，轉兩倍快），衝完剛好轉完。range：離玩家這麼近才放。
+     劍掃的跟主角第三擊那一圈（combat.js 的 inRing）同一種：一片沒有厚度的水平圓盤，在牠腰那麼高
+     （waist：騎士畫成 1.2 倍高，腰是 1.2 × DOG_H / 2，跟劍光同高），碰到身體那根圓柱就算——只是
+     這片圓盤跟著衝的位置一路移動（每一幀掃過的是一段膠囊）。 */
+  whirl: { windup: 0.5, time: 0.4, speed: 16, radius: 1.75 * DOG_H, range: 3.2, damage: 2, waist: 0.6 * DOG_H },
   /* 騎士的跳砍：倒數 windup，然後 air 秒跳一道最高 hop 公尺的弧線落下、劈那一條（長 len、
      寬 width，從落點往前）。range：離玩家這麼近才放。
      up：落地 gap 秒後上挑——主角第二段那一跳（初速 PHYS.jump），起跳後 swing 秒內打；
@@ -120,7 +132,23 @@ const REACH_UP = PHYS.height;
  * （combat.js 的 FIELD 那一種）：球飛到它的黑牆就消失。
  */
 export function makeWorld(field = FIELD) {
-  return { shots: [], spawns: [], field };
+  return { shots: [], waves: [], spawns: [], field };
+}
+
+/**
+ * 地震的震波往前一幀（扇形與跳砸的圓，`bossStep` 打下去那一幀放進 world.waves）：前緣從腳下
+ * 照 QUAKE.wave 秒走完半徑，`from`～`to` 是這一幀前緣掃過的那一圈（strikeHits 照它判），走完
+ * 那一幀之後的下一次收掉。新放進來的那一幀不推進（前緣還在腳下）。每一幀在 bossStep 之後、判定之前叫。
+ */
+export function wavesStep(world, dt) {
+  world.waves = world.waves.filter((w) => !w.done);
+  for (const w of world.waves) {
+    if (w.fresh) { w.fresh = false; continue; }
+    w.t += dt;
+    w.from = w.to;
+    w.to = w.r * Math.min(1, w.t / QUAKE.wave);
+    if (w.to >= w.r) w.done = true;
+  }
 }
 
 /* 不能開始放招的狀態（combat.js 的 busy）。倒數中不會被擊退（見 armored），
@@ -239,7 +267,7 @@ const CAST = {
     [m.x, m.z] = solveXZ(m.field.cols, m.x + c.dirX * step, m.z + c.dirZ * step, m.y, m.field.doors);
     settle(m);
     if (s >= S.time) m.cast = null;
-    return { shape: 'capsule', x: x0, y: m.y, z: z0, x1: m.x, z1: m.z, r: S.radius, dmg: S.damage };
+    return { shape: 'capsule', x: x0, y: m.y, z: z0, x1: m.x, z1: m.z, r: S.radius, waist: m.y + S.waist, dmg: S.damage };
   },
 
   /* 倒數的時候站著；倒數完站在原地劈那一條：從牠腳下往鎖定的方向一直到黑牆。 */
@@ -304,20 +332,25 @@ function segGap(px, pz, ax, az, bx, bz) {
 }
 
 /**
- * 範圍攻擊打到玩家了嗎。範圍是平面上的形狀，高度是地面往上一個狗高：
- * 形狀碰到身體（身體半徑算進去）、腳又在那個高度以下，才算。
+ * 範圍攻擊打到玩家了嗎。範圍是平面上的形狀，高度各有各的（見每一種）：
+ * 形狀碰到身體（身體半徑算進去）、身體的圓柱又跟那個高度重疊，才算。
  *
- *   circle   圓心 (x, z)、半徑 r。
- *   cone     尖在 (x, z)、朝 (dirX, dirZ)、半角 half、長 r。
- *   capsule  (x, z)–(x1, z1) 那一段往外擴 r（劍迴旋衝刺這一幀走過的那一段）。
+ *   circle   圓心 (x, z)、半徑 r。震波：這一幀前緣掃過 from～to 那一圈，高度是塵鼓的高度（waveHits）。
+ *   cone     尖在 (x, z)、朝 (dirX, dirZ)、半角 half、長 r。同上，只有那一片扇形裡的那一段前緣。
+ *   capsule  (x, z)–(x1, z1) 那一段往外擴 r（劍迴旋衝刺這一幀走過的那一段），在 waist 那個高度：移動的圓盤。
  *   strip    從 (x, z) 往 (dirX, dirZ) 長 len、寬 w 的長方形（跳砍劈下去的那一條）。
  *   fan      腳在 (x, y, z)、下緣指著 tip 的直立扇形，左右各厚 thick（跳砍之後的上挑，
  *            combat.js 的 inFan）。立起來的，所以不看高度——跳起來躲不掉。
  */
 export function strikeHits(st, p) {
   if (st.shape === 'fan') return inFan(st, p, st.tip, st.thick);
+  if (QUAKE[st.shape]) return waveHits(st, p);
+  if (st.shape === 'capsule') {
+    // 移動的圓盤：跟 inRing 一樣，waist 那片平面切得到身體的圓柱、這一幀走過的那一段（膠囊）又碰到身體。
+    if (st.waist < p.y || st.waist > p.y + PHYS.height) return false;
+    return segGap(p.x, p.z, st.x, st.z, st.x1, st.z1) <= st.r + PHYS.radius;
+  }
   if (p.y >= (st.y ?? 0) + REACH_UP) return false;
-  if (st.shape === 'capsule') return segGap(p.x, p.z, st.x, st.z, st.x1, st.z1) <= st.r + PHYS.radius;
   if (st.shape === 'strip') {
     // 長方形到身體中心的距離（裡面是 0），碰到身體就算。
     const rx = p.x - st.x, rz = p.z - st.z;
@@ -325,14 +358,29 @@ export function strikeHits(st, p) {
     const du = Math.max(0, -u, u - st.len), dv = Math.max(0, Math.abs(v) - st.w / 2);
     return Math.hypot(du, dv) <= PHYS.radius;
   }
-  const d = Math.hypot(p.x - st.x, p.z - st.z);
-  if (st.shape === 'circle') return d <= st.r + PHYS.radius;
-  // 扇形：跟第一段同一種判法——半徑加身體，角度加上身體在那個距離張開的角度。
-  if (d > st.r + PHYS.radius) return false;
-  if (d <= PHYS.radius) return true;
+  return false;
+}
+
+/**
+ * 地震的震波這一幀打到玩家了嗎（circle、cone）。震波是一道往外走的前緣，不是整片一次打下去：
+ *   前緣  這一幀掃過半徑 from～to 的那一圈（往外各多半條塵的寬，最外不超過 r）；身體那根圓柱
+ *         碰到那一圈才算。震波走完之後裡面就沒有東西了——站在已經過去的地方不會挨。
+ *   高度  那一層地板往上、前緣所在的那一道塵鼓多高（dust.js 的 quakeTop）：越外面越高。身體
+ *         的圓柱碰到 [地板, 塵頂] 才算，所以矮的裡圈跳得過、高的外圈跳不過，也不會打到腳下
+ *         更低那一層的人。
+ *   扇形  角度跟第一段同一種判法：身體在那個距離張開的角度算進去。
+ * from／to 由 bossStep 打下去那一刻寫進來（都是 0：前緣在腳下），之後 wavesStep 推進。
+ */
+function waveHits(st, p) {
+  const d = Math.hypot(p.x - st.x, p.z - st.z), R = PHYS.radius;
+  const y0 = st.y ?? 0;
+  if (p.y >= y0 + quakeTop(st.shape, d / st.r) || p.y + PHYS.height <= y0) return false;
+  const half = QUAKE[st.shape].width / 2;
+  if (d - R > Math.min(st.r, st.to + half) || d + R < st.from - half) return false;
+  if (st.shape === 'circle' || d <= R) return true;
   const cos = ((p.x - st.x) * st.dirX + (p.z - st.z) * st.dirZ) / d;
   const off = Math.acos(Math.max(-1, Math.min(1, cos)));
-  return off <= st.half + Math.asin(Math.min(1, PHYS.radius / d));
+  return off <= st.half + Math.asin(Math.min(1, R / d));
 }
 
 /**
@@ -364,6 +412,8 @@ export function bossStep(m, dt, target, world, rng = Math.random) {
   const skill = m.cast.skill;
   const hit = CAST[skill](m, world, target) || null;
   if (!m.cast) m.stun = recoverOf(skill);              // 出完了：僵直
+  // 地震：打下去的這一刻是震波的起點，之後由 wavesStep 一圈一圈往外推，不是一次打完。
+  if (hit && QUAKE[hit.shape]) world.waves.push(Object.assign(hit, { t: 0, from: 0, to: 0, fresh: true, done: false }));
   return hit;
 }
 

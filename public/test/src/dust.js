@@ -109,14 +109,23 @@ export function dustFade(d, tau) {
  *   push    往外推多快（公尺 / 秒）：慢，道與道之間才留得住空隙。
  *   soft    硬切之前抹平的半徑（fluid.js 的 Sheet）：一道越窄，抹太開越會被抹淡、變矮。
  *   thick   鼓的高度的上限（公尺）。
+ *   top     震波打得到的高度：[最裡面、最外面]（公尺，從那一層地板往上量），中間照距離內插。
+ *           就是上面那幾道塵鼓多高（扇形四道 0.2～2.0、圓 0.2～1.5）——看得到塵的地方才打得到，
+ *           skills.js 的 strikeHits 照它判；跳起來躲得過矮的裡圈，躲不過高的外圈。
  *
  * 圓比扇形小（2.3 對 3.7 公尺），道與道隔得近，所以每一道更窄、推得更慢、抹得更少。
  */
 export const QUAKE = {
   gap: 0.9, wave: 0.4, inject: 0.06, life: 1.2, rise: 0.45,
-  cone: { near: 0.9, far: 1.8, width: 0.25, push: 0.6, soft: 9, thick: 3 },
-  circle: { near: 0.9, far: 1.8, width: 0.2, push: 0.35, soft: 6, thick: 1.5 },
+  cone: { near: 0.9, far: 1.8, width: 0.25, push: 0.6, soft: 9, thick: 3, top: [0.2, 2.0] },
+  circle: { near: 0.9, far: 1.8, width: 0.2, push: 0.35, soft: 6, thick: 1.5, top: [0.2, 1.5] },
 };
+
+/** 震波走到半徑的 u 成（0～1）那一道，塵鼓多高（公尺）：QUAKE 的 top 照距離內插。 */
+export function quakeTop(shape, u) {
+  const [lo, hi] = QUAKE[shape].top;
+  return lo + (hi - lo) * Math.min(1, Math.max(0, u));
+}
 
 /**
  * 一種範圍（'cone'、'circle'）、半徑 r，揚幾道塵，每一道（由裡到外）：在半徑的幾成（u）、打下去之後幾秒震波
