@@ -1,11 +1,13 @@
 /* ── test/src/monster.js ──────────────────────────────────────
-   怪物的外觀：立耳犬，紅眼睛。一個系列一件毛，系列裡靠體型分：
+   怪物的外觀：立耳犬（國王是垂耳狗），紅眼睛。一個系列一件毛，系列裡靠體型分：
 
      minion  殭屍：純綠色，一般大小。
      boss    殭屍 BOSS：同一件綠毛，兩倍大，戴頭盔（helm.js）。
      ghost   幽靈：淡藍白，半透明，一般大小。
      knight  騎士：同一件綠毛，1.2 倍高，嘴裡橫咬一把雙刃劍（blade.js 的 knight），
              戴頭盔（helm.js）。
+     king    國王：垂耳狗（其他幾類是立耳犬），幽靈那一件淡藍白、一樣半透明，1.4 倍高，
+             戴王冠（crown.js）。
 
    只是看起來大：碰撞還是 combat.js 那同一個 PHYS 圓柱。
 
@@ -93,13 +95,15 @@ export const GHOST_ALPHA = 0.5;
 /**
  * 每一類的外觀，鍵跟 combat.js 的 KINDS 一樣：毛色、畫多高（公尺）、不透明度
  * （1 = 不透明）、挨打噴出來的是哪一種血（bleed.js 的 STYLE）、嘴裡咬著哪一把
- * 刀劍（blade.js 的 SWORDS，沒有就是空手）、戴不戴頭盔（helm.js）。
+ * 刀劍（blade.js 的 SWORDS，沒有就是空手）、戴不戴頭盔（helm.js）、戴不戴王冠（crown.js）、
+ * 是哪一隻狗（Zoo 的模型 id，不寫就是立耳犬）。
  */
 const LOOKS = {
   minion: { coat: ZOMBIE, height: 1.0, alpha: 1, blood: 'blood' },
   boss: { coat: ZOMBIE, height: 2.0, alpha: 1, blood: 'blood', helm: true },
   ghost: { coat: GHOST, height: 1.0, alpha: GHOST_ALPHA, blood: 'ecto' },
   knight: { coat: ZOMBIE, height: 1.2, alpha: 1, blood: 'blood', sword: 'knight', helm: true },
+  king: { coat: GHOST, height: 1.4, alpha: GHOST_ALPHA, blood: 'ecto', crown: true, model: 'dog-drop' },
 };
 /** 這一類畫多高，跟狗（1）比。落地的粉塵照它算（dust.js）。 */
 export const sizeOf = (kind) => LOOKS[kind].height;
@@ -109,6 +113,8 @@ export const bloodOf = (kind) => LOOKS[kind].blood;
 export const swordOf = (kind) => LOOKS[kind].sword || null;
 /** 這一類戴不戴頭盔（helm.js）。 */
 export const helmOf = (kind) => !!LOOKS[kind].helm;
+/** 這一類戴不戴王冠（crown.js）。 */
+export const crownOf = (kind) => !!LOOKS[kind].crown;
 
 const RED = [0.95, 0.08, 0.06];
 
@@ -118,16 +124,16 @@ export const ATTACK_INK = new THREE.Color(0xd41414);
 const SEE_THROUGH_ORDER = 5;
 
 /**
- * 做一隻怪物的外觀。借玩家那個 Zoo 已經讀好的立耳犬資料，不再讀一次 cat.bin。
+ * 做一隻怪物的外觀。借玩家那個 Zoo 已經讀好的狗（立耳犬，或那一類指定的模型），不再讀一次 cat.bin。
  *
  * @param {import('./critter.js').Zoo} zoo
  * @param {string} kind KINDS 的鍵
  * @returns {Critter}
  */
 export function makeMonsterCritter(zoo, kind) {
-  const data = zoo.critters.get('dog-prick').data;
   const look = LOOKS[kind];
-  const c = new Critter(data, 'dog-prick', { height: look.height });
+  const model = look.model || 'dog-prick';
+  const c = new Critter(zoo.critters.get(model).data, model, { height: look.height });
   c.setHat(false);
   paint(c, look.coat);
   if (look.alpha < 1) seeThrough(c, look.alpha);

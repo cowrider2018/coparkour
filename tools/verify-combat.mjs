@@ -97,6 +97,9 @@
                     在盔殼的墨線外殼外面、下緣高過吻部；兩隻眼睛各對著一個洞；臉往鏡頭
                     推的那一段讓眼睛正面看在頭皮前、面罩後。頭盔跟著頭骨轉；墨線跟著
                     那隻動物的墨色換（攻擊中轉紅）。
+    27. 王冠        只有國王戴；國王是垂耳狗、1.4 倍高、半透明、噴靈質。量在垂耳狗頭上（頭骨座標、
+                    靜置姿勢）：冠環的下緣低過頭頂（坐在頭上、不是浮著），頭頂那一截整個包在
+                    冠環內面裡；垂下來的耳朵在冠環底下；王冠跟著頭骨轉、墨線跟著墨色換。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
@@ -122,6 +125,8 @@ import * as THREE from '../public/test/vendor/three.module.js';
 import { loadZoo } from '../public/test/src/critter.js';
 import { makeMonsterCritter, helmOf, ATTACK_INK } from '../public/test/src/monster.js';
 import { Helm, HELM } from '../public/test/src/helm.js';
+import { Crown, CROWN } from '../public/test/src/crown.js';
+import { crownOf } from '../public/test/src/monster.js';
 import { Rig } from '../public/src/cat/rig.js';
 
 let fails = 0;
@@ -1906,6 +1911,47 @@ console.log('26. 頭盔');
     c.setInkColor(null);
     ok(red && !helm.ink.color.equals(ATTACK_INK), `${kind}：墨線跟著牠的墨色換（攻擊中轉紅、之後換回來）`);
   }
+}
+
+/* ── 27. 王冠 ────────────────────────────────────────────────── */
+console.log('27. 王冠');
+{
+  ok(crownOf('king') && ['minion', 'boss', 'ghost', 'knight'].every((k) => !crownOf(k)), '只有國王戴王冠');
+  ok(sizeOf('king') === 1.4 && bloodOf('king') === 'ecto', '國王 1.4 倍高、挨打噴的是靈質');
+  const buf = readFileSync('public/assets/cat.bin');
+  const zoo = await loadZoo({ buffer: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) });
+  const c = makeMonsterCritter(zoo, 'king');
+  ok(c.data === zoo.critters.get('dog-drop').data, '國王是垂耳狗');
+  const crown = new Crown();
+  crown.follow(c);
+  /* 每個頂點換到頭骨座標（靜置姿勢），照骨頭分。 */
+  const rig = new Rig(c.data.header);
+  rig.update();
+  const M = rig.matrices, head = rig.bone('head');
+  const inv = new THREE.Matrix4().fromArray(M, head * 16).invert();
+  const bm = new THREE.Matrix4(), v = new THREE.Vector3(), by = {};
+  for (let i = 0; i < c._boneId.length; i++) {
+    const b = c._boneId[i];
+    v.set(c._posBaked[i * 3], c._posBaked[i * 3 + 1], c._posBaked[i * 3 + 2]).applyMatrix4(bm.fromArray(M, b * 16)).applyMatrix4(inv);
+    (by[rig.names[b]] ||= []).push([v.x, v.y, v.z]);
+  }
+  const { RING } = CROWN;
+  const top = Math.max(...by.head.map((p) => p[1]));
+  ok(RING.y0 < top, `冠環下緣（y ${RING.y0}）低過頭頂（y ${top.toFixed(2)}）：坐在頭上`);
+  const inner = (p) => (p[0] / (RING.r[0] - RING.t)) ** 2 + ((p[2] - RING.c[1]) / (RING.r[1] - RING.t)) ** 2;
+  const cap = by.head.filter((p) => p[1] >= RING.y0);
+  const worst = Math.max(...cap.map(inner));
+  ok(cap.length > 50 && worst < 1, `頭頂那一截（${cap.length} 點）整個在冠環內面裡（最外 ${worst.toFixed(2)} < 1）`);
+  const ear = Math.max(...[...by.earL, ...by.earR].map((p) => p[1]));
+  ok(ear < RING.y0, `垂下來的耳朵（最高 y ${ear.toFixed(2)}）在冠環底下`);
+  for (let i = 0; i < 5; i++) c.update(DT, { speed: 0, grounded: true, vy: 0, viewYaw: 0, move: KNIGHT_MOVES.cleaveWind.keys[1][1] });
+  crown.update();
+  const want = new THREE.Matrix4().fromArray(c.rig.matrices, head * 16);
+  ok(crown.node.matrix.equals(want) && crown.node.parent === c.mesh, '王冠跟著頭骨轉');
+  c.setInkColor(ATTACK_INK);
+  const red = crown.ink.color.equals(ATTACK_INK);
+  c.setInkColor(null);
+  ok(red && !crown.ink.color.equals(ATTACK_INK), '墨線跟著牠的墨色換（攻擊中轉紅、之後換回來）');
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');
