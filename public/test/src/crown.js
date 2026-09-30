@@ -2,10 +2,11 @@
    國王戴的王冠：一圈金色的冠環坐在頭頂上，上緣是一圈尖角，尖角頂上各一顆金珠，
    正面冠環上鑲一顆紅寶石。
 
-     冠環   平面輪廓是一個橢圓（中心 RING.c、半徑 RING.r），坐在頭頂上：頭頂幾乎是平的
-            （y 2.06），邊上是圓角方形的角——y 2.02 以上那一截在 x ±0.87、z −0.78～0.96，
-            四個角離中心 0.99，冠環的內面比它大，下緣 RING.y0 就壓在那一截的高度。上緣在 RING.y1 與 RING.tip 之間走鋸齒：RING.points 個尖角，一個正對前面。
-            冠環有內外兩面，頂上一條窄邊封起來。
+     冠環   平面輪廓是一個圓角矩形（超橢圓：中心 RING.c、半徑 RING.r、指數 RING.n），跟頭頂
+            同一種形狀——頭頂幾乎是平的（y 2.06），邊上是圓角方形的角：y 1.98 以上那一截
+            在 x ±0.98、z −0.88～1.04，冠環的內面比它大一點，下緣 RING.y0 就壓在那一截的
+            高度。上緣在 RING.y1 與 RING.tip 之間走鋸齒：RING.points 個尖角，四個角與四邊
+            正中各一個，一個正對前面。冠環有內外兩面，頂上一條窄邊封起來。
      耳朵   國王是垂耳狗，耳朵最高到 y 1.72，在冠環底下，不必讓路。
 
    跟頭盔（helm.js）一樣掛在頭那根骨頭上、尺寸是模型單位、頭骨座標（+X 左頰、+Y 上、
@@ -15,11 +16,12 @@
 import * as THREE from '../vendor/three.module.js';
 import { toon, INK } from './palette.js';
 
-/** 冠環：輪廓中心、半徑（x, z）、下緣、尖角之間的上緣、尖角頂、幾個尖角、厚度。 */
-const RING = { c: [0, 0.09], r: [1.08, 1.08], y0: 2.02, y1: 2.38, tip: 2.88, points: 5, t: 0.06 };
+/** 冠環：輪廓中心、半徑（x, z）、超橢圓的指數（越大越方）、下緣、尖角之間的上緣、尖角頂、
+    幾個尖角、厚度。 */
+const RING = { c: [0, 0.08], r: [1.08, 1.08], n: 4, y0: 1.98, y1: 2.32, tip: 2.78, points: 8, t: 0.06 };
 /** 尖角頂上的金珠、正面的寶石：半徑。寶石在冠環正面的高度。 */
 const BEAD = 0.09;
-const GEM = { r: 0.13, y: 2.2 };
+const GEM = { r: 0.13, y: 2.15 };
 const INK_OUT = 0.05;
 /** 尺寸（驗證器量王冠跟狗頭的相對位置用）。 */
 export const CROWN = { RING, BEAD, GEM, INK_OUT };
@@ -28,7 +30,7 @@ const COL = { gold: 0xe8b53a, gem: 0xd8283a };
 /** 每一個尖角切幾格（尖角正好落在格線上）。 */
 const PER = 24;
 
-/** 冠環上緣在角度 θ（0 = 正前方，往 +X 轉）的高度：尖角之間是一條鋸齒。 */
+/** 冠環上緣在參數角 θ（0 = 正前方，往 +X 轉；見 onRing）的高度：尖角之間是一條鋸齒。 */
 export function crownTop(th) {
   const span = (2 * Math.PI) / RING.points;
   let d = th / span;
@@ -36,11 +38,17 @@ export function crownTop(th) {
   return RING.tip - (RING.tip - RING.y1) * 2 * d;
 }
 
-/** 冠環輪廓上角度 θ 的那一點（半徑再加 grow）與往外的法線。 */
+const spow = (x, e) => Math.sign(x) * Math.abs(x) ** e;
+
+/**
+ * 冠環輪廓上參數角 θ 的那一點（半徑再加 grow）與往外的法線（超橢圓的梯度方向）。
+ * θ 每 45° 一個：0 是正前方、45° 是角，所以尖角照 θ 等分就落在四角與四邊正中。
+ */
 function onRing(th, grow) {
-  const [rx, rz] = RING.r, s = Math.sin(th), c = Math.cos(th);
-  const nx = s / rx, nz = c / rz, l = Math.hypot(nx, nz);
-  return [RING.c[0] + (rx + grow) * s, RING.c[1] + (rz + grow) * c, nx / l, nz / l];
+  const [rx, rz] = RING.r, e = 2 / RING.n;
+  const u = spow(Math.sin(th), e), w = spow(Math.cos(th), e);
+  const nx = spow(u, RING.n - 1) / rx, nz = spow(w, RING.n - 1) / rz, l = Math.hypot(nx, nz) || 1;
+  return [RING.c[0] + (rx + grow) * u, RING.c[1] + (rz + grow) * w, nx / l, nz / l];
 }
 
 /**

@@ -98,8 +98,8 @@
                     推的那一段讓眼睛正面看在頭皮前、面罩後。頭盔跟著頭骨轉；墨線跟著
                     那隻動物的墨色換（攻擊中轉紅）。
     27. 王冠        只有國王戴；國王是垂耳狗、1.4 倍高、半透明、噴靈質。量在垂耳狗頭上（頭骨座標、
-                    靜置姿勢）：冠環的下緣低過頭頂（坐在頭上、不是浮著），頭頂那一截整個包在
-                    冠環內面裡；垂下來的耳朵在冠環底下；王冠跟著頭骨轉、墨線跟著墨色換。
+                    靜置姿勢）：冠環的底是圓角矩形，下緣低過頭頂（坐在頭上、不是浮著），頭頂那一截
+                    整個包在冠環內面裡；垂下來的耳朵在冠環底下；王冠跟著頭骨轉、墨線跟著墨色換。
     28. 國王        血 40、腳程 3.8、咬 2、走路受重力。一次衝兩下：第一下衝完不僵直，重新蓄力
                     0.25 秒、朝那時的玩家再衝，第二下衝完才僵直；站著不動的只被第一下扣血（guard），
                     躲過第一下的被第二下咬到；蓄力被打就整套取消。三面盾：挨打先用掉一面、那一下
@@ -1955,7 +1955,8 @@ console.log('27. 王冠');
   const { RING } = CROWN;
   const top = Math.max(...by.head.map((p) => p[1]));
   ok(RING.y0 < top, `冠環下緣（y ${RING.y0}）低過頭頂（y ${top.toFixed(2)}）：坐在頭上`);
-  const inner = (p) => (p[0] / (RING.r[0] - RING.t)) ** 2 + ((p[2] - RING.c[1]) / (RING.r[1] - RING.t)) ** 2;
+  const inner = (p) => Math.abs(p[0] / (RING.r[0] - RING.t)) ** RING.n + Math.abs((p[2] - RING.c[1]) / (RING.r[1] - RING.t)) ** RING.n;
+  ok(RING.n >= 3 && RING.points % 4 === 0, `冠環的底是圓角矩形（超橢圓指數 ${RING.n}），${RING.points} 個尖角落在四角與四邊正中`);
   const cap = by.head.filter((p) => p[1] >= RING.y0);
   const worst = Math.max(...cap.map(inner));
   ok(cap.length > 50 && worst < 1, `頭頂那一截（${cap.length} 點）整個在冠環內面裡（最外 ${worst.toFixed(2)} < 1）`);
