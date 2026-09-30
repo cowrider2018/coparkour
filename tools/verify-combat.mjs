@@ -2013,14 +2013,20 @@ console.log('27. 王冠');
     v.set(c._posBaked[i * 3], c._posBaked[i * 3 + 1], c._posBaked[i * 3 + 2]).applyMatrix4(bm.fromArray(M, b * 16)).applyMatrix4(inv);
     (by[rig.names[b]] ||= []).push([v.x, v.y, v.z]);
   }
-  const { RING } = CROWN;
+  const { RING, FLOOR } = CROWN;
   const top = Math.max(...by.head.map((p) => p[1]));
   ok(RING.y0 < top, `冠環下緣（y ${RING.y0}）低過頭頂（y ${top.toFixed(2)}）：坐在頭上`);
-  const inner = (p) => Math.abs(p[0] / (RING.r[0] - RING.t)) ** RING.n + Math.abs((p[2] - RING.c[1]) / (RING.r[1] - RING.t)) ** RING.n;
+  const outer = (p) => Math.abs(p[0] / RING.r[0]) ** RING.n + Math.abs((p[2] - RING.c[1]) / RING.r[1]) ** RING.n;
   ok(RING.n >= 3 && RING.points % 4 === 0, `冠環的底是圓角矩形（超橢圓指數 ${RING.n}），${RING.points} 個尖角落在四角與四邊正中`);
   const cap = by.head.filter((p) => p[1] >= RING.y0);
-  const worst = Math.max(...cap.map(inner));
-  ok(cap.length > 50 && worst < 1, `頭頂那一截（${cap.length} 點）整個在冠環內面裡（最外 ${worst.toFixed(2)} < 1）`);
+  const worst = Math.max(...cap.map(outer));
+  ok(cap.length > 50 && worst <= 1 + 1e-3 && worst > 0.999,
+    `頭頂那一截（${cap.length} 點）整個在冠環外緣以內、最外的剛好碰到（外緣貼齊頭、厚度往內；最外 ${worst.toFixed(4)}）`);
+  const floorIn = (p) => Math.abs(p[0] / FLOOR.r[0]) ** RING.n + Math.abs((p[2] - FLOOR.c[1]) / FLOOR.r[1]) ** RING.n;
+  const inFloor = by.head.filter((p) => p[1] >= RING.y0 && floorIn(p) >= 1);
+  ok(FLOOR.y > top && top - Math.max(...inFloor.map((p) => p[1])) < 0.02 && FLOOR.r[0] < RING.r[0] - RING.t,
+    `底板在頭頂最高點之上（${FLOOR.y} > ${top.toFixed(4)}），蓋住冠環內面到頭頂平台之間那一圈，頭頂從中間露出來`);
+  ok(['floor', 'floor-lip', 'ring-lip'].every((n) => crown.node.getObjectByName(n)), '相接的兩道（冠環下緣、底板貼頭頂那一圈）各有一條正面的墨色窄帶');
   const ear = Math.max(...[...by.earL, ...by.earR].map((p) => p[1]));
   ok(ear < RING.y0, `垂下來的耳朵（最高 y ${ear.toFixed(2)}）在冠環底下`);
   for (let i = 0; i < 5; i++) c.update(DT, { speed: 0, grounded: true, vy: 0, viewYaw: 0, move: KNIGHT_MOVES.cleaveWind.keys[1][1] });
@@ -2028,9 +2034,9 @@ console.log('27. 王冠');
   const want = new THREE.Matrix4().fromArray(c.rig.matrices, head * 16);
   ok(crown.node.matrix.equals(want) && crown.node.parent === c.mesh, '王冠跟著頭骨轉');
   c.setInkColor(ATTACK_INK);
-  const red = crown.ink.color.equals(ATTACK_INK);
+  const red = crown.ink.color.equals(ATTACK_INK) && crown.lip.color.equals(ATTACK_INK);
   c.setInkColor(null);
-  ok(red && !crown.ink.color.equals(ATTACK_INK), '墨線跟著牠的墨色換（攻擊中轉紅、之後換回來）');
+  ok(red && !crown.ink.color.equals(ATTACK_INK) && !crown.lip.color.equals(ATTACK_INK), '墨線跟著牠的墨色換（攻擊中轉紅、之後換回來）');
 
   /* 劍：跟騎士那一把同一個形狀，劍身一樣，劍萼、劍柄、柄頭換成金色。 */
   ok(swordOf('king') === 'king', '國王嘴裡咬著劍');
