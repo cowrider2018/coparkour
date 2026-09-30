@@ -109,6 +109,10 @@
                     然後原地劈一條從腳下到黑牆、寬 0.8 狗高的長條，扣 5；僵直只有 0.25 秒；放招中
                     打不退。長條（加上身體）裡的劈得到、外面與背後的劈不到，跳起來躲得過，倒數裡
                     往旁邊跑開就劈空。動作是 hewWind → hewRec，收尾照 0.25 秒的僵直走。
+    30. 召喚        國王會召喚；場上牠召喚的 0～2 隻時召 2 隻、3 隻時召 1 隻、滿 4 隻挑不到這一招。
+                    挑的那一刻在牠身邊 near～3 公尺內隨機挑點（夾在黑牆裡、落在地板上）；倒數 0.5 秒
+                    不冒、不打；倒數完每個點冒一隻幽靈（記著是誰召的、面向玩家被鎖定的那一點），
+                    不打人；僵直 0.5 秒。動作是 summonWind → summonRec。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
@@ -120,7 +124,7 @@ import {
   makeCombo, comboStep, invulnerable, cueing, FIELD, LIFE, resetLife, lifeStep, harm, refill, gainHeart, regen,
   SOUL, dropSoul, soulStep, grabs,
 } from '../public/test/src/combat.js';
-import { SKILL, UP_AIR, WHIRL_LEN, makeWorld, bossStep, shotsStep, shotHits, shotBlocked, strikeHits, laneLength, recoverOf } from '../public/test/src/skills.js';
+import { SKILL, UP_AIR, WHIRL_LEN, makeWorld, bossStep, shotsStep, shotHits, shotBlocked, strikeHits, laneLength, recoverOf, summonCount } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
 import { DUST, dustOf, dustFade, QUAKE, quakeBands, quakeFade } from '../public/test/src/dust.js';
 import { Motion, bloodOf, sizeOf, mirror, MOVES as KNIGHT_MOVES } from '../public/test/src/monster.js';
@@ -2123,6 +2127,62 @@ console.log('29. 直線劈砍');
   ok(!strikeHits(b.strikes[0], b.q), `倒數裡往旁邊跑 ${(3 * S.windup).toFixed(1)} 公尺：劈空`);
   ok([...a.stages].join() === 'hewWind,hewRec', `動作：${[...a.stages].join(' → ')}`);
   ok(near(KNIGHT_MOVES.hewRec.keys[KNIGHT_MOVES.hewRec.keys.length - 1][0], S.recover), '收尾照 0.25 秒的僵直走完');
+  KINDS.king.skills = keep;
+}
+
+/* ── 30. 召喚 ────────────────────────────────────────────────── */
+console.log('30. 召喚');
+{
+  const S = SKILL.summon;
+  ok(KINDS.king.skills.includes('summon') && S.windup === 0.5 && S.radius === 3 && S.cap === 4 && S.kind === 'ghost' && recoverOf('summon') === SKILL.recover,
+    '國王會召喚：倒數 0.5 秒、半徑 3 公尺、最多 4 隻幽靈、僵直 0.5 秒');
+  ok([0, 1, 2, 3, 4].map((n) => summonCount({ brood: n })).join() === '2,2,2,1,0', '場上 0、1、2、3、4 隻時各召 2、2、2、1、0 隻');
+  const keep = KINDS.king.skills;
+  KINDS.king.skills = ['summon'];
+  let seed = 7;
+  const rng = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  /* 國王在 (x, z)、場上已經有 brood 隻：放一次召喚，記下倒數裡冒了沒、打了沒、動作的每一段。 */
+  const summon = (x, z, brood = 0) => {
+    const m = makeMonster({ kind: 'king', x, z, yaw: 0 });
+    m.brood = brood;
+    const w = makeWorld(), q = body(0, 11);
+    m.castT = 0;
+    const out = { m, w, spots: null, early: false, hit: false, stages: new Set() };
+    const mo = new Motion();
+    for (let t = 0; t < 1.5; t += DT) {
+      const had = !!m.cast;
+      if (bossStep(m, DT, q, w, rng)) out.hit = true;
+      if (m.cast && !out.spots) out.spots = m.cast.spots.map((s) => ({ ...s }));
+      if (m.cast && w.spawns.length) out.early = true;
+      if (had && !m.cast) { out.endAt = t + DT; out.stun = m.stun; }
+      const [stage] = mo._stage(m);
+      if (stage) out.stages.add(stage);
+      if (had || m.cast || m.stun > 0) monsterStep(m, DT, q);
+      if (out.endAt && !(m.stun > 0)) break;
+    }
+    return out;
+  };
+  const a = summon(0, 0);
+  ok(a.spots.length === 2 && !a.early && !a.hit, '場上沒有：挑兩個點；倒數裡不冒、整招不打人');
+  ok(near(a.endAt, S.windup, 1.5 * DT) && a.stun === SKILL.recover, `${a.endAt.toFixed(2)} 秒冒出來，僵直 ${SKILL.recover} 秒`);
+  ok(a.w.spawns.length === 2 && a.w.spawns.every((sp, i) => sp.kind === 'ghost' && sp.by === a.m && near(sp.x, a.spots[i].x) && near(sp.z, a.spots[i].z)),
+    '倒數完每個紅圈冒一隻幽靈，記著是國王召的');
+  ok(a.w.spawns.every((sp) => near(Math.sin(sp.yaw), (0 - sp.x) / Math.hypot(sp.x, 11 - sp.z))), '冒出來面向玩家被鎖定的那一點');
+  let inRing = true;
+  for (let i = 0; i < 40; i++) {
+    const b = summon(0, 0);
+    for (const s of b.spots) {
+      const d = Math.hypot(s.x, s.z);
+      if (d < S.near - 1e-9 || d > S.radius + 1e-9 || s.y !== 0) inRing = false;
+    }
+  }
+  ok(inRing, `40 次召喚：每個點都在牠身邊 ${S.near.toFixed(1)}～${S.radius} 公尺、落在地板上`);
+  const corner = summon(ARENA.x1 - 0.5, ARENA.z1 - 0.5);
+  ok(corner.spots.every((s) => s.x <= ARENA.x1 - PHYS.radius + 1e-9 && s.z <= ARENA.z1 - PHYS.radius + 1e-9), '站在角落召喚：點都夾在黑牆裡面');
+  ok(summon(0, 0, 3).spots.length === 1, '場上已經 3 隻：只召 1 隻');
+  const full = summon(0, 0, 4);
+  ok(!full.spots && full.w.spawns.length === 0, '場上滿 4 隻：挑不到召喚');
+  ok([...a.stages].join() === 'summonWind,summonRec', `動作：${[...a.stages].join(' → ')}`);
   KINDS.king.skills = keep;
 }
 

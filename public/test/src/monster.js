@@ -74,6 +74,8 @@
      hew    直線劈砍：國王沒有劍，是用頭劈。倒數的 0.5 秒上半身往後仰、頭抬到朝天、
             前腳微微離地；最後那一下頭往前、往下砸，劈下去的那一刻正砸到一半；收尾在
             0.25 秒的僵直裡砸到底、停一下、站回來。
+     summon 召喚：仰頭嚎叫——BOSS 蓄火球那一套（胸口挺起、頭仰到朝天、尾巴翹起來），
+            倒數的 0.5 秒仰到最高，冒出來的那一刻停在那裡，僵直裡慢慢回到原本的樣子。
 
    ── 會飛的漂 ──────────────────────────────────────────────────────
    會飛的（幽靈）一直是空中姿勢、不走路，所以移動的時候另外常駐一套漂（DRIFT）：
@@ -363,6 +365,8 @@ export const MOVES = {
     keys: [[0, {}], [0.3, HEW_UP, 'out'], [SKILL.hew.windup - 0.06, { ...HEW_UP, headPitch: -0.85, pitch: -0.40 }, 'inOut'], [SKILL.hew.windup, HEW_MID, 'in']],
   },
   hewRec: { blend: 0.02, keys: [[0, HEW_MID], [0.05, HEW_DOWN, 'out'], [0.12, HEW_DOWN, 'lin'], [SKILL.hew.recover, {}, 'inOut']] },
+  summonWind: { blend: 0.08, keys: [[0, {}], [0.3, STRETCH, 'out'], [SKILL.summon.windup, STRETCH_MAX, 'inOut']] },
+  summonRec: { blend: 0.02, keys: [[0, STRETCH_MAX], [0.12, STRETCH_MAX, 'lin'], [recoverOf('summon'), {}, 'inOut']] },
 };
 
 /**

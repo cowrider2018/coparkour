@@ -1,5 +1,5 @@
 /* ── test/src/skills.js ───────────────────────────────────────
-   怪物的技能（BOSS、騎士）：規則。
+   怪物的技能（BOSS、騎士、國王）：規則。
 
    跟 combat.js 一樣只算數字——哪一招、打在哪裡、碰到沒有。畫出預告與球是
    fx.js 與 mode-combat.js 的事，而這一支 node 驗得動（tools/verify-combat.mjs）。
@@ -50,6 +50,10 @@
      hew    直線劈砍（不限距離）。牠腳下出現一條往鎖定方向一直延伸到黑牆的紅色長條
             （寬 0.8 個狗高），倒數 0.5 秒；然後站在原地往前劈，打那一整條。出招後
             只僵直 0.25 秒（SKILL.hew.recover，其他招是 SKILL.recover）。
+     summon 召喚。挑的那一刻在牠身邊半徑 3 公尺內隨機挑幾個點（地板上），每個點一個小紅圈，
+            倒數 0.5 秒；倒數完每個點冒出一隻幽靈（不打人）。場上牠召喚出來、還活著的
+            （`m.brood`，呼叫端每幀數好寫進來）最多 4 隻：0～2 隻的時候召兩隻，3 隻的時候
+            召一隻，滿 4 隻就挑不到這一招。召出來的放進 world.spawns，由呼叫端接上場。
 
    範圍攻擊（leap 的那一圈、cone 的那一片、whirl、cleave 與 hew 的那一條）打的是地面上一個狗高以內：
    玩家的腳比那還高——跳起來了——就躲得過。跳砍之後的上挑例外：那一片是立起來的。
@@ -58,7 +62,7 @@
    打中人的球就炸掉消失。玩家無敵的時候（第三段、破防攻擊）碰到不算，球穿過去。
    ------------------------------------------------------------------ */
 
-import { PHYS, arenaGap, supportInfo, solveXZ, overlapXZ, roundTop } from './walk.js';
+import { PHYS, arenaGap, supportInfo, solveXZ, overlapXZ, roundTop, clampArena } from './walk.js';
 import { FIELD, DOG_H, REACH, SWING, kindOf, busy, settle, inFan } from './combat.js';
 
 /** 每一招的數值。長度一律用狗高量；`damage` 是打中玩家扣幾點血。 */
@@ -81,12 +85,21 @@ export const SKILL = {
   /* 國王的直線劈砍：倒數 windup，劈一條從牠腳下往鎖定方向到黑牆、寬 width 的長條。不限距離。
      出招後的僵直是自己的 recover（比別招短）。 */
   hew: { windup: 0.5, width: 0.8 * DOG_H, damage: 5, recover: 0.25 },
+  /* 國王的召喚：倒數 windup，在身邊 radius 公尺內（離牠至少 near，不疊在牠身上）的點上各冒出
+     一隻 kind；紅圈半徑 mark。場上牠召喚的最多 cap 隻，一次最多召 each 隻（補到 cap 為止）。 */
+  summon: { windup: 0.5, radius: 3, near: 2 * PHYS.radius, mark: 0.35, cap: 4, each: 2, kind: 'ghost' },
   /** 出招後僵直幾秒（那一招沒有自己的 `recover` 的話）。 */
   recover: 0.5,
 };
 
 /** 這一招出完僵直幾秒：那一招自己的 `recover`，沒有就是 SKILL.recover。 */
 export const recoverOf = (skill) => SKILL[skill].recover ?? SKILL.recover;
+
+/** 這一次召喚召幾隻：補到 cap 為止，一次最多 each 隻（0～2 隻時召 2、3 隻時召 1、滿了 0）。 */
+export const summonCount = (m) => Math.max(0, Math.min(SKILL.summon.each, SKILL.summon.cap - (m.brood || 0)));
+
+/** 除了距離（`range`）之外，這一招現在挑不挑得到。 */
+const READY = { summon: (m) => summonCount(m) > 0 };
 
 /** 劍迴旋衝刺衝出去 s 秒（0 ≤ s ≤ time）走了多遠：速度從 speed 線性減到 0 的積分。 */
 export const whirlDist = (s) => SKILL.whirl.speed * (s - (s * s) / (2 * SKILL.whirl.time));
@@ -105,14 +118,14 @@ const REACH_UP = PHYS.height;
  * （combat.js 的 FIELD 那一種）：球飛到它的黑牆就消失。
  */
 export function makeWorld(field = FIELD) {
-  return { shots: [], field };
+  return { shots: [], spawns: [], field };
 }
 
 /* 不能開始放招的狀態（combat.js 的 busy）。倒數中不會被擊退（見 armored），
    所以放到一半會碰上的只有「被定住」——破防攻擊打斷得了。 */
 
 /** 開始一招：鎖定玩家現在的水平位置，面向它，停下來。 */
-function begin(m, skill, target) {
+function begin(m, skill, target, rng) {
   const dx = target.x - m.x, dz = target.z - m.z;
   const d = Math.hypot(dx, dz);
   const [dirX, dirZ] = d > 1e-6 ? [dx / d, dz / d] : [m.aimX, m.aimZ];
@@ -122,6 +135,22 @@ function begin(m, skill, target) {
   m.aimX = dirX; m.aimZ = dirZ;
   m.vx = 0; m.vz = 0;
   if (skill === 'cleave') aimCleave(m, d);
+  if (skill === 'summon') m.cast.spots = summonSpots(m, rng);
+}
+
+/**
+ * 召喚的點：summonCount 個，在牠身邊 near～radius 公尺的圓環裡均勻地隨機挑（面積均勻，
+ * 不是半徑均勻），夾回黑牆裡面，高度是那一點的地板。
+ */
+function summonSpots(m, rng) {
+  const S = SKILL.summon, out = [];
+  for (let i = 0; i < summonCount(m); i++) {
+    const a = rng() * 2 * Math.PI;
+    const r = Math.sqrt(S.near * S.near + rng() * (S.radius * S.radius - S.near * S.near));
+    const [x, z] = clampArena(m.field.arena, m.x + Math.sin(a) * r, m.z + Math.cos(a) * r, PHYS.radius);
+    out.push({ x, z, y: supportInfo(m.field.cols, x, z, m.y + PHYS.step).y });
+  }
+  return out;
 }
 
 /**
@@ -219,6 +248,18 @@ const CAST = {
     const len = laneLength(m.x, m.z, c.dirX, c.dirZ, m.field.arena);
     return { shape: 'strip', x: m.x, y: m.y, z: m.z, dirX: c.dirX, dirZ: c.dirZ, len, w: S.width, dmg: S.damage };
   },
+
+  /* 倒數的時候站著；倒數完每一個紅圈冒出一隻（面向玩家被鎖定的那一點），交給呼叫端接上場。
+     不打人。 */
+  summon(m, world) {
+    const c = m.cast, S = SKILL.summon;
+    if (c.t < S.windup) return null;
+    for (const s of c.spots) {
+      world.spawns.push({ kind: S.kind, x: s.x, y: s.y, z: s.z, yaw: Math.atan2(c.tx - s.x, c.tz - s.z), by: m });
+    }
+    m.cast = null;
+    return null;
+  },
 };
 
 /**
@@ -293,11 +334,11 @@ export function strikeHits(st, p) {
 }
 
 /**
- * 有技能的那一類（BOSS、騎士）的一幀：倒數、挑招、推進放到一半的招。沒有技能的那一類
+ * 有技能的那一類（BOSS、騎士、國王）的一幀：倒數、挑招、推進放到一半的招。沒有技能的那一類
  * 什麼都不做。要在 monsterStep 之前叫——放招中的怪物 monsterStep 讓牠站著不動（要走的招
  * 自己在 CAST 裡走）。
  *
- * 挑招只從夠得到的招裡挑（`range`，見檔頭）；一招都夠不到的話不重新計時，下一幀再看。
+ * 挑招只從夠得到的招裡挑（`range`，見檔頭；召喚還要場上沒滿，READY）；一招都挑不到的話不重新計時，下一幀再看。
  *
  * @param {() => number} rng 挑招用的亂數（離線驗證給固定的）
  * @returns {object|null} 這一幀打下來的範圍攻擊（給 strikeHits），沒有就是 null
@@ -310,10 +351,10 @@ export function bossStep(m, dt, target, world, rng = Math.random) {
   // 衝刺（combat.js 的 LUNGE）打完才挑下一招，兩件事不會疊在一起。
   if (!m.cast && m.castT <= 0 && !busy(m) && !(m.stun > 0) && !m.lunge) {
     const gap = Math.hypot(target.x - m.x, target.z - m.z);
-    const can = k.skills.filter((s) => !(gap > SKILL[s].range));
+    const can = k.skills.filter((s) => !(gap > SKILL[s].range) && (!READY[s] || READY[s](m)));
     if (can.length) {
       m.castT = k.every;
-      begin(m, can[Math.min(can.length - 1, Math.floor(rng() * can.length))], target);
+      begin(m, can[Math.min(can.length - 1, Math.floor(rng() * can.length))], target, rng);
     }
   }
   if (!m.cast) return null;

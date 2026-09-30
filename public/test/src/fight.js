@@ -170,6 +170,7 @@ export class Fight {
         lane: laneFx(SKILL.orb.radius), circle: circleFx(SKILL.leap.radius), cone: coneFx(SKILL.cone.radius, SKILL.cone.half),
         whirl: stripFx(SKILL.whirl.radius, true), cleave: stripFx(SKILL.cleave.width / 2, false),
         hew: stripFx(SKILL.hew.width / 2, false),
+        marks: Array.from({ length: SKILL.summon.each }, () => circleFx(SKILL.summon.mark)),
         blade: null, helm: null, crown: null,
       };
       // 咬著劍的那幾類（騎士）：劍掛在牠自己的頭上，跟主角那把一樣每幀跟著頭。
@@ -179,7 +180,7 @@ export class Fight {
       // 戴王冠的（國王）：一樣掛在頭上。
       if (crownOf(kind)) { slot.crown = new Crown(); slot.crown.follow(slot.critter); }
       if (this._inkPx) slot.critter.setInkPx(...this._inkPx);
-      this.scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node, slot.cone.node, slot.whirl.node, slot.cleave.node, slot.hew.node);
+      this.scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node, slot.cone.node, slot.whirl.node, slot.cleave.node, slot.hew.node, ...slot.marks.map((k) => k.node));
       list.push(slot);
     }
     return list[i];
@@ -194,6 +195,34 @@ export class Fight {
     s.whirl.node.visible = false;
     s.cleave.node.visible = false;
     s.hew.node.visible = false;
+    for (const k of s.marks) k.node.visible = false;
+  }
+
+  /** 一隻怪物上場：借來的外觀亮出來、面向站位的方向，配上牠的狀態與動作。 */
+  static _enter(slot, spawn, field) {
+    slot.critter.root.visible = true;
+    slot.critter.setFacing(spawn.yaw);
+    return { m: makeMonster(spawn, field), motion: new Motion(), hewHit: null, ...slot };
+  }
+
+  /**
+   * 召喚出來的一隻上場（skills.js 的 world.spawns 的一筆）：借一份這一類沒在用的外觀，
+   * 站在那個紅圈上、跟召喚牠的那一隻（`m.by`）站在同一塊場地。
+   */
+  _summon(sp) {
+    const busy = new Set(this.foes.map((f) => f.critter));
+    const list = this._pool.get(sp.kind) || [];
+    let i = list.findIndex((s) => !busy.has(s.critter));
+    if (i < 0) i = list.length;
+    const f = Fight._enter(this._slot(sp.kind, i), sp, sp.by.field);
+    f.m.by = sp.by;
+    this.foes.push(f);
+  }
+
+  /** 讓符合條件的那幾隻離場：外觀藏起來，下一幀起不在清單裡。 */
+  _drop(gone) {
+    for (const f of this.foes) if (gone(f)) Fight._hide(f);
+    this.foes = this.foes.filter((f) => !gone(f));
   }
 
   /**
@@ -209,27 +238,27 @@ export class Fight {
     this.foes = spawns.map((s) => {
       const i = used.get(s.kind) || 0;
       used.set(s.kind, i + 1);
-      const slot = this._slot(s.kind, i);
-      slot.critter.root.visible = true;
-      slot.critter.setFacing(s.yaw);
-      return { m: makeMonster(s, field), motion: new Motion(), hewHit: null, ...slot };
+      return Fight._enter(this._slot(s.kind, i), s, field);
     });
     this.world = makeWorld(field);
     Object.assign(this.combo, makeCombo());
     this._dropTrails();
   }
 
-  /** 怪物全部回到站位（血滿、破防歸零），連段與球清掉。 */
+  /** 怪物全部回到站位（血滿、破防歸零），召喚出來的離場，連段與球清掉。 */
   reset() {
+    this._drop((f) => f.m.by);
     for (const f of this.foes) {
       placeMonster(f.m);
       f.critter.setFacing(f.m.spawn.yaw);
       f.motion = new Motion();
       f.hewHit = null;
+      f.m.brood = 0;
     }
     Object.assign(this.combo, makeCombo());
     this._face = null;
     this.world.shots.length = 0;
+    this.world.spawns.length = 0;
     this.souls.length = 0;
     this._dropTrails();
   }
@@ -300,6 +329,9 @@ export class Fight {
     const combo = this.combo, foes = this.foes;
     const kills = [];
     lifeStep(player, dt);
+    // 每一隻召喚出來、還在場上的有幾隻（召喚挑不挑得到、召幾隻看它，skills.js）。
+    for (const { m } of foes) m.brood = 0;
+    for (const { m } of foes) if (m.by) m.by.brood++;
     // BOSS 先決定這一幀在不在放招（放招中 monsterStep 讓牠站著），球往前飛。
     const strikes = [];
     for (const f of foes) {
@@ -314,6 +346,9 @@ export class Fight {
       this._stomps.push(st);
       if (st.shape === 'circle') this._quiet.add(m);
     }
+    // 召喚出來的上場（這一幀起就追人）。
+    for (const sp of this.world.spawns) this._summon(sp);
+    this.world.spawns.length = 0;
     // 撞到黑牆或場上東西的球炸掉。
     for (const s of shotsStep(this.world, dt)) this._fire.explode(s);
     for (const { m } of foes) monsterStep(m, dt, player);
@@ -341,15 +376,13 @@ export class Fight {
       }
     }
     for (const m of dead) {
-      kills.push(m.kind);
+      if (!m.by) kills.push(m.kind);
       if (KINDS[m.kind].soul) this.souls.push(dropSoul(spot.get(m)));
     }
     /* 打死：hurt 已經讓牠在重生點重生了。不重生的話就離場——外觀藏起來，下一幀
-       起不在清單裡。 */
-    if (!this.respawn && dead.size) {
-      for (const f of foes) if (dead.has(f.m)) Fight._hide(f);
-      this.foes = foes.filter((f) => !dead.has(f.m));
-    }
+       起不在清單裡。召喚出來的打死一律離場（不重生、不算在 kills 裡）；召喚牠們的那一隻
+       死了，牠召喚的一起離場。 */
+    if (dead.size) this._drop(({ m }) => (dead.has(m) && (!this.respawn || m.by)) || (m.by && dead.has(m.by)));
 
     let hit = null;
     if (!untouchable(combo, player)) {
@@ -433,6 +466,12 @@ export class Fight {
       const { m, lane, circle, cone, whirl, cleave } = f;
       const c = m.cast;
       this._hew(dt, f);
+      // 召喚：每一個會冒出一隻的點一個小紅圈，亮色從中心長到邊，長滿就冒出來。
+      const sm = !!c && c.skill === 'summon';
+      f.marks.forEach((k, i) => {
+        const s = sm && c.spots[i];
+        showCircle(k, !!s, s ? Math.min(1, c.t / SKILL.summon.windup) : 0, s ? s.x : 0, s ? s.z : 0, s ? s.y : 0);
+      });
       const orb = !!c && c.skill === 'orb', leap = !!c && c.skill === 'leap', fan = !!c && c.skill === 'cone';
       /* 劍迴旋衝刺：從起步的地方往鎖定的方向，衝得到多遠（黑牆擋住的話到牆前）。衝的時候
          亮著滿的——那一條就是還會被掃到的地方。 */
@@ -746,8 +785,8 @@ export class Fight {
 
   /** 右上那一行小字的戰鬥那幾段：每一隻怪物的血與破防、連段在哪。 */
   status() {
-    const foeLine = this.foes.map(({ m }) => `${KINDS[m.kind].name} 血 ${m.hp}/${KINDS[m.kind].hp}`
-      + `${KINDS[m.kind].shields ? ` 盾 ${m.shields}/${KINDS[m.kind].shields}` : ''}`
+    const foeLine = this.foes.filter(({ m }) => !m.by).map(({ m }) => `${KINDS[m.kind].name} 血 ${m.hp}/${KINDS[m.kind].hp}`
+      + `${KINDS[m.kind].shields ? ` 盾 ${m.shields}/${KINDS[m.kind].shields}` : ''}${m.brood ? ` 召喚 ${m.brood}` : ''}`
       + `${m.deaths ? `（打死 ${m.deaths}）` : ''} 破防 ${m.breakT > 0 ? '中' : `${m.gauge}/${KINDS[m.kind].breakAt}`}`).join(' ・ ');
     const phase = `${PHASE_NAME[this.combo.phase]}${invulnerable(this.combo) ? '（無敵）' : ''}`;
     return { foeLine, phase };
