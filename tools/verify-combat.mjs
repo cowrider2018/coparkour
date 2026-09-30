@@ -113,6 +113,9 @@
                     挑的那一刻在牠身邊 near～3 公尺內隨機挑點（夾在黑牆裡、落在地板上）；倒數 0.5 秒
                     不冒、不打；倒數完每個點冒一隻幽靈（記著是誰召的、面向玩家被鎖定的那一點），
                     不打人；僵直 0.5 秒。動作是 summonWind → summonRec。
+    31. 盾的外觀    剩幾面就畫幾面，平均分在一圈上、盾面朝外，那一圈照體型放大、離身體夠遠
+                    （不穿過國王的身體）；用掉一面：那一面縮到沒有、其他的滑到新的平均間隔；
+                    墨線跟著國王的墨色換。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
@@ -140,6 +143,7 @@ import { makeMonsterCritter, helmOf, ATTACK_INK } from '../public/test/src/monst
 import { Helm, HELM } from '../public/test/src/helm.js';
 import { Crown, CROWN } from '../public/test/src/crown.js';
 import { crownOf } from '../public/test/src/monster.js';
+import { ShieldRing, SHIELD } from '../public/test/src/shield.js';
 import { Rig } from '../public/src/cat/rig.js';
 
 let fails = 0;
@@ -2184,6 +2188,47 @@ console.log('30. 召喚');
   ok(!full.spots && full.w.spawns.length === 0, '場上滿 4 隻：挑不到召喚');
   ok([...a.stages].join() === 'summonWind,summonRec', `動作：${[...a.stages].join(' → ')}`);
   KINDS.king.skills = keep;
+}
+
+/* ── 31. 盾的外觀 ────────────────────────────────────────────── */
+console.log('31. 盾的外觀');
+{
+  const buf = readFileSync('public/assets/cat.bin');
+  const zoo = await loadZoo({ buffer: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) });
+  const c = makeMonsterCritter(zoo, 'king');
+  const size = sizeOf('king'), { RING, PLATE } = SHIELD;
+  const ring = new ShieldRing(KINDS.king.shields);
+  ring.follow(c);
+  ring.snap(3);
+  const run = (n, secs) => { for (let t = 0; t < secs - 1e-9; t += DT) ring.show(DT, n, 1, 0, 2, size); };
+  const shown = () => ring.plates.filter((p) => p.obj.visible && p.obj.scale.x > size * 0.99);
+  const gaps = (ps) => {
+    const a = ps.map((p) => p.a).sort((x, y) => x - y);
+    return a.map((x, i) => (i ? x - a[i - 1] : x + 2 * Math.PI - a[a.length - 1]));
+  };
+  run(3, 1);
+  ok(shown().length === 3 && gaps(shown()).every((g) => near(g, (2 * Math.PI) / 3, 1e-3)), '三面：全部畫著、平均分在一圈上（間隔 120°）');
+  const r = Math.hypot(ring.plates[0].obj.position.x, ring.plates[0].obj.position.z);
+  ok(near(r, RING.r * size) && ring.plates.every((p) => {
+    const d = Math.hypot(p.obj.position.x, p.obj.position.z);
+    return near(Math.sin(p.obj.rotation.y), p.obj.position.x / d, 1e-9) && near(Math.cos(p.obj.rotation.y), p.obj.position.z / d, 1e-9);
+  }),
+    `繞的半徑 ${r.toFixed(2)} 公尺（照體型放大）、盾面朝外`);
+  /* 國王身體（靜置姿勢）的每一點離牠腳的中心最遠多遠：盾的內緣要在那之外。 */
+  c.update(DT, { speed: 0, grounded: true, vy: 0, viewYaw: 0 });
+  const s = c.mesh.scale.x, p = c._posBaked;
+  let body = 0;
+  for (let i = 0; i < p.length; i += 3) body = Math.max(body, Math.hypot(p[i] * s + c.mesh.position.x, p[i + 2] * s + c.mesh.position.z));
+  const inner = r - (PLATE.t / 2) * size;
+  ok(inner > body + 0.1, `盾的內緣（${inner.toFixed(2)} 公尺）在國王身體（最遠 ${body.toFixed(2)} 公尺）外面，留 0.1 以上`);
+  run(2, 1);
+  ok(shown().length === 2 && !ring.plates[2].obj.visible && gaps(shown()).every((g) => near(g, Math.PI, 1e-3)), '用掉一面：那一面縮到沒有、剩下兩面滑到對面（間隔 180°）');
+  run(3, 1);
+  ok(shown().length === 3 && gaps(shown()).every((g) => near(g, (2 * Math.PI) / 3, 1e-3)), '補回一面：長回來、三面又是 120°');
+  c.setInkColor(ATTACK_INK);
+  const red = ring.ink.color.equals(ATTACK_INK);
+  c.setInkColor(null);
+  ok(red && !ring.ink.color.equals(ATTACK_INK), '墨線跟著國王的墨色換（攻擊中轉紅、之後換回來）');
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

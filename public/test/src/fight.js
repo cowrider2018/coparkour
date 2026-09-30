@@ -14,7 +14,7 @@
      resolve  怪物追人、放招、球往前飛（撞到東西就炸掉），然後才判打中——兩個身體都走完這一幀了，
               範圍是對著畫面上的位置判的。打死 BOSS 掉出靈魂，靈魂往下掉、漂，碰到
               就撿起來。回報玩家挨了哪一下、倒下沒有、打死了誰、撿了幾顆靈魂。
-     draw     怪物、劍光（攻擊範圍）與粉塵（落地、BOSS 範圍攻擊的地震）、BOSS 的預告與球、靈魂、破防的兩圈、刀、
+     draw     怪物、劍光（攻擊範圍）與粉塵（落地、BOSS 範圍攻擊的地震）、BOSS 的預告與球、靈魂、破防的兩圈、國王的盾、刀、
               頭頂的愛心。
               在相機擺好之後（破防的兩圈與愛心正對這一幀的鏡頭）；流體場也在這裡
               往前推一幀，所以要在 renderer.render 之前。
@@ -35,6 +35,7 @@ import { hitFrame, pushFrame, spurtOf } from './bleed.js';
 import { Blade } from './blade.js';
 import { Helm } from './helm.js';
 import { Crown } from './crown.js';
+import { ShieldRing } from './shield.js';
 import { Mover } from './moves.js';
 import {
   cueFx, showFx, breakFx, showBreak, laneFx, showLane, circleFx, showCircle,
@@ -171,7 +172,7 @@ export class Fight {
         whirl: stripFx(SKILL.whirl.radius, true), cleave: stripFx(SKILL.cleave.width / 2, false),
         hew: stripFx(SKILL.hew.width / 2, false),
         marks: Array.from({ length: SKILL.summon.each }, () => circleFx(SKILL.summon.mark)),
-        blade: null, helm: null, crown: null,
+        blade: null, helm: null, crown: null, shields: null,
       };
       // 咬著劍的那幾類（騎士）：劍掛在牠自己的頭上，跟主角那把一樣每幀跟著頭。
       if (swordOf(kind)) { slot.blade = new Blade(swordOf(kind)); slot.blade.follow(slot.critter); }
@@ -179,6 +180,8 @@ export class Fight {
       if (helmOf(kind)) { slot.helm = new Helm(); slot.helm.follow(slot.critter); }
       // 戴王冠的（國王）：一樣掛在頭上。
       if (crownOf(kind)) { slot.crown = new Crown(); slot.crown.follow(slot.critter); }
+      // 有盾的（國王）：幾面盾繞著牠轉，墨線一樣跟著牠的墨色換。
+      if (KINDS[kind].shields) { slot.shields = new ShieldRing(KINDS[kind].shields); slot.shields.follow(slot.critter); this.scene.add(slot.shields.node); }
       if (this._inkPx) slot.critter.setInkPx(...this._inkPx);
       this.scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node, slot.cone.node, slot.whirl.node, slot.cleave.node, slot.hew.node, ...slot.marks.map((k) => k.node));
       list.push(slot);
@@ -196,13 +199,16 @@ export class Fight {
     s.cleave.node.visible = false;
     s.hew.node.visible = false;
     for (const k of s.marks) k.node.visible = false;
+    if (s.shields) s.shields.hide();
   }
 
   /** 一隻怪物上場：借來的外觀亮出來、面向站位的方向，配上牠的狀態與動作。 */
   static _enter(slot, spawn, field) {
     slot.critter.root.visible = true;
     slot.critter.setFacing(spawn.yaw);
-    return { m: makeMonster(spawn, field), motion: new Motion(), hewHit: null, ...slot };
+    const m = makeMonster(spawn, field);
+    if (slot.shields) slot.shields.snap(m.shields);
+    return { m, motion: new Motion(), hewHit: null, ...slot };
   }
 
   /**
@@ -254,6 +260,7 @@ export class Fight {
       f.motion = new Motion();
       f.hewHit = null;
       f.m.brood = 0;
+      if (f.shields) f.shields.snap(f.m.shields);
     }
     Object.assign(this.combo, makeCombo());
     this._face = null;
@@ -433,7 +440,7 @@ export class Fight {
     // 無敵的時候墨線金色：跟碰到算不算（untouchable）同一個判斷。
     this.zoo.setInkColor(untouchable(combo, player) ? GUARD_INK : null);
     this.hearts.show(player.hp, player.max, player.x, player.y, player.z, camera.quaternion);
-    for (const { m, critter, motion, blade, helm, crown } of this.foes) {
+    for (const { m, critter, motion, blade, helm, crown, shields } of this.foes) {
       /* 衝刺與放招的動作（monster.js 的 Motion）：疊一套動作，跳的那幾段畫成在空中、
          垂直速度照那一跳。 */
       const mo = motion.step(dt, m, player);
@@ -450,6 +457,8 @@ export class Fight {
       if (blade) blade.update();
       if (helm) helm.update();
       if (crown) crown.update();
+      // 盾繞著牠的腳轉（衝的時候畫得跳起來，盾跟著）。
+      if (shields) shields.show(dt, m.shields, m.x, m.y + mo.lift, m.z, sizeOf(m.kind));
     }
 
     // 攻擊範圍：劍光，跟著玩家的腳與出招時鎖住的面向走（騎士的劍迴旋跟著牠）。落地的粉塵。
