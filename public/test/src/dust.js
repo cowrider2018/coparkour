@@ -168,7 +168,7 @@ export function quakeFade(tau) {
  *   life    一片最後一次注入之後留多久（秒）。
  *   thick   鼓多高（公尺）。
  */
-export const PLOW = { seg: 6, margin: 1.6, push: 3.2, ahead: 0.35, amount: 1.4, width: 0.16, life: 0.9, thick: 0.35, clump: 0.35 };
+export const PLOW = { seg: 6, margin: 1.6, push: 1.2, ahead: 0.35, amount: 0.4, width: 0.16, life: 0.9, thick: 0.15, clump: 0.35 };
 
 /**
  * 犁地的第 i 團（離起點 i·clump～(i+1)·clump、e 那一側）推多快、多濃（PLOW.push、amount 的幾倍）：

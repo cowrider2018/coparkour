@@ -106,7 +106,7 @@ export const SKILL = {
   /* 國王的直線劈砍：倒數 windup，劈一條從牠腳下往鎖定方向、長 len、寬 width 的長條（劍長，
      跟騎士跳砍劈的那一條一樣長）。不限距離：劍尖推出一道同樣寬的氣流（gust），每秒 speed
      公尺往前走到黑牆或撞上東西。出招後的僵直是自己的 recover（比別招短）。 */
-  hew: { windup: 0.5, len: 2.2 * DOG_H, width: 0.8 * DOG_H, damage: 5, recover: 0.25, gust: { speed: 20, damage: 2 } },
+  hew: { windup: 0.5, len: 2.2 * DOG_H, width: 0.2 * DOG_H, damage: 5, recover: 0.25, gust: { speed: 20, damage: 2 } },
   /* 國王的召喚：倒數 windup，在身邊 radius 公尺內（離牠至少 near，不疊在牠身上）的點上各冒出
      一隻 kind（倒數的時候從地底升上來）。場上牠召喚的最多 cap 隻，一次最多召 each 隻（補到 cap 為止）。 */
   summon: { windup: 0.5, radius: 3, near: 2 * PHYS.radius, cap: 4, each: 2, kind: 'ghost' },
