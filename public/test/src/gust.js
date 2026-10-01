@@ -18,11 +18,15 @@
    視線離這一塊最近有多遠）——D 在輪廓上剛好是 0，裡外都是連續的。
 
      扭曲  讀「畫面上離它一點點遠的那個像素」（拷一份這一幀已經畫好的畫面來讀），偏移
-           順著氣流在畫面上走的方向。偏移量從輪廓上 0 開始，EDGE 個像素裡拉滿（D 除以
-           它在螢幕上的變化率就是離輪廓幾個像素）——位移是連續的，畫面不會撕開一條縫；
-           但拉得夠快，看起來就是一道邊。裡面再疊幾層跟表面平行的起伏（RIPPLE，照 D
-           排），往裡面跑：空氣在震。
-   不描邊、不壓暗：看不看得出來全靠變形——邊界就是扭曲在那裡驟降。
+           順著氣流在畫面上走的方向。偏移量從輪廓上 0 開始，往裡走到最深處（劍光半厚）的
+           FEATHER 成才拉滿——照厚度的比例淡，不是照像素：遠近看起來一樣寬，過渡夠寬就
+           不會在輪廓上留一條線。往旁邊的距離先換算成劍光的尺度（乘上 劍光半厚 / 半寬）
+           再量：劍氣很窄的時候，照真的公尺量最深也只有半寬那麼深，從側面看兩公尺大的
+           一片，淡出卻只有幾公分，又是一條邊。換算之後正面看是照寬度的比例淡、側面看是
+           照劍光厚度的比例淡；輪廓本身不動（0 還是 0）。裡面再疊幾層跟表面平行的起伏
+           （RIPPLE，照 D 排），往裡面跑：空氣在震，也讓裡面沒有整片一起平移的地方——
+           整片平移看起來不像變形，變形只會出現在偏移量變化的那一圈，那一圈就成了邊。
+   不描邊、不壓暗：看不看得出來全靠變形。
 
    視線上找最深那一點：在這一塊的外框（一個盒子）裡等距取 STEPS 點，找到最深的那一點
    之後在它兩邊再三分逼近 REFINE 次——只取等距點的話輪廓會有階梯。
@@ -46,14 +50,17 @@ import { BANDS } from './trail.js';
     邊上剩正中間的幾成高。 */
 const { scale: SCALE, top: TOP, inner: INNER, edge: EDGE_RISE } = GUST;
 
+/** 劍光最寬那一截的半厚（公尺）：這一塊最深的地方離表面多深（往旁邊換算成同樣的尺度之後）。 */
+const DEEP = (TOP - INNER) / 2;
+
 /** 起點收成尖的那一段多長（公尺，沿著外緣量；qi.js 的 END）。 */
 const END = 0.35;
 
 /** 從起點尖到全寬花掉掃的角度的幾成（trail.js 的 RISE）。 */
 const RISE = 0.6;
 
-/** 偏移最大多少（畫面高度的幾成）、輪廓上幾個像素拉滿。 */
-const AMP = 0.08, EDGE = 2.5;
+/** 偏移最大多少（畫面高度的幾成）；從輪廓往裡走到最深處的幾成才拉滿（0～1，越大邊越淡）。 */
+const AMP = 0.08, FEATHER = 0.5;
 
 /** 裡面的起伏：一層多厚（公尺，從表面往裡量）、一秒往裡跑幾層、佔偏移的幾成。 */
 const RIPPLE = { len: 0.14, hz: 8, share: 0.3 };
@@ -61,7 +68,7 @@ const RIPPLE = { len: 0.14, hz: 8, share: 0.3 };
 /** 推出去的頭幾秒扭曲長到滿、停下來幾秒縮到沒有。 */
 const GROW = 0.06, FADE = 0.12;
 
-/** 殼比劍光大一圈（公尺）：fwidth 要輪廓兩邊都有像素可比。 */
+/** 殼比劍光大一圈（公尺）：輪廓上的像素一定落在殼裡。 */
 const PAD = 0.12;
 
 /** 視線上等距取幾點、找到最深的之後三分逼近幾次。 */
@@ -82,7 +89,7 @@ void main() {
 
 /** 形狀離表面多遠（裡面是負的）：三道合起來（trail.js 的 BANDS、sideAt，qi.js 的 END），往旁邊加厚 uHalf。 */
 const SHAPE = /* glsl */ `
-uniform float uHalf;
+uniform float uHalf, uLat;   // uLat：往旁邊的距離乘上它，換算成劍光的尺度
 float side(float th) {
   float u = clamp(th / ${f(FAN.sweep)} / ${f(RISE)}, 0.0, 1.0);
   float s = 0.04 + 0.96 * pow(sin(1.5708 * u), 0.7);
@@ -98,7 +105,7 @@ float shape(vec3 q) {
   float s = side(clamp(th, 0.0, ${f(FAN.sweep)}));
   float d = 1.0e3;
 ${BANDS.map((B) => `  d = min(d, max(ang, max(${f((B.out - B.wide) * SCALE)} + ${f(B.wide * SCALE)} * (1.0 - s) - r, r - ${f(B.out * SCALE)})));`).join('\n')}
-  return max(d * rise, abs(q.z) - uHalf);
+  return max(d * rise, (abs(q.z) - uHalf) * uLat);
 }`;
 
 const FRAG = /* glsl */ `
@@ -122,7 +129,7 @@ void main() {
   vec3 ta = (lo - ro) * inv, tb = (hi - ro) * inv;
   float t0 = max(max(max(min(ta.x, tb.x), min(ta.y, tb.y)), min(ta.z, tb.z)), 0.0);
   float t1 = min(min(max(ta.x, tb.x), max(ta.y, tb.y)), max(ta.z, tb.z));
-  // 等距找最深的那一點，再在它兩邊三分逼近。沒穿過盒子的當成很遠（discard 留到 fwidth 之後）。
+  // 等距找最深的那一點，再在它兩邊三分逼近。沒穿過盒子的當成很遠。
   float D = -1.0e3;
   if (t1 > t0) {
     float h = (t1 - t0) / ${STEPS.toFixed(1)}, best = 1.0e3, bt = t0;
@@ -137,9 +144,8 @@ void main() {
     }
     D = -min(best, shape(ro + rd * (0.5 * (a + b)))) * uK;      // 最深那一點多深（公尺）
   }
-  float px = D / max(fwidth(D), 1e-6);                          // 離輪廓幾個像素（裡面是正的）
-  if (px <= 0.0) discard;
-  float s = smoothstep(0.0, ${f(EDGE)}, px) * uAmp;
+  if (D <= 0.0) discard;
+  float s = smoothstep(0.0, ${f(FEATHER * DEEP)} * uK, D) * uAmp;
   float wave = 1.0 - ${f(RIPPLE.share)} * (0.5 + 0.5 * cos(6.2832 * (D / ${f(RIPPLE.len)} - uTime * ${f(RIPPLE.hz)})));
   vec2 uv = gl_FragCoord.xy / uRes;
   vec2 off = uDir * s * wave * ${f(AMP)} * vec2(uRes.y / uRes.x, 1.0);
@@ -210,7 +216,7 @@ export class Gusts {
         uniforms: {
           uScreen: { value: this.tex }, uRes: { value: new THREE.Vector2(1, 1) }, uDir: { value: new THREE.Vector2(0, 1) },
           uO: { value: new THREE.Vector3() }, uF: { value: new THREE.Vector3() }, uS: { value: new THREE.Vector3() },
-          uHalf: { value: 0.5 }, uK: { value: 1 }, uAmp: { value: 0 }, uTime: { value: 0 },
+          uHalf: { value: 0.5 }, uLat: { value: 1 }, uK: { value: 1 }, uAmp: { value: 0 }, uTime: { value: 0 },
         },
         transparent: true, depthWrite: false,
       });
@@ -233,6 +239,7 @@ export class Gusts {
     v.mesh.geometry.dispose();
     v.mesh.geometry = shell(half);
     v.mat.uniforms.uHalf.value = half;
+    v.mat.uniforms.uLat.value = DEEP / half;
   }
 
   /** 全部收掉（回到站位、換陣容）。 */
