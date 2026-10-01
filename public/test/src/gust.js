@@ -6,7 +6,8 @@
    形狀就是國王那一刀的劍光（trail.js 的 cleave：三道 BANDS 合起來，起點那一頭三條尖尾、
    往刀那一頭變寬，照劍長 SKILL.hew.len / REACH 縮放），在劈的那個直立面上；再往左右各
    加厚紅條（劈的那一條）的半寬——一片劍光成了一塊有體積的東西，像火球一樣沿那一條
-   飛出去。劍光最後落在地上的那一頭（全寬的平邊）的最前端就是氣流的前緣（skills.js 的
+   飛出去。不是平頂：正中間是整片劍光，往兩邊照橢圓壓低（skills.js 的 gustRise），像刀背。
+   劍光最後落在地上的那一頭（全寬的平邊）的最前端就是氣流的前緣（skills.js 的
    `to`），所以推出去的那一刻，這一塊剛好疊在國王劈下去的那一道劍光上。
 
    判定就是這一塊（skills.js 的 gustHits，近似：三道的尖尾不算）——跳不過，只能往旁邊閃。
@@ -41,8 +42,9 @@ import { FAN } from './combat.js';
 import { GUST } from './skills.js';
 import { BANDS } from './trail.js';
 
-/** 劍光照劍長縮放多少、外緣離刀根多遠（前緣在刀根前面這麼遠）、最寬時最靠內的內緣（殼的內圈從這裡往內撐）。 */
-const { scale: SCALE, top: TOP, inner: INNER } = GUST;
+/** 劍光照劍長縮放多少、外緣離刀根多遠（前緣在刀根前面這麼遠）、最寬時最靠內的內緣（殼的內圈從這裡往內撐）、
+    邊上剩正中間的幾成高。 */
+const { scale: SCALE, top: TOP, inner: INNER, edge: EDGE_RISE } = GUST;
 
 /** 起點收成尖的那一段多長（公尺，沿著外緣量；qi.js 的 END）。 */
 const END = 0.35;
@@ -63,7 +65,7 @@ const GROW = 0.06, FADE = 0.12;
 const PAD = 0.12;
 
 /** 視線上等距取幾點、找到最深的之後三分逼近幾次。 */
-const STEPS = 24, REFINE = 6;
+const STEPS = 32, REFINE = 12;
 
 const f = (x) => x.toFixed(5);
 
@@ -87,14 +89,16 @@ float side(float th) {
   return s * clamp(${f(TOP)} * th / ${f(END)}, 0.0, 1.0);
 }
 float shape(vec3 q) {
-  vec2 p = vec2(q.x + ${f(TOP)}, q.y);
+  // 兩側矮（skills.js 的 gustRise）：高度先除回正中間那麼高再量，量完乘回去（距離只會少算、不會多算）。
+  float t = min(1.0, abs(q.z) / uHalf), rise = ${f(EDGE_RISE)} + ${f(1 - GUST.edge)} * sqrt(max(0.0, 1.0 - t * t));
+  vec2 p = vec2(q.x + ${f(TOP)}, q.y / rise);
   float r = length(p);
   float th = ${f(FAN.sweep)} - atan(p.y, p.x);          // 從起點（正上方）往下劈了多少
   float ang = max(-th, th - ${f(FAN.sweep)}) * r;        // 掃的角度以外：離那一條邊多遠
   float s = side(clamp(th, 0.0, ${f(FAN.sweep)}));
   float d = 1.0e3;
 ${BANDS.map((B) => `  d = min(d, max(ang, max(${f((B.out - B.wide) * SCALE)} + ${f(B.wide * SCALE)} * (1.0 - s) - r, r - ${f(B.out * SCALE)})));`).join('\n')}
-  return max(d, abs(q.z) - uHalf);
+  return max(d * rise, abs(q.z) - uHalf);
 }`;
 
 const FRAG = /* glsl */ `

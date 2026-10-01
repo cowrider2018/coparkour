@@ -110,8 +110,8 @@
                     然後原地劈一條劍長（跟騎士跳砍一樣長）、寬 0.8 狗高的長條，扣 5；僵直只有 0.25 秒；
                     放招中打不退。長條（加上身體）裡的劈得到、外面與背後的劈不到，跳起來躲得過，倒數裡
                     往旁邊跑開就劈空。那一刀的劍光變成一塊同樣寬的氣流推出去（前緣在劍尖、劍光照劍長
-                    縮放），每秒 20 公尺往前走、扣 2：遠處的人等它走到才挨；它跟劍光一樣高，跳一個
-                    狗高躲不過，高過劍光頂才躲得過；橫向照長條的寬，刀根背後打不到；走到黑牆停；撞上高台、門（關著的）停在碰到的那一點，
+                    縮放、正中間最高往兩邊壓低），每秒 20 公尺往前走、扣 2：遠處的人等它走到才挨；它跟
+                    劍光一樣高，跳一個狗高躲不過，高過劍光頂才躲得過；橫向照長條的寬，刀根背後打不到；走到黑牆停；撞上高台、門（關著的）停在碰到的那一點，
                     後面的人不挨，門開著就穿過去，劍光那麼高以內的橫樑也擋；劍長以內就撞到的話一步都不走。一招只打一次：
                     那一刀記著它的氣流。動作是 hewWind → hewRec：騎士跳砍的蓄力與劈（不跳），
                     收尾照 0.25 秒的僵直走，開頭停在劈到一半那一格 0.1 秒（打擊的頓）。
@@ -135,7 +135,7 @@ import {
   makeCombo, comboStep, invulnerable, cueing, FIELD, LIFE, resetLife, lifeStep, harm, refill, gainHeart, regen,
   SOUL, dropSoul, soulStep, grabs,
 } from '../public/test/src/combat.js';
-import { SKILL, UP_AIR, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, gustHits, GUST, shotHits, shotBlocked, strikeHits, laneLength, recoverOf, summonCount } from '../public/test/src/skills.js';
+import { SKILL, UP_AIR, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, gustHits, gustRise, GUST, shotHits, shotBlocked, strikeHits, laneLength, recoverOf, summonCount } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
 import { DUST, dustOf, dustFade, QUAKE, quakeBands, quakeFade, quakeTop } from '../public/test/src/dust.js';
 import { Motion, bloodOf, sizeOf, mirror, riseLift, HEW_STOP, MOVES as KNIGHT_MOVES } from '../public/test/src/monster.js';
@@ -2355,6 +2355,10 @@ console.log('29. 直線劈砍');
     ok(gustHits(g, body(0, -r + 0.02)) && !gustHits(g, body(0, r + 0.02)), '前緣：身體碰到劍光落地的最前端才算');
     ok(gustHits(g, body(half + r - 0.02, -0.3)) && !gustHits(g, body(half + r + 0.02, -0.3)), `橫向：離中線 ${(half + r).toFixed(2)} 公尺以內打到`);
     ok(!gustHits(g, body(0, -GUST.top - r - 0.02)), '刀根背後打不到');
+    // 刀根正上方、離地 1.6 公尺：正中間有整片劍光那麼高，邊上只剩 edge 成。
+    const over = (x) => ({ ...body(x, -GUST.top + r), y: 1.6 });
+    ok(gustRise(0) === 1 && near(gustRise(1), GUST.edge) && gustRise(0.5) > gustRise(0.9), `不是平頂：正中間最高，往兩邊照橢圓壓到 ${GUST.edge} 成`);
+    ok(gustHits(g, over(0)) && !gustHits(g, over(half + r - 0.02)), '正中間 1.6 公尺高還打得到，貼著邊的同樣高度打不到');
     // 這一幀走了 2 公尺：走過的地方都算，沒走到的不算。
     const moved = { ...g, from: 3, to: 5 };
     ok(gustHits(moved, body(0, -1.5)) && !gustHits({ ...g, from: 3, to: 3 }, body(0, 1.5)), '一幀走過的那一段都打得到（不會一步跨過人）');

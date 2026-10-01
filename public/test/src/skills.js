@@ -118,11 +118,16 @@ export const SKILL = {
  * 國王劈砍推出去的氣流長什麼樣：那一刀的劍光（trail.js 的 cleave，三道合起來）照劍長縮放
  * （scale，fight.js 給 qi.js 的同一個），立在劈的那個直立面上。top 是外緣離刀根多遠——
  * 也就是前緣在刀根前面多遠；inner 是最寬的時候最靠內的那一道的內緣離刀根多遠（公尺）。
+ * 往左右加厚的時候不是平頂：正中間是整片劍光，往兩邊高度照橢圓壓低，到邊上剩 edge 那麼多
+ * （gustRise）。只壓高度，往前伸多遠不變——落在地上的那一頭整條一樣寬。
  */
 export const GUST = (() => {
   const scale = SKILL.hew.len / REACH;
-  return { scale, top: hullOf(1).outer * scale, inner: hullOf(1).inner * scale };
+  return { scale, top: hullOf(1).outer * scale, inner: hullOf(1).inner * scale, edge: 0.45 };
 })();
+
+/** 離中線 t 成半寬（0～1）的地方，氣流有正中間的幾成高。 */
+export const gustRise = (t) => GUST.edge + (1 - GUST.edge) * Math.sqrt(Math.max(0, 1 - t * t));
 
 /** 這一招出完僵直幾秒：那一招自己的 `recover`，沒有就是 SKILL.recover。 */
 export const recoverOf = (skill) => SKILL[skill].recover ?? SKILL.recover;
@@ -539,6 +544,7 @@ export function gustsStep(world, dt) {
  * 近似成刀根前上方的四分之一圈環（離刀根 inner～top，從水平往前到正上方；三道的尖尾不算），
  * 刀根在前緣後面 top。這一幀刀根從 from − top 走到 to − top，走過的地方都算——身體（圓柱
  * 近似成方框）在那個面上是一個長方形，往後拉長這一幀走的那一段，碰到那四分之一圈環就算。
+ * 兩側比較矮（gustRise）：照身體最靠中線的那一側那麼高算，高度除回去再比。
  */
 export function gustHits(g, p) {
   const R = PHYS.radius, rx = p.x - g.x, rz = p.z - g.z;
@@ -546,7 +552,8 @@ export function gustHits(g, p) {
   if (Math.abs(v) > g.w / 2 + R) return false;
   // 身體在那個面上的長方形（從刀根量）：往前 a0～a1、往上 b0～b1，切掉四分之一圈以外的那幾象限。
   const a0 = Math.max(0, u - R - (g.to - GUST.top)), a1 = u + R - (g.from - GUST.top);
-  const b0 = Math.max(0, p.y - g.y), b1 = p.y + PHYS.height - g.y;
+  const rise = gustRise(Math.max(0, Math.abs(v) - R) / (g.w / 2));
+  const b0 = Math.max(0, p.y - g.y) / rise, b1 = (p.y + PHYS.height - g.y) / rise;
   if (a1 < a0 || b1 < b0) return false;
   return Math.hypot(a0, b0) <= GUST.top && Math.hypot(a1, b1) >= GUST.inner;
 }
