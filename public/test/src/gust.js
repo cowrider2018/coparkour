@@ -23,9 +23,7 @@
            但拉得夠快，看起來就是一道邊。裡面再疊幾層跟表面平行的起伏（RIPPLE，照 D
            排），往裡面跑：空氣在震。
      壓暗  裡面整片暗一點（DIM）：平塗的地方沒有紋路可以扭，光靠扭曲會看不見。
-     墨線  輪廓外面一圈墨線（INK 像素寬，狗的墨線那個顏色）：跟周圍分得清清楚楚。三條
-           尖尾之間也是輪廓，一樣描；只是越往尖越淡（INK_SIDE，照視線上最近那一點的劍光
-           有多寬）——尖到最後不到一個像素，照描會斷成一截一截。
+   不描邊：邊界只靠扭曲在那裡驟降，與壓暗。
 
    視線上找最深那一點：在這一塊的外框（一個盒子）裡等距取 STEPS 點，找到最深的那一點
    之後在它兩邊再三分逼近 REFINE 次——只取等距點的話輪廓會有階梯。
@@ -37,7 +35,7 @@
    ── 成本 ─────────────────────────────────────────────────────────
    場上有氣流的那幾幀才拷畫面（每幀一次，全螢幕），之外完全不花。著色只在包住這一塊
    的殼（劍光的外框往外撐 PAD）蓋到的像素上跑，每個像素沿視線算 STEPS + 2·REFINE 次形狀。
-   網址給 `?gust=0` 就不拷、不扭——只剩壓暗與墨線——同一台手機開關各看一次 fps，
+   網址給 `?gust=0` 就不拷、不扭——只剩壓暗——同一台手機開關各看一次 fps，
    就是扭曲的成本。
    ------------------------------------------------------------------ */
 
@@ -61,22 +59,16 @@ const END = 0.35;
 /** 從起點尖到全寬花掉掃的角度的幾成（trail.js 的 RISE）。 */
 const RISE = 0.6;
 
-/** 偏移最大多少（畫面高度的幾成）、輪廓上幾個像素拉滿、壓暗幾成、墨線幾個像素。 */
-const AMP = 0.03, EDGE = 2.5, DIM = 0.16, INK = 1.6;
+/** 偏移最大多少（畫面高度的幾成）、輪廓上幾個像素拉滿、壓暗幾成。 */
+const AMP = 0.03, EDGE = 2.5, DIM = 0.16;
 
 /** 裡面的起伏：一層多厚（公尺，從表面往裡量）、一秒往裡跑幾層、佔偏移的幾成。 */
 const RIPPLE = { len: 0.14, hz: 8, share: 0.3 };
 
-/** 墨線在劍光多寬（sideAt 的幾成）以下開始淡、到多寬才描滿：尖尾細到不到一個像素，描了只會斷斷續續。 */
-const INK_SIDE = [0.05, 0.3];
-
-/** 墨線的顏色：跟狗的墨線同一個（43, 35, 32）。 */
-const INK_COL = [43 / 255, 35 / 255, 32 / 255];
-
 /** 推出去的頭幾秒扭曲長到滿、停下來幾秒縮到沒有。 */
 const GROW = 0.06, FADE = 0.12;
 
-/** 殼比劍光大一圈（公尺）：墨線在輪廓外面，遠的時候幾個像素也有好幾公分。 */
+/** 殼比劍光大一圈（公尺）：fwidth 要輪廓兩邊都有像素可比。 */
 const PAD = 0.12;
 
 /** 視線上等距取幾點、找到最深的之後三分逼近幾次。 */
@@ -103,12 +95,10 @@ float side(float th) {
   float s = 0.04 + 0.96 * pow(sin(1.5708 * u), 0.7);
   return s * clamp(${f(TOP)} * th / ${f(END)}, 0.0, 1.0);
 }
-/** 從起點（正上方）往下劈了多少。 */
-float sweep(vec3 q) { return ${f(FAN.sweep)} - atan(q.y, q.x + ${f(TOP)}); }
 float shape(vec3 q) {
   vec2 p = vec2(q.x + ${f(TOP)}, q.y);
   float r = length(p);
-  float th = sweep(q);
+  float th = ${f(FAN.sweep)} - atan(p.y, p.x);          // 從起點（正上方）往下劈了多少
   float ang = max(-th, th - ${f(FAN.sweep)}) * r;        // 掃的角度以外：離那一條邊多遠
   float s = side(clamp(th, 0.0, ${f(FAN.sweep)}));
   float d = 1.0e3;
@@ -138,7 +128,7 @@ void main() {
   float t0 = max(max(max(min(ta.x, tb.x), min(ta.y, tb.y)), min(ta.z, tb.z)), 0.0);
   float t1 = min(min(max(ta.x, tb.x), max(ta.y, tb.y)), max(ta.z, tb.z));
   // 等距找最深的那一點，再在它兩邊三分逼近。沒穿過盒子的當成很遠（discard 留到 fwidth 之後）。
-  float D = -1.0e3, thin = 1.0;
+  float D = -1.0e3;
   if (t1 > t0) {
     float h = (t1 - t0) / ${STEPS.toFixed(1)}, best = 1.0e3, bt = t0;
     for (int i = 0; i <= ${STEPS}; i++) {
@@ -150,21 +140,17 @@ void main() {
       float m1 = a + (b - a) / 3.0, m2 = b - (b - a) / 3.0;
       if (shape(ro + rd * m1) < shape(ro + rd * m2)) b = m2; else a = m1;
     }
-    vec3 q = ro + rd * (0.5 * (a + b));
-    D = -min(best, shape(q)) * uK;                                // 最深那一點多深（公尺）
-    thin = smoothstep(${f(INK_SIDE[0])}, ${f(INK_SIDE[1])}, side(clamp(sweep(q), 0.0, ${f(FAN.sweep)})));
+    D = -min(best, shape(ro + rd * (0.5 * (a + b)))) * uK;      // 最深那一點多深（公尺）
   }
   float px = D / max(fwidth(D), 1e-6);                          // 離輪廓幾個像素（裡面是正的）
-  if (px < -${f(INK)} - 1.0) discard;
+  if (px <= 0.0) discard;
   float s = smoothstep(0.0, ${f(EDGE)}, px) * uAmp;
   float wave = 1.0 - ${f(RIPPLE.share)} * (0.5 + 0.5 * cos(6.2832 * (D / ${f(RIPPLE.len)} - uTime * ${f(RIPPLE.hz)})));
-  vec4 ink = vec4(${INK_COL.map(f).join(', ')}, uAmp * thin * smoothstep(-${f(INK)} - 1.0, -${f(INK)}, px));
   ${screen ? `
   vec2 uv = gl_FragCoord.xy / uRes;
   vec2 off = uDir * s * wave * ${f(AMP)} * vec2(uRes.y / uRes.x, 1.0);
-  vec4 inside = vec4(texture2D(uScreen, uv - off).rgb * (1.0 - ${f(DIM)} * s), 1.0);` : `
-  vec4 inside = vec4(0.0, 0.0, 0.0, ${f(DIM)} * s);`}
-  gl_FragColor = mix(ink, inside, smoothstep(-0.5, 0.5, px));
+  gl_FragColor = vec4(texture2D(uScreen, uv - off).rgb * (1.0 - ${f(DIM)} * s), 1.0);` : `
+  gl_FragColor = vec4(0.0, 0.0, 0.0, ${f(DIM)} * s);`}
 }`;
 
 /**
@@ -194,7 +180,7 @@ const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _size = new THREE.Vect
 export class Gusts {
   /**
    * @param {THREE.Scene} scene
-   * @param {THREE.WebGLRenderer | null} renderer 沒給、或網址 `?gust=0`：不扭，只壓暗與描邊
+   * @param {THREE.WebGLRenderer | null} renderer 沒給、或網址 `?gust=0`：不扭，只壓暗
    */
   constructor(scene, renderer) {
     this.scene = scene;
