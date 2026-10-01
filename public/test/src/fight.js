@@ -66,6 +66,13 @@ const QUAKE_JOINT = Math.sqrt(Math.LN2);
 /** 一團塵的濃度：dust.js 的 amount 乘上這個，是 PUSH_TIME 那幾幀加起來注入的量。 */
 const DUST_DYE = 1.4;
 
+/**
+ * 國王劈下去的那一下鏡頭晃（跟收招開頭那一頓同一刻，monster.js 的 HEW_STOP）：往劈的方向
+ * ——往下、往前 ahead 那麼多——先推出去，再來回彈幾下收掉。位移 amp·e^(−t/decay)·sin(2π·hz·t)
+ * 公尺，life 秒之後不晃。只挪位置、不轉，畫面不會歪。
+ */
+const SHAKE = { amp: 0.12, hz: 14, decay: 0.08, life: 0.35, ahead: 0.5 };
+
 /** 右上那一行小字：現在在連段的哪裡。 */
 export const PHASE_NAME = {
   idle: '待機', slash: '第一段', rest: '第一段收招', rise: '第二段', air: '第二段之後', leap: '第三段起跳', slam: '第三段落地',
@@ -142,6 +149,9 @@ export class Fight {
     this._heard = this.combo.phase;
     /** 這一幀在哪一段，它的範圍打不打得到怪物。第二段指著上一次第一段的末端點。 */
     this._reach = { slash: inSlash, rise: (p, m) => inFan(p, m, this.combo.tip), slam: inRing };
+
+    /** 鏡頭還在晃的每一下（SHAKE）：劈下去多久了、往哪個方向（單位向量）。 */
+    this._shakes = [];
 
     /** 玩家頭頂的愛心：還剩幾點血。 */
     this.hearts = new Hearts(scene);
@@ -389,6 +399,11 @@ export class Fight {
         if (QUAKE[st.shape]) this._rumbles.push({ shape: st.shape, t: 0, at: quakeBands(st.shape, st.r).map((b) => b.at) });
         else sound.play(st.shape);
       }
+      // 國王劈下去（那一刀帶著氣流）：鏡頭往劈的方向晃。
+      if (st.gust) {
+        const n = Math.hypot(SHAKE.ahead, 1);
+        this._shakes.push({ t: 0, x: (st.dirX * SHAKE.ahead) / n, y: -1 / n, z: (st.dirZ * SHAKE.ahead) / n });
+      }
       // 地震（dust.js 的 QUAKE）是震波，放在 world.waves 一圈圈往外推；其餘的這一幀一次打完。
       if (!QUAKE[st.shape]) { strikes.push(st); continue; }
       if (!this.fluid) continue;
@@ -506,6 +521,7 @@ export class Fight {
   /** 擺好這一幀的外觀。在 zoo.update 與相機之後叫。 */
   draw(dt, camera, player) {
     const combo = this.combo, fx = this._fx;
+    this._shake(dt, camera);
     this.blade.update();
     // 剛挨過一下（guard 還開著）：玩家一閃一閃的。頭頂是最大血量幾顆心、剩下的幾顆是滿的。
     this.zoo.root.visible = !(player.guard > 0) || Math.floor(player.guard * 12) % 2 === 0;
@@ -600,6 +616,20 @@ export class Fight {
     // 破防的兩圈：套在怪物身體的中間，正對這一幀的鏡頭。
     for (const { m, breakFx: bf } of this.foes) {
       showBreak(bf, m.breakT / BREAK_WINDOW, m.x, m.y + PHYS.height / 2, m.z, camera.quaternion);
+    }
+  }
+
+  /**
+   * 鏡頭晃：還在晃的每一下（SHAKE）疊起來，加在這一幀擺好的鏡頭位置上。模式每一幀都重新擺
+   * 鏡頭，所以不會累積。
+   */
+  _shake(dt, camera) {
+    this._shakes = this._shakes.filter((s) => (s.t += dt) < SHAKE.life);
+    for (const s of this._shakes) {
+      const k = SHAKE.amp * Math.exp(-s.t / SHAKE.decay) * Math.sin(2 * Math.PI * SHAKE.hz * s.t);
+      camera.position.x += s.x * k;
+      camera.position.y += s.y * k;
+      camera.position.z += s.z * k;
     }
   }
 
