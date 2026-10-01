@@ -21,8 +21,7 @@
            它在螢幕上的變化率就是離輪廓幾個像素）——位移是連續的，畫面不會撕開一條縫；
            但拉得夠快，看起來就是一道邊。裡面再疊幾層跟表面平行的起伏（RIPPLE，照 D
            排），往裡面跑：空氣在震。
-     壓暗  裡面整片暗一點（DIM）：平塗的地方沒有紋路可以扭，光靠扭曲會看不見。
-   不描邊：邊界只靠扭曲在那裡驟降，與壓暗。
+   不描邊、不壓暗：看不看得出來全靠變形——邊界就是扭曲在那裡驟降。
 
    視線上找最深那一點：在這一塊的外框（一個盒子）裡等距取 STEPS 點，找到最深的那一點
    之後在它兩邊再三分逼近 REFINE 次——只取等距點的話輪廓會有階梯。
@@ -34,8 +33,7 @@
    ── 成本 ─────────────────────────────────────────────────────────
    場上有氣流的那幾幀才拷畫面（每幀一次，全螢幕），之外完全不花。著色只在包住這一塊
    的殼（劍光的外框往外撐 PAD）蓋到的像素上跑，每個像素沿視線算 STEPS + 2·REFINE 次形狀。
-   網址給 `?gust=0` 就不拷、不扭——只剩壓暗——同一台手機開關各看一次 fps，
-   就是扭曲的成本。
+   網址給 `?gust=0` 就整個不畫——同一台手機開關各看一次 fps，就是扭曲的成本。
    ------------------------------------------------------------------ */
 
 import * as THREE from '../vendor/three.module.js';
@@ -52,8 +50,8 @@ const END = 0.35;
 /** 從起點尖到全寬花掉掃的角度的幾成（trail.js 的 RISE）。 */
 const RISE = 0.6;
 
-/** 偏移最大多少（畫面高度的幾成）、輪廓上幾個像素拉滿、壓暗幾成。 */
-const AMP = 0.03, EDGE = 2.5, DIM = 0.16;
+/** 偏移最大多少（畫面高度的幾成）、輪廓上幾個像素拉滿。 */
+const AMP = 0.03, EDGE = 2.5;
 
 /** 裡面的起伏：一層多厚（公尺，從表面往裡量）、一秒往裡跑幾層、佔偏移的幾成。 */
 const RIPPLE = { len: 0.14, hz: 8, share: 0.3 };
@@ -99,7 +97,7 @@ ${BANDS.map((B) => `  d = min(d, max(ang, max(${f((B.out - B.wide) * SCALE)} + $
   return max(d, abs(q.z) - uHalf);
 }`;
 
-const FRAG = (screen) => /* glsl */ `
+const FRAG = /* glsl */ `
 uniform sampler2D uScreen;
 uniform vec2 uRes;        // 畫面多大（像素）
 uniform vec2 uDir;        // 氣流在畫面上往哪走（單位向量，像素空間）
@@ -139,11 +137,9 @@ void main() {
   if (px <= 0.0) discard;
   float s = smoothstep(0.0, ${f(EDGE)}, px) * uAmp;
   float wave = 1.0 - ${f(RIPPLE.share)} * (0.5 + 0.5 * cos(6.2832 * (D / ${f(RIPPLE.len)} - uTime * ${f(RIPPLE.hz)})));
-  ${screen ? `
   vec2 uv = gl_FragCoord.xy / uRes;
   vec2 off = uDir * s * wave * ${f(AMP)} * vec2(uRes.y / uRes.x, 1.0);
-  gl_FragColor = vec4(texture2D(uScreen, uv - off).rgb * (1.0 - ${f(DIM)} * s), 1.0);` : `
-  gl_FragColor = vec4(0.0, 0.0, 0.0, ${f(DIM)} * s);`}
+  gl_FragColor = vec4(texture2D(uScreen, uv - off).rgb, 1.0);
 }`;
 
 /**
@@ -173,12 +169,12 @@ const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _size = new THREE.Vect
 export class Gusts {
   /**
    * @param {THREE.Scene} scene
-   * @param {THREE.WebGLRenderer | null} renderer 沒給、或網址 `?gust=0`：不扭，只壓暗
+   * @param {THREE.WebGLRenderer | null} renderer 拷畫面用。沒給、或網址 `?gust=0`：不畫
    */
   constructor(scene, renderer) {
     this.scene = scene;
     this.renderer = renderer;
-    this.screen = !!renderer && new URLSearchParams(location.search).get('gust') !== '0';
+    this.on = !!renderer && new URLSearchParams(location.search).get('gust') !== '0';
     this.tex = null;
     this._frame = -1;
     this.views = [];
@@ -206,7 +202,7 @@ export class Gusts {
     let v = this.spare.pop();
     if (!v) {
       const mat = new THREE.ShaderMaterial({
-        vertexShader: VERT, fragmentShader: FRAG(this.screen),
+        vertexShader: VERT, fragmentShader: FRAG,
         uniforms: {
           uScreen: { value: this.tex }, uRes: { value: new THREE.Vector2(1, 1) }, uDir: { value: new THREE.Vector2(0, 1) },
           uO: { value: new THREE.Vector3() }, uF: { value: new THREE.Vector3() }, uS: { value: new THREE.Vector3() },
@@ -217,10 +213,8 @@ export class Gusts {
       const mesh = new THREE.Mesh(new THREE.BufferGeometry(), mat);
       mesh.frustumCulled = false;
       mesh.renderOrder = 10;
-      if (this.screen) {
-        mesh.onBeforeRender = (renderer) => this._copy(renderer);
-        this.renderer.getDrawingBufferSize(mat.uniforms.uRes.value);
-      }
+      mesh.onBeforeRender = (renderer) => this._copy(renderer);
+      this.renderer.getDrawingBufferSize(mat.uniforms.uRes.value);
       this.scene.add(mesh);
       v = { mesh, mat, half: -1 };
     }
@@ -249,6 +243,7 @@ export class Gusts {
    * @param {THREE.Camera} camera 算氣流在畫面上往哪走
    */
   draw(dt, world, camera) {
+    if (!this.on) return;
     this.time += dt;
     for (const g of world.gusts) {
       if (g.view) continue;
