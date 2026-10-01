@@ -7,6 +7,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail",
+    "sfx": "node tools/make-sfx.mjs",
     "verify": "node tools/verify-level.mjs 120 60000",
     "verify:touch": "node tools/verify-touch.mjs",
     "verify:jump": "node tools/verify-jump.mjs",

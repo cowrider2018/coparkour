@@ -134,6 +134,8 @@ npx wrangler deploy
 public/
   index.html  styles.css  config.js
   assets/cat.bin          貓的幾何 + 骨架 + 三個花色（935 kB，gzip 後 296 kB）
+  assets/sfx/             試打場的十二個音效（共約 63 kB），tools/make-sfx.mjs 做的
+  assets/sfx/recorded/    做音效的原料：五段錄音，只讀不改
   src/
     constants.js   物理參數，同時是地形生成器的難度依據
     rng.js  level.js  player.js  input.js  net.js  main.js
@@ -173,6 +175,7 @@ tools/
   verify-showcase.mjs  展示框：兩個使用者拿到的是不是同一件事
   lib/soft-raster.mjs   上面幾支共用的軟體光柵器（頂點著色器的 JS 版）
   lib/png.mjs           把它畫出來的東西寫成 PNG
+  make-sfx.mjs          從五段錄音切、移調、變速、濾波、疊出十二個音效（npm run sfx）
 wrangler.toml
 ```
 
