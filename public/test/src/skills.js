@@ -49,9 +49,10 @@
 
      hew    直線劈砍（不限距離）。牠腳下出現一條往鎖定方向一直延伸到黑牆的紅色長條
             （寬 0.8 個狗高），倒數 0.5 秒；然後站在原地往前劈：劍長（跟騎士跳砍劈的那一條
-            一樣長）以內那一刻打下去；劍尖那裡同時推出一道貼地的氣流（world.gusts），每秒
-            20 公尺沿那一條往前走，走到黑牆、或撞上場上的東西（跟球一樣，開著的門不擋）
-            就停。一招只打得到一次：被那一刀劈到的，氣流就不再算。出招後只僵直 0.25 秒
+            一樣長）以內那一刻打下去；同時那一刀的劍光變成一塊氣流（world.gusts，形狀是 GUST：
+            劍光立在劈的那個直立面上、往左右加厚到長條的寬）推出去，每秒 20 公尺沿那一條往前
+            走，走到黑牆、或撞上場上的東西（跟球一樣，開著的門不擋）就停。一招只打得到一次：
+            被那一刀劈到的，氣流就不再算。出招後只僵直 0.25 秒
             （SKILL.hew.recover，其他招是 SKILL.recover）；氣流不等僵直，自己走完。
      summon 召喚。挑的那一刻在牠身邊半徑 3 公尺內隨機挑幾個點（地板上），倒數 0.5 秒——
             這段時間每個點上一隻幽靈從地底升上來（畫面，fight.js；沒有紅圈），還不算上場、
@@ -69,7 +70,8 @@
      whirl       移動的圓盤：跟主角第三擊那一圈同一種判法（一片在腰高 waist、沒有厚度的水平圓盤，
                  碰到身體的圓柱才算），只是衝的每一幀從這一幀的起點掃到終點（膠囊），像球一樣一路移動。
      cleave、hew 貼地的長條，打的是地面上一個狗高以內：玩家的腳比那還高——跳起來了——就躲得過。
-     hew 的氣流  移動的貼地長條：每一幀打的是這一幀前緣走過的那一段（同樣一個狗高以內）。
+     hew 的氣流  移動的一塊（gustHits）：劍光那四分之一圈加厚成的體積，每一幀打的是它這一幀走過的
+                 地方。有兩公尺高，跳不過，只能往旁邊閃。
      跳砍之後的上挑例外：那一片是立起來的。
 
    碰到扣血：BOSS 的招 5、騎士的 whirl 2、cleave 3、上挑 3、國王的 hew 5、氣流 2（每一招的 `damage`；衝刺咬到的見 combat.js 的 KINDS）。
@@ -295,7 +297,7 @@ const CAST = {
     const wall = laneLength(m.x, m.z, c.dirX, c.dirZ, m.field.arena), len = Math.min(S.len, wall);
     const gust = {
       x: m.x, y: m.y, z: m.z, dirX: c.dirX, dirZ: c.dirZ, w: S.width, dmg: S.gust.damage, wall,
-      from: len, to: len, fresh: true, done: false, spent: false, blocker: null, st: null,
+      from: len, to: len, fresh: true, done: false, spent: false, blocker: null,
     };
     world.gusts.push(gust);
     return { shape: 'strip', x: m.x, y: m.y, z: m.z, dirX: c.dirX, dirZ: c.dirZ, len, w: S.width, dmg: S.damage, gust };
@@ -478,10 +480,10 @@ export function shotsStep(world, dt) {
   return gone;
 }
 
-/** 氣流前緣那一塊（前緣往後 w 那麼長的方框，高一個狗高）在離起點 d 的地方撞到什麼。 */
+/** 氣流前緣那一塊（前緣往後 w 那麼長的方框，跟劍光一樣高）在離起點 d 的地方撞到什麼。 */
 function gustBlocker(g, field, d) {
   const k = d - g.w / 2;
-  return blockerAt(field, g.x + g.dirX * k, g.z + g.dirZ * k, g.w / 2, g.y + SKIM, g.y + REACH_UP);
+  return blockerAt(field, g.x + g.dirX * k, g.z + g.dirZ * k, g.w / 2, g.y + SKIM, g.y + GUST.top);
 }
 
 /** 氣流往前找的一步最多多長：比它的寬短得多，薄的東西（門）才不會被一步跨過去。 */
@@ -509,7 +511,7 @@ function gustHit(g, field, a, b) {
 
 /**
  * 國王劈砍推出去的氣流往前一幀（`hew` 劈下去那一幀放進 world.gusts）：前緣每秒 speed 公尺沿那一條走，
- * `from`～`to` 是這一幀前緣走過的那一段（離起點量，`st` 是它的長條，給 strikeHits）。走到黑牆
+ * `from`～`to` 是這一幀前緣走過的那一段（離起點量，gustHits 照它判）。走到黑牆
  * （`wall`）或撞上場上的東西就停在那裡（`blocker` 是撞到的那一個，黑牆是 null），那一幀之後的
  * 下一次收掉。新放進來的那一幀不走：先看劍長那一截裡有沒有東西（有的話氣流根本推不出去）。
  * 每一幀在 bossStep 之後、判定之前叫。
@@ -528,11 +530,25 @@ export function gustsStep(world, dt) {
     g.from = fresh && hit ? hit.d : g.to;
     g.to = hit ? Math.max(g.from, hit.d) : b;
     if (hit || g.to >= g.wall) { g.done = true; g.blocker = hit ? hit.b : null; stopped.push(g); }
-    g.st = g.to > g.from ? Object.assign(g.st || { shape: 'strip' }, {
-      x: g.x + g.dirX * g.from, y: g.y, z: g.z + g.dirZ * g.from, dirX: g.dirX, dirZ: g.dirZ, len: g.to - g.from, w: g.w, dmg: g.dmg,
-    }) : null;
   }
   return stopped;
+}
+
+/**
+ * 氣流這一幀打到玩家了嗎。那一塊是劍光（GUST）立在劈的那個直立面上、往左右加厚 w：在那個面上
+ * 近似成刀根前上方的四分之一圈環（離刀根 inner～top，從水平往前到正上方；三道的尖尾不算），
+ * 刀根在前緣後面 top。這一幀刀根從 from − top 走到 to − top，走過的地方都算——身體（圓柱
+ * 近似成方框）在那個面上是一個長方形，往後拉長這一幀走的那一段，碰到那四分之一圈環就算。
+ */
+export function gustHits(g, p) {
+  const R = PHYS.radius, rx = p.x - g.x, rz = p.z - g.z;
+  const u = rx * g.dirX + rz * g.dirZ, v = rz * g.dirX - rx * g.dirZ;
+  if (Math.abs(v) > g.w / 2 + R) return false;
+  // 身體在那個面上的長方形（從刀根量）：往前 a0～a1、往上 b0～b1，切掉四分之一圈以外的那幾象限。
+  const a0 = Math.max(0, u - R - (g.to - GUST.top)), a1 = u + R - (g.from - GUST.top);
+  const b0 = Math.max(0, p.y - g.y), b1 = p.y + PHYS.height - g.y;
+  if (a1 < a0 || b1 < b0) return false;
+  return Math.hypot(a0, b0) <= GUST.top && Math.hypot(a1, b1) >= GUST.inner;
 }
 
 /**

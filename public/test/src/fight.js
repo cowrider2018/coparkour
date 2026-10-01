@@ -42,7 +42,7 @@ import {
   coneFx, showCone, stripFx, showStrip,
 } from './fx.js';
 import { SoulLook } from './soul.js';
-import { SKILL, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, shotHits, strikeHits, laneLength } from './skills.js';
+import { SKILL, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, shotHits, strikeHits, gustHits, laneLength } from './skills.js';
 import { Hearts } from './hearts.js';
 import { Fluid, Sheet } from './fluid.js';
 import { TRAILS } from './trail.js';
@@ -125,7 +125,7 @@ export class Fight {
         每一刀，與收掉的那幾刀（下一刀借）。 */
     this._qis = [];
     this._spare = [];
-    /** 國王劈砍推出去的氣流：一片扭曲畫面的彎月（gust.js）；扭曲要拷畫面，所以要 renderer。 */
+    /** 國王劈砍推出去的氣流：劍光那一塊，用扭曲畫面畫（gust.js）；扭曲要拷畫面，所以要 renderer。 */
     this._gusts = new Gusts(scene, renderer);
     /** 怪物與玩家挨打噴出來的血（bleed.js 算、blood.js 畫）。 */
     this._blood = new Blood(scene, renderer);
@@ -474,7 +474,7 @@ export class Fight {
       }
       // 氣流是一陣風壓，不是刀：噴的是一團，順著它走的方向（by 是氣流本身，bleed.js 的 hurtFrame）。
       for (const g of this.world.gusts) {
-        if (g.spent || !g.st || !strikeHits(g.st, player)) continue;
+        if (g.spent || !gustHits(g, player)) continue;
         g.spent = true;
         take('struck', g.dmg, g);
       }

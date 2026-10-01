@@ -109,9 +109,10 @@
     29. 直線劈砍    國王每 3 秒放一招，劈砍不限距離；挑的那一刻鎖定方向；倒數 0.5 秒站著不打；
                     然後原地劈一條劍長（跟騎士跳砍一樣長）、寬 0.8 狗高的長條，扣 5；僵直只有 0.25 秒；
                     放招中打不退。長條（加上身體）裡的劈得到、外面與背後的劈不到，跳起來躲得過，倒數裡
-                    往旁邊跑開就劈空。劍尖推出一道同樣寬的氣流，每秒 20 公尺往前走、扣 2：遠處的人
-                    等它走到才挨、跳起來躲得過；走到黑牆停；撞上高台、門（關著的）停在碰到的那一點，
-                    後面的人不挨，門開著就穿過去；劍長以內就撞到的話一步都不走。一招只打一次：
+                    往旁邊跑開就劈空。那一刀的劍光變成一塊同樣寬的氣流推出去（前緣在劍尖、劍光照劍長
+                    縮放），每秒 20 公尺往前走、扣 2：遠處的人等它走到才挨；它跟劍光一樣高，跳一個
+                    狗高躲不過，高過劍光頂才躲得過；橫向照長條的寬，刀根背後打不到；走到黑牆停；撞上高台、門（關著的）停在碰到的那一點，
+                    後面的人不挨，門開著就穿過去，劍光那麼高以內的橫樑也擋；劍長以內就撞到的話一步都不走。一招只打一次：
                     那一刀記著它的氣流。動作是 hewWind → hewRec：騎士跳砍的蓄力與劈（不跳），
                     收尾照 0.25 秒的僵直走，開頭停在劈到一半那一格 0.1 秒（打擊的頓）。
     30. 召喚        國王會召喚；場上牠召喚的 0～2 隻時召 2 隻、3 隻時召 1 隻、滿 4 隻挑不到這一招。
@@ -134,7 +135,7 @@ import {
   makeCombo, comboStep, invulnerable, cueing, FIELD, LIFE, resetLife, lifeStep, harm, refill, gainHeart, regen,
   SOUL, dropSoul, soulStep, grabs,
 } from '../public/test/src/combat.js';
-import { SKILL, UP_AIR, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, shotHits, shotBlocked, strikeHits, laneLength, recoverOf, summonCount } from '../public/test/src/skills.js';
+import { SKILL, UP_AIR, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, gustHits, GUST, shotHits, shotBlocked, strikeHits, laneLength, recoverOf, summonCount } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
 import { DUST, dustOf, dustFade, QUAKE, quakeBands, quakeFade, quakeTop } from '../public/test/src/dust.js';
 import { Motion, bloodOf, sizeOf, mirror, riseLift, HEW_STOP, MOVES as KNIGHT_MOVES } from '../public/test/src/monster.js';
@@ -2295,7 +2296,7 @@ console.log('29. 直線劈砍');
       const st = bossStep(m, DT, q, w, () => 0);
       if (st) { out.strikes.push(st); out.gust = st.gust; }
       gustsStep(w, DT);
-      if (out.gust && out.gustAt < 0 && out.gust.st && strikeHits(out.gust.st, q)) out.gustAt = t + DT;
+      if (out.gust && out.gustAt < 0 && gustHits(out.gust, q)) out.gustAt = t + DT;
       if (had && !m.cast) { out.endAt = t + DT; out.stun = m.stun; }
       const wind = m.cast && m.cast.t < S.windup;
       if (wind && (m.x !== 0 || m.z !== -10)) out.windStill = false;
@@ -2329,19 +2330,34 @@ console.log('29. 直線劈砍');
   ok(g && a.w.gusts.includes(g) && g.dmg === S.gust.damage && near(g.w, S.width), '劍尖推出一道同樣寬的氣流，扣 2；那一刀記著它');
   ok(a.gustAt > 0 && near(a.gustAt, due, 2 * DT), `21 公尺外的人：${a.gustAt.toFixed(2)} 秒挨到氣流（走過去要 ${due.toFixed(2)} 秒）`);
   ok(g.done && g.blocker === null && near(g.to, ARENA.z1 + 10), `一路走到黑牆才停（${g.to.toFixed(1)} 公尺）`);
+  ok(near(GUST.top, S.len) && GUST.inner > 0 && GUST.inner < GUST.top / 2, `氣流是劍光那一塊：外緣離刀根 ${GUST.top.toFixed(2)}（劍長）、內緣 ${GUST.inner.toFixed(2)} 公尺`);
   {
-    // 跳起來躲：氣流走過的那幾幀腳都高過一個狗高。
-    const m = makeMonster({ kind: 'king', x: 0, z: -10, yaw: 0 }), w = makeWorld();
-    m.castT = 0;
-    const q = { ...body(0, 11), y: PHYS.height };
-    let touched = false;
-    for (let t = 0; t < 2; t += DT) {
-      bossStep(m, DT, q, w, () => 0);
-      gustsStep(w, DT);
-      for (const x of w.gusts) if (x.st && strikeHits(x.st, q)) touched = true;
-      if (m.stun > 0) monsterStep(m, DT, q);
-    }
-    ok(!touched, '氣流貼地走：腳高過一個狗高就躲得過');
+    // 跳起來躲：氣流整塊走過去（人離黑牆夠遠，刀根也走得到他底下）的那幾幀，腳一直在 y 那麼高。
+    const pass = (y) => {
+      const m = makeMonster({ kind: 'king', x: 0, z: -10, yaw: 0 }), w = makeWorld();
+      m.castT = 0;
+      const q = { ...body(0, 5), y };
+      let touched = false;
+      for (let t = 0; t < 2; t += DT) {
+        bossStep(m, DT, q, w, () => 0);
+        gustsStep(w, DT);
+        for (const x of w.gusts) if (gustHits(x, q)) touched = true;
+        if (m.stun > 0) monsterStep(m, DT, q);
+      }
+      return touched;
+    };
+    ok(pass(PHYS.height) && pass(GUST.top - 0.05), '氣流跟劍光一樣高：腳高過一個狗高、甚至快到劍光頂，都躲不過');
+    ok(!pass(GUST.top + 0.01), '腳高過劍光頂：躲得過');
+  }
+  {
+    // 一道停在原地的氣流（這一幀沒走）：前緣在 z = 0，刀根在 z = −top，往 +z 走。
+    const g = { x: 0, y: 0, z: -5, dirX: 0, dirZ: 1, w: S.width, from: 5, to: 5 }, r = PHYS.radius, half = S.width / 2;
+    ok(gustHits(g, body(0, -r + 0.02)) && !gustHits(g, body(0, r + 0.02)), '前緣：身體碰到劍光落地的最前端才算');
+    ok(gustHits(g, body(half + r - 0.02, -0.3)) && !gustHits(g, body(half + r + 0.02, -0.3)), `橫向：離中線 ${(half + r).toFixed(2)} 公尺以內打到`);
+    ok(!gustHits(g, body(0, -GUST.top - r - 0.02)), '刀根背後打不到');
+    // 這一幀走了 2 公尺：走過的地方都算，沒走到的不算。
+    const moved = { ...g, from: 3, to: 5 };
+    ok(gustHits(moved, body(0, -1.5)) && !gustHits({ ...g, from: 3, to: 3 }, body(0, 1.5)), '一幀走過的那一段都打得到（不會一步跨過人）');
   }
   {
     // 擋住氣流：國王與玩家之間一座高台、一扇門。
@@ -2354,7 +2370,7 @@ console.log('29. 直線劈砍');
         const st = bossStep(m, DT, q, w, () => 0);
         if (st) gust = st.gust;
         gustsStep(w, DT);
-        if (gust && gust.st && strikeHits(gust.st, q)) hit = true;
+        if (gust && gustHits(gust, q)) hit = true;
         if (m.stun > 0) monsterStep(m, DT, q);
       }
       return { gust, hit };
@@ -2363,6 +2379,9 @@ console.log('29. 直線劈砍');
     const hb = run(wallF, 0, 5);
     ok(hb.gust.done && hb.gust.blocker === wallF.cols[0] && near(hb.gust.to, 10, 0.03), `撞上高台：停在碰到的那一點（${hb.gust.to.toFixed(2)} 公尺）`);
     ok(!hb.hit, '高台後面的人不挨');
+    const beamF = { arena: ARENA, cols: [box(-2, 1.2, 0, 2, 1.6, 1)], doors: {} }, overF = { arena: ARENA, cols: [box(-2, GUST.top + 0.1, 0, 2, 3, 1)], doors: {} };
+    ok(run(beamF, 0, 5).gust.blocker === beamF.cols[0] && run(overF, 0, 5).gust.blocker === null,
+      '比一個狗高還高、但在劍光高度以內的橫樑也擋得住；比劍光還高的擋不到');
     const lowF = { arena: ARENA, cols: [box(-2, 0, 0, 2, 0.03, 1, { kind: 'floor' })], doors: {} };
     ok(run(lowF, 0, 5).hit, '比 SKIM 還矮的一片地板擋不住，後面的人照挨');
     const doorF = { arena: ARENA, cols: [box(-2, 0, 0, 2, 3, 0.1, { door: 'g' })], doors: {} };
