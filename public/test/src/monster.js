@@ -74,7 +74,8 @@
      hew    直線劈砍：騎士跳砍那一套，只是不跳（這一招是原地劈、倒數完就出手）。倒數的
             0.5 秒就是騎士的 cleaveWind（蹲低蓄力、頭側過去、劍舉到頭頂後面），最後
             CHOP_LEAD 秒頭往前、往下甩（騎士落地前那一下），劈下去的那一刻劍正劈到一半；
-            收尾在 0.25 秒的僵直裡劈到底、整隻壓低（騎士的 CHOP），再站回來。劍光也是
+            收尾在 0.25 秒的僵直裡：先停在劈到一半那一格 HEW_STOP 秒（打擊的頓，鏡頭同時
+            往劈的方向晃，fight.js），再劈到底、整隻壓低（騎士的 CHOP），再站回來。劍光也是
             騎士跳砍那一道（fight.js）。
      summon 召喚：仰頭嚎叫——BOSS 蓄火球那一套（胸口挺起、頭仰到朝天、尾巴翹起來），
             倒數的 0.5 秒仰到最高，冒出來的那一刻停在那裡，僵直裡慢慢回到原本的樣子。
@@ -289,6 +290,9 @@ const WOUND = { ...RAISE, headPitch: -0.85, drop: 0.34, knee: -0.98 };
 /** 跳砍落地前頭往前甩的那一下多長（秒）：落地那一刻劍正劈到一半。劍光（fight.js）從這一下開始掃。 */
 export const CHOP_LEAD = 0.08;
 
+/** 國王劈下去之後停在劈到一半那一格多久（秒）：打擊的頓。算在 0.25 秒的僵直裡。 */
+export const HEW_STOP = 0.1;
+
 /** 跳砸站著蓄力的那一段有多長（之後 SKILL.leap.air 秒在飛）。 */
 const LEAP_WIND = SKILL.leap.windup - SKILL.leap.air;
 
@@ -370,12 +374,12 @@ export const MOVES = {
     keys: [...HERO.rise.keys.slice(0, -1).map(([t, pose, ease]) => [t, mirror(pose), ease]), [UP_AIR + SKILL.recover, {}, 'inOut']],
   },
   /* 國王的直線劈砍：騎士跳砍的蓄力（cleaveWind 那幾格），不跳，最後 CHOP_LEAD 秒直接甩下去；
-     收尾是騎士落地那一下（cleaveLand 的前兩格），在僵直裡站回來。 */
+     收尾先頓 HEW_STOP 秒，再是騎士落地那一下（cleaveLand 的前兩格），在僵直裡站回來。 */
   hewWind: {
     blend: 0.08,
     keys: [[0, {}], [0.3, RAISE, 'out'], [SKILL.hew.windup - CHOP_LEAD, WOUND, 'inOut'], [SKILL.hew.windup, CHOP_MID, 'in']],
   },
-  hewRec: { blend: 0.02, keys: [[0, CHOP_MID], [0.06, CHOP, 'out'], [0.14, CHOP, 'lin'], [SKILL.hew.recover, {}, 'inOut']] },
+  hewRec: { blend: 0.02, keys: [[0, CHOP_MID], [HEW_STOP, CHOP_MID, 'lin'], [HEW_STOP + 0.06, CHOP, 'out'], [SKILL.hew.recover, {}, 'inOut']] },
   summonWind: { blend: 0.08, keys: [[0, {}], [0.3, STRETCH, 'out'], [SKILL.summon.windup, STRETCH_MAX, 'inOut']] },
   summonRec: { blend: 0.02, keys: [[0, STRETCH_MAX], [0.12, STRETCH_MAX, 'lin'], [recoverOf('summon'), {}, 'inOut']] },
 };
