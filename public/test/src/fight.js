@@ -14,7 +14,7 @@
      resolve  怪物追人、放招、球往前飛（撞到東西就炸掉），然後才判打中——兩個身體都走完這一幀了，
               範圍是對著畫面上的位置判的。打死 BOSS 掉出靈魂，靈魂往下掉、漂，碰到
               就撿起來。回報玩家挨了哪一下、倒下沒有、打死了誰、撿了幾顆靈魂。
-     draw     怪物、劍光（攻擊範圍）與粉塵（落地、BOSS 範圍攻擊的地震）、BOSS 的預告與球、靈魂、破防的兩圈、國王的盾、刀、
+     draw     怪物、劍光（攻擊範圍）、國王劈砍的斬痕與粉塵（落地、BOSS 範圍攻擊的地震）、BOSS 的預告與球、靈魂、破防的兩圈、國王的盾、刀、
               頭頂的愛心。
               在相機擺好之後（破防的兩圈與愛心正對這一幀的鏡頭）；流體場也在這裡
               往前推一幀，所以要在 renderer.render 之前。
@@ -47,6 +47,7 @@ import { Hearts } from './hearts.js';
 import { Fluid, Sheet } from './fluid.js';
 import { TRAILS } from './trail.js';
 import { Qi } from './qi.js';
+import { Scars } from './scar.js';
 import { dustOf, dustFade, DUST_LOOK, PUSH_TIME, QUAKE, quakeBands, quakeFade } from './dust.js';
 import { MUTE } from './sound.js';
 
@@ -124,6 +125,8 @@ export class Fight {
         每一刀，與收掉的那幾刀（下一刀借）。 */
     this._qis = [];
     this._spare = [];
+    /** 國王劈砍在地上（與撞到的東西上）留下的斬痕（scar.js）。 */
+    this._scars = new Scars(scene);
     /** 怪物與玩家挨打噴出來的血（bleed.js 算、blood.js 畫）。 */
     this._blood = new Blood(scene, renderer);
     /* 落地的粉塵畫在共用的流體場（fluid.js）上，一團借一格。畫不出流體的機器、或網址
@@ -292,6 +295,7 @@ export class Fight {
     this.world = makeWorld(field);
     Object.assign(this.combo, makeCombo());
     this._dropTrails();
+    this._scars.clear();
   }
 
   /** 怪物全部回到站位（血滿、破防歸零），召喚出來的離場，連段與球清掉。 */
@@ -312,6 +316,7 @@ export class Fight {
     this.world.spawns.length = 0;
     this.souls.length = 0;
     this._dropTrails();
+    this._scars.clear();
   }
 
   /** 破防攻擊裡：突進與跳離是拋物線、迴旋的位置由 spinStep 擺，模式不要操控玩家。 */
@@ -565,6 +570,7 @@ export class Fight {
     // 攻擊範圍：劍光，跟著玩家的腳與出招時鎖住的面向走（騎士的劍迴旋跟著牠）。落地的粉塵。
     this._whirls();
     this._qi(dt, this.body(player));
+    this._scars.draw(dt, this.world);
     this._blood.step(dt, camera);
     if (this.fluid) this._dust(dt, player);
     // 提示圈不淡：亮著就是「現在按」。貼在玩家腳下那一層地板上（人可能在空中）。
