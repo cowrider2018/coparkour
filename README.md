@@ -176,6 +176,7 @@ tools/
   lib/soft-raster.mjs   上面幾支共用的軟體光柵器（頂點著色器的 JS 版）
   lib/png.mjs           把它畫出來的東西寫成 PNG
   make-sfx.mjs          從五段錄音切、移調、變速、濾波、疊出十二個音效（npm run sfx）
+  verify-sound.mjs      音效的登記表：檔都在、fight.js 說的每一件事都有登記
 wrangler.toml
 ```
 

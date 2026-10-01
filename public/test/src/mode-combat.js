@@ -35,6 +35,7 @@ import { hazeMesh } from './stage.js';
 import { Controls, speedFor, fitView, wardrobe } from './controls.js';
 import { ARENA, COLS, SPAWN, MODES, DEFAULT_MODE, KINDS, resetLife, refill } from './combat.js';
 import { Fight, DEATH_TEXT } from './fight.js';
+import { Sound } from './sound.js';
 
 const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -77,7 +78,7 @@ resetLife(player);
 
 /* 戰鬥：怪物、連段、打中與被打中、刀。場上有哪幾隻由陣容決定（setMode）；
    這一頁打死的怪物在牠的重生點重生。 */
-const fight = new Fight(scene, zoo, { respawn: true, renderer });
+const fight = new Fight(scene, zoo, { respawn: true, renderer, sound: new Sound() });
 let mode = DEFAULT_MODE;
 
 /** 倒下（血扣光）過幾次。 */

@@ -23,7 +23,8 @@
     "verify:showcase": "node tools/verify-showcase.mjs",
     "verify:terrain": "node tools/verify-terrain.mjs",
     "verify:combat": "node tools/verify-combat.mjs",
-    "verify:flow": "node tools/verify-flow.mjs"
+    "verify:flow": "node tools/verify-flow.mjs",
+    "verify:sound": "node tools/verify-sound.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

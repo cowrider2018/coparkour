@@ -32,6 +32,7 @@ import { buildStage } from './stage.js';
 import { makeHero, steerHero, moveHero } from './hero.js';
 import { Transit } from './transit.js';
 import { Fight, DEATH_TEXT } from './fight.js';
+import { Sound } from './sound.js';
 import { resetLife, refill, regen } from './combat.js';
 import { BLOCKS } from './blocks.js';
 import { STAGES, START, bossPost, inStage, makeRun, doorsFor, portalsOn, restAt } from './route.js';
@@ -62,7 +63,7 @@ scene.add(zoo.root);
 const player = { ...makeHero(0, 0, 0), block: 'wallwalk' };
 
 /* 戰鬥：打死的 BOSS 就沒了（不重生），場上沒有怪物就是這一場清完。 */
-const fight = new Fight(scene, zoo, { respawn: false, renderer });
+const fight = new Fight(scene, zoo, { respawn: false, renderer, sound: new Sound() });
 
 const cam = makeCam(0, 0);
 

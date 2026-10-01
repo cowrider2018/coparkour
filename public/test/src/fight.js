@@ -24,7 +24,7 @@ import { PHYS, supportInfo } from './walk.js';
 import {
   FIELD, REACH, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster, harm, lifeStep, gainHeart,
   dropSoul, soulStep, grabs,
-  breaking, breakTarget, startBreak, breakContact, contact, parry, spinStep, separate, placeMonster, monsterStep, bites, knock,
+  breaking, broken, breakTarget, startBreak, breakContact, contact, parry, spinStep, separate, placeMonster, monsterStep, bites, knock,
   inSlash, inFan, inRing, slashTip, makeCombo, comboStep, invulnerable, untouchable, cueing, attacking, taken,
 } from './combat.js';
 import { makeMonsterCritter, sizeOf, bloodOf, swordOf, helmOf, crownOf, riseLift, Motion, ATTACK_INK, CHOP_LEAD } from './monster.js';
@@ -48,6 +48,7 @@ import { Fluid, Sheet } from './fluid.js';
 import { TRAILS } from './trail.js';
 import { Qi } from './qi.js';
 import { dustOf, dustFade, DUST_LOOK, PUSH_TIME, QUAKE, quakeBands, quakeFade } from './dust.js';
+import { MUTE } from './sound.js';
 
 /** 一團塵：腳下那一圈切成幾段注入。 */
 const DUST_RING = 8;
@@ -78,14 +79,16 @@ export class Fight {
   /**
    * @param {THREE.Scene} scene
    * @param {import('./critter.js').Zoo} zoo 玩家那一隻（刀掛在牠頭上，怪物借牠的立耳犬資料）
-   * @param {{respawn?: boolean, renderer?: THREE.WebGLRenderer}} o respawn：打死的怪物在牠的
-   *   重生點重生（戰鬥模式）；false 的話打死就離場（完整流程）。renderer：落地粉塵的流體場畫在
-   *   它上面，沒給就沒有粉塵
+   * @param {{respawn?: boolean, renderer?: THREE.WebGLRenderer, sound?: {play: (event: string) => void}}} o
+   *   respawn：打死的怪物在牠的重生點重生（戰鬥模式）；false 的話打死就離場（完整流程）。
+   *   renderer：落地粉塵的流體場畫在它上面，沒給就沒有粉塵。sound：場上發生的事說給它聽
+   *   （sound.js 的 Sound），沒給就沒有聲音
    */
-  constructor(scene, zoo, { respawn = true, renderer = null } = {}) {
+  constructor(scene, zoo, { respawn = true, renderer = null, sound = MUTE } = {}) {
     this.scene = scene;
     this.zoo = zoo;
     this.respawn = respawn;
+    this.sound = sound;
     /** 咬在嘴裡的刀：掛在現在那一隻的頭上，換動物就跟著換過去（`follow`）。 */
     this.blade = new Blade();
     this.blade.follow(zoo.active);
@@ -130,8 +133,13 @@ export class Fight {
     this._quakes = [];
     this._stomps = [];
     this._quiet = new Set();
+    /** 地震的聲音：每一道塵揚起來的那一刻一聲（dust.js 的 quakeBands）。還沒響完的每一次
+        地震，與還剩哪幾道（打下去之後幾秒）。跟塵分開記：沒有流體場、沒有塵的機器也聽得到。 */
+    this._rumbles = [];
     /** 上一幀在哪一段：換段的那一刻起一道劍光。 */
     this._phase = this.combo.phase;
+    /** 同一件事，給聲音的：resolve 的最後看，那時候破防攻擊的換段也走完了。 */
+    this._heard = this.combo.phase;
     /** 這一幀在哪一段，它的範圍打不打得到怪物。第二段指著上一次第一段的末端點。 */
     this._reach = { slash: inSlash, rise: (p, m) => inFan(p, m, this.combo.tip), slam: inRing };
 
@@ -360,7 +368,9 @@ export class Fight {
    */
   resolve(dt, player) {
     const combo = this.combo, foes = this.foes;
-    const kills = [];
+    const kills = [], sound = this.sound;
+    /* 這一幀開始的時候已經在破防中的：結束的時候多出來的，就是這一幀窗口剛開的。 */
+    const open = new Set(foes.filter(({ m }) => broken(m)).map(({ m }) => m));
     lifeStep(player, dt);
     // 每一隻召喚出來、還在場上的有幾隻（召喚挑不挑得到、召幾隻看它，skills.js）。
     for (const { m } of foes) m.brood = 0;
@@ -368,9 +378,17 @@ export class Fight {
     // BOSS 先決定這一幀在不在放招（放招中 monsterStep 讓牠站著），球往前飛。
     const strikes = [];
     for (const f of foes) {
-      const m = f.m, skill = m.cast && m.cast.skill;
+      const m = f.m, cast = m.cast, skill = cast && cast.skill, shots = this.world.shots.length;
       const st = bossStep(m, dt, player, this.world);
+      if (this.world.shots.length > shots) sound.play('shot');
       if (!st) continue;
+      /* 打下去的那一刻。劍迴旋與上挑是連著好幾幀都在打，只有頭一幀出聲：記在那一招
+         身上（跳砍先劈後挑，形狀換了就是另一下）。地震不在這一刻響，跟著塵一道一道響（_rumble）。 */
+      if (cast && cast.heard !== st.shape) {
+        cast.heard = st.shape;
+        if (QUAKE[st.shape]) this._rumbles.push({ shape: st.shape, t: 0, at: quakeBands(st.shape, st.r).map((b) => b.at) });
+        else sound.play(st.shape);
+      }
       // 直線劈砍劈下去的那一條：僵直的那一段亮著（draw）。
       if (skill === 'hew') f.hewHit = { st, t: 0 };
       // 地震（dust.js 的 QUAKE）是震波，放在 world.waves 一圈圈往外推；其餘的這一幀一次打完。
@@ -380,34 +398,40 @@ export class Fight {
       if (st.shape === 'circle') this._quiet.add(m);
     }
     wavesStep(this.world, dt);
+    this._rumble(dt);
     // 召喚：倒數完的上場（這一幀起就追人）；剛開始倒數的借外觀，準備從地底升上來。
     this._rise();
     // 撞到黑牆或場上東西的球炸掉。
-    for (const s of shotsStep(this.world, dt)) this._fire.explode(s);
+    for (const s of shotsStep(this.world, dt)) { this._fire.explode(s); sound.play('burst'); }
     for (const { m } of foes) monsterStep(m, dt, player);
+    // 衝刺衝出去的那一刻：咬下去的那一聲。國王一次衝好幾下，每一下是新的一份 m.lunge。
+    for (const { m } of foes) if (m.lunge && m.lunge.hot && !m.lunge.heard) { m.lunge.heard = true; sound.play('lunge'); }
     separate(foes.map((f) => f.m));
     /* 每一隻這一刻在哪：扣到 0 的那一下 hurt 就把牠搬回重生點了，靈魂要掉在死的地方。 */
     const spot = new Map(foes.map(({ m }) => [m, { x: m.x, y: m.y, z: m.z, field: m.field }]));
     // 破防攻擊：突進碰到目標就定住牠、進迴旋（有盾的話被擋掉、直接跳離）；迴旋轉完就扣血、跳離。
-    if (combo.phase === 'dash' && breakContact(player, combo.target)) contact(combo, player, combo.target);
+    if (combo.phase === 'dash' && breakContact(player, combo.target) && contact(combo, player, combo.target)) sound.play('parry');
     const dead = new Set();
     if (combo.phase === 'spin') {
       const m = combo.target, r = spinStep(combo, player, m);
       if (r.died) dead.add(m);
       // 破防攻擊沒有劍氣：往全方向噴，從牠被定住的地方（打死的話已經搬回重生點了）。
-      if (r.took > 0) this._bleed(burstFrame(), spot.get(m) || m, m.kind);
+      if (r.took > 0) { this._bleed(burstFrame(), spot.get(m) || m, m.kind); sound.play('hit'); }
     }
     const reach = this._reach[combo.phase];
     const body = this.body(player);
     for (const { m } of foes) {
       if (reach && !combo.hit.has(m) && reach(body, m)) {
         combo.hit.add(m);
-        if (parry(m)) continue;              // 盾擋掉了（國王）：這一下整個不算
+        if (parry(m)) { sound.play('parry'); continue; }   // 盾擋掉了（國王）：這一下整個不算
+        sound.play('hit');
         knock(m, body.x, body.z, body.aimX, body.aimZ, KNOCK_SCALE[combo.phase]);
         if (taken(m, DAMAGE[combo.phase]) > 0) this._bleed(hitFrame(combo.phase, body, combo.tip, m, sizeOf(m.kind)), m, m.kind);
         if (hurt(m, DAMAGE[combo.phase])) dead.add(m);
       }
     }
+    if (dead.size) sound.play('kill');
+    if (foes.some(({ m }) => broken(m) && !open.has(m))) sound.play('break');
     for (const m of dead) {
       if (!m.by) kills.push(m.kind);
       if (KINDS[m.kind].soul) this.souls.push(dropSoul(spot.get(m)));
@@ -427,12 +451,18 @@ export class Fight {
       for (const w of this.world.waves) if (strikeHits(w, player)) take('struck', w.dmg, w);
       if (hit) {
         // 玩家跟狗一樣大（體型 1），噴的是血；剛挨過一下（guard）沒扣到就不噴。
-        if (harm(player, hit.dmg)) this._blood.spurt(spurtOf(hurtFrame(hit.cause, by, player), player, 1, 'blood'), this.world.field);
+        if (harm(player, hit.dmg)) {
+          this._blood.spurt(spurtOf(hurtFrame(hit.cause, by, player), player, 1, 'blood'), this.world.field);
+          if (hit.cause === 'bitten') sound.play('bitten');
+          if (player.hp <= 0) sound.play('down');
+          else if (hit.cause !== 'bitten') sound.play('hurt');
+        }
         // 打中人的球炸掉消失。
         if (hit.cause === 'shot') {
           this.world.shots = this.world.shots.filter((s) => {
             if (!shotHits(s, player)) return true;
             this._fire.explode(s);
+            sound.play('burst');
             return false;
           });
         }
@@ -448,7 +478,10 @@ export class Fight {
       souls = this.souls.length - left.length;
       for (let i = 0; i < souls; i++) gainHeart(player);
       this.souls = left;
+      if (souls) sound.play('soul');
     }
+    /* 連段進了新的一段：出手的那一聲。沒有登記的段（收招、起跳、跳離）不出聲。 */
+    if (combo.phase !== this._heard) sound.play(this._heard = combo.phase);
     return { hit, died, kills, souls };
   }
 
@@ -826,12 +859,26 @@ export class Fight {
     this._sheets.push(pf.sheet);
   }
 
-  /** 全部的劍光與塵收起來（回到站位、換陣容）。 */
+  /**
+   * 地震的聲音往前一幀：震波走到哪一道、那一道的塵揚起來，就響一聲。先看再加 dt，跟
+   * _quake 的塵同一個順序（打下去那一幀是第 0 秒），聲音與塵落在同一幀。
+   */
+  _rumble(dt) {
+    this._rumbles = this._rumbles.filter((r) => {
+      while (r.at.length && r.at[0] <= r.t) { r.at.shift(); this.sound.play(r.shape); }
+      r.t += dt;
+      return r.at.length > 0;
+    });
+  }
+
+  /** 全部的劍光與塵收起來（回到站位、換陣容）；還沒響完的地震也不響了。 */
   _dropTrails() {
     for (const q of this._qis) { q.stop(); this._spare.push(q); }
     this._qis = [];
     this._blood.clear();
     this._phase = this.combo.phase;
+    this._heard = this.combo.phase;
+    this._rumbles = [];
     if (!this.fluid) return;
     for (const pf of this._puffs) this._endPuff(pf);
     for (const q of this._quakes) this._endPuff(q);
