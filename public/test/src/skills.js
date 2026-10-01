@@ -421,26 +421,28 @@ export function bossStep(m, dt, target, world, rng = Math.random) {
 const SKIM = 0.05;
 
 /**
- * 一顆球撞到場上的東西了嗎：球（用外接方框近似）跟碰撞體重疊。坑與黑牆不在這裡算
- * （黑牆是 shotsStep 用 arenaGap 量的），開著的門不擋；圓柱照它的頂（圓頂的話照球
- * 碰得到的那一圈的高度）。
+ * 水平半徑 r、高度 lo～hi 的一塊（方框近似）撞到場上的哪一個東西：第一個碰到的碰撞體，
+ * 沒有就是 null。坑與黑牆不在這裡算（黑牆用 arenaGap 量），開著的門不擋；圓柱照它的頂
+ * （圓頂的話照碰得到的那一圈的高度）。
  */
-export function shotBlocked(s, field) {
+export function blockerAt(field, x, z, r, lo, hi) {
   const doors = field.doors || {};
-  const lo = s.y - s.r + SKIM, hi = s.y + s.r;
   for (const b of field.cols) {
     if (b.kind === 'pit' || b.kind === 'bound') continue;
     if (b.door && doors[b.door]) continue;
     if (b.min[1] >= hi) continue;
     if (b.shape === 'circle') {
-      const d = Math.hypot(s.x - b.x, s.z - b.z);
-      if (d < b.r + s.r && roundTop(b, Math.max(0, d - s.r)) > lo) return true;
+      const d = Math.hypot(x - b.x, z - b.z);
+      if (d < b.r + r && roundTop(b, Math.max(0, d - r)) > lo) return b;
       continue;
     }
-    if (b.max[1] > lo && overlapXZ(s.x, s.z, b, s.r)) return true;
+    if (b.max[1] > lo && overlapXZ(x, z, b, r)) return b;
   }
-  return false;
+  return null;
 }
+
+/** 一顆球撞到場上的東西了嗎：球（用外接方框近似）跟碰撞體重疊（blockerAt）。 */
+export const shotBlocked = (s, field) => !!blockerAt(field, s.x, s.z, s.r, s.y - s.r + SKIM, s.y + s.r);
 
 /** 球往前飛，碰到黑牆或場上的東西就炸掉消失。回傳這一幀炸掉的那幾顆（畫爆炸用）。 */
 export function shotsStep(world, dt) {
