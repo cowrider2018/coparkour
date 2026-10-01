@@ -42,7 +42,7 @@ import {
   coneFx, showCone, stripFx, showStrip,
 } from './fx.js';
 import { SoulLook } from './soul.js';
-import { SKILL, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, shotHits, strikeHits, laneLength } from './skills.js';
+import { SKILL, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, shotHits, strikeHits, laneLength } from './skills.js';
 import { Hearts } from './hearts.js';
 import { Fluid, Sheet } from './fluid.js';
 import { TRAILS } from './trail.js';
@@ -214,7 +214,7 @@ export class Fight {
     slot.critter.setFacing(spawn.yaw);
     const m = makeMonster(spawn, field);
     if (slot.shields) slot.shields.snap(m.shields);
-    return { m, motion: new Motion(), hewHit: null, rising: null, ...slot };
+    return { m, motion: new Motion(), rising: null, ...slot };
   }
 
   /** 借一份這一類沒在用的外觀：場上的與正在升上來的都不借。 */
@@ -291,7 +291,6 @@ export class Fight {
       placeMonster(f.m);
       f.critter.setFacing(f.m.spawn.yaw);
       f.motion = new Motion();
-      f.hewHit = null;
       f.m.brood = 0;
       Fight._sink(f);
       if (f.shields) f.shields.snap(f.m.shields);
@@ -299,6 +298,7 @@ export class Fight {
     Object.assign(this.combo, makeCombo());
     this._face = null;
     this.world.shots.length = 0;
+    this.world.gusts.length = 0;
     this.world.spawns.length = 0;
     this.souls.length = 0;
     this._dropTrails();
@@ -378,7 +378,7 @@ export class Fight {
     // BOSS 先決定這一幀在不在放招（放招中 monsterStep 讓牠站著），球往前飛。
     const strikes = [];
     for (const f of foes) {
-      const m = f.m, cast = m.cast, skill = cast && cast.skill, shots = this.world.shots.length;
+      const m = f.m, cast = m.cast, shots = this.world.shots.length;
       const st = bossStep(m, dt, player, this.world);
       if (this.world.shots.length > shots) sound.play('shot');
       if (!st) continue;
@@ -389,8 +389,6 @@ export class Fight {
         if (QUAKE[st.shape]) this._rumbles.push({ shape: st.shape, t: 0, at: quakeBands(st.shape, st.r).map((b) => b.at) });
         else sound.play(st.shape);
       }
-      // 直線劈砍劈下去的那一條：僵直的那一段亮著（draw）。
-      if (skill === 'hew') f.hewHit = { st, t: 0 };
       // 地震（dust.js 的 QUAKE）是震波，放在 world.waves 一圈圈往外推；其餘的這一幀一次打完。
       if (!QUAKE[st.shape]) { strikes.push(st); continue; }
       if (!this.fluid) continue;
@@ -403,6 +401,8 @@ export class Fight {
     this._rise();
     // 撞到黑牆或場上東西的球炸掉。
     for (const s of shotsStep(this.world, dt)) { this._fire.explode(s); sound.play('burst'); }
+    // 國王劈砍推出去的氣流往前走，走到黑牆或撞上東西就停。
+    gustsStep(this.world, dt);
     for (const { m } of foes) monsterStep(m, dt, player);
     // 衝刺衝出去的那一刻：咬下去的那一聲。國王一次衝好幾下，每一下是新的一份 m.lunge。
     for (const { m } of foes) if (m.lunge && m.lunge.hot && !m.lunge.heard) { m.lunge.heard = true; sound.play('lunge'); }
@@ -447,7 +447,17 @@ export class Fight {
       const take = (cause, dmg, src) => { if (!hit || dmg > hit.dmg) { hit = { cause, dmg }; by = src; } };
       for (const { m } of this.foes) if (bites(player, m)) take('bitten', KINDS[m.kind].bite, m);
       for (const s of this.world.shots) if (shotHits(s, player)) take('shot', s.dmg, s);
-      for (const st of strikes) if (strikeHits(st, player)) take('struck', st.dmg, st);
+      for (const st of strikes) {
+        if (!strikeHits(st, player)) continue;
+        take('struck', st.dmg, st);
+        if (st.gust) st.gust.spent = true;    // 被劈砍那一刀劈到：同一招的氣流不再算
+      }
+      // 氣流是一陣風壓，不是刀：噴的是一團，順著它走的方向（by 是氣流本身，bleed.js 的 hurtFrame）。
+      for (const g of this.world.gusts) {
+        if (g.spent || !g.st || !strikeHits(g.st, player)) continue;
+        g.spent = true;
+        take('struck', g.dmg, g);
+      }
       for (const w of this.world.waves) if (strikeHits(w, player)) take('struck', w.dmg, w);
       if (hit) {
         // 玩家跟狗一樣大（體型 1），噴的是血；剛挨過一下（guard）沒扣到就不噴。
@@ -549,7 +559,7 @@ export class Fight {
     for (const f of this.foes) {
       const { m, lane, circle, cone, whirl, cleave } = f;
       const c = m.cast;
-      this._hew(dt, f);
+      this._hew(f);
       const orb = !!c && c.skill === 'orb', leap = !!c && c.skill === 'leap', fan = !!c && c.skill === 'cone';
       /* 劍迴旋衝刺：從起步的地方往鎖定的方向，衝得到多遠（黑牆擋住的話到牆前）。衝的時候
          亮著滿的——那一條就是還會被掃到的地方。 */
@@ -594,22 +604,13 @@ export class Fight {
   }
 
   /**
-   * 國王的直線劈砍：倒數的時候是一條從牠腳下往鎖定方向一直到黑牆的長條，亮色從腳下長到
-   * 那一頭；劈下去之後同一條整條亮著，亮 SKILL.hew.recover 秒（出招後的僵直）就收掉。
-   * 被打斷（破防攻擊定住、死了重生）就收掉。
+   * 國王的直線劈砍：倒數的時候是一條從牠腳下往鎖定方向一直到黑牆的長條（氣流最遠走得到那裡），
+   * 亮色從腳下長到那一頭；劈下去就收掉——跟球的預告一樣，出手之後不留。
    */
-  _hew(dt, f) {
-    const { m, hew } = f, c = m.cast, S = SKILL.hew;
-    if (c && c.skill === 'hew') {
-      f.hewHit = null;
-      showStrip(hew, true, Math.min(1, c.t / S.windup), m.x, m.z, Math.atan2(c.dirX, c.dirZ),
-        laneLength(m.x, m.z, c.dirX, c.dirZ, m.field.arena), m.y);
-      return;
-    }
-    const h = f.hewHit;
-    if (h) h.t += dt;
-    if (!h || h.t >= S.recover || m.held || m.air) { f.hewHit = null; showStrip(hew, false); return; }
-    showStrip(hew, true, 1, h.st.x, h.st.z, Math.atan2(h.st.dirX, h.st.dirZ), h.st.len, h.st.y);
+  _hew(f) {
+    const { m, hew } = f, c = m.cast, on = !!c && c.skill === 'hew';
+    showStrip(hew, on, on ? Math.min(1, c.t / SKILL.hew.windup) : 0, m.x, m.z, on ? Math.atan2(c.dirX, c.dirZ) : 0,
+      on ? laneLength(m.x, m.z, c.dirX, c.dirZ, m.field.arena) : 0, m.y);
   }
 
   /**
@@ -658,11 +659,11 @@ export class Fight {
 
   /**
    * 國王的直線劈砍：跟騎士跳砍劈下去那一道一樣——頭往下甩的那一刻（出手前 CHOP_LEAD 秒）
-   * 起一道 cleave，從正上方劈到前面，照跳砍那一條的長度縮放（劍光是那一刀本身，不是
-   * 一路到牆邊的那一條；那一條是地上的長條）。
+   * 起一道 cleave，從正上方劈到前面，照劍長（SKILL.hew.len）縮放：劍光是那一刀本身，
+   * 往前推出去的是氣流。
    */
   _hewQi(m, c) {
-    const S = SKILL.hew, L = SKILL.cleave.len;
+    const S = SKILL.hew, L = S.len;
     if (c.chopQi || c.t < S.windup - CHOP_LEAD) return;
     this._foeQi(m, c, 'cleave', { x: m.x + c.dirX * L, y: m.y, z: m.z + c.dirZ * L }, L / REACH, c.dirX, c.dirZ);
     c.chopQi = true;
