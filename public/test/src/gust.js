@@ -40,18 +40,12 @@
    ------------------------------------------------------------------ */
 
 import * as THREE from '../vendor/three.module.js';
-import { REACH, FAN } from './combat.js';
-import { SKILL } from './skills.js';
-import { BANDS, hullOf } from './trail.js';
+import { FAN } from './combat.js';
+import { GUST } from './skills.js';
+import { BANDS } from './trail.js';
 
-/** 劍光照劍長縮放多少（qi.js 的 scale，fight.js 的 _hewQi 給的同一個）。 */
-const SCALE = SKILL.hew.len / REACH;
-
-/** 劍光的外緣離刀根多遠（公尺）：前緣在刀根前面這麼遠。 */
-const TOP = hullOf(1).outer * SCALE;
-
-/** 劍光最寬的時候，最靠內的那一道的內緣（公尺）：殼的內圈從這裡往內撐。 */
-const INNER = hullOf(1).inner * SCALE;
+/** 劍光照劍長縮放多少、外緣離刀根多遠（前緣在刀根前面這麼遠）、最寬時最靠內的內緣（殼的內圈從這裡往內撐）。 */
+const { scale: SCALE, top: TOP, inner: INNER } = GUST;
 
 /** 起點收成尖的那一段多長（公尺，沿著外緣量；qi.js 的 END）。 */
 const END = 0.35;

@@ -79,6 +79,7 @@
 import { PHYS, arenaGap, supportInfo, solveXZ, overlapXZ, roundTop, clampArena } from './walk.js';
 import { FIELD, DOG_H, REACH, SWING, kindOf, busy, settle, inFan } from './combat.js';
 import { QUAKE, quakeTop } from './dust.js';
+import { hullOf } from './trail.js';
 
 /** 每一招的數值。長度一律用狗高量；`damage` 是打中玩家扣幾點血。 */
 export const SKILL = {
@@ -110,6 +111,16 @@ export const SKILL = {
   /** 出招後僵直幾秒（那一招沒有自己的 `recover` 的話）。 */
   recover: 0.5,
 };
+
+/**
+ * 國王劈砍推出去的氣流長什麼樣：那一刀的劍光（trail.js 的 cleave，三道合起來）照劍長縮放
+ * （scale，fight.js 給 qi.js 的同一個），立在劈的那個直立面上。top 是外緣離刀根多遠——
+ * 也就是前緣在刀根前面多遠；inner 是最寬的時候最靠內的那一道的內緣離刀根多遠（公尺）。
+ */
+export const GUST = (() => {
+  const scale = SKILL.hew.len / REACH;
+  return { scale, top: hullOf(1).outer * scale, inner: hullOf(1).inner * scale };
+})();
 
 /** 這一招出完僵直幾秒：那一招自己的 `recover`，沒有就是 SKILL.recover。 */
 export const recoverOf = (skill) => SKILL[skill].recover ?? SKILL.recover;
