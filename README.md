@@ -136,6 +136,8 @@ public/
   assets/cat.bin          貓的幾何 + 骨架 + 三個花色（935 kB，gzip 後 296 kB）
   assets/sfx/             試打場的十二個音效（共約 63 kB），tools/make-sfx.mjs 做的
   assets/sfx/recorded/    做音效的原料：五段錄音，只讀不改
+  assets/music/           背景音樂兩首：探索、戰鬥（共約 4.4 MB），tools/make-music.mjs 做的
+  assets/music/recorded/  音樂的原檔：兩首 192 kbps MP3，只讀不改
   src/
     constants.js   物理參數，同時是地形生成器的難度依據
     rng.js  level.js  player.js  input.js  net.js  main.js
@@ -176,6 +178,7 @@ tools/
   lib/soft-raster.mjs   上面幾支共用的軟體光柵器（頂點著色器的 JS 版）
   lib/png.mjs           把它畫出來的東西寫成 PNG
   make-sfx.mjs          從五段錄音切、移調、變速、濾波、疊出十二個音效（npm run sfx）
+  make-music.mjs        兩首音樂：切掉尾巴的靜音、響度拉齊、編成 96 kbps AAC（npm run music）
   verify-sound.mjs      音效的登記表：檔都在、fight.js 說的每一件事都有登記
 wrangler.toml
 ```
