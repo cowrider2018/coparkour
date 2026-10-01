@@ -429,10 +429,15 @@ const CUT_GLSL = `float cut(float fade) { return mix(${CUT[0].toFixed(2)}, ${CUT
 const SHEET_VERT = /* glsl */ `
 uniform sampler2D uDye;
 uniform vec4 uTile;      // 左下角 xy、邊長 z
+uniform vec2 uGap;       // 挖掉的那一條：沿 u 軸、v 離中線多遠以內（格內座標）、邊上抹多寬
+// 濃度：挖掉的那一條裡面當成 0（見 Sheet.place 的 gap）。
+float dye(vec2 a) {
+  float v = abs((a.y - uTile.y) / uTile.z - 0.5);
+  return texture2D(uDye, a).r * smoothstep(uGap.x, uGap.x + uGap.y, v);
+}
 uniform float uThick, uSide, uTexel, uSoft, uFade, uRise;
 varying vec2 vA;
 varying vec2 vUv2;
-float dye(vec2 a) { return texture2D(uDye, a).r; }
 ${CUT_GLSL}
 void main() {
   vec2 a = uTile.xy + uv * uTile.z;
@@ -457,11 +462,17 @@ const INK_RGB = [(INK >> 16) & 255, (INK >> 8) & 255, INK & 255].map((c) => (c /
 
 const SHEET_FRAG = /* glsl */ `
 uniform sampler2D uDye;
+uniform vec4 uTile;      // 左下角 xy、邊長 z
+uniform vec2 uGap;       // 挖掉的那一條：沿 u 軸、v 離中線多遠以內（格內座標）、邊上抹多寬
+// 濃度：挖掉的那一條裡面當成 0（見 Sheet.place 的 gap）。
+float dye(vec2 a) {
+  float v = abs((a.y - uTile.y) / uTile.z - 0.5);
+  return texture2D(uDye, a).r * smoothstep(uGap.x, uGap.x + uGap.y, v);
+}
 uniform float uSide, uTexel, uFade, uSoft;
 uniform vec3 uU, uV, uN, uKey, uLit, uShade;
 varying vec2 vA;
 varying vec2 vUv2;
-float dye(vec2 a) { return texture2D(uDye, a).r; }
 ${CUT_GLSL}
 // 一圈九點平均，半徑三格：比這還細的絲抹掉，切出來的邊才是大塊。
 float soft(vec2 a) {
@@ -502,6 +513,8 @@ void main() {
  *   ground 平躺在地上（正面朝上）：只畫往正面鼓的那一層
  *   rise  多快鼓到 thick（預設 2）：高度是 thick·(1 − e^(−rise·x²))，x 是濃度超過切的門檻
  *         多少。大的一點點濃就鼓滿；小的鼓得慢，濃度差一路看得出高度差
+ *   gap   挖掉一條（公尺，預設 0）：u 軸那一條中線左右各這麼寬以內的濃度當成 0——煙在那裡
+ *         照常流，只是不畫，邊上照常收成輪廓、描墨線。gapSoft 是邊上抹多寬（公尺，預設 0.04）
  */
 
 export class Sheet {
@@ -525,7 +538,7 @@ export class Sheet {
       const mat = new THREE.ShaderMaterial({
         vertexShader: SHEET_VERT, fragmentShader: SHEET_FRAG,
         uniforms: {
-          uDye: { value: null }, uTile: { value: new THREE.Vector4() },
+          uDye: { value: null }, uTile: { value: new THREE.Vector4() }, uGap: { value: new THREE.Vector2(-1, 0.01) },
           uThick: { value: 0.1 }, uSide: { value: side }, uTexel: { value: 1 / (FLUID.dye * FLUID.grid) },
           uLit: { value: new THREE.Vector3() }, uShade: { value: new THREE.Vector3() }, uSoft: { value: 3 },
           uFade: { value: 1 }, uRise: { value: 2 }, uKey: { value: KEY_DIR }, ...Object.fromEntries(Object.entries(this._axes).map(([k, v]) => [k, { value: v }])),
@@ -565,6 +578,8 @@ export class Sheet {
       m.uniforms.uShade.value.set(...look.shade);
       m.uniforms.uSoft.value = look.soft;
       m.uniforms.uRise.value = look.rise ?? 2;
+      // 沒有 gap 的話門檻放在 −1：|v| 永遠比它大，整片照常畫。
+      m.uniforms.uGap.value.set(look.gap ? look.gap / (2 * half) : -1, (look.gapSoft ?? 0.04) / (2 * half));
     }
   }
 

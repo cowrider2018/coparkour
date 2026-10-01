@@ -819,7 +819,10 @@ export class Fight {
     }
   }
 
-  /** 這一道氣流第 k 段的那一片煙：還沒有就借一片、一格，平貼在那一段的地上（之後不動）。 */
+  /**
+   * 這一道氣流第 k 段的那一片煙：還沒有就借一片、一格，平貼在那一段的地上（之後不動）。u 軸就是
+   * 那一條的中線，劍氣走過的那一條挖掉不畫（gap）。
+   */
   _plowSheet(g, k) {
     let pl = this._plows.find((p) => p.g === g && p.k === k && this.fluid.owns(p.tile, p));
     if (pl) return pl;
@@ -827,7 +830,7 @@ export class Fight {
     pl = { g, k, tau: 0, sheet };
     pl.tile = this.fluid.acquire(pl);
     sheet.place([g.x + g.dirX * mid, g.y + 0.03, g.z + g.dirZ * mid], [g.dirX, 0, g.dirZ], [g.dirZ, 0, -g.dirX],
-      PLOW.seg / 2 + PLOW.margin, { ...DUST_LOOK, thick: PLOW.thick });
+      PLOW.seg / 2 + PLOW.margin, { ...DUST_LOOK, thick: PLOW.thick, gap: g.w / 2 });
     this._plows.push(pl);
     return pl;
   }
