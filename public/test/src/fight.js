@@ -14,7 +14,7 @@
      resolve  怪物追人、放招、球往前飛（撞到東西就炸掉），然後才判打中——兩個身體都走完這一幀了，
               範圍是對著畫面上的位置判的。打死 BOSS 掉出靈魂，靈魂往下掉、漂，碰到
               就撿起來。回報玩家挨了哪一下、倒下沒有、打死了誰、撿了幾顆靈魂。
-     draw     怪物、劍光（攻擊範圍）、國王劈砍的氣流、粉塵（落地、BOSS 範圍攻擊的地震）、BOSS 的預告與球、靈魂、破防的兩圈、國王的盾、刀、
+     draw     怪物、劍光（攻擊範圍）、國王劈砍的斬痕與氣流、粉塵（落地、BOSS 範圍攻擊的地震）、BOSS 的預告與球、靈魂、破防的兩圈、國王的盾、刀、
               頭頂的愛心。
               在相機擺好之後（破防的兩圈與愛心正對這一幀的鏡頭）；流體場也在這裡
               往前推一幀，所以要在 renderer.render 之前。
@@ -48,6 +48,7 @@ import { Fluid, Sheet } from './fluid.js';
 import { TRAILS } from './trail.js';
 import { Qi } from './qi.js';
 import { Gusts } from './gust.js';
+import { Scars, SCAR_REACH } from './scar.js';
 import { dustOf, dustFade, DUST_LOOK, PUSH_TIME, QUAKE, quakeBands, quakeFade, PLOW, plowPieces, plowClump } from './dust.js';
 import { MUTE } from './sound.js';
 
@@ -82,6 +83,12 @@ export const PHASE_NAME = {
 
 /** 玩家挨了哪一下 → 給人看的一句話。 */
 export const DEATH_TEXT = { bitten: '被咬到了', shot: '被球打中了', struck: '被怪物的招打中了' };
+
+/**
+ * 犁地的溝離中線多遠（公尺）：劍氣的半寬，但至少跟斬痕一樣寬——劍長那一截的斬痕才不會被同一刀
+ * 揚起的塵蓋住。塵從溝的兩緣揚起，溝裡的不畫。
+ */
+const plowHalf = (g) => Math.max(g.w / 2, SCAR_REACH);
 
 export class Fight {
   /**
@@ -125,6 +132,8 @@ export class Fight {
         每一刀，與收掉的那幾刀（下一刀借）。 */
     this._qis = [];
     this._spare = [];
+    /** 國王劈砍在劍長以內留下的斬痕（scar.js）。 */
+    this._scars = new Scars(scene);
     /** 國王劈砍推出去的氣流：劍光那一塊，用扭曲畫面畫（gust.js）；扭曲要拷畫面，所以要 renderer。 */
     this._gusts = new Gusts(scene, renderer);
     /** 怪物與玩家挨打噴出來的血（bleed.js 算、blood.js 畫）。 */
@@ -298,6 +307,7 @@ export class Fight {
     Object.assign(this.combo, makeCombo());
     this._dropTrails();
     this._gusts.clear();
+    this._scars.clear();
   }
 
   /** 怪物全部回到站位（血滿、破防歸零），召喚出來的離場，連段與球清掉。 */
@@ -319,6 +329,7 @@ export class Fight {
     this.souls.length = 0;
     this._dropTrails();
     this._gusts.clear();
+    this._scars.clear();
   }
 
   /** 破防攻擊裡：突進與跳離是拋物線、迴旋的位置由 spinStep 擺，模式不要操控玩家。 */
@@ -406,8 +417,9 @@ export class Fight {
         if (QUAKE[st.shape]) this._rumbles.push({ shape: st.shape, t: 0, at: quakeBands(st.shape, st.r).map((b) => b.at) });
         else sound.play(st.shape);
       }
-      // 國王劈下去（那一刀帶著氣流）：鏡頭往劈的方向晃。
+      // 國王劈下去（那一刀帶著氣流）：劍長那一截裂開，鏡頭往劈的方向晃。
       if (st.gust) {
+        this._scars.cut(st, this.world.field.cols);
         const n = Math.hypot(SHAKE.ahead, 1);
         this._shakes.push({ t: 0, x: (st.dirX * SHAKE.ahead) / n, y: -1 / n, z: (st.dirZ * SHAKE.ahead) / n });
       }
@@ -572,6 +584,7 @@ export class Fight {
     // 攻擊範圍：劍光，跟著玩家的腳與出招時鎖住的面向走（騎士的劍迴旋跟著牠）。落地的粉塵。
     this._whirls();
     this._qi(dt, this.body(player));
+    this._scars.draw(dt);
     this._gusts.draw(dt, this.world, camera);
     this._blood.step(dt, camera);
     if (this.fluid) this._dust(dt, player);
@@ -795,7 +808,7 @@ export class Fight {
 
   /**
    * 氣流犁地（dust.js 的 PLOW）：落在地上的那一頭（離刀根 inner～top，刀根在前緣後面 top）
-   * 這一幀新蓋到的地面——頭一次是整截，之後是前緣走過的那一段——左右兩緣各注入一道塵，
+   * 這一幀新蓋到的地面——頭一次是整截，之後是前緣走過的那一段——溝的左右兩緣（plowHalf）各注入一道塵，
    * 往外側推、往前帶一點，一團一團各自多快多濃（plowClump）。照段切開，每一段注入到自己那一片；
    * 底下的地板不在氣流那一層的
    * 地方（坑、台階）不揚。
@@ -804,7 +817,7 @@ export class Fight {
     const from = g.plowed ?? Math.max(0, g.to - GUST.top + GUST.inner);
     if (g.to <= from) return;
     g.plowed = g.to;
-    const side = [g.dirZ, 0, -g.dirX], half = g.w / 2;
+    const side = [g.dirZ, 0, -g.dirX], half = plowHalf(g);
     for (const { k, i, a, b } of plowPieces(from, g.to)) {
       const pl = this._plowSheet(g, k), s = pl.sheet, rad = PLOW.width / (2 * s.half);
       for (const e of [-1, 1]) {
@@ -821,7 +834,7 @@ export class Fight {
 
   /**
    * 這一道氣流第 k 段的那一片煙：還沒有就借一片、一格，平貼在那一段的地上（之後不動）。u 軸就是
-   * 那一條的中線，劍氣走過的那一條挖掉不畫（gap）。
+   * 那一條的中線，犁開的那一條溝挖掉不畫（gap，plowHalf）。
    */
   _plowSheet(g, k) {
     let pl = this._plows.find((p) => p.g === g && p.k === k && this.fluid.owns(p.tile, p));
@@ -830,7 +843,7 @@ export class Fight {
     pl = { g, k, tau: 0, sheet };
     pl.tile = this.fluid.acquire(pl);
     sheet.place([g.x + g.dirX * mid, g.y + 0.03, g.z + g.dirZ * mid], [g.dirX, 0, g.dirZ], [g.dirZ, 0, -g.dirX],
-      PLOW.seg / 2 + PLOW.margin, { ...DUST_LOOK, thick: PLOW.thick, gap: g.w / 2 });
+      PLOW.seg / 2 + PLOW.margin, { ...DUST_LOOK, thick: PLOW.thick, gap: plowHalf(g) });
     this._plows.push(pl);
     return pl;
   }
