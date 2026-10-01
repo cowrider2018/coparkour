@@ -31,7 +31,7 @@ import { makeMonsterCritter, sizeOf, bloodOf, swordOf, helmOf, crownOf, riseLift
 import { GUARD_INK } from './critter.js';
 import { Blood } from './blood.js';
 import { Fireballs } from './fireball.js';
-import { hitFrame, burstFrame, hurtFrame, spurtOf } from './bleed.js';
+import { hitFrame, burstFrame, hurtFrame, spurtOf, floorUnder } from './bleed.js';
 import { Blade } from './blade.js';
 import { Helm } from './helm.js';
 import { Crown } from './crown.js';
@@ -42,13 +42,13 @@ import {
   coneFx, showCone, stripFx, showStrip,
 } from './fx.js';
 import { SoulLook } from './soul.js';
-import { SKILL, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, shotHits, strikeHits, gustHits, laneLength } from './skills.js';
+import { SKILL, GUST, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, shotHits, strikeHits, gustHits, laneLength } from './skills.js';
 import { Hearts } from './hearts.js';
 import { Fluid, Sheet } from './fluid.js';
 import { TRAILS } from './trail.js';
 import { Qi } from './qi.js';
 import { Gusts } from './gust.js';
-import { dustOf, dustFade, DUST_LOOK, PUSH_TIME, QUAKE, quakeBands, quakeFade } from './dust.js';
+import { dustOf, dustFade, DUST_LOOK, PUSH_TIME, QUAKE, quakeBands, quakeFade, PLOW, plowPieces, plowClump } from './dust.js';
 import { MUTE } from './sound.js';
 
 /** 一團塵：腳下那一圈切成幾段注入。 */
@@ -137,6 +137,8 @@ export class Fight {
     this._sheets = [];
     /** 還看得到的每一團落地的塵，與每一個身體上一幀的高度、往下掉多快、站著沒有。 */
     this._puffs = [];
+    /** 國王劈砍的氣流犁地揚起的塵：每一道氣流沿路每一段一片（dust.js 的 PLOW）。 */
+    this._plows = [];
     this._feet = new WeakMap();
     /** BOSS 的範圍攻擊（扇形、跳砸的圓）打下去揚起的地震塵：還看得到的每一片，與這一幀
         剛打下去、還沒揚的。跳砸落地的那一隻這一幀不揚落地的塵（_quiet）——那一下是地震。 */
@@ -768,6 +770,8 @@ export class Fight {
       if (fluid.owns(q.tile, q)) this._quake(q, dt);
       q.tau += dt;
     }
+    for (const pl of this._plows) pl.tau += dt;
+    for (const g of this.world.gusts) this._plow(g);
     fluid.step(dt);
     this._puffs = this._puffs.filter((pf) => {
       const alive = pf.tau < pf.d.life && fluid.owns(pf.tile, pf);
@@ -781,6 +785,51 @@ export class Fight {
       else this._endPuff(q);
       return alive;
     });
+    this._plows = this._plows.filter((pl) => {
+      const alive = pl.tau < PLOW.life && fluid.owns(pl.tile, pl);
+      if (alive) pl.sheet.show(pl.tile, dustFade(PLOW, pl.tau));
+      else this._endPuff(pl);
+      return alive;
+    });
+  }
+
+  /**
+   * 氣流犁地（dust.js 的 PLOW）：落在地上的那一頭（離刀根 inner～top，刀根在前緣後面 top）
+   * 這一幀新蓋到的地面——頭一次是整截，之後是前緣走過的那一段——左右兩緣各注入一道塵，
+   * 往外側推、往前帶一點，一團一團各自多快多濃（plowClump）。照段切開，每一段注入到自己那一片；
+   * 底下的地板不在氣流那一層的
+   * 地方（坑、台階）不揚。
+   */
+  _plow(g) {
+    const from = g.plowed ?? Math.max(0, g.to - GUST.top + GUST.inner);
+    if (g.to <= from) return;
+    g.plowed = g.to;
+    const side = [g.dirZ, 0, -g.dirX], half = g.w / 2;
+    for (const { k, i, a, b } of plowPieces(from, g.to)) {
+      const pl = this._plowSheet(g, k), s = pl.sheet, rad = PLOW.width / (2 * s.half);
+      for (const e of [-1, 1]) {
+        const at = (d) => [g.x + g.dirX * d + side[0] * e * half, g.y, g.z + g.dirZ * d + side[2] * e * half];
+        const mid = at((a + b) / 2);
+        if (Math.abs(floorUnder(this.world.field.cols, mid[0], mid[2], g.y + 0.05) - g.y) > 0.04) continue;
+        const cl = plowClump(i, e), p = PLOW.push * cl.push, c = DUST_DYE * PLOW.amount * cl.amount;
+        const v = s.toTileVel([(side[0] * e + g.dirX * PLOW.ahead) * p, 0, (side[2] * e + g.dirZ * PLOW.ahead) * p]);
+        this.fluid.splat(pl.tile, s.toTile(at(a)), s.toTile(at(b)), v, v, c, c, rad);
+      }
+      pl.tau = 0;
+    }
+  }
+
+  /** 這一道氣流第 k 段的那一片煙：還沒有就借一片、一格，平貼在那一段的地上（之後不動）。 */
+  _plowSheet(g, k) {
+    let pl = this._plows.find((p) => p.g === g && p.k === k && this.fluid.owns(p.tile, p));
+    if (pl) return pl;
+    const sheet = this._sheet(), mid = (k + 0.5) * PLOW.seg;
+    pl = { g, k, tau: 0, sheet };
+    pl.tile = this.fluid.acquire(pl);
+    sheet.place([g.x + g.dirX * mid, g.y + 0.03, g.z + g.dirZ * mid], [g.dirX, 0, g.dirZ], [g.dirZ, 0, -g.dirX],
+      PLOW.seg / 2 + PLOW.margin, { ...DUST_LOOK, thick: PLOW.thick });
+    this._plows.push(pl);
+    return pl;
   }
 
   /** 借一片煙（收回來的先用）。 */
@@ -919,8 +968,10 @@ export class Fight {
     if (!this.fluid) return;
     for (const pf of this._puffs) this._endPuff(pf);
     for (const q of this._quakes) this._endPuff(q);
+    for (const pl of this._plows) this._endPuff(pl);
     this._puffs = [];
     this._quakes = [];
+    this._plows = [];
     this._stomps.length = 0;
     this._quiet.clear();
   }

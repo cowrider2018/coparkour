@@ -137,7 +137,7 @@ import {
 } from '../public/test/src/combat.js';
 import { SKILL, UP_AIR, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, gustHits, gustRise, GUST, shotHits, shotBlocked, strikeHits, laneLength, recoverOf, summonCount } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
-import { DUST, dustOf, dustFade, QUAKE, quakeBands, quakeFade, quakeTop } from '../public/test/src/dust.js';
+import { DUST, dustOf, dustFade, QUAKE, quakeBands, quakeFade, quakeTop, PLOW, plowPieces, plowClump } from '../public/test/src/dust.js';
 import { Motion, bloodOf, sizeOf, mirror, riseLift, HEW_STOP, MOVES as KNIGHT_MOVES } from '../public/test/src/monster.js';
 import { MOVES as HERO_MOVES } from '../public/test/src/moves.js';
 import { TRAILS, PIECE, BANDS, sweepAt, fadeAt, sideAt, qiAt, along, hullOf } from '../public/test/src/trail.js';
@@ -2362,6 +2362,19 @@ console.log('29. 直線劈砍');
     // 這一幀走了 2 公尺：走過的地方都算，沒走到的不算。
     const moved = { ...g, from: 3, to: 5 };
     ok(gustHits(moved, body(0, -1.5)) && !gustHits({ ...g, from: 3, to: 3 }, body(0, 1.5)), '一幀走過的那一段都打得到（不會一步跨過人）');
+  }
+  {
+    // 犁地的塵：走過的那一段照 PLOW.seg 切到各自那一片煙。
+    const P = PLOW.seg, C = PLOW.clump, cut = plowPieces(P - 1, 2 * P + 0.5);
+    const inside = cut.every((c) => c.a >= c.k * P - 1e-9 && c.b <= (c.k + 1) * P + 1e-9 && c.a >= c.i * C - 1e-9 && c.b <= (c.i + 1) * C + 1e-9);
+    const joined = cut.every((c, j) => j === 0 || near(c.a, cut[j - 1].b)) && near(cut[0].a, P - 1) && near(cut[cut.length - 1].b, 2 * P + 0.5);
+    ok(inside && joined && new Set(cut.map((c) => c.k)).size === 3,
+      `犁過的一段照段（${P} 公尺）與團（${C} 公尺）切開，首尾相接：${cut.length} 截、跨 3 段`);
+    ok(plowClump(3, 1).push === plowClump(3, 1).push && plowClump(3, 1).push !== plowClump(3, -1).push
+      && cut.every((c) => { const k = plowClump(c.i, 1); return k.push >= 0.5 && k.push <= 1.5 && k.amount >= 0.4 && k.amount <= 1.4; }),
+      '每一團推多快、多濃固定（同一團每一幀都一樣），兩側各自抽、在範圍裡');
+    ok(plowPieces(3, 3).length === 0 && plowPieces(P, P + 1)[0].k === 1, '沒走就不揚；剛好在段界上的算下一段');
+    ok(P / 2 + PLOW.margin >= P / 2 + PLOW.push * PLOW.life * 0.5, '一片煙往兩側留的餘裕，蓋得住推出去的塵');
   }
   {
     // 擋住氣流：國王與玩家之間一座高台、一扇門。

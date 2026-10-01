@@ -34,6 +34,15 @@
    或隔得近的話一道追上下一道，幾道塵連成一整團，看不出哪裡高哪裡低。所以分幾道
    是照範圍的半徑與間隔（gap）算的，不是固定的：扇形（半徑 3.7 公尺）是 4 道、
    跳砸的圓（2.3 公尺）是 3 道。
+   ── 犁地 ────────────────────────────────────────────────────────
+   國王劈砍推出去的氣流（skills.js 的 gusts）落在地上的那一頭整條貼著地板往前走，像犁
+   一樣把地上的塵往兩邊推開：前緣每走過一段新的地面，那一段的左右兩緣各揚一道塵，往
+   外側推、也被帶著往前一點。一道是一小團一小團（每 clump 公尺一團）潑出去的：每一團推多快、
+   多濃各自抽（照它在那一條上的位置算，每一幀都一樣）——整條一樣的話是兩道土堤，不像飛濺。劈下去的那一刻，劍光落地的那一整截（離刀根 inner～top）
+   一次揚起來。
+
+   一道氣流可能飛三十幾公尺，一片煙蓋不住（一片越大、流體的格子越粗）：沿那一條每 PLOW.seg
+   公尺一段，一段借一片煙、一格流體，前緣走進下一段就換下一片。前一片照樣留著散完。
    ------------------------------------------------------------------ */
 
 import { PHYS } from './walk.js';
@@ -145,4 +154,44 @@ export function quakeFade(tau) {
   const t0 = QUAKE.wave + QUAKE.inject;
   const u = Math.min(1, Math.max(0, (tau - t0) / (QUAKE.life - t0)));
   return 1 - u * u * (3 - 2 * u);
+}
+
+/**
+ * 氣流犁地揚起的塵：
+ *
+ *   seg     一片煙管沿那一條多長的一段（公尺）。
+ *   margin  煙片往前後、往兩側多留多少（公尺）：推出去的塵要落在片裡。
+ *   push    往外側推多快（公尺 / 秒）。
+ *   ahead   往前帶的速度是往外推的幾成。
+ *   amount  注入多少濃度：走過的地方每一點都只蓋到一次，跟走多快、幀率無關。
+ *   width   注入多粗（公尺，注入的半徑）。
+ *   life    一片最後一次注入之後留多久（秒）。
+ *   thick   鼓多高（公尺）。
+ */
+export const PLOW = { seg: 6, margin: 1.6, push: 3.2, ahead: 0.35, amount: 1.4, width: 0.16, life: 0.9, thick: 0.35, clump: 0.35 };
+
+/**
+ * 犁地的第 i 團（離起點 i·clump～(i+1)·clump、e 那一側）推多快、多濃（PLOW.push、amount 的幾倍）：
+ * 推 0.5～1.5 倍、濃 0.4～1.4 倍，固定的亂數。
+ */
+export function plowClump(i, e) {
+  const h = (k) => { const x = Math.sin(i * 127.1 + e * 57.3 + k * 311.7) * 43758.5453; return x - Math.floor(x); };
+  return { push: 0.5 + h(1), amount: 0.4 + h(2) };
+}
+
+/**
+ * 沿那一條從 a 犁到 b（離氣流起點量，公尺）：照 PLOW.seg 切成落在哪一段的幾截，再照 clump
+ * 切成一團一團（i 是第幾團）。
+ *
+ * @returns {{k: number, i: number, a: number, b: number}[]} 第 k 段（涵蓋 k·seg～(k+1)·seg）裡、第 i 團的那一截
+ */
+export function plowPieces(a, b) {
+  const out = [];
+  for (let x = a; x < b - 1e-9;) {
+    const k = Math.floor(x / PLOW.seg + 1e-9), i = Math.floor(x / PLOW.clump + 1e-9);
+    const y = Math.min(b, (k + 1) * PLOW.seg, (i + 1) * PLOW.clump);
+    out.push({ k, i, a: x, b: y });
+    x = y;
+  }
+  return out;
 }
