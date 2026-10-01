@@ -5,10 +5,12 @@
    多：同一個檔調速率（音高跟著變）與音量給好幾件事用，全部登記在 CUES。fight.js
    只說「發生了什麼」（`sound.play('rise')`），不知道有哪些檔。
 
-   瀏覽器要等使用者碰過頁面才准出聲：第一次按鍵或觸碰的時候才建 AudioContext、
-   解碼；在那之前 play 什麼都不做。檔案沒載到、機器沒有 Web Audio、或網址給了
-   `?sound=0`，也是什麼都不做——沒有聲音不該讓遊戲跑不起來。
+   AudioContext 是 audio.js 那一個，使用者碰過頁面之後才有：檔案一開始就載，
+   有了 AudioContext 才解碼；在那之前 play 什麼都不做。檔案沒載到、或這一頁不能
+   出聲（audio.js 的 audible），也是什麼都不做——沒有聲音不該讓遊戲跑不起來。
    ------------------------------------------------------------------ */
+
+import { audible, onWake } from './audio.js';
 
 /** 檔案在哪（相對這一支）。 */
 const BASE = new URL('../../assets/sfx/', import.meta.url);
@@ -74,8 +76,7 @@ export class Sound {
     /** 每一件事上一次播是什麼時候。 */
     this._last = new Map();
 
-    this._Ctx = globalThis.AudioContext || globalThis.webkitAudioContext;
-    if (!this._Ctx || new URLSearchParams(location.search).get('sound') === '0') return;
+    if (!audible) return;
 
     for (const name of new Set(Object.values(CUES).map(([file]) => file))) {
       fetch(new URL(`${name}.m4a`, BASE))
@@ -83,21 +84,13 @@ export class Sound {
         .then((bytes) => { this._raw.set(name, bytes); this._decode(); })
         .catch(() => {});
     }
-    /* 留著不拆：手機切到背景再回來，AudioContext 會被停掉，下一次碰頁面要再叫醒。 */
-    for (const type of ['pointerdown', 'keydown', 'touchend']) {
-      addEventListener(type, () => this._wake(), { capture: true, passive: true });
-    }
-  }
-
-  _wake() {
-    if (!this._ctx) {
-      this._ctx = new this._Ctx();
-      this._out = this._ctx.createGain();
+    onWake((ctx) => {
+      this._ctx = ctx;
+      this._out = ctx.createGain();
       this._out.gain.value = MASTER;
-      this._out.connect(this._ctx.destination);
+      this._out.connect(ctx.destination);
       this._decode();
-    }
-    if (this._ctx.state !== 'running') this._ctx.resume().catch(() => {});
+    });
   }
 
   /** 載到了、AudioContext 也有了的檔解碼。 */
