@@ -1,4 +1,5 @@
-// 聲音的登記表對得上嗎：sound.js 的 CUES 指的檔都在、fight.js 說的每一件事都有登記。
+// 聲音的登記表對得上嗎：sound.js 的 CUES 指的檔都在、fight.js 說的每一件事都有登記，
+// music.js 的每一首與 mode-flow.js 要的每一首都有檔。
 // 用法：node tools/verify-sound.mjs
 //
 // 播不播得出來要開瀏覽器聽；這裡只抓打錯字——CUES 的鍵是 fight.js 手上現成的字
@@ -7,6 +8,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CUES } from '../public/test/src/sound.js';
+import { TRACKS } from '../public/test/src/music.js';
 import { makeCombo } from '../public/test/src/combat.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -34,6 +36,12 @@ for (const s of shapes) check(s in CUES, `skills.js 的形狀 '${s}' 有登記`)
 const combat = read('public/test/src/combat.js');
 const phases = new Set([makeCombo().phase, ...[...combat.matchAll(/go\('(\w+)'\)|c\.phase = '(\w+)'/g)].map((m) => m[1] || m[2])]);
 for (const p of ['slash', 'rise', 'slam', 'dash', 'spin']) check(phases.has(p) && p in CUES, `連段的 '${p}' 是真的段、有登記`);
+
+// 音樂：每一首都有檔；mode-flow.js 要的（music.want('…')）都是登記過的那幾首。
+for (const t of TRACKS) check(existsSync(join(ROOT, 'public/assets/music', `${t}.m4a`)), `音樂 ${t}.m4a 在`);
+const wants = read('public/test/src/mode-flow.js').split('\n').filter((l) => l.includes('music.want('));
+const asked = wants.flatMap((l) => [...l.matchAll(/'(\w+)'/g)].map((m) => m[1]));
+check(asked.length > 0 && asked.every((w) => TRACKS.includes(w)), `mode-flow.js 要的 ${[...new Set(asked)].join('、')} 都有登記`);
 
 console.log(bad ? `\n${bad} 項不對` : '\n全部對得上');
 process.exit(bad ? 1 : 0);

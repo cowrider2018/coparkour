@@ -18,6 +18,8 @@
      R                   重玩：回到起點，六場全部重來。
      1–6                 從第幾場開始（前面的當作打完了），在那一場的入口外面。
 
+   音樂：開打（門關上）到清完或倒下放戰鬥那一首，其餘的時候放探索那一首（music.js）。
+
    這一頁跟其他模式一樣不存檔：重新整理就是重玩。
    ------------------------------------------------------------------ */
 
@@ -33,6 +35,7 @@ import { makeHero, steerHero, moveHero } from './hero.js';
 import { Transit } from './transit.js';
 import { Fight, DEATH_TEXT } from './fight.js';
 import { Sound } from './sound.js';
+import { Music } from './music.js';
 import { resetLife, refill, regen } from './combat.js';
 import { BLOCKS } from './blocks.js';
 import { STAGES, START, bossPost, inStage, makeRun, doorsFor, portalsOn, restAt } from './route.js';
@@ -64,6 +67,9 @@ const player = { ...makeHero(0, 0, 0), block: 'wallwalk' };
 
 /* 戰鬥：打死的 BOSS 就沒了（不重生），場上沒有怪物就是這一場清完。 */
 const fight = new Fight(scene, zoo, { respawn: false, renderer, sound: new Sound() });
+
+/** 背景音樂：探索與戰鬥兩首，換的時候淡出淡入（music.js）。 */
+const music = new Music();
 
 const cam = makeCam(0, 0);
 
@@ -218,6 +224,7 @@ function frame(now) {
   if (run.active && spawnIn === 0 && !fight.foes.length) clear();
   if (died) fall(died);
   else if (hit) hud.flash(`${DEATH_TEXT[hit.cause]}，扣 ${hit.dmg} 點血`);
+  music.want(run.active ? 'fight' : 'explore');
 
   // 動物
   zoo.root.position.set(player.x, player.y, player.z);
@@ -264,7 +271,7 @@ requestAnimationFrame(frame);
 
 // 給主控台一個把手，方便手動看東西。run 會被換掉，所以是 getter。
 window.flowArea = {
-  scene, camera, renderer, zoo, player, ruins, cam, pad, hud, fight, doors, startFrom,
+  scene, camera, renderer, zoo, player, ruins, cam, pad, hud, fight, music, doors, startFrom,
   get run() { return run; },
   get foes() { return fight.foes; },
 };
