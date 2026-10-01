@@ -2355,10 +2355,11 @@ console.log('29. 直線劈砍');
     ok(gustHits(g, body(0, -r + 0.02)) && !gustHits(g, body(0, r + 0.02)), '前緣：身體碰到劍光落地的最前端才算');
     ok(gustHits(g, body(half + r - 0.02, -0.3)) && !gustHits(g, body(half + r + 0.02, -0.3)), `橫向：離中線 ${(half + r).toFixed(2)} 公尺以內打到`);
     ok(!gustHits(g, body(0, -GUST.top - r - 0.02)), '刀根背後打不到');
-    // 刀根正上方、離地 1.6 公尺：正中間有整片劍光那麼高，邊上只剩 edge 成。
-    const over = (x) => ({ ...body(x, -GUST.top + r), y: 1.6 });
+    // 刀根正上方、高度在正中間與貼著邊的那一側之間（照寬度算，劍氣調寬調窄都成立）。
+    const re = gustRise((half - 0.02) / half), y = (GUST.top * (1 + re)) / 2;
+    const over = (x) => ({ ...body(x, -GUST.top + r), y });
     ok(gustRise(0) === 1 && near(gustRise(1), GUST.edge) && gustRise(0.5) > gustRise(0.9), `不是平頂：正中間最高，往兩邊照橢圓壓到 ${GUST.edge} 成`);
-    ok(gustHits(g, over(0)) && !gustHits(g, over(half + r - 0.02)), '正中間 1.6 公尺高還打得到，貼著邊的同樣高度打不到');
+    ok(gustHits(g, over(0)) && !gustHits(g, over(half + r - 0.02)), `正中間離地 ${y.toFixed(2)} 公尺還打得到，貼著邊的同樣高度打不到`);
     // 這一幀走了 2 公尺：走過的地方都算，沒走到的不算。
     const moved = { ...g, from: 3, to: 5 };
     ok(gustHits(moved, body(0, -1.5)) && !gustHits({ ...g, from: 3, to: 3 }, body(0, 1.5)), '一幀走過的那一段都打得到（不會一步跨過人）');
