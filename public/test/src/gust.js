@@ -51,7 +51,7 @@ const END = 0.35;
 const RISE = 0.6;
 
 /** 偏移最大多少（畫面高度的幾成）、輪廓上幾個像素拉滿。 */
-const AMP = 0.03, EDGE = 2.5;
+const AMP = 0.08, EDGE = 2.5;
 
 /** 裡面的起伏：一層多厚（公尺，從表面往裡量）、一秒往裡跑幾層、佔偏移的幾成。 */
 const RIPPLE = { len: 0.14, hz: 8, share: 0.3 };
