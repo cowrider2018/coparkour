@@ -69,7 +69,7 @@ const QUAKE_JOINT = Math.sqrt(Math.LN2);
 const DUST_DYE = 1.4;
 
 /**
- * 國王劈下去的那一下鏡頭晃（跟收招開頭那一頓同一刻，monster.js 的 HEW_STOP）：往劈的方向
+ * 國王劈下去的那一下鏡頭晃（跟收招那一頓同一刻，monster.js 的 hewRec）：往劈的方向
  * ——往下、往前 ahead 那麼多——先推出去，再來回彈幾下收掉。位移 amp·e^(−t/decay)·sin(2π·hz·t)
  * 公尺，life 秒之後不晃。只挪位置、不轉，畫面不會歪。
  */

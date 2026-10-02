@@ -114,7 +114,7 @@
                     劍光一樣高，跳一個狗高躲不過，高過劍光頂才躲得過；橫向照長條的寬，刀根背後打不到；走到黑牆停；撞上高台、門（關著的）停在碰到的那一點，
                     後面的人不挨，門開著就穿過去，劍光那麼高以內的橫樑也擋；劍長以內就撞到的話一步都不走。一招只打一次：
                     那一刀記著它的氣流。動作是 hewWind → hewRec：騎士跳砍的蓄力與劈（不跳），
-                    收尾照 0.25 秒的僵直走，開頭停在劈到一半那一格 0.1 秒（打擊的頓）。
+                    收尾整段 0.25 秒的僵直停在劈到底、頭朝地面那一格（打擊的頓）。
     30. 召喚        國王會召喚；場上牠召喚的 0～2 隻時召 2 隻、3 隻時召 1 隻、滿 4 隻挑不到這一招。
                     挑的那一刻在牠身邊 near～3 公尺內隨機挑點（夾在黑牆裡、落在地板上）；倒數 0.5 秒
                     不上場、不打；倒數完每個點上場一隻幽靈（記著是誰召的、面向玩家被鎖定的那一點），
@@ -138,7 +138,7 @@ import {
 import { SKILL, UP_AIR, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, gustHits, gustRise, GUST, shotHits, shotBlocked, strikeHits, laneLength, recoverOf, summonCount } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
 import { DUST, dustOf, dustFade, QUAKE, quakeBands, quakeFade, quakeTop, PLOW, plowPieces, plowClump } from '../public/test/src/dust.js';
-import { Motion, bloodOf, sizeOf, mirror, riseLift, HEW_STOP, MOVES as KNIGHT_MOVES } from '../public/test/src/monster.js';
+import { Motion, bloodOf, sizeOf, mirror, riseLift, MOVES as KNIGHT_MOVES } from '../public/test/src/monster.js';
 import { MOVES as HERO_MOVES } from '../public/test/src/moves.js';
 import { TRAILS, PIECE, BANDS, sweepAt, fadeAt, sideAt, qiAt, along, hullOf } from '../public/test/src/trail.js';
 import { bladeAt } from '../public/test/src/trail.js';
@@ -2417,9 +2417,8 @@ console.log('29. 直線劈砍');
     ok(S.windup === SKILL.cleave.windup && hw[1][1] === cw[1][1] && hw[2][1] === cw[2][1] && hw[3][1] === lastAir,
       '劈砍的蓄力是騎士跳砍那幾格（一樣長、一樣舉劍），最後甩到騎士落地那一刻的劈到一半');
     const hr = KM.hewRec.keys;
-    ok(HEW_STOP === 0.1 && hr[0][1] === lastAir && hr[1][1] === lastAir && near(hr[1][0], HEW_STOP),
-      '收尾先停在劈到一半那一格 0.1 秒（打擊的頓，算在僵直裡）');
-    ok(hr[2][1] === KM.cleaveLand.keys[1][1] && hr[2][0] < S.recover, '頓完是騎士落地那一下：劈到底');
+    ok(hr.length === 2 && hr[0][1] === KM.cleaveLand.keys[1][1] && hr[1][1] === hr[0][1] && near(hr[1][0], S.recover),
+      '收尾整段 0.25 秒停在騎士落地劈到底那一格（頭朝地面），一動不動');
   }
   KINDS.king.skills = keep;
 }
