@@ -353,6 +353,9 @@ export class Fireballs {
     this._nz = new Float32Array(n); this._nr = new Float32Array(n);
     this._crest = new Float32Array(n);
 
+    // 先做好一顆藏著：著色器在第一顆射出去之前就編得到、畫得到（fight.js 的 _compile）。
+    this._more();
+
     if (!renderer) return;
     const half = floatOk(renderer);
     tail.uScale.value = half ? 1 : 0.25;
@@ -403,18 +406,7 @@ export class Fireballs {
 
   /** 往前一幀：流體往後推、噴火粒、推火粒，擺好每一顆球，畫尾巴的場。camera：主畫面那一台。 */
   draw(dt, shots, camera) {
-    while (this._pool.length < shots.length) {
-      const g = ballGeometry();
-      const node = new THREE.Group();
-      for (const mat of [this._fire, this._ink]) {
-        const m = new THREE.Mesh(g, mat);
-        m.frustumCulled = false;            // 每幀改形狀，three 的邊界球跟不上
-        node.add(m);
-      }
-      node.visible = false;
-      this.scene.add(node);
-      this._pool.push({ node, g });
-    }
+    while (this._pool.length < shots.length) this._more();
     const alive = new Set(shots);
     this._pool.forEach((slot, i) => {
       const s = shots[i];
@@ -434,6 +426,20 @@ export class Fireballs {
     if (!this.renderer) return;
     this._step(dt, alive);
     this._field(camera);
+  }
+
+  /** 多做一顆球（藏著，放進池子）。 */
+  _more() {
+    const g = ballGeometry();
+    const node = new THREE.Group();
+    for (const mat of [this._fire, this._ink]) {
+      const m = new THREE.Mesh(g, mat);
+      m.frustumCulled = false;            // 每幀改形狀，three 的邊界球跟不上
+      node.add(m);
+    }
+    node.visible = false;
+    this.scene.add(node);
+    this._pool.push({ node, g });
   }
 
   /** 一個火舌噴口換方向：抽方向、噴多久、多密。 */
@@ -527,6 +533,18 @@ export class Fireballs {
   }
 
   /** 畫尾巴的場：畫面一半的解析度，清成 0 再把每一顆疊上去。 */
+  /**
+   * 尾巴的場先空畫一次（fight.js 的 _compile）：沒有火粒的時候平常不畫，著色器要等第一顆球噴出
+   * 火粒才編，就頓在那一幀。沒有火粒，畫出來是空的（每一幀都會再清）。
+   */
+  compile(camera) {
+    if (!this.renderer) return;
+    const r = this.renderer, prev = r.getRenderTarget();
+    r.setRenderTarget(this._rt);
+    r.render(this._fieldScene, camera);
+    r.setRenderTarget(prev);
+  }
+
   _field(camera) {
     const r = this.renderer, u = this._tail;
     r.getDrawingBufferSize(_size);

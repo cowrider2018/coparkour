@@ -109,7 +109,7 @@ export class Fight {
     this.respawn = respawn;
     this.sound = sound;
     this._renderer = renderer;
-    /** 還沒把著色器編好：一開始、與每次換陣容之後（見 _compile）。 */
+    /** 還沒把著色器編好、預先畫過：一開始，與之後每次多建了一份怪物的外觀（見 _compile）。 */
     this._cold = true;
     /** 咬在嘴裡的刀：掛在現在那一隻的頭上，換動物就跟著換過去（`follow`）。 */
     this.blade = new Blade();
@@ -182,9 +182,44 @@ export class Fight {
     /* BOSS 掉出來的靈魂（combat.js 的 dropSoul）。換陣容不清——完整流程裡打完一場就換
        下一場，沒撿的留在原地；回到站位（reset）才清。一顆一個 mesh，不夠就多做。 */
     this.souls = [];
-    this._soulViews = [];
-    /** 靈魂的外觀（soul.js 的狗頭），第一顆掉出來的時候才建。 */
-    this._soulLook = null;
+    /** 靈魂的外觀（soul.js 的狗頭）：現在就建、先做好一顆藏著——第一顆掉出來（打死 BOSS）的那一刻
+        才建、才編的話就頓一下。 */
+    this._soulLook = new SoulLook(zoo);
+    this._soulViews = [this._soulLook.make()];
+    this._soulViews[0].show(null);
+    scene.add(this._soulViews[0].root);
+  }
+
+  /**
+   * 每一類要幾份外觀才夠這一個陣容：陣容裡的，加上召喚得出來的（每一隻召喚者最多 cap 隻）。
+   */
+  static _need(spawns) {
+    const need = new Map(), add = (kind, n) => need.set(kind, (need.get(kind) || 0) + n);
+    for (const s of spawns) {
+      add(s.kind, 1);
+      if (KINDS[s.kind].skills?.includes('summon')) add(SKILL.summon.kind, SKILL.summon.cap);
+    }
+    return need;
+  }
+
+  /**
+   * 載入的時候叫：這個模式會出現的每一個陣容（每一個是站位的清單），每一類照最多要的那麼多份
+   * 先把外觀建好。建一隻要上百毫秒，而換陣容（完整流程是進場之後 BOSS 才上場）與召喚都在
+   * 遊戲中，那時候才建就是一頓。建好的藏著，下一幀跟其他東西一起編、預先畫一次（_compile）。
+   *
+   * @param {object[][]} lineups
+   */
+  preload(lineups) {
+    const most = new Map();
+    for (const spawns of lineups) {
+      for (const [kind, n] of Fight._need(spawns)) most.set(kind, Math.max(most.get(kind) || 0, n));
+    }
+    const busy = new Set(this.foes.map((f) => f.critter));
+    for (const [kind, n] of most) {
+      const had = this._pool.get(kind)?.length || 0;
+      this._slot(kind, n - 1);
+      for (const s of this._pool.get(kind).slice(had)) if (!busy.has(s.critter)) Fight._hide(s);
+    }
   }
 
   /** 換了動物：刀掛到新那一隻頭上。 */
@@ -225,6 +260,7 @@ export class Fight {
       if (this._inkPx) slot.critter.setInkPx(...this._inkPx);
       this.scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node, slot.cone.node, slot.whirl.node, slot.cleave.node, slot.hew.node);
       list.push(slot);
+      this._cold = true;
     }
     return list[i];
   }
@@ -305,10 +341,9 @@ export class Fight {
    * @param {object} field 牠們站在什麼樣的場地（combat.js 的 FIELD 那一種）
    */
   lineup(spawns, field = FIELD) {
-    /* 會召喚的：召喚得出來的那幾隻外觀現在就建好（每一隻召喚者最多 cap 隻，加上陣容裡本來就有的同一類）。
-       建一隻要上百毫秒，召喚的那一刻才建就是一頓；換陣容本來就在建外觀，在這裡建。下面一起藏起來。 */
-    const S = SKILL.summon, callers = spawns.filter((s) => KINDS[s.kind].skills?.includes('summon')).length;
-    if (callers) this._slot(S.kind, spawns.filter((s) => s.kind === S.kind).length + callers * S.cap - 1);
+    /* 召喚得出來的那幾隻也要有外觀：召喚的那一刻才建就是一頓。preload 過的話都已經有了；
+       沒有的在這裡補（下面一起藏起來）。 */
+    for (const [kind, n] of Fight._need(spawns)) this._slot(kind, n - 1);
     for (const list of this._pool.values()) for (const s of list) Fight._hide(s);
     const used = new Map();
     this.foes = spawns.map((s) => {
@@ -321,7 +356,6 @@ export class Fight {
     this._dropTrails();
     this._gusts.clear();
     this._scars.clear();
-    this._cold = true;
   }
 
   /** 怪物全部回到站位（血滿、破防歸零），召喚出來的離場，連段與球清掉。 */
@@ -642,7 +676,6 @@ export class Fight {
 
     // 靈魂：頭、光暈、冒出來的小球（soul.js）。
     while (this._soulViews.length < this.souls.length) {
-      this._soulLook ??= new SoulLook(this.zoo);
       const o = this._soulLook.make();
       this.scene.add(o.root);
       this._soulViews.push(o);
@@ -656,11 +689,11 @@ export class Fight {
   }
 
   /**
-   * 把會用到的著色器先編好（一開始、與換陣容之後的第一幀）。three 是第一次畫到一個材質才編它，
+   * 把會用到的著色器先編好（一開始、與多建了外觀之後的第一幀）。three 是第一次畫到一個材質才編它，
    * 一個要幾十到幾百毫秒：藏著、還沒畫過的那幾樣（預告、召喚的幽靈、劍光、國王的氣流與斬痕、煙、
    * 血）第一次亮出來的那一幀就頓一下——國王一劈下去就是四五樣一起。renderer.compile 連藏著的
    * 都編，所以要用的時候才借的那幾樣各先收著一份（劍光、煙在建構子；氣流、斬痕在它們自己那支）。
-   * 畫到貼圖上的（流體場的 pass、血的場）不在場景裡，對著它們自己的貼圖編——畫到哪裡也算在
+   * 畫到貼圖上的（流體場的 pass、血與火球尾巴的場）不在場景裡，對著它們自己的貼圖編——畫到哪裡也算在
    * 著色器的快取鍵裡。
    */
   _compile(camera) {
@@ -670,9 +703,13 @@ export class Fight {
     r.compile(this.scene, camera);
     /* 編好了還不夠：Windows 上的 WebGL（ANGLE，底下是 D3D）第一次真的畫一個東西的時候，才把
        著色器照它的頂點格式再編一次、把幾何送上去，一樣頓一下。所以藏著的全部亮出來畫一次——
-       只畫左下角一個像素（scissor），這一幀接著畫的整個畫面會蓋過去——再藏回去。 */
-    const hidden = [];
-    this.scene.traverse((o) => { if (!o.visible) { o.visible = true; hidden.push(o); } });
+       只畫左下角一個像素（scissor），這一幀接著畫的整個畫面會蓋過去——再藏回去。鏡頭外的也要畫：
+       沒在用的預告縮成長度 0 擺在原點，照視錐裁掉的話就畫不到，所以這一下不裁。 */
+    const hidden = [], culled = [];
+    this.scene.traverse((o) => {
+      if (!o.visible) { o.visible = true; hidden.push(o); }
+      if (o.frustumCulled) { o.frustumCulled = false; culled.push(o); }
+    });
     const scissor = r.getScissor(_scissor), test = r.getScissorTest();
     r.setScissor(0, 0, 1, 1);
     r.setScissorTest(true);
@@ -680,8 +717,10 @@ export class Fight {
     r.setScissor(scissor);
     r.setScissorTest(test);
     for (const o of hidden) o.visible = false;
+    for (const o of culled) o.frustumCulled = true;
     if (this.fluid) this.fluid.compile();
     this._blood.compile(camera);
+    this._fire.compile(camera);
   }
 
   /**

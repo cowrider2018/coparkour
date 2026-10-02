@@ -77,8 +77,9 @@ const player = {
 resetLife(player);
 
 /* 戰鬥：怪物、連段、打中與被打中、刀。場上有哪幾隻由陣容決定（setMode）；
-   這一頁打死的怪物在牠的重生點重生。 */
+   這一頁打死的怪物在牠的重生點重生。每一個陣容的外觀現在就建好，換陣容只是借。 */
 const fight = new Fight(scene, zoo, { respawn: true, renderer, sound: new Sound() });
+fight.preload(MODES.map((md) => md.monsters));
 let mode = DEFAULT_MODE;
 
 /** 倒下（血扣光）過幾次。 */

@@ -65,8 +65,10 @@ scene.add(zoo.root);
 
 const player = { ...makeHero(0, 0, 0), block: 'wallwalk' };
 
-/* 戰鬥：打死的 BOSS 就沒了（不重生），場上沒有怪物就是這一場清完。 */
+/* 戰鬥：打死的 BOSS 就沒了（不重生），場上沒有怪物就是這一場清完。每一場的 BOSS 現在就把
+   外觀建好——牠是進場之後才上場的，那時候才建就是一頓。 */
 const fight = new Fight(scene, zoo, { respawn: false, renderer, sound: new Sound() });
+fight.preload(STAGES.map((_, k) => [bossPost(k)]));
 
 /** 背景音樂：探索與戰鬥兩首，換的時候淡出淡入（music.js）。 */
 const music = new Music();
