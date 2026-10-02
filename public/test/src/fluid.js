@@ -309,6 +309,18 @@ export class Fluid {
     r.autoClear = autoClear;
   }
 
+  /**
+   * 先空跑一次（fight.js 的 _compile）：每個 pass 的著色器、每一張圖第一次用到的時候都要花一截
+   * （編譯、配置記憶體），不先跑的話就算在第一團煙的那一幀上。場是空的，跑完還是 0。
+   */
+  compile() {
+    const r = this.renderer, prev = r.getRenderTarget(), autoClear = r.autoClear;
+    r.autoClear = false;
+    this._simulate(0);
+    r.setRenderTarget(prev);
+    r.autoClear = autoClear;
+  }
+
   _run(mat, rt, texel) {
     mat.uniforms.uTexel.value.set(1 / texel, 1 / texel);
     this._quad.material = mat;

@@ -43,7 +43,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { FAN } from './combat.js';
-import { GUST } from './skills.js';
+import { GUST, SKILL } from './skills.js';
 import { BANDS } from './trail.js';
 
 /** 劍光照劍長縮放多少、外緣離刀根多遠（前緣在刀根前面這麼遠）、最寬時最靠內的內緣（殼的內圈從這裡往內撐）、
@@ -190,6 +190,13 @@ export class Gusts {
     this.views = [];
     this.spare = [];
     this.time = 0;
+    // 先收著一塊（殼照國王那一刀的寬建好）：第一道推出去之前就編得到、畫得到（fight.js 的 _compile）。
+    if (this.on) {
+      const v = this._view();
+      this._shape(v, SKILL.hew.width / 2);
+      v.mesh.visible = false;
+      this.spare.push(v);
+    }
   }
 
   /** 這一幀第一次要讀畫面：拷一份（大小跟著畫布變）。 */

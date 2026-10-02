@@ -334,6 +334,14 @@ export class Blood {
     this._s.g.instanceCount = this.splats.length;
   }
 
+  /**
+   * 場先空畫一次（fight.js 的 _compile）：場那張圖第一次照畫面調大小、著色器第一次編，都要花一截，
+   * 不先畫的話就算在第一次噴血的那一幀上。沒有血滴，畫出來是空的。
+   */
+  compile(camera) {
+    if (this.renderer && !this.drops.length) this._field(camera);
+  }
+
   /** 畫場：畫面一半的解析度，清成 0 再把每一滴疊上去。 */
   _field(camera) {
     const r = this.renderer;

@@ -20,6 +20,7 @@
               往前推一幀，所以要在 renderer.render 之前。
    ------------------------------------------------------------------ */
 
+import * as THREE from '../vendor/three.module.js';
 import { PHYS, supportInfo } from './walk.js';
 import {
   FIELD, REACH, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster, harm, lifeStep, gainHeart,
@@ -51,6 +52,9 @@ import { Gusts } from './gust.js';
 import { Scars, SCAR_REACH } from './scar.js';
 import { dustOf, dustFade, DUST_LOOK, PUSH_TIME, QUAKE, quakeBands, quakeFade, PLOW, plowPieces, plowClump } from './dust.js';
 import { MUTE } from './sound.js';
+
+/** _compile 記下原本的 scissor 用。 */
+const _scissor = new THREE.Vector4();
 
 /** 一團塵：腳下那一圈切成幾段注入。 */
 const DUST_RING = 8;
@@ -104,6 +108,9 @@ export class Fight {
     this.zoo = zoo;
     this.respawn = respawn;
     this.sound = sound;
+    this._renderer = renderer;
+    /** 還沒把著色器編好：一開始、與每次換陣容之後（見 _compile）。 */
+    this._cold = true;
     /** 咬在嘴裡的刀：掛在現在那一隻的頭上，換動物就跟著換過去（`follow`）。 */
     this.blade = new Blade();
     this.blade.follow(zoo.active);
@@ -129,9 +136,10 @@ export class Fight {
     this._fx = { cue: cueFx() };
     scene.add(this._fx.cue.node);
     /** 劍光：三段攻擊的範圍，同心的三道劍氣（trail.js 算形狀、qi.js 畫）。還看得到的
-        每一刀，與收掉的那幾刀（下一刀借）。 */
+        每一刀，與收掉的那幾刀（下一刀借）。先收著一道：著色器才編得到（_compile）。 */
     this._qis = [];
-    this._spare = [];
+    this._spare = [new Qi()];
+    scene.add(this._spare[0].node);
     /** 國王劈砍在劍長以內留下的斬痕（scar.js）。 */
     this._scars = new Scars(scene);
     /** 國王劈砍推出去的氣流：劍光那一塊，用扭曲畫面畫（gust.js）；扭曲要拷畫面，所以要 renderer。 */
@@ -142,8 +150,9 @@ export class Fight {
        給了 `?fluid=0`，就沒有粉塵——同一台手機上開關各看一次 fps，就是流體的成本。 */
     const fluidOn = new URLSearchParams(location.search).get('fluid') !== '0';
     this.fluid = renderer && fluidOn && Fluid.supported(renderer) ? new Fluid(renderer) : null;
-    /** 收回來的那幾片煙（下一團塵借）。 */
+    /** 收回來的那幾片煙（下一團塵借）。先收著一片，理由同劍光。 */
     this._sheets = [];
+    if (this.fluid) this._sheets.push(this._sheet());
     /** 還看得到的每一團落地的塵，與每一個身體上一幀的高度、往下掉多快、站著沒有。 */
     this._puffs = [];
     /** 國王劈砍的氣流犁地揚起的塵：每一道氣流沿路每一段一片（dust.js 的 PLOW）。 */
@@ -308,6 +317,7 @@ export class Fight {
     this._dropTrails();
     this._gusts.clear();
     this._scars.clear();
+    this._cold = true;
   }
 
   /** 怪物全部回到站位（血滿、破防歸零），召喚出來的離場，連段與球清掉。 */
@@ -540,6 +550,7 @@ export class Fight {
   /** 擺好這一幀的外觀。在 zoo.update 與相機之後叫。 */
   draw(dt, camera, player) {
     const combo = this.combo, fx = this._fx;
+    if (this._cold) this._compile(camera);
     this._shake(dt, camera);
     this.blade.update();
     // 剛挨過一下（guard 還開著）：玩家一閃一閃的。頭頂是最大血量幾顆心、剩下的幾顆是滿的。
@@ -638,6 +649,35 @@ export class Fight {
     for (const { m, breakFx: bf } of this.foes) {
       showBreak(bf, m.breakT / BREAK_WINDOW, m.x, m.y + PHYS.height / 2, m.z, camera.quaternion);
     }
+  }
+
+  /**
+   * 把會用到的著色器先編好（一開始、與換陣容之後的第一幀）。three 是第一次畫到一個材質才編它，
+   * 一個要幾十到幾百毫秒：藏著、還沒畫過的那幾樣（預告、召喚的幽靈、劍光、國王的氣流與斬痕、煙、
+   * 血）第一次亮出來的那一幀就頓一下——國王一劈下去就是四五樣一起。renderer.compile 連藏著的
+   * 都編，所以要用的時候才借的那幾樣各先收著一份（劍光、煙在建構子；氣流、斬痕在它們自己那支）。
+   * 畫到貼圖上的（流體場的 pass、血的場）不在場景裡，對著它們自己的貼圖編——畫到哪裡也算在
+   * 著色器的快取鍵裡。
+   */
+  _compile(camera) {
+    this._cold = false;
+    const r = this._renderer;
+    if (!r) return;
+    r.compile(this.scene, camera);
+    /* 編好了還不夠：Windows 上的 WebGL（ANGLE，底下是 D3D）第一次真的畫一個東西的時候，才把
+       著色器照它的頂點格式再編一次、把幾何送上去，一樣頓一下。所以藏著的全部亮出來畫一次——
+       只畫左下角一個像素（scissor），這一幀接著畫的整個畫面會蓋過去——再藏回去。 */
+    const hidden = [];
+    this.scene.traverse((o) => { if (!o.visible) { o.visible = true; hidden.push(o); } });
+    const scissor = r.getScissor(_scissor), test = r.getScissorTest();
+    r.setScissor(0, 0, 1, 1);
+    r.setScissorTest(true);
+    r.render(this.scene, camera);
+    r.setScissor(scissor);
+    r.setScissorTest(test);
+    for (const o of hidden) o.visible = false;
+    if (this.fluid) this.fluid.compile();
+    this._blood.compile(camera);
   }
 
   /**

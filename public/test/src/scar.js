@@ -140,7 +140,11 @@ export class Scars {
     this.scene = scene;
     this.now = 0;
     this.live = [];
-    this.spare = [];
+    // 先收著一道：著色器在第一刀之前就編得到（fight.js 的 _compile）。
+    const m = new Mark();
+    m.mesh.visible = false;
+    scene.add(m.mesh);
+    this.spare = [m];
   }
 
   /**
