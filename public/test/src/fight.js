@@ -361,6 +361,7 @@ export class Fight {
       return Fight._enter(this._slot(s.kind, i), s, field);
     });
     this.world = makeWorld(field);
+    this._calm = false;
     Object.assign(this.combo, makeCombo());
     this._dropTrails();
     this._gusts.clear();
@@ -390,6 +391,16 @@ export class Fight {
     this._gusts.clear();
     this._heats.clear();
     this._scars.clear();
+  }
+
+  /**
+   * 失去目標：玩家倒下了。放到一半的招、衝到一半的衝刺取消，之後不再挑招、不再追人——
+   * 被打飛的照拋物線落地，其餘站著（combat.js 的 monsterStep 沒有目標的那一段）。已經
+   * 出手的（飛著的球、往外走的氣流）照常走完。下一次 lineup 才回來。
+   */
+  standDown() {
+    this._calm = true;
+    for (const { m } of this.foes) { m.cast = null; m.lunge = null; }
   }
 
   /** 收招：連段歸零、朝向放開，怪物不動。倒下的那一刻用（之後不再 lead，屍體不出招）。 */
@@ -475,7 +486,7 @@ export class Fight {
     const strikes = [];
     for (const f of foes) {
       const m = f.m, cast = m.cast, shots = this.world.shots.length;
-      const st = bossStep(m, dt, player, this.world);
+      const st = this._calm ? null : bossStep(m, dt, player, this.world);
       if (this.world.shots.length > shots) sound.play('shot');
       if (!st) continue;
       /* 打下去的那一刻。劍迴旋與上挑是連著好幾幀都在打，只有頭一幀出聲：記在那一招
@@ -508,7 +519,7 @@ export class Fight {
     // 國王旋風斬的熱氣流往外擴散，碰到東西的那一段停下；推出去的那一刻每一個擋下它的東西留一道斬痕。
     for (const g of this.world.rings) if (!g.gashed) { g.gashed = true; this._scars.gash(g, SKILL.gale.wave.speed); }
     ringsStep(this.world, dt);
-    for (const { m } of foes) monsterStep(m, dt, player);
+    for (const { m } of foes) monsterStep(m, dt, this._calm ? null : player);
     // 衝刺衝出去的那一刻：咬下去的那一聲。國王一次衝好幾下，每一下是新的一份 m.lunge。
     for (const { m } of foes) if (m.lunge && m.lunge.hot && !m.lunge.heard) { m.lunge.heard = true; sound.play('lunge'); }
     separate(foes.map((f) => f.m));

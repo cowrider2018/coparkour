@@ -2,22 +2,30 @@
    倒下（完整流程模式，mode-flow.js）：不是當幀就回到門前，而是演完一段——
 
    ── 一次倒下 ────────────────────────────────────────────────────
-     倒下     DEATH.tip 秒，從直立轉到橫躺。從血扣光的那一刻就開始轉，不等落地：
-              半空中被打死的話，身體一邊照重力往下掉一邊倒。越倒越快（u²），
-              躺平的那一刻停住——是倒下去，不是被放下去。
+     失去目標 血扣光的那一刻，所有怪物不再追、不再出招（Fight.standDown，模式叫）。
+              那一下照常把主角打飛（combat.js 的 knockHero）。
+     倒下     落地之後（knockHero 那一段結束、站到地上）才開始倒：DEATH.tip 秒從直立
+              轉到橫躺，越倒越快（u²），躺平的那一刻停住——是倒下去，不是被放下去。
+              一直沒落地的話，等 DEATH.wait 秒就在空中倒。
      幽靈     DEATH.ghost 秒。躺平的那一刻，牠的靈魂從屍體站起來往上浮（monster.js 的
               makeGhostCritter：同一隻動物，幽靈那一件、半透明）：直立的、朝著倒下
               那一刻的方向，浮起 DEATH.rise 公尺，先慢後快再慢（smoothstep）。
               屍體留在地上，一直躺到全黑。
-     暗下去   DEATH.fade：暗下去、全黑、亮回來（transit.js，同一層黑幕）。全黑的
-              那一刻 `update` 回傳 true，模式把人放回門前（跟以前的倒下一樣）。
-     醒來     開始亮回來的那一刻（全黑那一段過完）起 WAKE.time 秒：畫面在模糊與清楚之間簡諧地來回
-              （WAKE.cycles 個來回，從最模糊開始、停在清楚），中間浮出「原來是夢」：
-              WAKE.words 的四個時間點是開始浮現、完全清楚、開始淡出、淡完。
+     暗下去   DEATH.fade：暗下去、全黑停一下、亮回來（transit.js，同一層黑幕）。全黑的
+              那一刻 `update` 回傳 true，模式把怪物收掉、把人放回門前。
+     醒來     開始亮回來的那一刻起 WAKE.time 秒：畫面在模糊與清楚之間簡諧地來回，
+              每 WAKE.period 秒一次，從最模糊開始、停在清楚。
 
-   倒下到全黑之前操作收起來（`busy`）：身體照慣性停下。怪物不收，照常動到全黑那一刻
-   （怎麼讓牠們打不到屍體是模式的事，mode-flow.js 的 fall）。醒來那一段已經站在門前，
-   操作還回來了，模糊只是畫面。
+   字（CAPTIONS，一次一行，用同一個元素）：每一行四個時間點——開始淡入、完全清楚、
+   開始淡出、淡完——從「開始亮回來」那一刻起算，所以暗下去那一段是負的：
+
+     死亡              暗下去的同時淡入，全黑停著，亮回來的同時淡出
+     原來是夢          0.5 秒起：淡入 0.25、停 0.5、淡出 0.25
+     （只剩模糊閃爍）
+     我又不小心睡著了  2.5 秒起，一樣；淡到一半（3 秒）的時候閃爍停
+
+   倒下到全黑之前操作收起來（`busy`）：身體照慣性停下。怪物不收，站著（或照被打飛的
+   拋物線落地）到全黑那一刻。醒來那一段已經站在門前，操作還回來了，模糊只是畫面。
 
    ── 怎麼倒 ──────────────────────────────────────────────────────
    繞著前進軸轉，支點是倒向那一側的腳邊（離中線半個身寬）：轉 90° 之後身體的側面
@@ -30,13 +38,22 @@ import * as THREE from '../vendor/three.module.js';
 import { Transit } from './transit.js';
 import { makeGhostCritter } from './monster.js';
 
-/** 倒下幾秒、幽靈浮幾秒、浮多高（公尺）、暗下去—全黑—亮回來各幾秒。 */
-export const DEATH = { tip: 1.0, ghost: 2.0, rise: 1.0, fade: { out: 0.5, hold: 0.3, in: 0.5 } };
 /**
- * 醒來（秒、CSS 像素）：多久、模糊與清楚之間幾個來回（n + 0.5 才會從模糊開始、停在清楚）、
- * 最模糊多糊；字的四個時間點（開始浮現、完全清楚、開始淡出、淡完）、字浮現前多糊。
+ * 倒下幾秒、幽靈浮幾秒、浮多高（公尺）、等落地最多等幾秒；暗下去—全黑—亮回來各幾秒。
  */
-export const WAKE = { time: 3.5, cycles: 2.5, blur: 8, words: [0.5, 1.5, 2.5, 3.5], wordsBlur: 6 };
+export const DEATH = { tip: 1.0, ghost: 2.0, rise: 1.0, wait: 2.0, fade: { out: 0.5, hold: 0.5, in: 0.5 } };
+/** 醒來（秒、CSS 像素）：閃多久、多久閃一次、最模糊多糊、字淡入的時候從多糊開始。 */
+export const WAKE = { time: 3, period: 2, blur: 8, wordsBlur: 6 };
+
+const F = DEATH.fade;
+/** 一行一行的字：[開始淡入, 完全清楚, 開始淡出, 淡完]，從開始亮回來那一刻起算（秒）。 */
+export const CAPTIONS = [
+  { text: '死亡', at: [-(F.out + F.hold), -F.hold, 0, F.in] },
+  { text: '原來是夢', at: [0.5, 0.75, 1.25, 1.5] },
+  { text: '我又不小心睡著了', at: [2.5, 2.75, 3.25, 3.5] },
+];
+/** 醒來那一段演到哪一刻為止：閃爍與最後一行字都完了。 */
+const WAKE_END = Math.max(WAKE.time, ...CAPTIONS.map((c) => c.at[3]));
 
 const smooth = (u) => { const k = Math.min(1, Math.max(0, u)); return k * k * (3 - 2 * k); };
 const UP = new THREE.Vector3(0, 1, 0);
@@ -44,23 +61,24 @@ const _side = new THREE.Vector3();
 const _axis = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 
-/** 這一刻（倒下之後 t 秒）倒了幾度：越倒越快，DEATH.tip 秒躺平。 */
+/** 開始倒之後 t 秒倒了幾度：越倒越快，DEATH.tip 秒躺平。 */
 export const tipAngle = (t) => (Math.PI / 2) * Math.min(1, t / DEATH.tip) ** 2;
 
-/** 醒來之後 t 秒畫面多糊（像素）：從最模糊開始，簡諧地來回，WAKE.time 秒停在清楚。 */
+/** 開始亮回來之後 t 秒畫面多糊（像素）：從最模糊開始，每 WAKE.period 秒一次，WAKE.time 秒停在清楚。 */
 export function wakeBlur(t) {
-  if (t >= WAKE.time) return 0;
-  t = Math.max(0, t);
-  return (WAKE.blur * (1 + Math.cos((2 * Math.PI * WAKE.cycles * t) / WAKE.time))) / 2;
+  if (t < 0 || t >= WAKE.time) return 0;
+  return (WAKE.blur * (1 + Math.cos((2 * Math.PI * t) / WAKE.period))) / 2;
 }
 
-/** 醒來之後 t 秒「原來是夢」多清楚（0～1）：浮現、停住、淡出。 */
-export function wordsShown(t) {
-  const [a, b, c, d] = WAKE.words;
-  if (t < a || t >= d) return 0;
-  if (t < b) return smooth((t - a) / (b - a));
-  if (t < c) return 1;
-  return 1 - smooth((t - c) / (d - c));
+/** 開始亮回來之後 t 秒是哪一行字、多清楚（0～1）、是不是還在淡入；沒有字是 null。 */
+export function captionAt(t) {
+  for (const c of CAPTIONS) {
+    const [a, b, k, d] = c.at;
+    if (t < a || t >= d) continue;
+    if (t < b) return { text: c.text, shown: smooth((t - a) / (b - a)), rising: true };
+    return { text: c.text, shown: t < k ? 1 : 1 - smooth((t - k) / (d - k)), rising: false };
+  }
+  return null;
 }
 
 /**
@@ -84,7 +102,7 @@ export class Death {
    * @param {THREE.Scene} scene
    * @param {import('./critter.js').Zoo} zoo 玩家那一隻
    * @param {{fade: HTMLElement | null, view: HTMLElement | null, words: HTMLElement | null}} els
-   *   黑幕、要糊的畫面、「原來是夢」那一行
+   *   黑幕、要糊的畫面、字（CAPTIONS）那一行
    */
   constructor(scene, zoo, { fade, view, words }) {
     this.zoo = zoo;
@@ -104,7 +122,9 @@ export class Death {
     }
     /** 倒下之後幾秒；-1 = 沒在倒。 */
     this.t = -1;
-    /** 醒來之後幾秒（還在全黑裡是負的）；null = 沒在醒。 */
+    /** 開始倒之後幾秒；null = 還沒落地、還沒開始倒。 */
+    this.down = null;
+    /** 開始亮回來之後幾秒（暗下去、全黑那兩段是負的）；null = 沒在演這一段。 */
     this.wake = null;
     this.ghost = null;
     this._side = new THREE.Vector3();
@@ -123,6 +143,7 @@ export class Death {
   start(player, camX, camZ) {
     this.cancel();
     this.t = 0;
+    this.down = null;
     this.yaw = this.zoo.active._yaw;
     this.zoo.setFacing(this.yaw);          // 不再轉身：倒的軸是這一刻的前進軸
     this.ghost = this.ghosts.get(this.zoo.modelId);
@@ -147,16 +168,20 @@ export class Death {
    * 到了全黑、該送回門前的那一刻回傳 true（只回傳一次）。
    *
    * @param {number} dt
-   * @param {{x: number, y: number, z: number}} player 身體在哪（倒下的時候照常移動）
+   * @param {{x: number, y: number, z: number, grounded: boolean, knocked?: boolean}} player
+   *   身體在哪（倒下的時候照常移動）、落地了沒
    * @param {number} viewYaw 鏡頭在哪個方向（給幽靈轉遠側那隻眼睛）
    */
   update(dt, player, viewYaw) {
     let due = false;
     if (this.t >= 0) {
       this.t += dt;
-      const T = this.t, g = this.ghost;
+      // 落地了（或等太久了）才開始倒。
+      if (this.down !== null) this.down += dt;
+      else if ((player.grounded && !player.knocked) || this.t >= DEATH.wait) this.down = 0;
+      const T = this.down ?? -1, g = this.ghost;
       // 倒：Zoo 的 root 繞前進軸、支點在倒向那一側的腳邊。倒下的身體不閃、墨線不是金的。
-      this._tip(this.zoo.root, tipAngle(T), g.half, player);
+      this._tip(this.zoo.root, tipAngle(Math.max(0, T)), g.half, player);
       this.zoo.root.visible = true;
       this.zoo.setInkColor(null);
       // 躺平的那一刻靈魂站起來：接手那一隻的朝向與步態，直立著從屍體往上浮。
@@ -171,20 +196,22 @@ export class Death {
         g.c.setFacing(this.yaw);
         g.c.update(dt, { speed: 0, grounded: false, vy: 1, viewYaw });
       }
-      // 浮完：暗下去。全黑的那一刻送回門前、屍體站回來、靈魂收起來、開始醒。
-      if (T >= DEATH.tip + DEATH.ghost && this.fade.t < 0) this.fade.go(true);
+      // 浮完：暗下去（「死亡」同時淡入）。全黑的那一刻送回門前、屍體站回來、靈魂收起來。
+      if (T >= DEATH.tip + DEATH.ghost && this.fade.t < 0) {
+        this.fade.go(true);
+        this.wake = -(F.out + F.hold);
+      }
       if (this.fade.update(dt)) {
         due = true;
         this.t = -1;
         this._stand();
-        this.wake = -DEATH.fade.hold;      // 全黑那一段過完、開始亮回來才算醒
       }
     } else {
       this.fade.update(dt);
     }
     if (this.wake !== null) {
       this.wake += dt;
-      if (this.wake >= WAKE.time) this.wake = null;
+      if (this.wake >= WAKE_END) this.wake = null;
       this._paintWake();
     }
     return due;
@@ -220,12 +247,13 @@ export class Death {
       this.view.style.filter = b > 0.01 ? `blur(${b.toFixed(2)}px)` : '';
     }
     if (this.words) {
-      const a = wordsShown(t);
+      const c = captionAt(t);
+      const a = c ? c.shown : 0;
+      if (c && this.words.textContent !== c.text) this.words.textContent = c.text;
       this.words.style.opacity = a.toFixed(3);
       this.words.style.visibility = a > 0 ? 'visible' : 'hidden';
-      // 浮現的時候從糊到清楚；淡出只是淡，不再糊回去。
-      const [, clear] = WAKE.words;
-      const b = t >= 0 && t < clear ? WAKE.wordsBlur * (1 - a) : 0;
+      // 淡入的時候從糊到清楚；淡出只是淡，不再糊回去。
+      const b = c && c.rising ? WAKE.wordsBlur * (1 - a) : 0;
       this.words.style.filter = b > 0.01 ? `blur(${b.toFixed(2)}px)` : '';
     }
   }

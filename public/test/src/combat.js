@@ -536,6 +536,9 @@ export function hurt(m, dmg) {
  *
  * 追的時候轉向與加速用的是玩家那一支 steer，所以牠的手感跟玩家是同一種
  * 東西：轉向不欠帳，加速量照 PHYS。
+ *
+ * `target` 是 null 就是沒有目標（玩家倒下了，Fight.standDown）：被擊退、被推開的照常
+ * 飛完、滑完，其餘站著不動，不衝也不追。
  */
 export function monsterStep(m, dt, target) {
   if (m.stun > 0) m.stun = Math.max(0, m.stun - dt);
@@ -575,7 +578,8 @@ export function monsterStep(m, dt, target) {
     }
     return;
   }
-  // 放招中、出招後的僵直（skills.js）：站著不動。
+  // 沒有目標、放招中、出招後的僵直（skills.js）：站著不動。
+  if (!target) { m.lunge = null; m.vx = 0; m.vy = 0; m.vz = 0; return; }
   if (m.cast || m.stun > 0) { m.vx = 0; m.vy = 0; m.vz = 0; return; }
   /* 一次衝好幾下的那一類（國王）：這一下衝完、還沒到 `lunges` 下，不發呆，重新蓄力
      朝玩家現在的位置再衝。衝完的那一幀（hot）照常算咬，下一幀才換成下一下。 */
