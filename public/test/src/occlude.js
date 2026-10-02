@@ -244,3 +244,23 @@ export function farIn(piece) {
 
 /** 整圈最遠到哪（氣流走完要走這麼遠）。 */
 export const farthestOf = (env) => Math.max(...env.pieces.map(farIn));
+
+/** 預告與畫面用的那一份表一圈切幾格（每格 360° / 4096 ≈ 0.09°：20 公尺外 3 公分）。 */
+export const SHADE_N = 4096;
+
+/**
+ * 把一圈烘成一張表給著色器讀：第 i 格是方向 −π + 2π(i + ½)/n 那一條。每格兩個數：熱氣流在那個
+ * 方向最遠到哪（reachAt）、只看黑牆的話到哪（wall）。回傳整圈黑牆最遠多遠。
+ *
+ * @param {(th: number) => number} wall 只看黑牆的話，方向 θ 多遠
+ */
+export function bakeShade(env, out, wall, n = SHADE_N) {
+  let far = 0;
+  for (let i = 0; i < n; i++) {
+    const th = -Math.PI + (2 * Math.PI * (i + 0.5)) / n, w = wall(th);
+    out[2 * i] = reachAt(env, th);
+    out[2 * i + 1] = w;
+    far = Math.max(far, w);
+  }
+  return far;
+}

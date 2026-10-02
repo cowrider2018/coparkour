@@ -1,5 +1,5 @@
 /* ── test/src/fx.js ───────────────────────────────────────────
-   戰鬥的小外觀：連段的提示圈、破防的兩圈、怪物技能（BOSS、騎士）的預告。
+   戰鬥的小外觀：連段的提示圈、破防的兩圈、怪物技能（BOSS、騎士、國王）的預告。
    靈魂（BOSS 掉出來的狗頭）在 soul.js。
    主角三段攻擊的範圍是劍氣，在 qi.js（形狀在 trail.js）；BOSS 的火球在 fireball.js。
 
@@ -197,6 +197,72 @@ export function showStrip(f, on, frac, x, z, yaw, len, y = 0) {
     L.mid.scale.z = Math.max(1e-3, len);
     if (L.caps.length) { L.caps[0].position.z = len / 2; L.caps[1].position.z = -len / 2; }
   }
+}
+
+/**
+ * 旋風斬的預告：整片場地一層淺色（熱氣流擴散得到的地方），擋住的東西後面挖掉——那一片是
+ * 安全的；轉的那一圈（半徑 radius）以內一律是淺色（轉的那一下不會被擋）。亮色是一片圓，
+ * 浮在國王的腰那麼高（跟主角、騎士迴旋的那一片同一個高度），從中心長到劍長那一圈。
+ *
+ * 淺色那一片是一塊蓋住整個場地的方板，片段照方向讀一張表（occlude.js 的 bakeShade：每個方向
+ * 熱氣流最遠到哪、黑牆在哪），比那裡遠的不畫。表的每一格是一條很細的扇形，所以影子的
+ * 兩條邊是直的，不是鋸齒。表放在這裡（data、tex），由呼叫端在挑招的那一刻寫好。
+ */
+const GALE_VERT = /* glsl */ `
+uniform float uHalf;
+varying vec2 vRel;
+void main() {
+  vRel = position.xz * uHalf;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position.x * uHalf, position.y, position.z * uHalf, 1.0);
+}`;
+const GALE_FRAG = /* glsl */ `
+uniform sampler2D uShade;
+uniform float uR, uOpacity;
+uniform vec3 uColor;
+varying vec2 vRel;
+void main() {
+  float rho = length(vRel), u = (atan(vRel.x, vRel.y) + 3.14159265) / 6.28318531;
+  vec2 s = texture2D(uShade, vec2(u, 0.5)).rg;      // 熱氣流最遠到哪、黑牆在哪
+  if (rho > max(s.r, min(uR, s.g))) discard;
+  gl_FragColor = vec4(uColor, uOpacity);
+}`;
+
+export function galeFx(radius, n) {
+  const data = new Float32Array(2 * n);
+  const tex = new THREE.DataTexture(data, n, 1, THREE.RGFormat, THREE.FloatType);
+  tex.minFilter = tex.magFilter = THREE.NearestFilter;
+  tex.needsUpdate = true;
+  const plane = new THREE.PlaneGeometry(2, 2);
+  plane.rotateX(-Math.PI / 2);
+  plane.translate(0, 0.03, 0);
+  const pale = new THREE.Mesh(plane, new THREE.ShaderMaterial({
+    vertexShader: GALE_VERT, fragmentShader: GALE_FRAG,
+    uniforms: { uShade: { value: tex }, uHalf: { value: 1 }, uR: { value: radius }, uOpacity: { value: 0.2 }, uColor: { value: new THREE.Color(DANGER) } },
+    transparent: true, side: THREE.DoubleSide, depthWrite: false,
+  }));
+  pale.renderOrder = 2;
+  pale.frustumCulled = false;
+  const disc = new THREE.CircleGeometry(radius, 64);
+  disc.rotateX(-Math.PI / 2);
+  const bright = decal(disc, 0.45);
+  const node = new THREE.Group();
+  node.add(pale, bright);
+  node.visible = false;
+  return { node, pale, bright, data, tex };
+}
+
+/**
+ * 擺旋風斬的預告：國王腳下 (x, y, z)，frac 是倒數走了幾成（0 → 1），waist 是亮色那一片離地多高，
+ * half 是淺色那一塊方板的半邊長（蓋得住整個場地：表裡黑牆最遠的那一格）。
+ */
+export function showGale(f, on, frac, x, y, z, waist, half) {
+  f.node.visible = on;
+  if (!on) return;
+  f.node.position.set(x, y, z);
+  f.pale.material.uniforms.uHalf.value = half;
+  f.bright.position.y = waist;
+  const k = Math.max(1e-3, frac);
+  f.bright.scale.set(k, 1, k);
 }
 
 /**

@@ -40,7 +40,7 @@ import { ShieldRing } from './shield.js';
 import { Mover } from './moves.js';
 import {
   cueFx, showFx, breakFx, showBreak, laneFx, showLane, circleFx, showCircle,
-  coneFx, showCone, stripFx, showStrip,
+  coneFx, showCone, stripFx, showStrip, galeFx, showGale,
 } from './fx.js';
 import { SoulLook } from './soul.js';
 import { SKILL, GUST, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, ringsStep, shotHits, strikeHits, gustHits, ringHits, laneLength } from './skills.js';
@@ -50,6 +50,7 @@ import { TRAILS } from './trail.js';
 import { Qi } from './qi.js';
 import { Gusts } from './gust.js';
 import { Scars, SCAR_REACH } from './scar.js';
+import { SHADE_N, bakeShade } from './occlude.js';
 import { dustOf, dustFade, DUST_LOOK, PUSH_TIME, QUAKE, quakeBands, quakeFade, PLOW, plowPieces, plowClump } from './dust.js';
 import { MUTE } from './sound.js';
 
@@ -246,7 +247,7 @@ export class Fight {
         critter: makeMonsterCritter(this.zoo, kind), breakFx: breakFx(),
         lane: laneFx(SKILL.orb.radius), circle: circleFx(SKILL.leap.radius), cone: coneFx(SKILL.cone.radius, SKILL.cone.half),
         whirl: stripFx(SKILL.whirl.radius, true), cleave: stripFx(SKILL.cleave.width / 2, false),
-        hew: stripFx(SKILL.hew.width / 2, false),
+        hew: stripFx(SKILL.hew.width / 2, false), gale: galeFx(SKILL.gale.radius, SHADE_N),
         blade: null, helm: null, crown: null, shields: null,
       };
       // 咬著劍的那幾類（騎士、國王）：劍掛在牠自己的頭上，跟主角那把一樣每幀跟著頭。
@@ -258,7 +259,7 @@ export class Fight {
       // 有盾的（國王）：幾面盾繞著牠轉，墨線一樣跟著牠的墨色換。
       if (KINDS[kind].shields) { slot.shields = new ShieldRing(KINDS[kind].shields); slot.shields.follow(slot.critter); this.scene.add(slot.shields.node); }
       if (this._inkPx) slot.critter.setInkPx(...this._inkPx);
-      this.scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node, slot.cone.node, slot.whirl.node, slot.cleave.node, slot.hew.node);
+      this.scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node, slot.cone.node, slot.whirl.node, slot.cleave.node, slot.hew.node, slot.gale.node);
       list.push(slot);
       this._cold = true;
     }
@@ -274,6 +275,7 @@ export class Fight {
     s.whirl.node.visible = false;
     s.cleave.node.visible = false;
     s.hew.node.visible = false;
+    s.gale.node.visible = false;
     if (s.shields) s.shields.hide();
   }
 
@@ -655,6 +657,7 @@ export class Fight {
       const { m, lane, circle, cone, whirl, cleave } = f;
       const c = m.cast;
       this._hew(f);
+      this._gale(f);
       const orb = !!c && c.skill === 'orb', leap = !!c && c.skill === 'leap', fan = !!c && c.skill === 'cone';
       /* 劍迴旋衝刺：從起步的地方往鎖定的方向，衝得到多遠（黑牆擋住的話到牆前）。衝的時候
          亮著滿的——那一條就是還會被掃到的地方。 */
@@ -754,6 +757,21 @@ export class Fight {
     const { m, hew } = f, c = m.cast, on = !!c && c.skill === 'hew';
     showStrip(hew, on, on ? Math.min(1, c.t / SKILL.hew.windup) : 0, m.x, m.z, on ? Math.atan2(c.dirX, c.dirZ) : 0,
       on ? laneLength(m.x, m.z, c.dirX, c.dirZ, m.field.arena) : 0, m.y);
+  }
+
+  /**
+   * 國王的旋風斬：倒數的時候整片場地淺紅（擋住的地方挖掉）、腰那麼高的亮圓從中心長到劍長；
+   * 轉的那一下就收掉。挑招的那一刻（第一次看到這一招）把 skills.js 算好的那一張遮擋表烘給它。
+   */
+  _gale(f) {
+    const { m, gale } = f, c = m.cast, on = !!c && c.skill === 'gale' && c.t < SKILL.gale.windup;
+    if (on && gale.cast !== c) {
+      gale.cast = c;
+      const A = m.field.arena;
+      gale.half = bakeShade(c.env, gale.data, (th) => laneLength(m.x, m.z, Math.sin(th), Math.cos(th), A));
+      gale.tex.needsUpdate = true;
+    }
+    showGale(gale, on, on ? c.t / SKILL.gale.windup : 0, m.x, m.y, m.z, SKILL.gale.waist, on ? gale.half : 1);
   }
 
   /**
