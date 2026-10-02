@@ -4,10 +4,10 @@
    ── 一次倒下 ────────────────────────────────────────────────────
      失去目標 血扣光的那一刻，所有怪物不再追、不再出招（Fight.standDown，模式叫）。
               那一下照常把主角打飛（combat.js 的 knockHero）。
-     倒下     落地之後（knockHero 那一段結束、站到地上）才開始倒：DEATH.tip 秒從直立
-              轉到橫躺，越倒越快（u²），躺平的那一刻停住——是倒下去，不是被放下去。
-              一直沒落地的話，等 DEATH.wait 秒就在空中倒。
-     幽靈     DEATH.ghost 秒。躺平的那一刻，牠的靈魂從屍體站起來往上浮（monster.js 的
+     倒下     血扣光的那一刻就開始倒，在空中也是（被打飛的身體一邊飛一邊倒）：DEATH.tip
+              秒從直立轉到橫躺，越倒越快（u²），躺平的那一刻停住——是倒下去，不是被放下去。
+     幽靈     DEATH.ghost 秒。躺平而且落地之後（knockHero 那一段結束、站到地上；一直沒
+              落地的話等到 DEATH.wait 秒），牠的靈魂從屍體站起來往上浮（monster.js 的
               makeGhostCritter：同一隻動物，幽靈那一件、半透明）：直立的、朝著倒下
               那一刻的方向，浮起 DEATH.rise 公尺，先慢後快再慢（smoothstep）。
               屍體留在地上，一直躺到全黑。
@@ -39,9 +39,9 @@ import { Transit } from './transit.js';
 import { makeGhostCritter } from './monster.js';
 
 /**
- * 倒下幾秒、幽靈浮幾秒、浮多高（公尺）、等落地最多等幾秒；暗下去—全黑—亮回來各幾秒。
+ * 倒下幾秒、幽靈浮幾秒、浮多高（公尺）、幽靈等落地最多等到倒下之後幾秒；暗下去—全黑—亮回來各幾秒。
  */
-export const DEATH = { tip: 1.0, ghost: 2.0, rise: 1.0, wait: 2.0, fade: { out: 0.5, hold: 0.5, in: 0.5 } };
+export const DEATH = { tip: 0.25, ghost: 2.0, rise: 1.0, wait: 2.0, fade: { out: 0.5, hold: 0.5, in: 0.5 } };
 /** 醒來（秒、CSS 像素）：閃多久、多久閃一次、最模糊多糊、字淡入的時候從多糊開始。 */
 export const WAKE = { time: 3, period: 2, blur: 8, wordsBlur: 6 };
 
@@ -61,7 +61,7 @@ const _side = new THREE.Vector3();
 const _axis = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 
-/** 開始倒之後 t 秒倒了幾度：越倒越快，DEATH.tip 秒躺平。 */
+/** 倒下之後 t 秒倒了幾度：越倒越快，DEATH.tip 秒躺平。 */
 export const tipAngle = (t) => (Math.PI / 2) * Math.min(1, t / DEATH.tip) ** 2;
 
 /** 開始亮回來之後 t 秒畫面多糊（像素）：從最模糊開始，每 WAKE.period 秒一次，WAKE.time 秒停在清楚。 */
@@ -122,8 +122,8 @@ export class Death {
     }
     /** 倒下之後幾秒；-1 = 沒在倒。 */
     this.t = -1;
-    /** 開始倒之後幾秒；null = 還沒落地、還沒開始倒。 */
-    this.down = null;
+    /** 幽靈浮了幾秒；null = 還沒躺平落地、還沒出來。 */
+    this.up = null;
     /** 開始亮回來之後幾秒（暗下去、全黑那兩段是負的）；null = 沒在演這一段。 */
     this.wake = null;
     this.ghost = null;
@@ -143,7 +143,7 @@ export class Death {
   start(player, camX, camZ) {
     this.cancel();
     this.t = 0;
-    this.down = null;
+    this.up = null;
     this.yaw = this.zoo.active._yaw;
     this.zoo.setFacing(this.yaw);          // 不再轉身：倒的軸是這一刻的前進軸
     this.ghost = this.ghosts.get(this.zoo.modelId);
@@ -176,28 +176,27 @@ export class Death {
     let due = false;
     if (this.t >= 0) {
       this.t += dt;
-      // 落地了（或等太久了）才開始倒。
-      if (this.down !== null) this.down += dt;
-      else if ((player.grounded && !player.knocked) || this.t >= DEATH.wait) this.down = 0;
-      const T = this.down ?? -1, g = this.ghost;
+      const g = this.ghost;
       // 倒：Zoo 的 root 繞前進軸、支點在倒向那一側的腳邊。倒下的身體不閃、墨線不是金的。
-      this._tip(this.zoo.root, tipAngle(Math.max(0, T)), g.half, player);
+      this._tip(this.zoo.root, tipAngle(this.t), g.half, player);
       this.zoo.root.visible = true;
       this.zoo.setInkColor(null);
-      // 躺平的那一刻靈魂站起來：接手那一隻的朝向與步態，直立著從屍體往上浮。
-      if (T >= DEATH.tip && !g.root.visible) {
+      // 躺平、落地（或等太久了）的那一刻靈魂站起來：接手那一隻的朝向與步態，直立著從屍體往上浮。
+      if (this.up !== null) this.up += dt;
+      else if (this.t >= DEATH.tip && ((player.grounded && !player.knocked) || this.t >= DEATH.wait)) {
+        this.up = 0;
         g.c.adopt(this.zoo.active);
         g.c.setHat(this.zoo.hatOn);
         g.root.visible = true;
       }
       if (g.root.visible) {
-        const u = (T - DEATH.tip) / DEATH.ghost;
+        const u = this.up / DEATH.ghost;
         g.root.position.set(player.x, player.y + DEATH.rise * smooth(u), player.z);
         g.c.setFacing(this.yaw);
         g.c.update(dt, { speed: 0, grounded: false, vy: 1, viewYaw });
       }
       // 浮完：暗下去（「死亡」同時淡入）。全黑的那一刻送回門前、屍體站回來、靈魂收起來。
-      if (T >= DEATH.tip + DEATH.ghost && this.fade.t < 0) {
+      if (this.up !== null && this.up >= DEATH.ghost && this.fade.t < 0) {
         this.fade.go(true);
         this.wake = -(F.out + F.hold);
       }
