@@ -49,6 +49,7 @@ import { Fluid, Sheet } from './fluid.js';
 import { TRAILS } from './trail.js';
 import { Qi } from './qi.js';
 import { Gusts } from './gust.js';
+import { Grab } from './grab.js';
 import { Scars, SCAR_REACH } from './scar.js';
 import { SHADE_N, bakeShade } from './occlude.js';
 import { dustOf, dustFade, DUST_LOOK, PUSH_TIME, QUAKE, quakeBands, quakeFade, PLOW, plowPieces, plowClump } from './dust.js';
@@ -143,8 +144,10 @@ export class Fight {
     scene.add(this._spare[0].node);
     /** 國王劈砍在劍長以內留下的斬痕（scar.js）。 */
     this._scars = new Scars(scene);
-    /** 國王劈砍推出去的氣流：劍光那一塊，用扭曲畫面畫（gust.js）；扭曲要拷畫面，所以要 renderer。 */
-    this._gusts = new Gusts(scene, renderer);
+    /** 扭曲畫面的那幾樣讀的畫面：一幀拷一次，大家共用（grab.js）。沒有 renderer 就沒有。 */
+    this._grab = renderer ? new Grab(renderer) : null;
+    /** 國王劈砍推出去的氣流：劍光那一塊，用扭曲畫面畫（gust.js）。 */
+    this._gusts = new Gusts(scene, this._grab);
     /** 怪物與玩家挨打噴出來的血（bleed.js 算、blood.js 畫）。 */
     this._blood = new Blood(scene, renderer);
     /* 落地的粉塵畫在共用的流體場（fluid.js）上，一團借一格。畫不出流體的機器、或網址

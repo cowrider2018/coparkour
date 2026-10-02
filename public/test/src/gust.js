@@ -36,7 +36,7 @@
    在原地以前緣為中心 FADE 秒縮到沒有。
 
    ── 成本 ─────────────────────────────────────────────────────────
-   場上有氣流的那幾幀才拷畫面（每幀一次，全螢幕），之外完全不花。著色只在包住這一塊
+   場上有氣流的那幾幀才拷畫面（每幀一次，全螢幕，grab.js），之外完全不花。著色只在包住這一塊
    的殼（劍光的外框往外撐 PAD）蓋到的像素上跑，每個像素沿視線算 STEPS + 2·REFINE 次形狀。
    網址給 `?gust=0` 就整個不畫——同一台手機開關各看一次 fps，就是扭曲的成本。
    ------------------------------------------------------------------ */
@@ -59,20 +59,22 @@ const END = 0.35;
 /** 從起點尖到全寬花掉掃的角度的幾成（trail.js 的 RISE）。 */
 const RISE = 0.6;
 
+/* 下面這幾個是被推歪的空氣長什麼樣：別的扭曲畫面的東西照同一套。 */
+
 /** 偏移最大多少（畫面高度的幾成）；從輪廓往裡走到最深處的幾成才拉滿（0～1，越大邊越淡）。 */
-const AMP = 0.08, FEATHER = 0.5;
+export const AMP = 0.08, FEATHER = 0.5;
 
 /** 裡面的起伏：一層多厚（公尺，從表面往裡量）、一秒往裡跑幾層、佔偏移的幾成。 */
-const RIPPLE = { len: 0.14, hz: 8, share: 0.3 };
+export const RIPPLE = { len: 0.14, hz: 8, share: 0.3 };
 
 /** 推出去的頭幾秒扭曲長到滿、停下來幾秒縮到沒有。 */
-const GROW = 0.06, FADE = 0.12;
+export const GROW = 0.06, FADE = 0.12;
 
 /** 殼比劍光大一圈（公尺）：輪廓上的像素一定落在殼裡。 */
-const PAD = 0.12;
+export const PAD = 0.12;
 
 /** 視線上等距取幾點、找到最深的之後三分逼近幾次。 */
-const STEPS = 32, REFINE = 12;
+export const STEPS = 32, REFINE = 12;
 
 const f = (x) => x.toFixed(5);
 
@@ -170,23 +172,21 @@ function shell(half) {
   return g;
 }
 
-const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _size = new THREE.Vector2();
+const _a = new THREE.Vector3(), _b = new THREE.Vector3();
 
 /**
  * 場上的氣流：每一道一塊。每幀 draw 一次（在 renderer.render 之前），讀 world.gusts。
- * 畫面在畫到第一塊的時候才拷（onBeforeRender），那時候其他東西都畫好了。
+ * 畫面在畫到第一塊的時候才拷（onBeforeRender → grab.js），那時候其他東西都畫好了。
  */
 export class Gusts {
   /**
    * @param {THREE.Scene} scene
-   * @param {THREE.WebGLRenderer | null} renderer 拷畫面用。沒給、或網址 `?gust=0`：不畫
+   * @param {import('./grab.js').Grab | null} grab 拷畫面用。沒給、或網址 `?gust=0`：不畫
    */
-  constructor(scene, renderer) {
+  constructor(scene, grab) {
     this.scene = scene;
-    this.renderer = renderer;
-    this.on = !!renderer && new URLSearchParams(location.search).get('gust') !== '0';
-    this.tex = null;
-    this._frame = -1;
+    this.grab = grab;
+    this.on = !!grab && new URLSearchParams(location.search).get('gust') !== '0';
     this.views = [];
     this.spare = [];
     this.time = 0;
@@ -199,29 +199,13 @@ export class Gusts {
     }
   }
 
-  /** 這一幀第一次要讀畫面：拷一份（大小跟著畫布變）。 */
-  _copy(renderer) {
-    const frame = renderer.info.render.frame;
-    if (frame === this._frame) return;
-    this._frame = frame;
-    renderer.getDrawingBufferSize(_size);
-    if (!this.tex || this.tex.image.width !== _size.x || this.tex.image.height !== _size.y) {
-      if (this.tex) this.tex.dispose();
-      this.tex = new THREE.FramebufferTexture(_size.x, _size.y);
-      this.tex.minFilter = this.tex.magFilter = THREE.LinearFilter;
-      for (const v of [...this.views, ...this.spare]) v.mat.uniforms.uScreen.value = this.tex;
-    }
-    renderer.copyFramebufferToTexture(this.tex);
-    for (const v of this.views) v.mat.uniforms.uRes.value.copy(_size);
-  }
-
   _view() {
     let v = this.spare.pop();
     if (!v) {
       const mat = new THREE.ShaderMaterial({
         vertexShader: VERT, fragmentShader: FRAG,
         uniforms: {
-          uScreen: { value: this.tex }, uRes: { value: new THREE.Vector2(1, 1) }, uDir: { value: new THREE.Vector2(0, 1) },
+          uScreen: this.grab.screen, uRes: this.grab.res, uDir: { value: new THREE.Vector2(0, 1) },
           uO: { value: new THREE.Vector3() }, uF: { value: new THREE.Vector3() }, uS: { value: new THREE.Vector3() },
           uHalf: { value: 0.5 }, uLat: { value: 1 }, uK: { value: 1 }, uAmp: { value: 0 }, uTime: { value: 0 },
         },
@@ -230,8 +214,7 @@ export class Gusts {
       const mesh = new THREE.Mesh(new THREE.BufferGeometry(), mat);
       mesh.frustumCulled = false;
       mesh.renderOrder = 10;
-      mesh.onBeforeRender = (renderer) => this._copy(renderer);
-      this.renderer.getDrawingBufferSize(mat.uniforms.uRes.value);
+      mesh.onBeforeRender = () => this.grab.copy();
       this.scene.add(mesh);
       v = { mesh, mat, half: -1 };
     }
