@@ -127,6 +127,12 @@
     32. 遮擋        從一點看出去每個方向最先撞到什麼（occlude.js）：跟一條一條射線解出來的一樣（隨機擺的
                     方盒、圓柱、圓頂、門、太高太矮的，方的與圓的黑牆，還有流程模式的每一個場地），
                     分段首尾相接蓋滿一整圈；擋不擋跟 blockerAt 同一套；流程模式算一次夠快。
+    33. 旋風斬      國王會旋風斬、不限距離；倒數 1 秒站著不打、打不退；然後原地轉一圈：腰那麼高、半徑劍長的
+                    圓盤，扣 5、打 SWING 秒（跳到腳比牠的腰高躲得過）；轉完熱氣流推出去、僵直 0.25 秒。
+                    熱氣流是那一圈劍光在腰的高度上下加厚的一圈環帶，每秒 20 公尺往外、扣 2：遠處的人（前、
+                    旁邊、背後）等它走到才挨，前緣齊、往上下壓淺，一幀走過的都算，跳得過，下一層的不挨；
+                    走到最遠的黑牆角才整圈停。碰到東西的那一段停下：牆後面的不挨、露出來一點點就挨，
+                    太矮的台與太高的橫樑擋不住，門關著擋、開著不擋，劍長以內就擋住的方向一出來就停。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
@@ -162,6 +168,7 @@ import { Blade } from '../public/test/src/blade.js';
 import { swordOf } from '../public/test/src/monster.js';
 import { Rig } from '../public/src/cat/rig.js';
 import { shadeOf, reachAt, pieceAt, farthestOf } from '../public/test/src/occlude.js';
+import { ringsStep, ringHits, ringDepth, RING } from '../public/test/src/skills.js';
 import { blockerAt } from '../public/test/src/skills.js';
 import { roundTop, supportInfo } from '../public/test/src/walk.js';
 import { buildRuins } from '../public/test/src/blocks.js';
@@ -2670,6 +2677,100 @@ console.log('32. 遮擋');
     ok(n >= 4 && worstF < 1e-6, `流程模式 ${n} 個場地，每個 2000 個方向跟射線一樣（最多差 ${worstF.toExponential(1)} 公尺）`);
     ok(slow < 20, `一場算一次最慢 ${slow.toFixed(1)} 毫秒`);
   }
+}
+
+/* ── 33. 旋風斬 ──────────────────────────────────────────────── */
+console.log('33. 旋風斬');
+{
+  const S = SKILL.gale, W = S.wave;
+  ok(KINDS.king.skills.includes('gale') && S.range === undefined, '國王會旋風斬，不限距離');
+  ok(S.windup === 1 && S.damage === SKILL.hew.damage && W.damage === SKILL.hew.gust.damage && W.speed === SKILL.hew.gust.speed
+    && S.recover === 0.25 && recoverOf('gale') === 0.25,
+    '倒數 1 秒；轉的那一下扣 5、熱氣流扣 2、每秒 20 公尺（都照直線劈砍）；僵直 0.25 秒');
+  ok(near(S.radius, SKILL.hew.len) && near(S.waist, (DOG_H * sizeOf('king')) / 2) && near(S.spin, TRAILS.slam.t1) && S.swing === SWING,
+    `轉的半徑是劍長（${S.radius.toFixed(2)}）、在國王的腰（${S.waist.toFixed(2)}）；跟主角第三擊一樣 ${S.spin} 秒轉完、前 ${SWING} 秒打得到`);
+  ok(near(RING.depth, GUST.top - GUST.inner) && near(RING.half * 2, SKILL.hew.width),
+    `熱氣流是那一圈劍光（深 ${RING.depth.toFixed(2)}）、上下厚 ${(2 * RING.half).toFixed(2)}（跟劈砍的氣流一樣寬，躺平）`);
+  const keep = KINDS.king.skills;
+  KINDS.king.skills = ['gale'];
+  const box = (x0, y0, z0, x1, y1, z1) => ({ kind: 'block', min: [x0, y0, z0], max: [x1, y1, z1], base: y0 });
+  /* 國王在場地正中間，玩家在 q：放一次旋風斬，記下每一下打到的時刻、倒數裡打不打、放招中打不打得退、
+     收招與僵直、動作。field：場地；jump：玩家整段腳離地多高。 */
+  const gale = (px, pz, { field = FIELD, y = 0 } = {}) => {
+    const m = makeMonster({ kind: 'king', x: 0, z: 0, yaw: 0 }, field), w = makeWorld(field), q = { ...body(px, pz), y };
+    m.castT = 0;
+    const out = { m, w, q, spinAt: -1, ringAt: -1, windHit: false, still: true, armor: true, stages: new Set(), strikes: [], env: null };
+    const mo = new Motion();
+    for (let t = 0; t < 3; t += DT) {
+      const had = !!m.cast;
+      const st = bossStep(m, DT, q, w, () => 0);
+      if (m.cast && m.cast.env) out.env = m.cast.env;
+      if (st) out.strikes.push(st);
+      ringsStep(w, DT);
+      if (st && out.spinAt < 0 && strikeHits(st, q)) out.spinAt = t + DT;
+      for (const g of w.rings) { out.ring = g; if (out.ringAt < 0 && ringHits(g, q)) out.ringAt = t + DT; }
+      if (had && !m.cast) { out.endAt = t + DT; out.stun = m.stun; }
+      const wind = m.cast && m.cast.t < S.windup;
+      if (wind && st) out.windHit = true;
+      if (m.cast && (m.x !== 0 || m.z !== 0)) out.still = false;
+      if (m.cast && !(attacking(m) && armored(m))) out.armor = false;
+      const [stage] = mo._stage(m);
+      if (stage) out.stages.add(stage);
+      if (had || m.cast || m.stun > 0) monsterStep(m, DT, q);
+      if (out.endAt && !(m.stun > 0) && out.ring && out.ring.done) break;
+    }
+    return out;
+  };
+  const r = PHYS.radius;
+  const a = gale(0, S.radius - 0.2);
+  ok(!a.windHit && a.still && a.armor, '倒數的 1 秒不打；整招站在原地、打不退');
+  ok(a.env && a.env.pieces.length >= 1, '挑的那一刻就算好每個方向會被什麼擋下（預告照它畫）');
+  ok(near(a.spinAt, S.windup, 1.5 * DT), `劍長以內的人：${a.spinAt.toFixed(2)} 秒被轉到`);
+  ok(a.strikes.every((st) => st.shape === 'capsule' && st.dmg === S.damage && near(st.r, S.radius) && near(st.waist, S.waist) && st.wave === a.ring)
+    && Math.abs(a.strikes.length - (S.swing / DT + 1)) <= 1,
+    `轉的那一下：腰那麼高、半徑劍長的圓盤，扣 ${S.damage}，打 ${S.swing} 秒；記著它的熱氣流`);
+  ok(near(a.endAt, S.windup + S.spin, 1.5 * DT) && a.stun === S.recover, `${a.endAt.toFixed(2)} 秒轉完、熱氣流推出去，僵直 ${S.recover} 秒`);
+  ok(!strikeHits(a.strikes[0], body(0, S.radius + r + 0.02)) && strikeHits(a.strikes[0], body(S.radius + r - 0.02, 0)),
+    '轉的那一下：身體碰到劍長那一圈才算');
+  ok(!strikeHits(a.strikes[0], { ...body(0, 1), y: S.waist + 0.01 }), '跳到腳比牠的腰高：轉的那一下躲得過');
+  const b = gale(0, 8), due = S.windup + S.spin + (8 - r - S.radius) / W.speed;
+  ok(b.spinAt < 0 && near(b.ringAt, due, 2 * DT), `8 公尺外：轉不到，${b.ringAt.toFixed(2)} 秒挨到熱氣流（走過去要 ${due.toFixed(2)} 秒）`);
+  ok(b.ring.done && b.ring.from >= Math.hypot(12, 12) - W.speed * DT - 1e-9, '熱氣流一路走到最遠的黑牆角才整圈停');
+  const side = gale(8, 0), back = gale(-6, -6);
+  ok(near(side.ringAt, due, 2 * DT) && near(back.ringAt, S.windup + S.spin + (Math.hypot(6, 6) - r - S.radius) / W.speed, 2 * DT),
+    '一整圈：旁邊、背後的人一樣等它走到才挨');
+  const top = RING.half + S.waist;
+  ok(gale(0, 6, { y: top - 0.02 }).ringAt > 0 && gale(0, 6, { y: top + 0.01 }).ringAt < 0, `腳高過 ${top.toFixed(2)} 公尺（熱氣流的頂）：跳得過`);
+  ok(gale(0, 6, { y: S.waist - RING.half - PHYS.height - 0.01 }).ringAt < 0, '頭比熱氣流的底還低（下一層的人）：不挨');
+  {
+    // 前緣齊、往上下壓淺：一道停住的熱氣流（前緣在 6），身體貼著前緣、或在後緣附近。
+    const env = shadeOf(FIELD, 0, 0, S.waist - RING.half, S.waist + RING.half);
+    const g = { x: 0, y: 0, z: 0, mid: S.waist, half: RING.half, depth: RING.depth, env, from: 6, to: 6 };
+    ok(ringHits(g, body(0, 6 + r - 0.01)) && !ringHits(g, body(0, 6 + r + 0.01)), '前緣：身體碰到才算');
+    ok(ringHits(g, body(0, 6 - RING.depth - r + 0.01)) && !ringHits(g, body(0, 6 - RING.depth - r - 0.01)), `正中間往後 ${RING.depth.toFixed(2)} 公尺深`);
+    const edge = { ...body(0, 6 - RING.depth * 0.7 - r), y: S.waist + RING.half * 0.95 };
+    ok(ringDepth(g, 0) === RING.depth && near(ringDepth(g, RING.half), RING.depth * GUST.edge) && !ringHits(g, edge) && ringHits(g, { ...edge, y: 0 }),
+      `往上下照橢圓壓淺（邊上剩 ${GUST.edge} 成）：後半截靠邊的高度打不到、正中間打得到`);
+    ok(ringHits({ ...g, from: 3, to: 6 }, body(0, 2)) && !ringHits({ ...g, from: 6, to: 6 }, body(0, 2)), '一幀走過的那一段都打得到（不會一步跨過人）');
+  }
+  {
+    // 擋下：國王與玩家之間一面牆（z 4～5），牆後的人不挨；牆外露出來的人照挨。
+    const wall = { arena: ARENA, cols: [box(-1, 0, 4, 1, 3, 5)], doors: {} };
+    const hid = gale(0, 8, { field: wall }), out = gale(3, 8, { field: wall });
+    ok(hid.ringAt < 0 && out.ringAt > 0, '牆後面（整個躲在擋住的那一片裡）的人不挨；旁邊露出來的照挨');
+    // 牆的影子邊上：身體中心在影子裡、邊露出來一點點。z = 8 那裡影子的邊在 x = 8/4 = 2（牆角 (1, 4)）。
+    ok(gale(2 - r + 0.03, 8, { field: wall }).ringAt > 0 && gale(2 - r - 0.03, 8, { field: wall }).ringAt < 0,
+      '影子的邊上：身體露出 3 公分就挨，整個進影子就不挨');
+    const low = { arena: ARENA, cols: [box(-1, 0, 4, 1, S.waist - RING.half, 5)], doors: {} };
+    const high = { arena: ARENA, cols: [box(-1, S.waist + RING.half, 4, 1, 3, 5)], doors: {} };
+    ok(gale(0, 8, { field: low }).ringAt > 0 && gale(0, 8, { field: high }).ringAt > 0, '比熱氣流矮的台、比它高的橫樑：擋不住');
+    const door = { arena: ARENA, cols: [{ ...box(-3, 0, 4, 3, 3, 4.2), door: 'g' }], doors: {} };
+    ok(gale(0, 8, { field: door }).ringAt < 0 && gale(0, 8, { field: { ...door, doors: { g: true } } }).ringAt > 0, '門關著擋住，門開著穿過去');
+    // 劍長以內就有東西：那個方向的熱氣流一出來就停了，牆後的不挨（轉的那一下照樣打得到牆這邊的人）。
+    const close = { arena: ARENA, cols: [box(-1, 0, 1.2, 1, 3, 1.5)], doors: {} };
+    ok(gale(0, 6, { field: close }).ringAt < 0, '劍長以內就擋住的方向：熱氣流一出來就停');
+  }
+  KINDS.king.skills = keep;
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

@@ -43,7 +43,7 @@ import {
   coneFx, showCone, stripFx, showStrip,
 } from './fx.js';
 import { SoulLook } from './soul.js';
-import { SKILL, GUST, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, shotHits, strikeHits, gustHits, laneLength } from './skills.js';
+import { SKILL, GUST, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, ringsStep, shotHits, strikeHits, gustHits, ringHits, laneLength } from './skills.js';
 import { Hearts } from './hearts.js';
 import { Fluid, Sheet } from './fluid.js';
 import { TRAILS } from './trail.js';
@@ -373,6 +373,7 @@ export class Fight {
     this._face = null;
     this.world.shots.length = 0;
     this.world.gusts.length = 0;
+    this.world.rings.length = 0;
     this.world.spawns.length = 0;
     this.souls.length = 0;
     this._dropTrails();
@@ -485,6 +486,8 @@ export class Fight {
     for (const s of shotsStep(this.world, dt)) { this._fire.explode(s); sound.play('burst'); }
     // 國王劈砍推出去的氣流往前走，走到黑牆或撞上東西就停。
     gustsStep(this.world, dt);
+    // 國王旋風斬的熱氣流往外擴散，碰到東西的那一段停下。
+    ringsStep(this.world, dt);
     for (const { m } of foes) monsterStep(m, dt, player);
     // 衝刺衝出去的那一刻：咬下去的那一聲。國王一次衝好幾下，每一下是新的一份 m.lunge。
     for (const { m } of foes) if (m.lunge && m.lunge.hot && !m.lunge.heard) { m.lunge.heard = true; sound.play('lunge'); }
@@ -533,10 +536,16 @@ export class Fight {
         if (!strikeHits(st, player)) continue;
         take('struck', st.dmg, st);
         if (st.gust) st.gust.spent = true;    // 被劈砍那一刀劈到：同一招的氣流不再算
+        if (st.wave) st.wave.spent = true;    // 被旋風斬轉到：同一招的熱氣流不再算
       }
       // 氣流是一陣風壓，不是刀：噴的是一團，順著它走的方向（by 是氣流本身，bleed.js 的 hurtFrame）。
       for (const g of this.world.gusts) {
         if (g.spent || !gustHits(g, player)) continue;
+        g.spent = true;
+        take('struck', g.dmg, g);
+      }
+      for (const g of this.world.rings) {
+        if (g.spent || !ringHits(g, player)) continue;
         g.spent = true;
         take('struck', g.dmg, g);
       }

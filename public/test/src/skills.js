@@ -60,6 +60,14 @@
             （不打人的招）。場上牠召喚出來、還活著的
             （`m.brood`，呼叫端每幀數好寫進來）最多 4 隻：0～2 隻的時候召兩隻，3 隻的時候
             召一隻，滿 4 隻就挑不到這一招。召出來的放進 world.spawns，由呼叫端接上場。
+     gale   旋風斬（不限距離）。整片場地亮起淡紅，牠腰那麼高浮著一片圓（半徑是劍長）從中心長到邊，
+            倒數 1 秒；然後原地轉一圈——主角第三擊落地那一下（SKILL.gale.spin 秒轉完，前 swing 秒
+            打得到）：腰那麼高的一片水平圓盤，扣 5。轉完的那一刻那一圈劍光推出去，成一圈熱氣流
+            （world.rings）：劍光那一圈環（從牠身上量 GUST.inner～劍長）在腰那個高度上下加厚，
+            每秒 20 公尺往外擴散，扣 2。碰到場上的東西（跟氣流一樣，開著的門不擋；比它低、比它高的
+            不擋）的那一段停在那裡，其他的照走，一直到黑牆。哪一段會被什麼擋下，挑這一招的那一刻就
+            算好了（occlude.js 的 shadeOf，精確的）：預告的淡紅照它挖掉擋住的地方，留下斬痕也照它。
+            一招只打得到一次：被轉的那一下打到的，熱氣流就不再算。出招後僵直 0.25 秒（甩頭）。
 
    範圍攻擊照畫面上看得到的東西判，不是一次打完貼地的一片：
 
@@ -72,16 +80,19 @@
      cleave、hew 貼地的長條，打的是地面上一個狗高以內：玩家的腳比那還高——跳起來了——就躲得過。
      hew 的氣流  移動的一塊（gustHits）：劍光那四分之一圈加厚成的體積，每一幀打的是它這一幀走過的
                  地方。有兩公尺高，跳不過，只能往旁邊閃。
+     gale        轉的那一下跟騎士的 whirl 同一種（移動的圓盤，只是不移動）。熱氣流是一圈薄薄的環帶
+                 （ringHits），在牠腰那麼高：跳得過，也躲得到東西後面。
      跳砍之後的上挑例外：那一片是立起來的。
 
-   碰到扣血：BOSS 的招 5、騎士的 whirl 2、cleave 3、上挑 3、國王的 hew 5、氣流 2（每一招的 `damage`；衝刺咬到的見 combat.js 的 KINDS）。
+   碰到扣血：BOSS 的招 5、騎士的 whirl 2、cleave 3、上挑 3、國王的 hew 5、氣流 2、gale 5、熱氣流 2（每一招的 `damage`；衝刺咬到的見 combat.js 的 KINDS）。
    打中人的球就炸掉消失。玩家無敵的時候（第三段、破防攻擊）碰到不算，球穿過去。
    ------------------------------------------------------------------ */
 
 import { PHYS, arenaGap, supportInfo, solveXZ, overlapXZ, roundTop, clampArena } from './walk.js';
 import { FIELD, DOG_H, REACH, SWING, kindOf, busy, settle, inFan } from './combat.js';
 import { QUAKE, quakeTop } from './dust.js';
-import { hullOf } from './trail.js';
+import { hullOf, TRAILS } from './trail.js';
+import { shadeOf, reachAt, farthestOf } from './occlude.js';
 
 /** 每一招的數值。長度一律用狗高量；`damage` 是打中玩家扣幾點血。 */
 export const SKILL = {
@@ -110,6 +121,14 @@ export const SKILL = {
   /* 國王的召喚：倒數 windup，在身邊 radius 公尺內（離牠至少 near，不疊在牠身上）的點上各冒出
      一隻 kind（倒數的時候從地底升上來）。場上牠召喚的最多 cap 隻，一次最多召 each 隻（補到 cap 為止）。 */
   summon: { windup: 0.5, radius: 3, near: 2 * PHYS.radius, cap: 4, each: 2, kind: 'ghost' },
+  /* 國王的旋風斬：倒數 windup，然後原地轉一圈（主角第三擊落地那一下：spin 秒轉完，前 swing 秒
+     打得到），一片在腰（waist：國王畫成 1.4 倍高，腰是 1.4 × DOG_H / 2）那麼高、半徑 radius（劍長，
+     跟 hew 一樣）的水平圓盤。轉完的那一刻劍光推出去成一圈熱氣流（wave）：每秒 speed 公尺往外，
+     在腰的高度上下各厚 half（跟 hew 那一道氣流一樣寬，只是躺平了）。 */
+  gale: {
+    windup: 1, radius: 2.2 * DOG_H, waist: 0.7 * DOG_H, spin: TRAILS.slam.t1, swing: SWING, damage: 5, recover: 0.25,
+    wave: { speed: 20, damage: 2, half: 0.1 * DOG_H },
+  },
   /** 出招後僵直幾秒（那一招沒有自己的 `recover` 的話）。 */
   recover: 0.5,
 };
@@ -128,6 +147,14 @@ export const GUST = (() => {
 
 /** 離中線 t 成半寬（0～1）的地方，氣流有正中間的幾成高。 */
 export const gustRise = (t) => GUST.edge + (1 - GUST.edge) * Math.sqrt(Math.max(0, 1 - t * t));
+
+/**
+ * 旋風斬那一圈熱氣流的截面：轉的那一圈劍光（三道合起來的外框，照劍長縮放：離牠 GUST.inner～
+ * GUST.top）往外推，所以前緣後面 depth 那麼深；在腰那個高度上下各厚 half。不是平的：正中間
+ * 整片那麼深，往上下照橢圓壓淺（gustRise，跟 hew 的氣流往兩邊壓低同一條），到邊上剩 edge 那麼多
+ * ——只壓深度，前緣整圈一樣齊。
+ */
+export const RING = { depth: GUST.top - GUST.inner, half: SKILL.gale.wave.half };
 
 /** 這一招出完僵直幾秒：那一招自己的 `recover`，沒有就是 SKILL.recover。 */
 export const recoverOf = (skill) => SKILL[skill].recover ?? SKILL.recover;
@@ -155,7 +182,7 @@ const REACH_UP = PHYS.height;
  * （combat.js 的 FIELD 那一種）：球飛到它的黑牆就消失。
  */
 export function makeWorld(field = FIELD) {
-  return { shots: [], waves: [], gusts: [], spawns: [], field };
+  return { shots: [], waves: [], gusts: [], rings: [], spawns: [], field };
 }
 
 /**
@@ -189,6 +216,16 @@ function begin(m, skill, target, rng) {
   m.vx = 0; m.vz = 0;
   if (skill === 'cleave') aimCleave(m, d);
   if (skill === 'summon') m.cast.spots = summonSpots(m, rng);
+  if (skill === 'gale') m.cast.env = galeShade(m);
+}
+
+/**
+ * 旋風斬的熱氣流從牠身上往外擴散，每個方向會被什麼擋下、在多遠：挑這一招的那一刻就算好
+ * （牠倒數、轉的時候站著不動，打不退）。高度是熱氣流那一段（腰上下各 half）。
+ */
+function galeShade(m) {
+  const mid = m.y + SKILL.gale.waist;
+  return shadeOf(m.field, m.x, m.z, mid - RING.half, mid + RING.half);
 }
 
 /**
@@ -306,6 +343,23 @@ const CAST = {
     };
     world.gusts.push(gust);
     return { shape: 'strip', x: m.x, y: m.y, z: m.z, dirX: c.dirX, dirZ: c.dirZ, len, w: S.width, dmg: S.damage, gust };
+  },
+
+  /* 倒數的時候站著；倒數完原地轉一圈：轉的頭 swing 秒每一幀打腰那麼高的那一片圓盤（跟騎士的
+     whirl 同一種形狀，只是不移動）。那一下記著它的熱氣流（`wave`）：轉到的話熱氣流就不再算
+     （fight.js）。轉完那一幀熱氣流推出去（world.rings），收招。 */
+  gale(m, world) {
+    const c = m.cast, S = SKILL.gale;
+    if (c.t < S.windup) return null;
+    c.wave ??= makeRing(m, c.env);
+    const s = c.t - S.windup;
+    if (s >= S.spin) {
+      world.rings.push(c.wave);
+      m.cast = null;
+      return null;
+    }
+    if (s > S.swing) return null;
+    return { shape: 'capsule', x: m.x, y: m.y, z: m.z, x1: m.x, z1: m.z, r: S.radius, waist: m.y + S.waist, dmg: S.damage, wave: c.wave };
   },
 
   /* 倒數的時候站著；倒數完每一個點上場一隻（面向玩家被鎖定的那一點），交給呼叫端接上場。
@@ -556,6 +610,72 @@ export function gustHits(g, p) {
   const b0 = Math.max(0, p.y - g.y) / rise, b1 = (p.y + PHYS.height - g.y) / rise;
   if (a1 < a0 || b1 < b0) return false;
   return Math.hypot(a0, b0) <= GUST.top && Math.hypot(a1, b1) >= GUST.inner;
+}
+
+/**
+ * 旋風斬的熱氣流：一圈環帶，圓心在國王腳下 (x, z)，腰的高度 mid 上下各 half。前緣在離圓心 `to`
+ * 的地方（推出去那一刻是劍長 r0），`from`～`to` 是這一幀前緣走過的那一段（ringHits 照它判）。
+ * env 是每個方向會被什麼擋下（occlude.js），far 是整圈最遠的那一點：前緣走過它就整圈都停了。
+ */
+function makeRing(m, env) {
+  const S = SKILL.gale, mid = m.y + S.waist;
+  return {
+    x: m.x, y: m.y, z: m.z, mid, half: RING.half, depth: RING.depth, r0: S.radius, env, far: farthestOf(env),
+    from: S.radius, to: S.radius, dmg: S.wave.damage, t: 0, fresh: true, done: false, spent: false,
+  };
+}
+
+/**
+ * 熱氣流往外一幀（旋風斬轉完那一幀放進 world.rings）：前緣每秒 speed 公尺往外。每個方向在被擋下
+ * 的地方（reachAt）停住，那一段就不再往前、也不再打人；前緣走過整圈最遠的那一點（`far`）就整圈
+ * 停了，那一幀之後的下一次收掉。新放進來的那一幀不走。每一幀在 bossStep 之後、判定之前叫。
+ */
+export function ringsStep(world, dt) {
+  world.rings = world.rings.filter((g) => !g.done);
+  for (const g of world.rings) {
+    if (g.fresh) { g.fresh = false; continue; }
+    g.t += dt;
+    g.from = g.to;
+    g.to += SKILL.gale.wave.speed * dt;
+    if (g.to >= g.far) g.done = true;
+  }
+}
+
+/** 熱氣流在離中線 dy（公尺，往上往下一樣）的地方有多深（前緣往後量）：正中間 depth，往邊上照橢圓壓淺。 */
+export const ringDepth = (g, dy) => g.depth * gustRise(Math.min(1, Math.abs(dy) / g.half));
+
+/** 判一個身體碰到熱氣流的時候，身體張開的那一段角度裡取幾個方向（再加上擋住的分段在裡面的每一個交界）。 */
+const RING_PROBES = 16;
+
+/**
+ * 熱氣流這一幀打到玩家了嗎。
+ *   高度  身體那根圓柱跟環帶（mid ± half）重疊才算；在最靠中線的那個高度量那裡有多深（ringDepth）。
+ *   方向  身體在圓心那裡張開一段角度。那一段裡每一個方向：熱氣流在那個方向這一幀的前緣是
+ *         min(to, 擋下的地方)，後緣是這一幀開始時的 from 往後那麼深；這一段（從後緣到前緣）跟
+ *         身體在那個方向上的那一截（弦）重疊就算。這一幀開始的時候已經被擋下的方向不算。
+ *         方向取那一段的兩頭、等分的 RING_PROBES 個，與擋住的分段在那一段裡的每一個交界——
+ *         所以躲在柱子後面露出一點點也挨得到，整個躲進去就不挨。
+ */
+export function ringHits(g, p) {
+  const R = PHYS.radius;
+  const dy = Math.min(Math.max(g.mid, p.y), p.y + PHYS.height) - g.mid;
+  if (Math.abs(dy) > g.half) return false;
+  const deep = ringDepth(g, dy);
+  const rx = p.x - g.x, rz = p.z - g.z, rho = Math.hypot(rx, rz);
+  if (rho - R > g.to || rho + R < g.from - deep) return false;
+  const at = Math.atan2(rx, rz), half = rho > R ? Math.asin(R / rho) : Math.PI;
+  const probes = [];
+  for (let i = 0; i <= RING_PROBES; i++) probes.push(at - half + (2 * half * i) / RING_PROBES);
+  for (const pc of g.env.pieces) {
+    for (const a of [pc.a0, pc.a0 + 2 * Math.PI, pc.a0 - 2 * Math.PI]) if (a > at - half && a < at + half) probes.push(a, a - 1e-9);
+  }
+  for (const th of probes) {
+    const d = reachAt(g.env, th);
+    if (g.from >= d) continue;
+    const off = th - at, s = rho * Math.sin(off), w = Math.sqrt(Math.max(0, R * R - s * s)), c = rho * Math.cos(off);
+    if (Math.min(g.to, d) >= c - w && g.from - deep <= c + w) return true;
+  }
+  return false;
 }
 
 /**
