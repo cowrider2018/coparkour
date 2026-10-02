@@ -82,6 +82,10 @@
             召出來的幽靈在同一段 0.5 秒裡從地底升上來（riseLift）：一開始整隻在地板底下，
             先快後慢，倒數完的那一刻腳剛好離開地面——也就是牠進場、開始動的那一刻。
             埋在地板底下的那一截被地板的深度擋掉，不必另外裁。
+     gale   旋風斬：騎士劍迴旋那一套（主角第三擊），只是不衝、只轉一圈。倒數的 1 秒是主角二段跳
+            起來那一下縮成一團、往右擰到底（照 1 秒拉長）；轉的時候是主角落地那一下整隻往左轉一圈，
+            劍水平伸在外面掃過去（galeSpin，0.4 秒轉完）；0.25 秒的僵直是甩頭（衝刺僵直那一套甩，
+            不先低頭）：從轉完的那個姿勢一邊甩一邊回到原本的樣子。劍光是主角第三擊那一道（fight.js）。
 
    ── 會飛的漂 ──────────────────────────────────────────────────────
    會飛的（幽靈）一直是空中姿勢、不走路，所以移動的時候另外常駐一套漂（DRIFT）：
@@ -290,6 +294,13 @@ const WOUND = { ...RAISE, headPitch: -0.85, drop: 0.34, knee: -0.98 };
 /** 跳砍落地前頭往前甩的那一下多長（秒）：落地那一刻劍正劈到一半。劍光（fight.js）從這一下開始掃。 */
 export const CHOP_LEAD = 0.08;
 
+/** 旋風斬轉完的那一刻：主角落地那一下轉到底的那一格（SKILL.gale.spin 就是那一格的時間），轉過的一整圈拿掉。 */
+const SPIN_END = (() => {
+  const [t, pose] = HERO.slam.keys[1];
+  if (Math.abs(t - SKILL.gale.spin) > 1e-9) throw new Error('旋風斬轉完的時間要跟主角落地那一下轉到底那一格一樣');
+  return { ...pose, yaw: pose.yaw - 2 * Math.PI };
+})();
+
 /** 跳砸站著蓄力的那一段有多長（之後 SKILL.leap.air 秒在飛）。 */
 const LEAP_WIND = SKILL.leap.windup - SKILL.leap.air;
 
@@ -379,6 +390,11 @@ export const MOVES = {
   hewRec: { blend: 0.02, keys: [[0, CHOP], [SKILL.hew.recover, CHOP, 'lin']] },
   summonWind: { blend: 0.08, keys: [[0, {}], [0.3, STRETCH, 'out'], [SKILL.summon.windup, STRETCH_MAX, 'inOut']] },
   summonRec: { blend: 0.02, keys: [[0, STRETCH_MAX], [0.12, STRETCH_MAX, 'lin'], [recoverOf('summon'), {}, 'inOut']] },
+  /* 國王的旋風斬：蓄力是騎士劍迴旋的那一套（主角二段跳那一下，照 1 秒拉長），轉是主角落地那一下
+     （一圈），僵直是甩頭——從轉完的那一格一邊甩一邊回來。 */
+  galeWind: retime(HERO.leap, SKILL.gale.windup),
+  galeSpin: HERO.slam,
+  galeRec: { blend: 0.02, keys: shakeKeys(recoverOf('gale'), SPIN_END, [[0, SPIN_END]]) },
 };
 
 /**
@@ -488,6 +504,7 @@ export class Motion {
       this._skill = c.skill;
       if (c.skill === 'leap' && c.t >= LEAP_WIND) return ['leapAir', c.t - LEAP_WIND];
       if (c.skill === 'whirl' && c.t >= SKILL.whirl.windup) return ['whirlDash', c.t - SKILL.whirl.windup];
+      if (c.skill === 'gale' && c.t >= SKILL.gale.windup) return ['galeSpin', c.t - SKILL.gale.windup];
       if (c.skill === 'cleave' && c.up) {
         const S = SKILL.cleave, u = c.t - S.windup - S.air - S.up.gap;
         return u < 0 ? ['cleaveLand', u + S.up.gap] : ['cleaveUp', u];

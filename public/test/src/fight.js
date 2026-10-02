@@ -777,7 +777,8 @@ export class Fight {
   /**
    * 騎士的劍迴旋衝刺：倒數完、開始衝的那一幀起一道兩圈的劍光（trail.js 的 whirl），
    * 照迴旋的半徑縮放，跟著牠的腳與鎖定的方向走——牠一邊衝一邊鋪，所以留下來的是
-   * 一圈往前拉開的劍光。高度照牠的體型抬：主角的劍光在身高中間，牠畫得高。
+   * 一圈往前拉開的劍光。高度照牠的體型抬：主角的劍光在身高中間，牠畫得高。國王的旋風斬一樣，
+   * 只是一圈（主角第三擊那一道）、不衝。
    * 跳砍與之後的上挑交給 _cleave。
    */
   _whirls() {
@@ -785,10 +786,12 @@ export class Fight {
       const c = m.cast;
       if (c && c.skill === 'cleave') { this._cleave(m, c); continue; }
       if (c && c.skill === 'hew') { this._hewQi(m, c); continue; }
-      if (!c || c.skill !== 'whirl' || c.t < SKILL.whirl.windup || c.qi) continue;
+      // 國王的旋風斬：主角第三擊那一道（一圈），照劍長縮放。
+      const spin = !!c && c.skill === 'gale', S = spin ? SKILL.gale : SKILL.whirl;
+      if (!c || !(spin || c.skill === 'whirl') || c.t < S.windup || c.qi) continue;
       const q = this._spare.pop() || new Qi();
       if (!q.node.parent) this.scene.add(q.node);
-      q.start('whirl', null, SKILL.whirl.radius / REACH);
+      q.start(spin ? 'slam' : 'whirl', null, S.radius / REACH);
       const lift = (PHYS.height / 2) * (sizeOf(m.kind) - 1), body = { x: 0, y: 0, z: 0, aimX: 0, aimZ: 1 };
       q.owner = () => Object.assign(body, { x: m.x, y: m.y + lift, z: m.z, aimX: c.dirX, aimZ: c.dirZ });
       q.cast = c;

@@ -133,6 +133,8 @@
                     旁邊、背後）等它走到才挨，前緣齊、往上下壓淺，一幀走過的都算，跳得過，下一層的不挨；
                     走到最遠的黑牆角才整圈停。碰到東西的那一段停下：牆後面的不挨、露出來一點點就挨，
                     太矮的台與太高的橫樑擋不住，門關著擋、開著不擋，劍長以內就擋住的方向一出來就停。
+                    動作是 galeWind → galeSpin → galeRec：主角二段跳那一下拉長到 1 秒、主角落地那一下轉一圈、
+                    從轉完那一格甩頭 0.25 秒回到原本的樣子。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
@@ -2779,6 +2781,19 @@ console.log('33. 旋風斬');
     // 劍長以內就有東西：那個方向的熱氣流一出來就停了，牆後的不挨（轉的那一下照樣打得到牆這邊的人）。
     const close = { arena: ARENA, cols: [box(-1, 0, 1.2, 1, 3, 1.5)], doors: {} };
     ok(gale(0, 6, { field: close }).ringAt < 0, '劍長以內就擋住的方向：熱氣流一出來就停');
+  }
+  ok([...a.stages].join() === 'galeWind,galeSpin,galeRec', `動作：${[...a.stages].join(' → ')}`);
+  {
+    const KM = KNIGHT_MOVES, gw = KM.galeWind.keys, gr = KM.galeRec.keys, end = HERO_MOVES.slam.keys[1];
+    ok(near(gw[gw.length - 1][0], S.windup) && gw.every(([, p], i) => p === HERO_MOVES.leap.keys[i][1]) && KM.galeSpin === HERO_MOVES.slam,
+      '蓄力是主角二段跳那一下拉長到 1 秒，轉是主角落地那一下（一圈）');
+    const yaw = (p) => p.yaw || 0;
+    ok(near(end[0], S.spin) && near(yaw(gr[0][1]), end[1].yaw - 2 * Math.PI) && gr[0][1].pitch === end[1].pitch,
+      '僵直從轉完的那一格接下去（轉過的一整圈拿掉，不會倒轉回去）');
+    let shook = 0;
+    for (let i = 2; i < gr.length - 1; i++) if (Math.sign(gr[i][1].headYaw) !== Math.sign(gr[i - 1][1].headYaw)) shook++;
+    ok(near(gr[gr.length - 1][0], S.recover) && Object.keys(gr[gr.length - 1][1]).length === 0 && shook >= 2,
+      `僵直 ${S.recover} 秒整段在甩頭（左右換邊 ${shook} 次），最後回到原本的樣子`);
   }
   KINDS.king.skills = keep;
 }
