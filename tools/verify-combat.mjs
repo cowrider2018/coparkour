@@ -124,6 +124,9 @@
     31. 盾的外觀    剩幾面就畫幾面，平均分在一圈上、盾面朝外，那一圈照體型放大、離身體夠遠
                     （不穿過國王的身體）；用掉一面：那一面縮到沒有、其他的滑到新的平均間隔；
                     墨線跟著國王的墨色換。
+    32. 遮擋        從一點看出去每個方向最先撞到什麼（occlude.js）：跟一條一條射線解出來的一樣（隨機擺的
+                    方盒、圓柱、圓頂、門、太高太矮的，方的與圓的黑牆，還有流程模式的每一個場地），
+                    分段首尾相接蓋滿一整圈；擋不擋跟 blockerAt 同一套；流程模式算一次夠快。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
@@ -158,6 +161,10 @@ import { ShieldRing, SHIELD } from '../public/test/src/shield.js';
 import { Blade } from '../public/test/src/blade.js';
 import { swordOf } from '../public/test/src/monster.js';
 import { Rig } from '../public/src/cat/rig.js';
+import { shadeOf, reachAt, pieceAt, farthestOf } from '../public/test/src/occlude.js';
+import { blockerAt } from '../public/test/src/skills.js';
+import { roundTop, supportInfo } from '../public/test/src/walk.js';
+import { buildRuins } from '../public/test/src/blocks.js';
 
 let fails = 0;
 const ok = (cond, msg) => {
@@ -2533,6 +2540,136 @@ console.log('31. 盾的外觀');
   const red = ring.ink.color.equals(ATTACK_INK);
   c.setInkColor(null);
   ok(red && !ring.ink.color.equals(ATTACK_INK), '墨線跟著國王的墨色換（攻擊中轉紅、之後換回來）');
+}
+
+/* ── 32. 遮擋 ────────────────────────────────────────────────── */
+console.log('32. 遮擋');
+{
+  /* 對照組：一條射線一個碰撞體地解（方盒用 slab、圓柱解二次式；圓頂被 lo 切過的半徑用二分
+     roundTop 找），取最近的，再跟黑牆比。擋不擋照 blockerAt：在撞到的那一點往裡一點點問它。 */
+  const ray = (field, x, z, th, lo, hi) => {
+    const ux = Math.sin(th), uz = Math.cos(th);
+    let best = laneLength(x, z, ux, uz, field.arena), col = null;
+    for (const b of field.cols) {
+      if (b.kind === 'pit' || b.kind === 'bound' || (b.door && field.doors[b.door]) || b.min[1] >= hi) continue;
+      let t = Infinity;
+      if (b.shape === 'circle') {
+        let r = b.r;
+        if (roundTop(b, 0) <= lo) continue;
+        if (roundTop(b, b.r * 0.999999) <= lo) {
+          let u = 0, v = b.r;
+          for (let i = 0; i < 80; i++) { const m = (u + v) / 2; if (roundTop(b, m) > lo) u = m; else v = m; }
+          r = u;
+        }
+        const ox = x - b.x, oz = z - b.z, k = ox * ux + oz * uz, c = ox * ox + oz * oz - r * r, q = k * k - c;
+        if (q >= 0 && -k - Math.sqrt(q) >= 0) t = -k - Math.sqrt(q);
+      } else {
+        if (b.max[1] <= lo) continue;
+        let t0 = -Infinity, t1 = Infinity;
+        for (const [o, u, a, c] of [[x, ux, b.min[0], b.max[0]], [z, uz, b.min[2], b.max[2]]]) {
+          if (Math.abs(u) < 1e-15) { if (o < a || o > c) t0 = Infinity; continue; }
+          const p = (a - o) / u, q = (c - o) / u;
+          t0 = Math.max(t0, Math.min(p, q)); t1 = Math.min(t1, Math.max(p, q));
+        }
+        if (t0 <= t1 && t0 >= 0) t = t0;
+      }
+      if (t < best) { best = t; col = b; }
+    }
+    return { d: best, col };
+  };
+  let seed = 11;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const span = (a, b) => a + (b - a) * rnd();
+  const box = (x0, y0, z0, x1, y1, z1, more = {}) => ({ kind: 'block', min: [x0, y0, z0], max: [x1, y1, z1], base: y0, ...more });
+  const round = (x, z, r, y0, cap, dome = 0) => ({ kind: 'block', shape: 'circle', x, z, r, cap, dome, min: [x - r, y0, z - r], max: [x + r, cap + dome, z + r], base: y0 });
+  const lo = 0.55, hi = 0.75;
+  /* 隨機的場：方的或圓的黑牆，裡面擺一些方盒（有的疊在一起、有的是門、有的太高或太矮）與圓柱
+     （有的帶圓頂，被 lo 切過）。中心挑在不在任何東西裡面的地方。 */
+  const scene = () => {
+    const circ = rnd() < 0.4;
+    const arena = circ ? { shape: 'circle', x: span(-1, 1), z: span(-1, 1), r: span(8, 16) } : { shape: 'rect', x0: span(-14, -8), x1: span(8, 14), z0: span(-14, -8), z1: span(8, 14) };
+    const cols = [], doors = {};
+    const n = 6 + Math.floor(rnd() * 16);
+    for (let i = 0; i < n; i++) {
+      const x = span(-12, 12), z = span(-12, 12), k = rnd();
+      if (k < 0.55) {
+        const w = span(0.1, 4), d = span(0.1, 4), y0 = rnd() < 0.15 ? span(0.8, 2) : 0, y1 = rnd() < 0.15 ? span(0.2, 0.6) : span(1, 3);
+        const more = rnd() < 0.15 ? { door: `d${i}` } : {};
+        if (more.door) doors[more.door] = rnd() < 0.5;
+        cols.push(box(x, y0, z, x + w, Math.max(y0 + 0.05, y1), z + d, more));
+      } else {
+        const r = span(0.2, 1.5), cap = rnd() < 0.3 ? span(0.2, 0.6) : span(0.8, 2), dome = rnd() < 0.5 ? span(0.1, 0.8) : 0;
+        cols.push(round(x, z, r, 0, cap, dome));
+      }
+    }
+    // 不算的：坑。
+    cols.push({ kind: 'pit', min: [-1, -2, -1], max: [1, 0, 1] });
+    const field = { arena, cols, doors };
+    for (let k = 0; k < 200; k++) {
+      const x = circ ? arena.x + span(-0.6, 0.6) * arena.r : span(arena.x0 + 0.5, arena.x1 - 0.5);
+      const z = circ ? arena.z + span(-0.6, 0.6) * arena.r : span(arena.z0 + 0.5, arena.z1 - 0.5);
+      if (!blockerAt(field, x, z, 0.05, lo, hi)) return { field, x, z };
+    }
+    return null;
+  };
+  let scenes = 0, dirs = 0, worst = 0, wrongCol = 0, gaps = 0, blockOk = true;
+  for (let s = 0; s < 300; s++) {
+    const sc = scene();
+    if (!sc) continue;
+    scenes++;
+    const env = shadeOf(sc.field, sc.x, sc.z, lo, hi), P = env.pieces;
+    if (P[0].a0 !== -Math.PI || P[P.length - 1].a1 !== Math.PI || P.some((p, i) => i && p.a0 !== P[i - 1].a1) || P.some((p) => !(p.a1 > p.a0))) gaps++;
+    for (let i = 0; i < 400; i++) {
+      const th = span(-Math.PI, Math.PI), want = ray(sc.field, sc.x, sc.z, th, lo, hi), got = reachAt(env, th);
+      dirs++;
+      const err = Math.abs(got - want.d);
+      worst = Math.max(worst, err);
+      // 兩個東西剛好一樣近（共用一面、疊在一起）的時候是哪一個都對。
+      const col = pieceAt(env, th).col;
+      if (col !== want.col && Math.abs(ray({ ...sc.field, cols: sc.field.cols.filter((b) => b !== want.col) }, sc.x, sc.z, th, lo, hi).d - want.d) > 1e-7) wrongCol++;
+      if (want.col && i % 20 === 0) {
+        // 撞到的那一點往裡 1 毫米、半徑 2 毫米：blockerAt 也說那裡有它（擦過角的射線一進去就出來，所以帶一點半徑）。
+        const px = sc.x + Math.sin(th) * (want.d + 0.001), pz = sc.z + Math.cos(th) * (want.d + 0.001);
+        if (!blockerAt({ ...sc.field, cols: [want.col] }, px, pz, 0.002, lo, hi)) blockOk = false;
+      }
+    }
+  }
+  ok(scenes > 250 && gaps === 0, `${scenes} 個隨機的場：分段首尾相接、蓋滿一整圈`);
+  ok(worst < 1e-6 && wrongCol === 0, `${dirs} 個方向跟射線解出來的一樣（最多差 ${worst.toExponential(1)} 公尺），撞到的也是同一個`);
+  ok(blockOk, '擋不擋跟 blockerAt 同一套：撞到的那一點，blockerAt 也說有東西');
+  {
+    // 幾個指定的：門開著穿過去、太矮太高的不擋、圓頂被切過的半徑。
+    const A = { shape: 'rect', x0: -12, x1: 12, z0: -12, z1: 12 };
+    const at = (cols, doors = {}, th = 0) => reachAt(shadeOf({ arena: A, cols, doors }, 0, 0, lo, hi), th);
+    const door = box(-2, 0, 5, 2, 3, 5.2, { door: 'g' });
+    ok(near(at([door]), 5) && near(at([door], { g: true }), 12), '門關著停在門上，門開著一路到黑牆');
+    ok(near(at([box(-2, 0, 5, 2, lo, 6)]), 12) && near(at([box(-2, hi, 5, 2, 3, 6)]), 12) && near(at([box(-2, lo + 0.01, 5, 2, 3, 6)]), 5),
+      '頂在 lo 以下、底在 hi 以上的不擋；底在中間的擋');
+    const dome = round(0, 6, 1, 0, 0.3, 0.5), cut = Math.sqrt(1 - ((lo - 0.3) / 0.5) ** 2);
+    ok(near(at([dome]), 6 - cut, 1e-9), `圓頂被 lo 切過：半徑剩 ${cut.toFixed(3)}，停在 ${(6 - cut).toFixed(3)} 公尺`);
+    const env = shadeOf({ arena: A, cols: [box(-1, 0, 4, 1, 2, 5), box(-1, 0, 8, 1, 2, 9)], doors: {} }, 0, 0, lo, hi);
+    ok(near(farthestOf(env), Math.hypot(12, 12)), '整圈最遠的是黑牆的角');
+  }
+  {
+    // 流程模式的每一個場地：在場地中心，國王的腰那一段高度。
+    const ruins = buildRuins(), cols = ruins.colliders, doors = Object.fromEntries(Object.keys(ruins.doors).map((d) => [d, false]));
+    let worstF = 0, slow = 0, n = 0;
+    for (const a of ruins.arenas) {
+      const x = a.shape === 'circle' ? a.x : (a.x0 + a.x1) / 2, z = a.shape === 'circle' ? a.z : (a.z0 + a.z1) / 2;
+      const y = supportInfo(cols, x, z, a.lid ?? 30).y, field = { arena: a, cols, doors };
+      if (blockerAt(field, x, z, 0.05, y + lo, y + hi)) continue;
+      const t0 = performance.now();
+      const env = shadeOf(field, x, z, y + lo, y + hi);
+      slow = Math.max(slow, performance.now() - t0);
+      n++;
+      for (let i = 0; i < 2000; i++) {
+        const th = -Math.PI + (2 * Math.PI * (i + 0.5)) / 2000;
+        worstF = Math.max(worstF, Math.abs(reachAt(env, th) - ray(field, x, z, th, y + lo, y + hi).d));
+      }
+    }
+    ok(n >= 4 && worstF < 1e-6, `流程模式 ${n} 個場地，每個 2000 個方向跟射線一樣（最多差 ${worstF.toExponential(1)} 公尺）`);
+    ok(slow < 20, `一場算一次最慢 ${slow.toFixed(1)} 毫秒`);
+  }
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');
