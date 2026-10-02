@@ -305,6 +305,10 @@ export class Fight {
    * @param {object} field 牠們站在什麼樣的場地（combat.js 的 FIELD 那一種）
    */
   lineup(spawns, field = FIELD) {
+    /* 會召喚的：召喚得出來的那幾隻外觀現在就建好（每一隻召喚者最多 cap 隻，加上陣容裡本來就有的同一類）。
+       建一隻要上百毫秒，召喚的那一刻才建就是一頓；換陣容本來就在建外觀，在這裡建。下面一起藏起來。 */
+    const S = SKILL.summon, callers = spawns.filter((s) => KINDS[s.kind].skills?.includes('summon')).length;
+    if (callers) this._slot(S.kind, spawns.filter((s) => s.kind === S.kind).length + callers * S.cap - 1);
     for (const list of this._pool.values()) for (const s of list) Fight._hide(s);
     const used = new Map();
     this.foes = spawns.map((s) => {
