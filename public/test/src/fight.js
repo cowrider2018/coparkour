@@ -26,6 +26,7 @@ import {
   FIELD, REACH, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster, harm, lifeStep, gainHeart,
   dropSoul, soulStep, grabs,
   breaking, broken, breakTarget, startBreak, breakContact, contact, parry, spinStep, separate, placeMonster, monsterStep, bites, knock,
+  knockHero, knockLand,
   inSlash, inFan, inRing, slashTip, makeCombo, comboStep, invulnerable, untouchable, cueing, attacking, taken,
 } from './combat.js';
 import { makeMonsterCritter, sizeOf, bloodOf, swordOf, helmOf, crownOf, riseLift, Motion, ATTACK_INK, CHOP_LEAD } from './monster.js';
@@ -430,6 +431,7 @@ export class Fight {
    */
   lead(dt, player, pressed) {
     const combo = this.combo;
+    if (player.knocked) pressed = false;   // 被擊退、還在空中：不能跳（combat.js 的 knockHero）
     const target = breakTarget(player, this.foes.map((f) => f.m));
     const act = comboStep(combo, dt, {
       pressed, grounded: player.grounded, near: this.foes.some((f) => inSlash(this.body(player), f.m)),
@@ -465,6 +467,7 @@ export class Fight {
     /* 這一幀開始的時候已經在破防中的：結束的時候多出來的，就是這一幀窗口剛開的。 */
     const open = new Set(foes.filter(({ m }) => broken(m)).map(({ m }) => m));
     lifeStep(player, dt);
+    knockLand(player);
     // 每一隻召喚出來、還在場上的有幾隻（召喚挑不挑得到、召幾隻看它，skills.js）。
     for (const { m } of foes) m.brood = 0;
     for (const { m } of foes) if (m.by) m.by.brood++;
@@ -570,7 +573,14 @@ export class Fight {
       if (hit) {
         // 玩家跟狗一樣大（體型 1），噴的是血；剛挨過一下（guard）沒扣到就不噴。
         if (harm(player, hit.dmg)) {
-          this._blood.spurt(spurtOf(hurtFrame(hit.cause, by, player), player, 1, 'blood'), this.world.field);
+          const frame = hurtFrame(hit.cause, by, player);
+          this._blood.spurt(spurtOf(frame, player, 1, 'blood'), this.world.field);
+          /* 擊退：往血噴出去的那個方向（那一下打過來的方向）。那個方向幾乎是直上直下的話
+             （往上挑的那一片），改成離開打中他的那一個；還是分不出來就往後退。 */
+          let kx = frame.d[0], kz = frame.d[2], kh = Math.hypot(kx, kz);
+          if (kh < 0.2) { kx = player.x - (by.x ?? player.x); kz = player.z - (by.z ?? player.z); kh = Math.hypot(kx, kz); }
+          if (kh < 1e-6) { kx = -player.aimX; kz = -player.aimZ; kh = 1; }
+          knockHero(player, kx / kh, kz / kh);
           if (hit.cause === 'bitten') sound.play('bitten');
           if (player.hp <= 0) sound.play('down');
           else if (hit.cause !== 'bitten') sound.play('hurt');

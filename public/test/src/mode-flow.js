@@ -221,7 +221,8 @@ function frame(now) {
   const pressed = controls.jumpPressed() && !still;
   const sliding = player.grounded && player.slip === 'fall';
   if (!death.busy) fight.lead(dt, player, pressed && !sliding);
-  if (!fight.breaking) steerHero(player, dt, controls, input);
+  // 被擊退的那一段（combat.js 的 knockHero）也不操控：照那一下的速度飛，落地才還回來。
+  if (!fight.breaking && !player.knocked) steerHero(player, dt, controls, input);
   const portals = portalsOn(run) ? ruins.portals : NO_PORTALS;
   const speed = fight.spinning ? 0 : moveHero(player, dt, COLS, portals, doors);
 

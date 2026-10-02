@@ -138,8 +138,9 @@ function frame(now) {
   fight.lead(dt, player, controls.jumpPressed());
 
   /* 操控。破防攻擊裡不操控：突進與跳離是拋物線，迴旋的位置由 spinStep 擺——
-     steer 會把速度投影到搖桿的方向上，那一投影就把突進的速度吃掉了。 */
-  if (!fight.breaking) {
+     steer 會把速度投影到搖桿的方向上，那一投影就把突進的速度吃掉了。被擊退的那一段
+     （combat.js 的 knockHero）也一樣：照那一下的速度飛，落地才還回來。 */
+  if (!fight.breaking && !player.knocked) {
     const aim = controls.aim(input);
     if (aim) [player.aimX, player.aimZ] = aim;
     [player.vx, player.vz] = steer(player.vx, player.vz, player.aimX, player.aimZ, speedFor(input.mag), dt);

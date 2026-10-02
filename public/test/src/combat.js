@@ -748,6 +748,31 @@ export function knock(m, fromX, fromZ, awayX, awayZ, scale = { h: 1, v: 1 }) {
   m.grounded = false;
 }
 
+/**
+ * 主角挨了一下（harm 有扣到）的擊退：怪物被打的基準（KNOCK，KNOCK_SCALE 之前）的一半
+ * 動能。動能跟速度的平方成正比，所以水平與垂直的初速都乘 √½：1.41 m/s、4.95 m/s，
+ * 飛 0.45 秒、最高 0.56 公尺、水平帶走 0.64 公尺。(dirX, dirZ) 是那一下打過來的方向
+ * （水平的單位向量）。飛在空中的這一段不能操控、不能跳（`knocked`，模式與 Fight.lead
+ * 看它），落地就結束（knockLand）。
+ */
+export const HERO_KNOCK = Math.SQRT1_2;
+
+export function knockHero(p, dirX, dirZ) {
+  p.vx = dirX * KNOCK.h * HERO_KNOCK;
+  p.vz = dirZ * KNOCK.h * HERO_KNOCK;
+  p.vy = KNOCK.v * HERO_KNOCK;
+  p.grounded = false;
+  p.knocked = true;
+}
+
+/** 被擊退的主角落地了：這一段結束，水平一起停掉（跟怪物落地一樣）。移動之後、判打中之前叫。 */
+export function knockLand(p) {
+  if (!p.knocked || !p.grounded) return;
+  p.knocked = false;
+  p.vx = 0;
+  p.vz = 0;
+}
+
 /* ── 攻擊範圍 ────────────────────────────────────────────────────
    怪物是一根圓柱（半徑 PHYS.radius、高 PHYS.height），所以「打得到」是
    「範圍與那根圓柱相交」，不是「範圍包住牠的中心」——後者會讓擦到身體
