@@ -391,6 +391,12 @@ export class Fight {
     this._scars.clear();
   }
 
+  /** 收招：連段歸零、朝向放開，怪物不動。倒下的那一刻用（之後不再 lead，屍體不出招）。 */
+  disarm() {
+    Object.assign(this.combo, makeCombo());
+    this._face = null;
+  }
+
   /** 破防攻擊裡：突進與跳離是拋物線、迴旋的位置由 spinStep 擺，模式不要操控玩家。 */
   get breaking() { return breaking(this.combo); }
 

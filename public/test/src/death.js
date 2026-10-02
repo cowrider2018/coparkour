@@ -5,16 +5,18 @@
      倒下     DEATH.tip 秒，從直立轉到橫躺。從血扣光的那一刻就開始轉，不等落地：
               半空中被打死的話，身體一邊照重力往下掉一邊倒。越倒越快（u²），
               躺平的那一刻停住——是倒下去，不是被放下去。
-     幽靈     DEATH.ghost 秒。躺平的那一刻那一隻變成幽靈（monster.js 的
-              makeGhostCritter：同一隻動物，幽靈那一件、半透明），照躺著的樣子
-              浮起 DEATH.rise 公尺，先慢後快再慢（smoothstep）。
+     幽靈     DEATH.ghost 秒。躺平的那一刻，牠的靈魂從屍體站起來往上浮（monster.js 的
+              makeGhostCritter：同一隻動物，幽靈那一件、半透明）：直立的、朝著倒下
+              那一刻的方向，浮起 DEATH.rise 公尺，先慢後快再慢（smoothstep）。
+              屍體留在地上，一直躺到全黑。
      暗下去   DEATH.fade：暗下去、全黑、亮回來（transit.js，同一層黑幕）。全黑的
               那一刻 `update` 回傳 true，模式把人放回門前（跟以前的倒下一樣）。
-     醒來     開始亮回來的那一刻起 WAKE.time 秒：畫面在模糊與清楚之間簡諧地來回
+     醒來     開始亮回來的那一刻（全黑那一段過完）起 WAKE.time 秒：畫面在模糊與清楚之間簡諧地來回
               （WAKE.cycles 個來回，從最模糊開始、停在清楚），中間浮出「原來是夢」：
               WAKE.words 的四個時間點是開始浮現、完全清楚、開始淡出、淡完。
 
-   倒下到全黑之前操作收起來（`busy`）：身體照慣性停下。醒來那一段已經站在門前，
+   倒下到全黑之前操作收起來（`busy`）：身體照慣性停下。怪物不收，照常動到全黑那一刻
+   （怎麼讓牠們打不到屍體是模式的事，mode-flow.js 的 fall）。醒來那一段已經站在門前，
    操作還回來了，模糊只是畫面。
 
    ── 怎麼倒 ──────────────────────────────────────────────────────
@@ -34,7 +36,7 @@ export const DEATH = { tip: 1.0, ghost: 2.0, rise: 1.0, fade: { out: 0.5, hold: 
  * 醒來（秒、CSS 像素）：多久、模糊與清楚之間幾個來回（n + 0.5 才會從模糊開始、停在清楚）、
  * 最模糊多糊；字的四個時間點（開始浮現、完全清楚、開始淡出、淡完）、字浮現前多糊。
  */
-export const WAKE = { time: 1.75, cycles: 2.5, blur: 8, words: [0.25, 0.75, 1.25, 1.75], wordsBlur: 6 };
+export const WAKE = { time: 3.5, cycles: 2.5, blur: 8, words: [0.5, 1.5, 2.5, 3.5], wordsBlur: 6 };
 
 const smooth = (u) => { const k = Math.min(1, Math.max(0, u)); return k * k * (3 - 2 * k); };
 const UP = new THREE.Vector3(0, 1, 0);
@@ -140,7 +142,8 @@ export class Death {
   }
 
   /**
-   * 每幀一次，在 fight.draw 之後（它每幀重設玩家看不看得到）、算圖之前。
+   * 每幀一次，在 fight.draw 之後（它每幀照 guard 重設玩家看不看得到、墨線是不是金色，
+   * 倒下的時候這裡蓋回來）、算圖之前。
    * 到了全黑、該送回門前的那一刻回傳 true（只回傳一次）。
    *
    * @param {number} dt
@@ -151,25 +154,24 @@ export class Death {
     let due = false;
     if (this.t >= 0) {
       this.t += dt;
-      const T = this.t, alive = T < DEATH.tip;
-      const half = this.ghost.half;
-      // 倒：Zoo 的 root 繞前進軸、支點在倒向那一側的腳邊。
-      this._tip(this.zoo.root, tipAngle(T), half, player, 0);
-      this.zoo.root.visible = alive;
-      // 躺平的那一刻換成幽靈：接手那一隻的朝向與步態，照躺著的樣子往上浮。
-      const g = this.ghost;
-      if (!alive && !g.root.visible) {
+      const T = this.t, g = this.ghost;
+      // 倒：Zoo 的 root 繞前進軸、支點在倒向那一側的腳邊。倒下的身體不閃、墨線不是金的。
+      this._tip(this.zoo.root, tipAngle(T), g.half, player);
+      this.zoo.root.visible = true;
+      this.zoo.setInkColor(null);
+      // 躺平的那一刻靈魂站起來：接手那一隻的朝向與步態，直立著從屍體往上浮。
+      if (T >= DEATH.tip && !g.root.visible) {
         g.c.adopt(this.zoo.active);
         g.c.setHat(this.zoo.hatOn);
         g.root.visible = true;
       }
-      if (!alive) {
+      if (g.root.visible) {
         const u = (T - DEATH.tip) / DEATH.ghost;
-        this._tip(g.root, Math.PI / 2, half, player, DEATH.rise * smooth(u));
+        g.root.position.set(player.x, player.y + DEATH.rise * smooth(u), player.z);
         g.c.setFacing(this.yaw);
         g.c.update(dt, { speed: 0, grounded: false, vy: 1, viewYaw });
       }
-      // 浮完：暗下去。全黑的那一刻送回門前、動物站回來、開始醒。
+      // 浮完：暗下去。全黑的那一刻送回門前、屍體站回來、靈魂收起來、開始醒。
       if (T >= DEATH.tip + DEATH.ghost && this.fade.t < 0) this.fade.go(true);
       if (this.fade.update(dt)) {
         due = true;
@@ -188,8 +190,8 @@ export class Death {
     return due;
   }
 
-  /** 把 `node` 擺成倒了 `angle`、再往上浮 `lift` 公尺。 */
-  _tip(node, angle, half, player, lift) {
+  /** 把 `node` 擺成倒了 `angle`。 */
+  _tip(node, angle, half, player) {
     const s = this._side;
     _axis.crossVectors(UP, s).normalize();
     _q.setFromAxisAngle(_axis, angle);
@@ -198,7 +200,7 @@ export class Death {
     const c = Math.cos(angle), n = Math.sin(angle);
     node.position.set(
       player.x + half * s.x * (1 - c),
-      player.y + half * n + lift,
+      player.y + half * n,
       player.z + half * s.z * (1 - c),
     );
   }

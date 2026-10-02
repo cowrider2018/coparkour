@@ -12,10 +12,10 @@
                          最大血量 +1，一路帶到後面的場。
      不在戰鬥中          清完一場之後、還沒走進下一場之前：很快回血到最大血量
                          （combat.js 的 regen）。
-     倒下（血扣光）      BOSS 收起來。不當幀重生，先演一段（death.js）：倒下、變成幽靈
-                         浮起來、暗下去；全黑的時候血補滿，人回到這一場的入口外面、面朝
-                         入口（route.js 的 restAt），門照「還沒打第 k 場」開著；亮回來的
-                         時候畫面糊了又清楚幾下，浮出「原來是夢」。
+     倒下（血扣光）      不當幀重生，先演一段（death.js）：倒下、靈魂從屍體浮起來、暗下去。
+                         這一段裡 BOSS 照常動、但打不到屍體；全黑的時候 BOSS 收起來、血補滿，
+                         人回到這一場的入口外面、面朝入口（route.js 的 restAt），門照「還沒打
+                         第 k 場」開著；亮回來的時候畫面糊了又清楚幾下，浮出「原來是夢」。
                          不在同一個房間裡重生；自己走回去，一進房間就重打。
      R                   重玩：回到起點，六場全部重來。
      1–6                 從第幾場開始（前面的當作打完了），在那一場的入口外面。
@@ -86,8 +86,6 @@ const STILL = { ix: 0, iz: 0, mag: 0 };
 const death = new Death(scene, zoo, {
   fade: document.getElementById('fade'), view: canvas, words: document.getElementById('dream'),
 });
-/** 倒下那一段裡不打（BOSS 已經收起來了）。 */
-const CALM = { hit: null, died: null, souls: 0 };
 
 /* ── 路線 ────────────────────────────────────────────────────────
    run 是路線的狀態（route.js 的 makeRun）：下一場是第幾場、是不是正在打。
@@ -156,24 +154,29 @@ function clear() {
 }
 
 /**
- * 倒下：BOSS 收起來，開始演倒下那一段（death.js）。門還關著、這一場還算在打，
- * 到全黑的那一刻才回到入口外面（rest）。
+ * 倒下：開始演倒下那一段（death.js）。門還關著、這一場還算在打、BOSS 照常動，
+ * 到全黑的那一刻才收起來、回到入口外面（rest）。
+ *
+ * 屍體打不到：guard 開到無限大，fight.js 就整個不判玩家挨打（combat.js 的 untouchable），
+ * 也就不會再倒下一次。它讓玩家一閃一閃、墨線變金色的那兩件事，death.js 每幀蓋回來。
+ * 收招，之後不再 lead：貼著怪物的屍體不會自動出第一擊。
  */
 function fall(cause) {
   transit.cancel();
   deaths++;
-  player.guard = 0;                       // 剛挨的那一下不閃：倒下的身體要看得到
-  spawnIn = 0;
-  fight.lineup([], fieldOf(player.block));
+  player.guard = Infinity;
+  fight.disarm();
   death.start(player, camera.position.x, camera.position.z);
   hud.flash(DEATH_TEXT[cause]);
 }
 
-/** 倒下演完、畫面全黑：血補滿，回到這一場的入口外面休息。 */
+/** 倒下演完、畫面全黑：BOSS 收起來，血補滿（guard 一起清掉），回到這一場的入口外面休息。 */
 function rest() {
   refill(player);
   const k = run.next;
   run.active = false;
+  spawnIn = 0;
+  fight.lineup([], fieldOf(player.block));
   applyDoors();
   place(k === 0 ? { ...ruins.arrivals[START] } : restAt(k, ruins));
 }
@@ -217,7 +220,7 @@ function frame(now) {
   const input = still ? STILL : controls.axis();
   const pressed = controls.jumpPressed() && !still;
   const sliding = player.grounded && player.slip === 'fall';
-  fight.lead(dt, player, pressed && !sliding);
+  if (!death.busy) fight.lead(dt, player, pressed && !sliding);
   if (!fight.breaking) steerHero(player, dt, controls, input);
   const portals = portalsOn(run) ? ruins.portals : NO_PORTALS;
   const speed = fight.spinning ? 0 : moveHero(player, dt, COLS, portals, doors);
@@ -241,13 +244,13 @@ function frame(now) {
       hud.flash('BOSS 出現了');
     }
   }
-  const { hit, died, souls } = death.busy ? CALM : fight.resolve(dt, player);
+  const { hit, died, souls } = fight.resolve(dt, player);
   if (souls) hud.flash(`撿到靈魂，最大血量 +${souls}`);
   if (!run.active && !death.busy) regen(player, dt);     // 不在戰鬥中：很快回血
   if (run.active && spawnIn === 0 && !fight.foes.length && !death.busy) clear();
   if (died) fall(died);
   else if (hit) hud.flash(`${DEATH_TEXT[hit.cause]}，扣 ${hit.dmg} 點血`);
-  music.want(run.active && !death.busy ? 'fight' : 'explore');
+  music.want(run.active ? 'fight' : 'explore');
 
   // 動物
   zoo.root.position.set(player.x, player.y, player.z);
