@@ -226,18 +226,18 @@ const SHAKE = {
 const shakeEnv = (u) => Math.min(1, u / 0.1) * (1 - u * u);
 
 /**
- * 僵直的關鍵影格：先低頭，停到 BOW_TIME；之後照 SHAKE 每 20 毫秒取一格，
- * 低頭的那一份跟著淡掉（頭一邊甩一邊抬回來），最後一格回到原本的樣子。
+ * 甩頭的關鍵影格：lead 那幾格先播（最後一格的姿勢是 base），之後到 T 秒照 SHAKE 每 20 毫秒
+ * 取一格，base 跟著淡掉（一邊甩一邊回來），最後一格回到原本的樣子。
  */
-function shakeKeys() {
-  const T = LUNGE.recover, span = T - BOW_TIME, step = 0.02;
-  const keys = [[0, {}], [0.12, BOW, 'out'], [BOW_TIME, BOW, 'lin']];
+function shakeKeys(T, base, lead) {
+  const t0 = lead[lead.length - 1][0], span = T - t0, step = 0.02;
+  const keys = [...lead];
   for (let s = step; s < span - 1e-6; s += step) {
     const u = s / span, e = shakeEnv(u), b = 1 - u * u * (3 - 2 * u);
     const pose = { w: 1 };
-    for (const k in BOW) if (k !== 'w') pose[k] = BOW[k] * b;
+    for (const k in base) if (k !== 'w') pose[k] = base[k] * b;
     for (const [k, [a, hz, ph]] of Object.entries(SHAKE)) pose[k] = (pose[k] || 0) + a * e * Math.sin(2 * Math.PI * hz * s + ph);
-    keys.push([BOW_TIME + s, pose, 'lin']);
+    keys.push([t0 + s, pose, 'lin']);
   }
   keys.push([T, {}, 'lin']);
   return keys;
@@ -328,7 +328,7 @@ const LOOK = { stages: { coneWind: 1, leapWind: 1 }, tau: 0.12, max: 1.0 };
 export const MOVES = {
   windup: { blend: 0.05, keys: [[0, {}], [0.16, CROUCH, 'out'], [LUNGE.windup, { ...CROUCH, headPitch: 0.86, drop: 0.10 }, 'inOut']] },
   dash: { blend: 0.05, keys: [[0, {}]] },
-  recover: { blend: 0.04, keys: shakeKeys() },
+  recover: { blend: 0.04, keys: shakeKeys(LUNGE.recover, BOW, [[0, {}], [0.12, BOW, 'out'], [BOW_TIME, BOW, 'lin']]) },
   orbWind: {
     blend: 0.08,
     keys: [[0, {}], [0.55, STRETCH, 'out'], [SKILL.orb.windup - 0.06, STRETCH_MAX, 'inOut'], [SKILL.orb.windup, SPIT_MID, 'in']],
