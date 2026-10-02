@@ -28,8 +28,8 @@ import { floorUnder } from './bleed.js';
 /** 兩個樣本之間隔多遠（公尺）。 */
 const SEG = 0.18;
 
-/** 一道最多幾個樣本：劍長兩公尺上下，留足夠的餘裕。 */
-const MAX = 32;
+/** 一道先留幾個樣本的位置：劍長兩公尺上下，留足夠的餘裕。比這長的那一道寫的時候再放大。 */
+const ROOM = 32;
 
 /** 全寬是多寬（公尺），裡面那一道黑的佔幾成。 */
 const WIDE = 0.24, CORE = 0.42;
@@ -92,12 +92,8 @@ const ATTRS = [['position', 3], ['aSide', 3], ['aV', 1], ['aHalf', 1], ['aBorn',
 /** 一道斬痕：一條帶子，劈下去那一刻整條寫好。 */
 class Mark {
   constructor() {
-    const g = new THREE.BufferGeometry();
-    for (const [name, n] of ATTRS) g.setAttribute(name, new THREE.BufferAttribute(new Float32Array(MAX * 2 * n), n));
-    const idx = [];
-    for (let i = 0; i < MAX - 1; i++) { const a = 2 * i; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
-    g.setIndex(idx);
-    g.setDrawRange(0, 0);
+    this.room = 0;
+    const g = this._geometry(ROOM);
     this.mat = new THREE.ShaderMaterial({
       vertexShader: VERT, fragmentShader: FRAG,
       uniforms: { uNow: { value: 0 } },
@@ -112,11 +108,27 @@ class Mark {
     this.over = 0;
   }
 
+  /** 放得下 n 個樣本的一條帶子。 */
+  _geometry(n) {
+    const g = new THREE.BufferGeometry();
+    for (const [name, k] of ATTRS) g.setAttribute(name, new THREE.BufferAttribute(new Float32Array(n * 2 * k), k));
+    const idx = [];
+    for (let i = 0; i < n - 1; i++) { const a = 2 * i; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    g.setIndex(idx);
+    g.setDrawRange(0, 0);
+    this.room = n;
+    return g;
+  }
+
   /**
    * 寫下整條：samples 是每一個樣本 { p 中線上的一點, side 往兩邊撐開的方向, half 半寬, born 什麼時候裂開 }。
    */
   write(samples) {
-    const a = this.g.attributes, n = Math.min(MAX, samples.length);
+    if (samples.length > this.room) {
+      this.g.dispose();
+      this.g = this.mesh.geometry = this._geometry(Math.max(samples.length, 2 * this.room));
+    }
+    const a = this.g.attributes, n = samples.length;
     for (let i = 0; i < n; i++) {
       const { p, side, half, born } = samples[i];
       for (const v of [-1, 1]) {
@@ -163,6 +175,11 @@ export class Scars {
       out.push({ p: [x, st.y + LIFT, z], side, half, born: this.now + (s - s0) / TEAR });
       if (s >= st.len) break;
     }
+    this._mark(out);
+  }
+
+  /** 借一道（收回來的先用），寫下這幾個樣本。 */
+  _mark(out) {
     const m = this.spare.pop() || new Mark();
     if (!m.mesh.parent) this.scene.add(m.mesh);
     m.mesh.visible = true;
