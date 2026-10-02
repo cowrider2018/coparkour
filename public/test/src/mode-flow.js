@@ -12,8 +12,10 @@
                          最大血量 +1，一路帶到後面的場。
      不在戰鬥中          清完一場之後、還沒走進下一場之前：很快回血到最大血量
                          （combat.js 的 regen）。
-     倒下（血扣光）      BOSS 收起來，血補滿，人回到這一場的入口外面休息、面朝入口
-                         （route.js 的 restAt），門照「還沒打第 k 場」開著。
+     倒下（血扣光）      BOSS 收起來。不當幀重生，先演一段（death.js）：倒下、變成幽靈
+                         浮起來、暗下去；全黑的時候血補滿，人回到這一場的入口外面、面朝
+                         入口（route.js 的 restAt），門照「還沒打第 k 場」開著；亮回來的
+                         時候畫面糊了又清楚幾下，浮出「原來是夢」。
                          不在同一個房間裡重生；自己走回去，一進房間就重打。
      R                   重玩：回到起點，六場全部重來。
      1–6                 從第幾場開始（前面的當作打完了），在那一場的入口外面。
@@ -33,6 +35,7 @@ import { Controls, fitView, wardrobe } from './controls.js';
 import { buildStage } from './stage.js';
 import { makeHero, steerHero, moveHero } from './hero.js';
 import { Transit } from './transit.js';
+import { Death } from './death.js';
 import { Fight, DEATH_TEXT } from './fight.js';
 import { Sound } from './sound.js';
 import { Music } from './music.js';
@@ -79,6 +82,13 @@ const cam = makeCam(0, 0);
 const transit = new Transit(document.getElementById('fade'));
 const STILL = { ix: 0, iz: 0, mag: 0 };
 
+/** 倒下的那一段：倒、變成幽靈浮起、暗下去、在門前醒來（death.js）。 */
+const death = new Death(scene, zoo, {
+  fade: document.getElementById('fade'), view: canvas, words: document.getElementById('dream'),
+});
+/** 倒下那一段裡不打（BOSS 已經收起來了）。 */
+const CALM = { hit: null, died: null, souls: 0 };
+
 /* ── 路線 ────────────────────────────────────────────────────────
    run 是路線的狀態（route.js 的 makeRun）：下一場是第幾場、是不是正在打。
    `spawnIn` 是開打之後離 BOSS 出現還有幾秒（0 = 已經出現或沒在打）。 */
@@ -114,6 +124,7 @@ function place(at) {
  */
 function startFrom(k) {
   transit.cancel();
+  death.cancel();
   run = makeRun(k);
   spawnIn = 0;
   deaths = 0;
@@ -144,18 +155,27 @@ function clear() {
   if (!done) hud.paint({ block: STAGES[run.next].id });
 }
 
-/** 倒下：BOSS 收起來，血補滿，回到這一場的入口外面休息。 */
+/**
+ * 倒下：BOSS 收起來，開始演倒下那一段（death.js）。門還關著、這一場還算在打，
+ * 到全黑的那一刻才回到入口外面（rest）。
+ */
 function fall(cause) {
   transit.cancel();
   deaths++;
+  player.guard = 0;                       // 剛挨的那一下不閃：倒下的身體要看得到
+  spawnIn = 0;
+  fight.lineup([], fieldOf(player.block));
+  death.start(player, camera.position.x, camera.position.z);
+  hud.flash(DEATH_TEXT[cause]);
+}
+
+/** 倒下演完、畫面全黑：血補滿，回到這一場的入口外面休息。 */
+function rest() {
   refill(player);
   const k = run.next;
   run.active = false;
-  spawnIn = 0;
-  fight.lineup([], fieldOf(player.block));
   applyDoors();
   place(k === 0 ? { ...ruins.arrivals[START] } : restAt(k, ruins));
-  hud.flash(`${DEATH_TEXT[cause]}——在入口外面休息，準備好再進去`);
 }
 
 /** 感測區把人送走（沒在打的時候才會發生）。換了區塊就報名字。 */
@@ -192,9 +212,10 @@ function frame(now) {
 
   /* 連段先決定這一下跳是什麼（破防攻擊一發動就接管速度），然後操控、移動——
      破防攻擊裡不操控、迴旋中不移動（見 fight.js）。滑落的時候不能跳。 */
-  // 快被送走的那一段（畫面正在暗下去）不操作：身體照慣性停下。
-  const input = transit.busy ? STILL : controls.axis();
-  const pressed = controls.jumpPressed() && !transit.busy;
+  // 快被送走的那一段（畫面正在暗下去）與倒下的那一段不操作：身體照慣性停下。
+  const still = transit.busy || death.busy;
+  const input = still ? STILL : controls.axis();
+  const pressed = controls.jumpPressed() && !still;
   const sliding = player.grounded && player.slip === 'fall';
   fight.lead(dt, player, pressed && !sliding);
   if (!fight.breaking) steerHero(player, dt, controls, input);
@@ -220,17 +241,17 @@ function frame(now) {
       hud.flash('BOSS 出現了');
     }
   }
-  const { hit, died, souls } = fight.resolve(dt, player);
+  const { hit, died, souls } = death.busy ? CALM : fight.resolve(dt, player);
   if (souls) hud.flash(`撿到靈魂，最大血量 +${souls}`);
-  if (!run.active) regen(player, dt);     // 不在戰鬥中：很快回血
-  if (run.active && spawnIn === 0 && !fight.foes.length) clear();
+  if (!run.active && !death.busy) regen(player, dt);     // 不在戰鬥中：很快回血
+  if (run.active && spawnIn === 0 && !fight.foes.length && !death.busy) clear();
   if (died) fall(died);
   else if (hit) hud.flash(`${DEATH_TEXT[hit.cause]}，扣 ${hit.dmg} 點血`);
-  music.want(run.active ? 'fight' : 'explore');
+  music.want(run.active && !death.busy ? 'fight' : 'explore');
 
   // 動物
   zoo.root.position.set(player.x, player.y, player.z);
-  zoo.setFacing(fight.faceYaw(player));
+  if (!death.busy) zoo.setFacing(fight.faceYaw(player));
   const viewYaw = Math.atan2(camera.position.x - player.x, camera.position.z - player.z);
   zoo.update(dt, { speed, grounded: player.grounded, vy: player.vy, viewYaw, move: fight.move(dt) });
 
@@ -244,6 +265,7 @@ function frame(now) {
   }
 
   fight.draw(dt, camera, player);
+  if (death.update(dt, player, viewYaw)) rest();
   renderer.render(scene, camera);
   pad.draw();
 
@@ -264,7 +286,7 @@ function frame(now) {
 
 fitView({
   renderer, camera, pad, hud,
-  ink: (px, h) => { zoo.setInkPx(px, h); fight.setInkPx(px, h); },
+  ink: (px, h) => { zoo.setInkPx(px, h); fight.setInkPx(px, h); death.setInkPx(px, h); },
 });
 
 document.getElementById('boot').remove();
@@ -273,7 +295,7 @@ requestAnimationFrame(frame);
 
 // 給主控台一個把手，方便手動看東西。run 會被換掉，所以是 getter。
 window.flowArea = {
-  scene, camera, renderer, zoo, player, ruins, cam, pad, hud, fight, music, doors, startFrom,
+  scene, camera, renderer, zoo, player, ruins, cam, pad, hud, fight, music, doors, death, startFrom,
   get run() { return run; },
   get foes() { return fight.foes; },
 };

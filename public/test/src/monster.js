@@ -169,6 +169,23 @@ export function makeMonsterCritter(zoo, kind) {
   return c;
 }
 
+/**
+ * 玩家倒下之後浮起來的那一隻（death.js）：玩家那一隻動物本人（Zoo 的模型 `model`，同樣大），
+ * 穿幽靈那一件、一樣半透明。眼睛不是紅的——紅眼睛是怪物的記號，這一隻是玩家自己——
+ * 用臉那一色。
+ *
+ * @param {import('./critter.js').Zoo} zoo
+ * @param {string} model Zoo 的模型 id
+ * @returns {Critter}
+ */
+export function makeGhostCritter(zoo, model) {
+  const own = zoo.critters.get(model);
+  const c = new Critter(own.data, model, { height: own.height });
+  paint(c, GHOST, GHOST.face);
+  seeThrough(c, GHOST_ALPHA);
+  return c;
+}
+
 /** 讓一隻 Critter 半透明：原本的網格只寫深度，另一個網格照 alpha 上色（理由見檔頭）。 */
 function seeThrough(c, alpha) {
   const depth = c.mesh;
@@ -193,8 +210,8 @@ function seeThrough(c, alpha) {
   depth.parent.add(mesh);
 }
 
-/** 照骨頭上色。Critter 沒有「自訂毛色」的入口，所以直接寫它的顏色屬性。 */
-function paint(c, coat) {
+/** 照骨頭上色。Critter 沒有「自訂毛色」的入口，所以直接寫它的顏色屬性。眼睛預設是紅的。 */
+function paint(c, coat, eyes = RED) {
   const out = c._colorAttr.array;
   const nv = out.length / 3;
   const face = new Uint8Array(nv);
@@ -202,7 +219,7 @@ function paint(c, coat) {
   for (let i = g.start; i < g.start + g.count; i++) face[idx[i]] = 1;
   for (let v = 0; v < nv; v++) {
     const eye = c.rig.names[c._boneId[v]].startsWith('eye');
-    const col = eye ? RED : face[v] ? coat.face : coat.body;
+    const col = eye ? eyes : face[v] ? coat.face : coat.body;
     out[v * 3] = col[0]; out[v * 3 + 1] = col[1]; out[v * 3 + 2] = col[2];
   }
   c._colorAttr.needsUpdate = true;
