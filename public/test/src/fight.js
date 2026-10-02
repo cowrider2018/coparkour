@@ -143,7 +143,7 @@ export class Fight {
     this._qis = [];
     this._spare = [new Qi()];
     scene.add(this._spare[0].node);
-    /** 國王劈砍在劍長以內留下的斬痕（scar.js）。 */
+    /** 國王劈砍在劍長以內、旋風斬的熱氣流撞上東西的地方留下的斬痕（scar.js）。 */
     this._scars = new Scars(scene);
     /** 扭曲畫面的那幾樣讀的畫面：一幀拷一次，大家共用（grab.js）。沒有 renderer 就沒有。 */
     this._grab = renderer ? new Grab(renderer) : null;
@@ -496,7 +496,8 @@ export class Fight {
     for (const s of shotsStep(this.world, dt)) { this._fire.explode(s); sound.play('burst'); }
     // 國王劈砍推出去的氣流往前走，走到黑牆或撞上東西就停。
     gustsStep(this.world, dt);
-    // 國王旋風斬的熱氣流往外擴散，碰到東西的那一段停下。
+    // 國王旋風斬的熱氣流往外擴散，碰到東西的那一段停下；推出去的那一刻每一個擋下它的東西留一道斬痕。
+    for (const g of this.world.rings) if (!g.gashed) { g.gashed = true; this._scars.gash(g, SKILL.gale.wave.speed); }
     ringsStep(this.world, dt);
     for (const { m } of foes) monsterStep(m, dt, player);
     // 衝刺衝出去的那一刻：咬下去的那一聲。國王一次衝好幾下，每一下是新的一份 m.lunge。

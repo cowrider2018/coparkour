@@ -126,13 +126,15 @@
                     墨線跟著國王的墨色換。
     32. 遮擋        從一點看出去每個方向最先撞到什麼（occlude.js）：跟一條一條射線解出來的一樣（隨機擺的
                     方盒、圓柱、圓頂、門、太高太矮的，方的與圓的黑牆，還有流程模式的每一個場地），
-                    分段首尾相接蓋滿一整圈；擋不擋跟 blockerAt 同一套；流程模式算一次夠快。
+                    分段首尾相接蓋滿一整圈；擋不擋跟 blockerAt 同一套；流程模式算一次夠快。擋下的每一段
+                    沿著那一面取點：轉過牆角接著走、跨過 ±π 接成一段、被前面遮住的從影子的邊上開始。
     33. 旋風斬      國王會旋風斬、不限距離；倒數 1 秒站著不打、打不退；然後原地轉一圈：腰那麼高、半徑劍長的
                     圓盤，扣 5、打 SWING 秒（跳到腳比牠的腰高躲得過）；轉完熱氣流推出去、僵直 0.25 秒。
                     熱氣流是那一圈劍光在腰的高度上下加厚的一圈環帶，每秒 20 公尺往外、扣 2：遠處的人（前、
                     旁邊、背後）等它走到才挨，前緣齊、往上下壓淺，一幀走過的都算，跳得過，下一層的不挨；
                     走到最遠的黑牆角才整圈停。碰到東西的那一段停下：牆後面的不挨、露出來一點點就挨，
                     太矮的台與太高的橫樑擋不住，門關著擋、開著不擋，劍長以內就擋住的方向一出來就停。
+                    擋下的那一面留一道橫的斬痕（貼著那一面、熱氣流的高度，走到哪裡哪裡才裂）。
                     動作是 galeWind → galeSpin → galeRec：主角二段跳那一下拉長到 1 秒、主角落地那一下轉一圈、
                     從轉完那一格甩頭 0.25 秒回到原本的樣子。
    ------------------------------------------------------------------ */
@@ -169,7 +171,8 @@ import { ShieldRing, SHIELD } from '../public/test/src/shield.js';
 import { Blade } from '../public/test/src/blade.js';
 import { swordOf } from '../public/test/src/monster.js';
 import { Rig } from '../public/src/cat/rig.js';
-import { shadeOf, reachAt, pieceAt, farthestOf, bakeShade } from '../public/test/src/occlude.js';
+import { shadeOf, reachAt, pieceAt, farthestOf, bakeShade, faceRuns, alongRun } from '../public/test/src/occlude.js';
+import { Scars } from '../public/test/src/scar.js';
 import { ringsStep, ringHits, ringDepth, RING } from '../public/test/src/skills.js';
 import { blockerAt } from '../public/test/src/skills.js';
 import { roundTop, supportInfo } from '../public/test/src/walk.js';
@@ -2663,6 +2666,24 @@ console.log('32. 遮擋');
     const th = (i) => -Math.PI + (2 * Math.PI * (i + 0.5)) / n;
     ok(near(far, Math.max(...out.filter((v, k) => k % 2)), 1e-5) && out.every((v, k) => near(v, k % 2 ? laneLength(0, 0, Math.sin(th(k >> 1)), Math.cos(th(k >> 1)), A) : reachAt(env, th(k >> 1)), 1e-5)),
       '烘給預告的表：每一格是那個方向熱氣流最遠到哪、黑牆在哪；回傳黑牆最遠多遠');
+    // 擋下的每一段：一個方盒露出兩面（從 (-3, -3) 看 (0..1, 0..1)），轉過牆角還是同一段；沿著它取的點都在那兩面上。
+    const two = shadeOf({ arena: A, cols: [box(0, 0, 0, 1, 2, 1)], doors: {} }, -3, -3, lo, hi), runs = faceRuns(two);
+    const pts = alongRun(two, runs[0], 0.18);
+    const onFace = pts.every(({ th, d }) => {
+      const x = -3 + Math.sin(th) * d, z = -3 + Math.cos(th) * d;
+      return (near(x, 0, 1e-9) && z >= -1e-9 && z <= 1 + 1e-9) || (near(z, 0, 1e-9) && x >= -1e-9 && x <= 1 + 1e-9);
+    });
+    const gaps = pts.slice(1).map((q, i) => q.s - pts[i].s), corner = [[0, 1], [1, 0]];
+    const ends = [pts[0], pts[pts.length - 1]].map(({ th, d }) => [-3 + Math.sin(th) * d, -3 + Math.cos(th) * d]);
+    ok(runs.length === 1 && onFace && gaps.every((g) => g > 0 && g <= 0.18 + 1e-6) && near(pts[pts.length - 1].s, 2, 1e-6)
+      && ends.every((e) => corner.some((c) => near(e[0], c[0], 1e-9) && near(e[1], c[1], 1e-9))),
+      `擋下的那一段沿著露出來的兩面取點（${pts.length} 點、每段不超過 18 公分），轉過牆角接著走，頭尾在兩個外角上`);
+    // 跨過 ±π（正後方，−z）的那一段：頭尾接成一段。
+    const back = faceRuns(shadeOf({ arena: A, cols: [box(-1, 0, -5, 1, 2, -4)], doors: {} }, 0, 0, lo, hi));
+    ok(back.length === 1 && back[0].a1 > Math.PI && near(back[0].a1 - back[0].a0, 2 * Math.atan(1 / 4), 1e-9), '正後方跨過 ±π 的那一面：接成一段');
+    // 後面那一個被前面那一個遮住一部分：兩段，交界在前面那一個的影子邊上。
+    const pair = faceRuns(shadeOf({ arena: A, cols: [box(-1, 0, 4, 1, 2, 5), box(0, 0, 8, 3, 2, 9)], doors: {} }, 0, 0, lo, hi));
+    ok(pair.length === 2 && near(pair.find((r) => r.col.min[2] === 8).a0, Math.atan2(1, 4), 1e-9), '後面那一面被前面的遮住一部分：斬痕從影子的邊上開始');
   }
   {
     // 流程模式的每一個場地：在場地中心，國王的腰那一段高度。
@@ -2781,6 +2802,24 @@ console.log('33. 旋風斬');
     // 劍長以內就有東西：那個方向的熱氣流一出來就停了，牆後的不挨（轉的那一下照樣打得到牆這邊的人）。
     const close = { arena: ARENA, cols: [box(-1, 0, 1.2, 1, 3, 1.5)], doors: {} };
     ok(gale(0, 6, { field: close }).ringAt < 0, '劍長以內就擋住的方向：熱氣流一出來就停');
+  }
+  {
+    // 斬痕：牆（z 4～5、x −1～1）上一道橫的，在熱氣流的高度；正對國王的那一點先裂，往兩頭撕；黑牆不留。
+    const wall = { arena: ARENA, cols: [box(-1, 0, 4, 1, 3, 5)], doors: {} };
+    const m = makeMonster({ kind: 'king', x: 0, z: 0, yaw: 0 }, wall), w = makeWorld(wall);
+    m.castT = 0;
+    for (let t = 0; t < 2 && !w.rings.length; t += DT) { bossStep(m, DT, body(0, 8), w, () => 0); if (m.stun > 0) monsterStep(m, DT, body(0, 8)); }
+    const sc = new Scars(new THREE.Scene());
+    sc.gash(w.rings[0], W.speed);
+    const mk = sc.live[0], P = mk.g.attributes.position, B = mk.g.attributes.aBorn, n = mk.g.drawRange.count / 6 + 1;
+    const xs = [], ys = [], zs = [], born = [];
+    for (let i = 0; i < n; i++) { xs.push(P.getX(2 * i)); ys.push(P.getY(2 * i)); zs.push(P.getZ(2 * i)); born.push(B.getX(2 * i)); }
+    const mid = born.indexOf(Math.min(...born));
+    ok(sc.live.length === 1 && near(Math.min(...xs), -1, 0.01) && near(Math.max(...xs), 1, 0.01) && zs.every((z) => z > 4 - 0.03 && z < 4 - 0.01)
+      && ys.every((y) => Math.abs(y - S.waist) < 0.03),
+      '熱氣流撞上的那一面留一道橫的：從牆的一頭到另一頭，浮在牆面前面一兩公分、在熱氣流的高度');
+    ok(near(born[mid], (4 - S.radius) / W.speed, 1e-3) && near(xs[mid], 0, 0.1) && born.slice(0, mid).every((b, i) => b >= born[i + 1] - 1e-9) && born.slice(mid).every((b, i, arr) => i === 0 || b >= arr[i - 1] - 1e-9),
+      '熱氣流走到哪裡哪裡才裂：正對國王的那一點先，往兩頭撕過去');
   }
   ok([...a.stages].join() === 'galeWind,galeSpin,galeRec', `動作：${[...a.stages].join(' → ')}`);
   {

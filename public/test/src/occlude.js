@@ -264,3 +264,65 @@ export function bakeShade(env, out, wall, n = SHADE_N) {
   }
   return far;
 }
+
+/**
+ * 被同一個碰撞體擋下的每一段連續的角度（黑牆不算）：相鄰、同一個碰撞體的分段併成一段（方盒
+ * 露出兩面的話轉過牆角還是同一段），跨過 ±π 的頭尾也接起來（那一段的 a1 會超過 π）。
+ *
+ * @returns {{col: object, a0: number, a1: number}[]}
+ */
+export function faceRuns(env) {
+  const runs = [];
+  for (const p of env.pieces) {
+    const last = runs[runs.length - 1];
+    if (!p.col) continue;
+    if (last && last.col === p.col && last.a1 === p.a0) last.a1 = p.a1;
+    else runs.push({ col: p.col, a0: p.a0, a1: p.a1 });
+  }
+  const first = runs[0], end = runs[runs.length - 1];
+  if (runs.length > 1 && first.col === end.col && first.a0 === -Math.PI && end.a1 === Math.PI) {
+    end.a1 = first.a1 + 2 * Math.PI;
+    runs.shift();
+  }
+  return runs;
+}
+
+/**
+ * 沿著一段（faceRuns）擋下的那一面取點：每一個分段（一面）各自照那一面上量的長度等分，每一份
+ * 不超過 step 公尺，分段的交界（牆角、換到另一面的地方）一定取到。距離照那一面自己的式子算，
+ * 不查包絡——交界上查包絡會查到隔壁那一段。回傳每一點的方向、離中心多遠、從頭量過來沿著那一面
+ * 走了多遠。
+ */
+export function alongRun(env, run, step) {
+  const parts = [];
+  for (const p of env.pieces) {
+    if (p.col !== run.col) continue;
+    for (const k of [0, TAU]) if (p.a0 + k >= run.a0 - EPS && p.a1 + k <= run.a1 + EPS) parts.push({ face: p.face, a0: p.a0 + k, a1: p.a1 + k });
+  }
+  parts.sort((p, q) => p.a0 - q.a0);
+  const at = (f, th) => { const d = distOf(f, th); return [Math.sin(th) * d, Math.cos(th) * d, d]; };
+  const out = [];
+  let s0 = 0;
+  for (const { face, a0, a1 } of parts) {
+    // 先密密地走一遍量長度（每一小段一公分上下），再照長度等分取點。
+    const dense = [[a0, 0]];
+    let prev = at(face, a0), len = 0;
+    const n = Math.max(8, Math.ceil(((a1 - a0) * Math.max(prev[2], at(face, a1)[2])) / 0.01));
+    for (let i = 1; i <= n; i++) {
+      const th = a0 + ((a1 - a0) * i) / n, q = at(face, th);
+      len += Math.hypot(q[0] - prev[0], q[1] - prev[1]);
+      dense.push([th, len]);
+      prev = q;
+    }
+    const m = Math.max(1, Math.ceil(len / step - 1e-9));
+    for (let j = out.length ? 1 : 0, k = 0; j <= m; j++) {
+      const want = (len * j) / m;
+      while (k < n - 1 && dense[k + 1][1] < want) k++;
+      const [t0, l0] = dense[k], [t1, l1] = dense[k + 1];
+      const th = l1 > l0 ? t0 + ((t1 - t0) * (want - l0)) / (l1 - l0) : t0;
+      out.push({ th, d: distOf(face, th), s: s0 + want });
+    }
+    s0 += len;
+  }
+  return out;
+}

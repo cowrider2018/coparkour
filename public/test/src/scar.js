@@ -20,10 +20,20 @@
 
    地板不平的地方（流程模式的台階、坑）：樣本底下的地板不在國王那一層的，那一個樣本
    不畫——斬痕不會浮在坑上，也不會插進台階裡。
+
+   ── 旋風斬的斬痕 ─────────────────────────────────────────────────
+   旋風斬的熱氣流撞上東西的地方（gash）：同一個樣子，只是立在那一面上、橫著一道，在熱氣流的
+   高度（那個東西沒那麼高的話壓到它的頂下面）。哪一段被哪個東西擋下是挑招那一刻就算好的
+   （occlude.js 的 faceRuns，精確的），所以斬痕的兩頭剛好在牆角、或前面另一個東西的影子邊上；
+   中間每 SEG 公尺一個樣本，量的是那一面上的長度。熱氣流走到哪一點、那一點才裂開，所以一道
+   斬痕是照撞上去的先後一路撕開的（正對著國王的那一點先裂，往兩邊撕過去）。黑牆不留。
+   斬痕貼著碰撞體的那一面、往國王那邊浮 INSET——圓的東西的碰撞體比畫出來的胖一點點，那幾公分
+   浮在它前面。
    ------------------------------------------------------------------ */
 
 import * as THREE from '../vendor/three.module.js';
 import { floorUnder } from './bleed.js';
+import { faceRuns, alongRun } from './occlude.js';
 
 /** 兩個樣本之間隔多遠（公尺）。 */
 const SEG = 0.18;
@@ -51,6 +61,9 @@ const TEAR = 25, HOLD = 1.1, CLOSE = 0.35;
 
 /** 離地板多高：比血泊（blood.js，0.02）、預告（fx.js，0.03）都低，它們蓋得過它。 */
 const LIFT = 0.015;
+
+/** 旋風斬的斬痕往國王那邊浮多少（公尺）：圓的東西是一段段的弦，貼著弧畫會沉進去。 */
+const INSET = 0.02;
 
 /** 兩區的顏色（rgb、alpha）：裂緣、裂縫。 */
 const RIM = [0.10, 0.07, 0.05, 0.55], DEEP = [0.03, 0.02, 0.015, 0.92];
@@ -176,6 +189,29 @@ export class Scars {
       if (s >= st.len) break;
     }
     this._mark(out);
+  }
+
+  /**
+   * 旋風斬的熱氣流推出去了（skills.js 的 ringsStep 那一圈 g，前緣從劍長 r0 每秒 speed 公尺往外）：
+   * 每一個擋下它的東西留一道橫的，在它那一面上、熱氣流的高度，熱氣流走到哪裡哪裡才裂。劍長以內
+   * 就擋住的地方熱氣流根本沒出來，不留。
+   */
+  gash(g, speed) {
+    const up = [0, 1, 0];
+    for (const run of faceRuns(g.env)) {
+      const pts = alongRun(g.env, run, SEG), len = pts[pts.length - 1].s;
+      if (len < 1e-3) continue;
+      const top = run.col.max[1] - WIDE / 2, bottom = run.col.min[1] + WIDE / 2;
+      const y = Math.max(bottom, Math.min(g.mid, top));
+      const out = pts.map(({ th, d, s }, i) => {
+        const ux = Math.sin(th), uz = Math.cos(th), r = d - INSET;
+        const zig = (hash(i, 1) * 2 - 1) * ZIG;
+        const grow = Math.sin((Math.PI / 2) * Math.min(1, s / START)), tip = Math.min(1, (len - s) / TIP);
+        const half = d < g.r0 ? 0 : (WIDE / 2) * (JAG[0] + (JAG[1] - JAG[0]) * hash(i, 2)) * grow * tip;
+        return { p: [g.x + ux * r, y + zig, g.z + uz * r], side: up, half, born: this.now + Math.max(0, d - g.r0) / speed };
+      });
+      this._mark(out);
+    }
   }
 
   /** 借一道（收回來的先用），寫下這幾個樣本。 */
