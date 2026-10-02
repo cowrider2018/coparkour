@@ -18,6 +18,7 @@
 
    什麼時候送、送到哪還是模式的事（mode-terrain.js／mode-flow.js 的 `warp`），
    這裡只管時間與那一層黑。`el` 給 null 也跑得動（node 裡驗時間軸用）。
+   三段的長度預設是 TRANSIT；別的「暗下去、送走、亮回來」可以帶自己的。
    ------------------------------------------------------------------ */
 
 /** 暗下去、全黑、亮回來各幾秒。 */
@@ -26,9 +27,13 @@ export const TRANSIT = { out: 0.22, hold: 0.08, in: 0.35 };
 const ease = (u) => u * u * (3 - 2 * u);
 
 export class Transit {
-  /** @param {HTMLElement | null} el 那一層黑幕 */
-  constructor(el) {
+  /**
+   * @param {HTMLElement | null} el 那一層黑幕
+   * @param {{out: number, hold: number, in: number}} [times] 三段各幾秒
+   */
+  constructor(el, times = TRANSIT) {
     this.el = el;
+    this.times = times;
     /** 這一次穿越走了幾秒；-1 = 沒在穿越。 */
     this.t = -1;
     this.dest = null;
@@ -59,7 +64,7 @@ export class Transit {
   update(dt) {
     if (this.t < 0) return null;
     this.t += dt;
-    const { out, hold, in: back } = TRANSIT;
+    const { out, hold, in: back } = this.times;
     let due = null;
     if (this.dest && this.t >= out) {
       due = this.dest;
