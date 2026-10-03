@@ -34,6 +34,7 @@ import { portalAt } from './walk.js';
 import { makeCam, snapCam, updateCam } from './camera.js';
 import { Controls, fitView, wardrobe } from './controls.js';
 import { buildStage } from './stage.js';
+import { createLight } from './light.js';
 import { makeHero, steerHero, moveHero } from './hero.js';
 import { Transit } from './transit.js';
 import { Death } from './death.js';
@@ -59,6 +60,8 @@ const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 420);
 const stage = buildStage(scene, renderer);
 const { ruins, doors, setDoor, arenaAt } = stage;
 const COLS = stage.cols;
+/** 光影（light.js）：陰影、火光、霧、後製。 */
+const light = createLight({ scene, renderer, camera, ruins, cols: COLS, arenas: ruins.arenas });
 const NO_PORTALS = [];
 /** 怪物站在哪一張圖（combat.js 的 FIELD 那一種）：那一張的黑牆、整片遺跡的碰撞、現在的門。 */
 const fieldOf = (block) => ({ arena: ruins.arenas.find((a) => a.id === block), cols: COLS, doors });
@@ -272,7 +275,8 @@ function frame(now) {
 
   fight.draw(dt, camera, player);
   if (death.update(dt, player, viewYaw)) rest();
-  renderer.render(scene, camera);
+  light.update({ dt, now, player, block: player.block, foes: fight.foes.map((f) => f.m) });
+  light.render();
   pad.draw();
 
   fpsAcc += dt; fpsN++; hudAcc += dt;

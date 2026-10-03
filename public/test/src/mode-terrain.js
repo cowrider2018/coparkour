@@ -44,6 +44,7 @@ import { PHYS, portalAt } from './walk.js';
 import { makeCam, snapCam, updateCam } from './camera.js';
 import { Controls, fitView, wardrobe } from './controls.js';
 import { buildStage } from './stage.js';
+import { createLight } from './light.js';
 import { makeHero, steerHero, moveHero } from './hero.js';
 import { Transit } from './transit.js';
 
@@ -62,6 +63,8 @@ const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 420);
 const stage = buildStage(scene, renderer);
 const { ruins, doors, setDoor, arenaAt } = stage;
 const COLS = stage.cols;
+/** 光影（light.js）：陰影、火光、霧、後製。 */
+const light = createLight({ scene, renderer, camera, ruins, cols: COLS, arenas: ruins.arenas });
 
 /** P：傳送範圍的線框，開或關。 */
 function togglePortalLines() {
@@ -213,7 +216,8 @@ function frame(now) {
     camera.lookAt(rig.look[0], rig.look[1], rig.look[2]);
   }
 
-  renderer.render(scene, camera);
+  light.update({ dt, now, player, block: player.block });
+  light.render();
   pad.draw();
 
   fpsAcc += dt; fpsN++; hudAcc += dt;

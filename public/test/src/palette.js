@@ -27,6 +27,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { SURF, SURF_DEF, MOSS, surfaceTextures, surfaceUniforms } from './surface.js';
+import { lightShade } from './light.js';
 
 /** 墨色。src/cat/cat.js 的 INK = [43, 35, 32]。 */
 export const INK = 0x2b2320;
@@ -153,14 +154,16 @@ const TONES = (() => {
   return out;
 })();
 
-/* 所有分階材質共用這兩個 uniform 物件，所以要動燈只有一個地方可動。 */
-const U_BAND = { value: TONES };
-const U_KEYDIR = { value: KEY_DIR };
+/* 所有分階材質共用這兩個 uniform 物件，所以要動燈只有一個地方可動。
+   light/mood.js 換區塊的光就是改 U_BAND.value 的內容。 */
+export const U_BAND = { value: TONES };
+export const U_KEYDIR = { value: KEY_DIR };
 
 const BAND_DECL = `
 uniform vec3 uBand[5];
 uniform vec3 uKeyDir;
 varying vec3 vBandN;
+varying vec3 vLightP;
 `;
 /* 由暗往亮一階一階 mix 上去。邊界是遞減的，而 smoothstep 在自己的邊界
    以下是 0、以上是 1，所以這一串等價於「d 落在哪一階就取哪一階」，只有
@@ -168,10 +171,12 @@ varying vec3 vBandN;
 const BAND_FRAG = `
   float cpD = dot(normalize(vBandN), uKeyDir);
   float cpE = max(fwidth(cpD) * ${BAND_SOFT}, ${BAND_SOFT_MIN});
+  /*@light-pre*/
   vec3 cpTone = uBand[4];
 ${BAND_EDGE.map((e, i) => `  cpTone = mix(cpTone, uBand[${i}], `
   + `smoothstep(${e.toFixed(3)} - cpE, ${e.toFixed(3)} + cpE, cpD));`).reverse().join('\n')}
   diffuseColor.rgb *= cpTone;
+  /*@light-post*/
 `;
 
 /* ── 表面紋路 ─────────────────────────────────────────────────────
@@ -289,11 +294,16 @@ function banded(m, o = {}) {
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uBand = U_BAND;
     sh.uniforms.uKeyDir = U_KEYDIR;
+    /* 光影的掛點（light.js）。在這裡才讀，所以 light/ 底下的檔案可以反過來 import 這一頁。 */
+    const L = lightShade();
+    Object.assign(sh.uniforms, L.uniforms);
+    const band = BAND_FRAG.replace('/*@light-pre*/', L.pre).replace('/*@light-post*/', L.post);
     let vs = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vBandN;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vBandN = mat3(modelMatrix) * normal;');
+      .replace('#include <common>', '#include <common>\nvarying vec3 vBandN;\nvarying vec3 vLightP;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vBandN = mat3(modelMatrix) * normal;'
+        + '\n  vLightP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     let fs = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\n${BAND_DECL}`);
+      .replace('#include <common>', `#include <common>\n${BAND_DECL}${L.decl}`);
     if (surf !== false) {
       const T = surfTex();
       sh.uniforms.uSurfTexA = T.a;
@@ -307,9 +317,9 @@ function banded(m, o = {}) {
         .replace('#include <begin_vertex>', `#include <begin_vertex>\n${SURF_VERT}`);
       fs = fs
         .replace('#include <common>', `#include <common>\n${SURF_FRAG_DECL}`)
-        .replace('#include <color_fragment>', `#include <color_fragment>\n${SURF_FRAG}\n${BAND_FRAG}`);
+        .replace('#include <color_fragment>', `#include <color_fragment>\n${SURF_FRAG}\n${band}`);
     } else {
-      fs = fs.replace('#include <color_fragment>', `#include <color_fragment>\n${BAND_FRAG}`);
+      fs = fs.replace('#include <color_fragment>', `#include <color_fragment>\n${band}`);
     }
     sh.vertexShader = vs;
     sh.fragmentShader = fs;

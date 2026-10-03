@@ -32,6 +32,7 @@ import { PHYS, solveXZ, supportInfo, steer } from './walk.js';
 import { makeCam, snapCam, updateCam } from './camera.js';
 import { buildVeil } from './veil.js';
 import { hazeMesh } from './stage.js';
+import { createLight } from './light.js';
 import { Controls, speedFor, fitView, wardrobe } from './controls.js';
 import { ARENA, COLS, SPAWN, MODES, DEFAULT_MODE, KINDS, resetLife, refill } from './combat.js';
 import { Fight, DEATH_TEXT } from './fight.js';
@@ -78,6 +79,9 @@ resetLife(player);
 
 /* 戰鬥：怪物、連段、打中與被打中、刀。場上有哪幾隻由陣容決定（setMode）；
    這一頁打死的怪物在牠的重生點重生。每一個陣容的外觀現在就建好，換陣容只是借。 */
+/** 光影（light.js）：陰影、火光、霧、後製。這一頁沒有遺跡，只有一個場地。 */
+const light = createLight({ scene, renderer, camera, cols: COLS, arenas: [ARENA] });
+
 const fight = new Fight(scene, zoo, { respawn: true, renderer, sound: new Sound() });
 fight.preload(MODES.map((md) => md.monsters));
 let mode = DEFAULT_MODE;
@@ -191,7 +195,8 @@ function frame(now) {
   }
 
   fight.draw(dt, camera, player);
-  renderer.render(scene, camera);
+  light.update({ dt, now, player, block: ARENA.id, foes: fight.foes.map((f) => f.m) });
+  light.render();
   pad.draw();
 
   fpsAcc += dt; fpsN++; hudAcc += dt;
