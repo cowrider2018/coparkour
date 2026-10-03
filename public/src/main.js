@@ -16,6 +16,7 @@ import { CAT_SKINS } from './cat/cat.js';
 import { lookGrid, DEFAULT_LOOK, isLook, lookInfo, swatchCss } from './cat/looks.js';
 import { speciesModels } from './cat/species.js';
 import { Showcase, beat } from './cat/showcase.js';
+import { installFullscreen } from './fullscreen.js';
 
 const $ = (id) => document.getElementById(id);
 const cfg = window.GAME_CONFIG || {};
@@ -677,6 +678,7 @@ $('nameInput').value = localStorage.getItem('pk_name') || '';
 $('roomTag').textContent = ROOM;
 $('best').textContent = bestDist;
 buildLookPicker();
+installFullscreen();
 $('startBtn').addEventListener('click', start);
 $('nameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') start(); });
 $('retryBtn').addEventListener('click', restart);

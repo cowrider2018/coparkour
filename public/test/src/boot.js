@@ -12,6 +12,8 @@
    沒給模式、或給了不認得的，就是 DEFAULT。
    ------------------------------------------------------------------ */
 
+import { installFullscreen } from '../../src/fullscreen.js';
+
 /** 每一個模式：分頁標題、主程式。 */
 export const MODES = {
   terrain: { title: '試玩場：城堡遺跡', entry: './mode-terrain.js' },
@@ -30,5 +32,7 @@ document.title = MODES[mode].title;
 for (const el of document.querySelectorAll('[data-for]')) {
   if (!el.dataset.for.split(/\s+/).includes(mode)) el.remove();
 }
+
+installFullscreen();
 
 await import(MODES[mode].entry);
