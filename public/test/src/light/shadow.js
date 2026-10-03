@@ -129,7 +129,6 @@ const isBanded = (m) => !!m && !Array.isArray(m) && m.customProgramCacheKey !== 
 export function setup(ctx) {
   if (!ON) return null;
   const { scene, renderer, arenas } = ctx;
-  if (!arenas || !arenas.length) return null;
 
   /* ── 誰投影：此刻場景裡的靜態砌體 ── */
   const casters = [];
@@ -142,11 +141,14 @@ export function setup(ctx) {
     o.layers.enable(LAYER);
     casters.push(o);
   });
-  if (!casters.length) return null;                // 戰鬥場：只有一片地，什麼都不投影
+  /* 戰鬥場只有一片地，什麼都不投影——但深度圖照樣要有一張（1×1、清成最遠）：
+     著色器裡宣告了 sampler2DShadow，綁上去的不是一張設了比較模式的深度圖，
+     ANGLE 會整個 draw 不畫，畫面上是「地面不見了」。 */
+  const idle = !casters.length || !arenas || !arenas.length;
 
   /* ── 深度圖 ── */
   const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
-  const want = Number(Q) >= 256 ? Number(Q) : coarse ? 1024 : 2048;
+  const want = idle ? 1 : Number(Q) >= 256 ? Number(Q) : coarse ? 1024 : 2048;
   const S = Math.min(want, renderer.capabilities.maxTextureSize);
   const depth = new THREE.DepthTexture(S, S);
   depth.minFilter = depth.magFilter = THREE.LinearFilter;
@@ -230,6 +232,8 @@ export function setup(ctx) {
     }
     return h;
   }
+
+  if (idle) { shoot(); return null; }
 
   let at = undefined, was = -1;
   return {
