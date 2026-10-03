@@ -28,8 +28,12 @@
    拋物線落地）到全黑那一刻。醒來那一段已經站在門前，操作還回來了，模糊只是畫面。
 
    ── 怎麼倒 ──────────────────────────────────────────────────────
-   繞著前進軸轉，支點是倒向那一側的腳邊（離中線半個身寬）：轉 90° 之後身體的側面
-   剛好貼著腳下那一層，不會一半埋進地板。倒向離鏡頭遠的那一側，所以四條腿朝著鏡頭。
+   往擊退的方向倒（combat.js 的 knockHero 給的水平速度），哪個方向都可以：被從正面
+   咬到就仰面倒、從側面就側倒。沒有擊退（速度幾乎是 0）的話，往側面、離鏡頭遠的那一邊
+   倒，四條腿朝著鏡頭。繞的軸是水平、跟倒向垂直的那一條，支點在倒向那一邊的身體最外緣
+   （reach：待機姿勢的身體在那個方向伸得最遠的一點）：轉 90° 之後身體朝那一邊的那一面
+   剛好貼著腳下那一層，不會一半埋進地板。往前倒的時候是鼻尖、往側倒是肩膀，所以這一段
+   每次倒下照方向重量。
    轉的是 Zoo 的 root（動物自己的朝向在它底下那一層，critter.js），所以步態、
    出招的姿勢照常疊在上面。
    ------------------------------------------------------------------ */
@@ -82,19 +86,27 @@ export function captionAt(t) {
 }
 
 /**
- * 半個身寬（公尺）：待機姿勢下，身體離中線最遠的那一點（左右）。服裝不算——帽簷比頭寬
- * 一大截，照它算的話躺下來身體是浮著的；帽簷寧可壓進地板一點。
+ * 身體的水平輪廓：待機姿勢下每個頂點的 (x, z)（公尺，動物自己的座標，+Z 朝前）。服裝
+ * 不算——帽簷比頭寬一大截，照它算的話躺下來身體是浮著的；帽簷寧可壓進地板一點。
  */
-function halfWidth(c) {
+function footprint(c) {
   const d = c.data, M = c.rig.matrices, skin = d.colors.get(c.skins[0]);
-  let far = 0;
+  const out = [];
   for (let v = 0; v < d.header.vertexCount; v++) {
     const b = skin[v * 4 + 3] & 31;
     if (c.rig.names[b].startsWith('wear')) continue;
     const o = b * 16, x = d.position[v * 3], y = d.position[v * 3 + 1], z = d.position[v * 3 + 2];
-    far = Math.max(far, Math.abs(M[o] * x + M[o + 4] * y + M[o + 8] * z + M[o + 12]));
+    out.push((M[o] * x + M[o + 4] * y + M[o + 8] * z + M[o + 12]) * c._scale,
+      (M[o + 2] * x + M[o + 6] * y + M[o + 10] * z + M[o + 14]) * c._scale);
   }
-  return far * c._scale;
+  return Float32Array.from(out);
+}
+
+/** 輪廓沿動物自己座標的方向 (lx, lz) 伸得最遠的那一點有多遠（公尺）。 */
+function reach(pts, lx, lz) {
+  let far = 0;
+  for (let i = 0; i < pts.length; i += 2) far = Math.max(far, pts[i] * lx + pts[i + 1] * lz);
+  return far;
 }
 
 export class Death {
@@ -109,8 +121,8 @@ export class Death {
     this.view = view;
     this.words = words;
     this.fade = new Transit(fade, DEATH.fade);
-    /* 每一隻動物各一隻幽靈，現在就建好——倒下的那一刻才建就是一頓。身寬也是現在量
-       （halfWidth），倒的支點離中線半個身寬。 */
+    /* 每一隻動物各一隻幽靈，現在就建好——倒下的那一刻才建就是一頓。身體的輪廓也是現在量
+       （footprint），倒的支點照它算（reach）。 */
     this.ghosts = new Map();
     for (const model of zoo.models) {
       const c = makeGhostCritter(zoo, model);
@@ -118,7 +130,7 @@ export class Death {
       root.add(c.root);
       root.visible = false;
       scene.add(root);
-      this.ghosts.set(model, { c, root, half: halfWidth(c) });
+      this.ghosts.set(model, { c, root, pts: footprint(c) });
     }
     /** 倒下之後幾秒；-1 = 沒在倒。 */
     this.t = -1;
@@ -128,6 +140,8 @@ export class Death {
     this.wake = null;
     this.ghost = null;
     this._side = new THREE.Vector3();
+    /** 支點離身體中線多遠（公尺），倒下的那一刻照倒向量。 */
+    this._half = 0;
     this._paintWake();
   }
 
@@ -138,7 +152,8 @@ export class Death {
   setInkPx(px, h) { for (const g of this.ghosts.values()) g.c.setInkPx(px, h); }
 
   /**
-   * 血扣光的那一刻。`camX`／`camZ` 是鏡頭現在在哪：倒向離它遠的那一側。
+   * 血扣光的那一刻（擊退已經給了，player 的水平速度就是它）。`camX`／`camZ` 是鏡頭現在
+   * 在哪：沒有擊退的話倒向離它遠的那一側。
    */
   start(player, camX, camZ) {
     this.cancel();
@@ -147,10 +162,17 @@ export class Death {
     this.yaw = this.zoo.active._yaw;
     this.zoo.setFacing(this.yaw);          // 不再轉身：倒的軸是這一刻的前進軸
     this.ghost = this.ghosts.get(this.zoo.modelId);
-    // 前進軸的水平垂直方向，挑離鏡頭遠的那一邊。
-    _side.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
-    if (_side.x * (player.x - camX) + _side.z * (player.z - camZ) < 0) _side.negate();
+    // 倒向：擊退的方向；沒有擊退就是前進軸的水平垂直方向、離鏡頭遠的那一邊。
+    const kh = Math.hypot(player.vx, player.vz);
+    if (kh > 1e-3) _side.set(player.vx / kh, 0, player.vz / kh);
+    else {
+      _side.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+      if (_side.x * (player.x - camX) + _side.z * (player.z - camZ) < 0) _side.negate();
+    }
     this._side.copy(_side);
+    // 倒向換到動物自己的座標（root.rotation.y = yaw 的反轉），量那一邊伸多遠。
+    const c = Math.cos(this.yaw), n = Math.sin(this.yaw);
+    this._half = reach(this.ghost.pts, _side.x * c - _side.z * n, _side.x * n + _side.z * c);
   }
 
   /** 不演了（重玩、從第幾場開始）：動物站回來、幽靈收起來、畫面清楚。 */
@@ -177,8 +199,8 @@ export class Death {
     if (this.t >= 0) {
       this.t += dt;
       const g = this.ghost;
-      // 倒：Zoo 的 root 繞前進軸、支點在倒向那一側的腳邊。倒下的身體不閃、墨線不是金的。
-      this._tip(this.zoo.root, tipAngle(this.t), g.half, player);
+      // 倒：Zoo 的 root 繞水平軸、支點在倒向那一邊的身體外緣。倒下的身體不閃、墨線不是金的。
+      this._tip(this.zoo.root, tipAngle(this.t), this._half, player);
       this.zoo.root.visible = true;
       this.zoo.setInkColor(null);
       // 躺平、落地（或等太久了）的那一刻靈魂出來：接手那一隻的朝向與步態，從屍體的姿勢一邊擺正一邊往上浮。
@@ -191,7 +213,7 @@ export class Death {
       }
       if (g.root.visible) {
         const u = this.up / DEATH.ghost;
-        this._tip(g.root, (Math.PI / 2) * (1 - smooth(this.up / DEATH.right)), g.half, player);
+        this._tip(g.root, (Math.PI / 2) * (1 - smooth(this.up / DEATH.right)), this._half, player);
         g.root.position.y += DEATH.rise * smooth(u);
         g.c.setFacing(this.yaw);
         g.c.update(dt, { speed: 0, grounded: false, vy: 1, viewYaw });
