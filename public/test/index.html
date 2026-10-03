@@ -6,6 +6,14 @@
 <title>試玩場</title>
 <meta name="theme-color" content="#1e1810" />
 <meta name="robots" content="noindex" />
+<!-- 加到主畫面：manifest 是 display: fullscreen，從圖示開就沒有網址列。
+     iOS 不認 fullscreen，退成 standalone，狀態列半透明疊在畫面上（安全區已經讓開了）。 -->
+<link rel="manifest" href="./manifest.webmanifest" />
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="試玩場" />
 <!--
   試玩場：城堡遺跡、遊戲的那幾隻動物、戰鬥系統。一頁幾個模式，網址後綴選：
 
