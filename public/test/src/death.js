@@ -7,9 +7,10 @@
      倒下     血扣光的那一刻就開始倒，在空中也是（被打飛的身體一邊飛一邊倒）：DEATH.tip
               秒從直立轉到橫躺，越倒越快（u²），躺平的那一刻停住——是倒下去，不是被放下去。
      幽靈     DEATH.ghost 秒。躺平而且落地之後（knockHero 那一段結束、站到地上；一直沒
-              落地的話等到 DEATH.wait 秒），牠的靈魂從屍體站起來往上浮（monster.js 的
-              makeGhostCritter：同一隻動物，幽靈那一件、半透明）：直立的、朝著倒下
-              那一刻的方向，浮起 DEATH.rise 公尺，先慢後快再慢（smoothstep）。
+              落地的話等到 DEATH.wait 秒），牠的靈魂從屍體浮起來（monster.js 的
+              makeGhostCritter：同一隻動物，幽靈那一件、半透明）：一出來跟屍體疊在
+              一起、一樣躺著，DEATH.right 秒擺正成直立（倒下那一下倒過來播，支點一樣，
+              先慢後快再慢），同時往上浮 DEATH.rise 公尺（smoothstep，整段 DEATH.ghost 秒）。
               屍體留在地上，一直躺到全黑。
      暗下去   DEATH.fade：暗下去、全黑停一下、亮回來（transit.js，同一層黑幕）。全黑的
               那一刻 `update` 回傳 true，模式把怪物收掉、把人放回門前。
@@ -38,9 +39,9 @@ import { Transit } from './transit.js';
 import { makeGhostCritter } from './monster.js';
 
 /**
- * 倒下幾秒、幽靈浮幾秒、浮多高（公尺）、幽靈等落地最多等到倒下之後幾秒；暗下去—全黑—亮回來各幾秒。
+ * 倒下幾秒、幽靈浮幾秒、浮多高（公尺）、幽靈幾秒擺正、幽靈等落地最多等到倒下之後幾秒；暗下去—全黑—亮回來各幾秒。
  */
-export const DEATH = { tip: 0.25, ghost: 2.0, rise: 1.0, wait: 2.0, fade: { out: 0.5, hold: 0.5, in: 0.5 } };
+export const DEATH = { tip: 0.25, ghost: 2.0, rise: 1.0, right: 1.0, wait: 2.0, fade: { out: 0.5, hold: 0.5, in: 0.5 } };
 /** 醒來（秒、CSS 像素）：閃多久、多久閃一次、最模糊多糊、字淡入的時候從多糊開始。 */
 export const WAKE = { time: 3, period: 2, blur: 8, wordsBlur: 6 };
 
@@ -180,7 +181,7 @@ export class Death {
       this._tip(this.zoo.root, tipAngle(this.t), g.half, player);
       this.zoo.root.visible = true;
       this.zoo.setInkColor(null);
-      // 躺平、落地（或等太久了）的那一刻靈魂站起來：接手那一隻的朝向與步態，直立著從屍體往上浮。
+      // 躺平、落地（或等太久了）的那一刻靈魂出來：接手那一隻的朝向與步態，從屍體的姿勢一邊擺正一邊往上浮。
       if (this.up !== null) this.up += dt;
       else if (this.t >= DEATH.tip && ((player.grounded && !player.knocked) || this.t >= DEATH.wait)) {
         this.up = 0;
@@ -190,7 +191,8 @@ export class Death {
       }
       if (g.root.visible) {
         const u = this.up / DEATH.ghost;
-        g.root.position.set(player.x, player.y + DEATH.rise * smooth(u), player.z);
+        this._tip(g.root, (Math.PI / 2) * (1 - smooth(this.up / DEATH.right)), g.half, player);
+        g.root.position.y += DEATH.rise * smooth(u);
         g.c.setFacing(this.yaw);
         g.c.update(dt, { speed: 0, grounded: false, vy: 1, viewYaw });
       }
@@ -230,11 +232,11 @@ export class Death {
     );
   }
 
-  /** 動物站回來、幽靈收起來。Zoo 的位置每幀由模式擺，這裡只歸零轉的那一下。 */
+  /** 動物站回來、幽靈收起來（幽靈的轉向也歸零）。Zoo 的位置每幀由模式擺，這裡只歸零轉的那一下。 */
   _stand() {
     this.zoo.root.quaternion.identity();
     this.zoo.root.visible = true;
-    for (const g of this.ghosts.values()) g.root.visible = false;
+    for (const g of this.ghosts.values()) { g.root.visible = false; g.root.quaternion.identity(); }
     this.ghost = null;
   }
 
