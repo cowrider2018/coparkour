@@ -81,6 +81,7 @@ import {
 import { skyAt, acesTone } from '../../src/gfx/daycycle.js';
 import { INK, KEY_POS } from './palette.js';
 import { FUR_TINT } from './light/mood.js';
+import { receiver as SHADOW } from './light/shadow.js';
 
 /* ── 毛色：照遊戲那支著色器算，不照 three 的燈 ───────────────────
    這一頁本來讓狗跟石頭吃同一盞 three 的燈。那在「同一個作品」的意義上
@@ -310,8 +311,27 @@ vec3 cpSrgbToLinear(vec3 c) {
   return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
 }
 `;
+/* ── 背光的邊：一條細亮線 ──────────────────────────────────────
+   狗站在黑牆與暗的石頭前面時，背光那一側跟背景一樣暗，輪廓只剩墨線撐著。
+   這裡在輪廓內側、背光的那幾階上加一條亮邊：|N·V| 越小越靠輪廓，切一刀
+   （fwidth 寬，跟色階同一種邊），只留在不是最亮那一階的地方——讀起來是
+   身後有光，不是整隻描了一圈。墨線殼畫在外面，所以亮邊永遠在墨線裡側。
+
+   顏色與強度是一個共用的 uniform（RIM），之後火光要染它只改這一份。
+   `?rim=0` 不接。 */
+const RIM_ON = typeof location === 'undefined' || new URLSearchParams(location.search).get('rim') !== '0';
+/** 1 − |N·V| 過這一道就是亮邊。越大越細。 */
+const RIM_EDGE = 0.78;
+/** 亮邊的顏色（線性，已乘強度）。淡的冷白：天光從背後來。 */
+export const RIM = { value: new THREE.Color(0xcfe0ff).multiplyScalar(0.22) };
+
+/* 接收投影（light/shadow.js 的 receiver）：在牆影裡的毛皮落到陰影那一階，
+   跟地上的影子同一件事。`?shadow=0` 時 SHADOW 是 null，不接。 */
 const FUR_FRAG_DECL = `
 ${SHADE_COMMON}
+${SHADOW ? SHADOW.decl : ''}
+uniform vec3 uCpRim;
+varying vec3 vCpP;
 uniform vec3 uCpKeyLit;
 uniform vec3 uCpMood;
 uniform vec3 uCpMid;
@@ -328,11 +348,17 @@ vec3 cpAces(vec3 x) {
 const FUR_FRAG = `
   vec3 cpAlbedo = cpSrgbToLinear(vColor);
   float cpD = dot(normalize(vCpN), uCpLightDir);
+${SHADOW ? `  cpD = mix(min(cpD, -0.3), cpD, ${SHADOW.lit('vCpP', 'normalize(vCpN)', 'uCpLightDir')});` : ''}
   float cpE = max(fwidth(cpD) * ${0.6}, ${0.004});
   float cpS1 = smoothstep(${BAND_EDGE[0].toFixed(3)} - cpE, ${BAND_EDGE[0].toFixed(3)} + cpE, cpD);
   float cpS2 = smoothstep(${BAND_EDGE[1].toFixed(3)} - cpE, ${BAND_EDGE[1].toFixed(3)} + cpE, cpD);
   vec3 cpTone = mix(mix(uCpShadow, uCpMid, cpS1), vec3(1.0), cpS2);
   diffuseColor.rgb = cpSrgbToLinear(cpAces(cpAlbedo * uCpKeyLit * uCpMood) * cpTone);
+${RIM_ON ? `  {
+    float cpF = 1.0 - abs(dot(normalize(vCpN), normalize(cameraPosition - vCpP)));
+    float cpFe = max(fwidth(cpF) * 0.6, 0.004);
+    diffuseColor.rgb += uCpRim * smoothstep(${RIM_EDGE.toFixed(3)} - cpFe, ${RIM_EDGE.toFixed(3)} + cpFe, cpF) * (1.0 - cpS2);
+  }` : ''}
 `;
 /** 臉：不吃光，就是原色乘一個增益——遊戲那支的 vUnlit 分支。 */
 const FACE_FRAG_DECL = `
@@ -404,7 +430,7 @@ function rig3(material, uniforms, opts) {
        DECL 之後。分兩次 replace('#include <common>') 會踩到坑——第二次會
        配到第一次換進去的那個 include，把後面的程式碼插到宣告前面去，而
        GLSL 是要先宣告後使用的。眼睛整片消失就是這麼來的。 */
-    const extra = opts.shade === 'fur' ? 'varying vec3 vCpN;'
+    const extra = opts.shade === 'fur' ? 'varying vec3 vCpN;\nvarying vec3 vCpP;'
       : opts.shade === 'face' ? FACE_DECL : '';
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${DECL(boneN, partN)}\n${extra}`)
@@ -416,13 +442,15 @@ function rig3(material, uniforms, opts) {
       Object.assign(shader.uniforms, {
         uCpKeyLit: { value: new THREE.Vector3(...TONES.keyLit) },
         uCpMood: FUR_TINT,          // 區塊的光（light/mood.js），所有毛皮共用一份
+        uCpRim: RIM,
+        ...(SHADOW ? SHADOW.uniforms : {}),
         uCpMid: { value: new THREE.Vector3(...TONES.mid) },
         uCpShadow: { value: new THREE.Vector3(...TONES.shadow) },
         uCpLightDir: opts.lightDir,
       });
       /* begin_vertex 上面已經換掉了，所以這裡接在換進去的那段後面。 */
       shader.vertexShader = shader.vertexShader
-        .replace(BEGIN_VERTEX, `${BEGIN_VERTEX}\n  vCpN = mat3(modelMatrix) * cpSkinNrm();`);
+        .replace(BEGIN_VERTEX, `${BEGIN_VERTEX}\n  vCpN = mat3(modelMatrix) * cpSkinNrm();\n  vCpP = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>\n${FUR_FRAG_DECL}`)
         .replace('#include <color_fragment>', FUR_FRAG);
