@@ -473,6 +473,11 @@ export class Build {
     this.arrivals = [];      // 到達點：感測區送人去的地方（見 `arrive()`）
     this.pieces = [];        // 不進合併緩衝區的幾何（門的兩種狀態，見 `detach()`）
     this.signs = [];         // 懸浮的路標（見 `sign()`）
+    /* 會壓在地上的那幾塊，在頂點緩衝區裡的範圍（兩個數一組：起點、終點，
+       單位是 pos 的索引）。ao.js 拿它找出「石頭跟地面接觸的那一圈」——
+       記範圍而不是記座標，因為區塊砌完才整段平移（blocks.js 的 shift），
+       平移的是頂點本身，範圍不必跟著改。 */
+    this.feet = [];
     this._c = new THREE.Color();
     /* 每個頂點 4 個 int8：紋理方向與「材料 × 16 + 偏移」（見 surface.js）。
        用型別陣列自己長，不用一般陣列——兩百萬個頂點，一般陣列的每一格是
@@ -546,6 +551,14 @@ export class Build {
         _v.set(E.n1[i], E.n1[i + 1], E.n1[i + 2]).applyMatrix3(_nm).normalize();
         this.inkB.push(_v.x * 127, _v.y * 127, _v.z * 127);
       }
+    }
+
+    /* 接觸陰影的候選：夠高（碎石片、鋪面、苔不算）、不是掛著的、不是鐵與布
+       （火盆的細腳、旗子底下壓一圈黑只會是一圈髒點）。門那幾塊在 detach()
+       裡（`hz` 有值），跟著門一起換，不烘。 */
+    if (!this.hz && !o.hang && !this._hang && maxy - miny > 0.12 && o.tag !== 'moss'
+      && sid !== SURF.iron && sid !== SURF.cloth) {
+      this.feet.push(start, this.pos.length);
     }
 
     if (this.record) {
@@ -883,7 +896,7 @@ export class Build {
     return this;
   }
 
-  /** @returns {{geometry, ink, colliders, parts, walls, floors, portals, arrivals, pieces, signs, tris, inkLines}} */
+  /** @returns {{geometry, ink, colliders, parts, walls, floors, portals, arrivals, pieces, signs, feet, tris, inkLines}} */
   finish() {
     const { geometry, ink } = toGeometry({
       pos: this.pos, nrm: this.nrm, col: this.col, ink: this.ink, inkA: this.inkA, inkB: this.inkB,
@@ -906,6 +919,7 @@ export class Build {
       arrivals: this.arrivals,
       pieces,
       signs: this.signs,
+      feet: this.feet,
       tris: this.pos.length / 9,
       inkLines: this.ink.length / 6,
     };

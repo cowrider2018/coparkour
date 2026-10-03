@@ -11,12 +11,13 @@
    ------------------------------------------------------------------ */
 
 import * as THREE from '../vendor/three.module.js';
-import { C, toonVC, toon, glow, inkLine } from './palette.js';
+import { C, INK, toonVC, toon, glow, inkLine } from './palette.js';
 import { SURF, surfaceTextures } from './surface.js';
 import { buildRuins } from './blocks.js';
 import { facet } from './geom.js';
 import { arenaGap } from './walk.js';
 import { buildVeil } from './veil.js';
+import { AO, buildAO } from './ao.js';
 
 /** 黑牆與黑霧的 mesh：veil.js 吐的那一份，或門洞裡的那幾層（同一種資料）。 */
 export function hazeMesh(v) {
@@ -40,6 +41,57 @@ export function hazeMesh(v) {
     vertexColors: true, transparent: true, side: THREE.FrontSide,
     fog: false, depthWrite: false,
   }));
+}
+
+/**
+ * 接觸陰影的 mesh：ao.js 的磚與距離場。距離場在著色器裡切成 AO.bands 那
+ * 幾階，交界只留 fwidth 那麼寬（跟五階調同一種邊）。不寫深度、往鏡頭拉一點，
+ * 免得跟鋪面打架；顏色是墨色，吃霧。
+ */
+function aoMesh(d) {
+  if (!d.tris) return null;
+  const tex = new THREE.DataTexture(d.tex.data, d.tex.w, d.tex.h, THREE.RedFormat, THREE.UnsignedByteType);
+  tex.minFilter = tex.magFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(d.pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(d.uv, 2));
+  g.computeBoundingSphere();
+  const steps = AO.bands.map(([r, a]) => `  cpA = max(cpA, ${a.toFixed(3)} * (1.0 - smoothstep(${(r / AO.max).toFixed(4)} - cpE, ${(r / AO.max).toFixed(4)} + cpE, cpD)));`).join('\n');
+  const m = new THREE.ShaderMaterial({
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
+      uMap: { value: tex }, uInk: { value: new THREE.Color(INK) },
+    }]),
+    vertexShader: `
+varying vec2 vUv;
+#include <fog_pars_vertex>
+void main() {
+  vUv = uv;
+  vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * mvPosition;
+  #include <fog_vertex>
+}`,
+    fragmentShader: `
+uniform sampler2D uMap;
+uniform vec3 uInk;
+varying vec2 vUv;
+#include <fog_pars_fragment>
+void main() {
+  float cpD = texture2D(uMap, vUv).r;
+  float cpE = max(fwidth(cpD) * 0.6, 0.002);
+  float cpA = 0.0;
+${steps}
+  if (cpA <= 0.002) discard;
+  gl_FragColor = vec4(uInk, cpA);
+  #include <colorspace_fragment>
+  #include <fog_fragment>
+}`,
+    transparent: true, depthWrite: false, fog: true,
+    polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2,
+  });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.renderOrder = -2;    // 排在腳下的接觸陰影（light/contact.js，−1）之前
+  return mesh;
 }
 
 /**
@@ -201,6 +253,13 @@ export function buildStage(scene, renderer) {
      這裡只負責把那份資料變成一個 mesh：一顆材質、一個 draw。
      ------------------------------------------------------------------ */
   scene.add(hazeMesh(buildVeil(ruins.arenas)));
+
+  /* ── 石頭腳下那一圈暗 ──────────────────────────────────────────
+     ao.js 吐的那一份：地面上的磚、一張距離場。`?ao=0` 不建。 */
+  if (new URLSearchParams(location.search).get('ao') !== '0') {
+    const ao = aoMesh(buildAO(ruins));
+    if (ao) scene.add(ao);
+  }
 
   /** 站在哪個場地裡。取「離邊界最裡面」的那一個——四個場地互不重疊。 */
   function arenaAt(x, z) {
