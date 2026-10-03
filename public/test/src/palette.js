@@ -113,13 +113,36 @@ export const KEY_DIR = new THREE.Vector3(...KEY_POS).normalize();
    最暗那一階的 BAND_KEY 是 0.26 而不是 0：背光面收到四分之一的主光是
    假的補光，但原本那張 3 階梯度圖的最暗格就是 70/255 ≈ 0.27，照抄它才
    不會把整片背光的牆變成死黑。暗階的環境光增益多幾個百分點，於是陰影
-   偏藍——那是環境光在暗階裡佔比變大的自然結果，不是另外調的色。 */
+   偏藍——那是環境光在暗階裡佔比變大的自然結果，不是另外調的色。
 
-const KEY_TINT = 0xffeed1;          // daycycle.js 的 NOON tint
-const KEY_GAIN = 2.05 / Math.PI;    // 原本那盞 DirectionalLight(2.05) ÷ π
-const AMB_SKY = 0x9fb4e6;           // AMBIENT_DAY 的天色
-const AMB_GROUND = 0x3a2d1f;        // …與地色
-const AMB_GAIN = 0.85 / Math.PI;    // 原本那盞 HemisphereLight(0.85) ÷ π
+   ── 一組光 ──────────────────────────────────────────────────────
+   上面那條式子吃的五個數字收成一個物件（LIGHT_DEF），由 bandTones 算成
+   五階。light/mood.js 每個區塊各有一組，換區塊時就是拿兩組的五階來回
+   內插——預設與各區塊因此走的是同一條式子，不會有兩份算法。
+
+   再加一項：暗的兩階往 `shade` 那個色相拉 `cool` 那麼多。只靠環境光的
+   話，暖的主光一大，陰影就是主光色的暗版，一片髒灰；畫家的做法是讓陰影
+   往主光的對面偏——冷一點、純一點。拉的時候只換色相不換明度（目標色是
+   「同明度、shade 的色相」），所以五階的階距照舊，陰影只是換了顏色。
+   預設那一組 cool 是 0，也就是這一頁原本的樣子。 */
+
+/**
+ * 一組光。增益寫的是原本那兩盞燈的強度，÷ π 在 bandTones 裡做。
+ * @typedef {{key: number, keyGain: number, sky: number, ground: number,
+ *   ambGain: number, shade: number, cool: number}} Light
+ */
+/** @type {Light} */
+export const LIGHT_DEF = {
+  key: 0xffeed1,      // daycycle.js 的 NOON tint
+  keyGain: 2.05,      // 原本那盞 DirectionalLight(2.05)
+  sky: 0x9fb4e6,      // AMBIENT_DAY 的天色
+  ground: 0x3a2d1f,   // …與地色
+  ambGain: 0.85,      // 原本那盞 HemisphereLight(0.85)
+  shade: 0x5c6fae,    // 陰影偏過去的色相（只取色相，明度不算）
+  cool: 0,            // 偏多少：0 = 不偏，1 = 最暗那一階整個換成這個色相
+};
+/** 每一階吃 cool 的比例，由亮到暗：只有暗的兩階。 */
+const COOL_AT = [0, 0, 0, 0.5, 1];
 
 /** 每一階代表的 ndl，由亮到暗。 */
 export const BAND_KEY = [1.0, 0.75, 0.55, 0.39, 0.26];
@@ -139,24 +162,42 @@ const BAND_SOFT = 0.6;
 /** …以及一個下限，給 fwidth 幾乎是 0 的大平面（一整片鋪面）用。 */
 const BAND_SOFT_MIN = 0.004;
 
-/** 五階的顏色，攤平成 vec3[5]。three 的色彩管理已經把它們轉成線性。 */
-const TONES = (() => {
-  const key = new THREE.Color(KEY_TINT);
-  const amb = new THREE.Color(AMB_SKY).lerp(new THREE.Color(AMB_GROUND), 0.5)
-    .multiplyScalar(AMB_GAIN);
-  const out = new Float32Array(15);
+/** 線性 RGB 的明度（Rec.709）。 */
+const lum = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+const tKey = new THREE.Color(), tAmb = new THREE.Color(), tGnd = new THREE.Color(), tShade = new THREE.Color();
+
+/**
+ * 一組光的五階，攤平成 vec3[5]，寫進 out（不配置，換區塊時可以直接重算）。
+ * three 的色彩管理已經把顏色轉成線性。
+ * @param {Light} L
+ * @param {Float32Array} [out]
+ */
+export function bandTones(L, out = new Float32Array(15)) {
+  const key = tKey.set(L.key);
+  const amb = tAmb.set(L.sky).lerp(tGnd.set(L.ground), 0.5).multiplyScalar(L.ambGain / Math.PI);
+  const sh = tShade.set(L.shade);
+  const sl = Math.max(lum(sh.r, sh.g, sh.b), 1e-4);
   for (let i = 0; i < 5; i++) {
-    const k = KEY_GAIN * BAND_KEY[i], a = BAND_AMB[i];
-    out[i * 3] = key.r * k + amb.r * a;
-    out[i * 3 + 1] = key.g * k + amb.g * a;
-    out[i * 3 + 2] = key.b * k + amb.b * a;
+    const k = (L.keyGain / Math.PI) * BAND_KEY[i], a = BAND_AMB[i];
+    let r = key.r * k + amb.r * a, g = key.g * k + amb.g * a, b = key.b * k + amb.b * a;
+    const w = COOL_AT[i] * L.cool;
+    if (w > 0) {
+      const y = lum(r, g, b) / sl;          // 同明度、shade 的色相
+      r += (sh.r * y - r) * w; g += (sh.g * y - g) * w; b += (sh.b * y - b) * w;
+    }
+    out[i * 3] = r; out[i * 3 + 1] = g; out[i * 3 + 2] = b;
   }
   return out;
-})();
+}
+
+/** 預設那一組光的五階。不會被改——light/mood.js 拿它當基準量差多少。 */
+export const TONES = bandTones(LIGHT_DEF);
 
 /* 所有分階材質共用這兩個 uniform 物件，所以要動燈只有一個地方可動。
-   light/mood.js 換區塊的光就是改 U_BAND.value 的內容。 */
-export const U_BAND = { value: TONES };
+   light/mood.js 換區塊的光就是改 U_BAND.value 的內容（所以是一份拷貝，
+   TONES 本身留著當基準）。 */
+export const U_BAND = { value: TONES.slice() };
 export const U_KEYDIR = { value: KEY_DIR };
 
 const BAND_DECL = `

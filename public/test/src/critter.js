@@ -80,6 +80,7 @@ import {
 } from '../../src/cat/cat.js';
 import { skyAt, acesTone } from '../../src/gfx/daycycle.js';
 import { INK, KEY_POS } from './palette.js';
+import { FUR_TINT } from './light/mood.js';
 
 /* ── 毛色：照遊戲那支著色器算，不照 three 的燈 ───────────────────
    這一頁本來讓狗跟石頭吃同一盞 three 的燈。那在「同一個作品」的意義上
@@ -312,6 +313,7 @@ vec3 cpSrgbToLinear(vec3 c) {
 const FUR_FRAG_DECL = `
 ${SHADE_COMMON}
 uniform vec3 uCpKeyLit;
+uniform vec3 uCpMood;
 uniform vec3 uCpMid;
 uniform vec3 uCpShadow;
 uniform vec3 uCpLightDir;
@@ -330,7 +332,7 @@ const FUR_FRAG = `
   float cpS1 = smoothstep(${BAND_EDGE[0].toFixed(3)} - cpE, ${BAND_EDGE[0].toFixed(3)} + cpE, cpD);
   float cpS2 = smoothstep(${BAND_EDGE[1].toFixed(3)} - cpE, ${BAND_EDGE[1].toFixed(3)} + cpE, cpD);
   vec3 cpTone = mix(mix(uCpShadow, uCpMid, cpS1), vec3(1.0), cpS2);
-  diffuseColor.rgb = cpSrgbToLinear(cpAces(cpAlbedo * uCpKeyLit) * cpTone);
+  diffuseColor.rgb = cpSrgbToLinear(cpAces(cpAlbedo * uCpKeyLit * uCpMood) * cpTone);
 `;
 /** 臉：不吃光，就是原色乘一個增益——遊戲那支的 vUnlit 分支。 */
 const FACE_FRAG_DECL = `
@@ -413,6 +415,7 @@ function rig3(material, uniforms, opts) {
     if (opts.shade === 'fur') {
       Object.assign(shader.uniforms, {
         uCpKeyLit: { value: new THREE.Vector3(...TONES.keyLit) },
+        uCpMood: FUR_TINT,          // 區塊的光（light/mood.js），所有毛皮共用一份
         uCpMid: { value: new THREE.Vector3(...TONES.mid) },
         uCpShadow: { value: new THREE.Vector3(...TONES.shadow) },
         uCpLightDir: opts.lightDir,
