@@ -161,7 +161,7 @@ const FACES = {
     bigTear(g, 0.58, 0.74);
   },
   /** 瞪（怪物）：紅色的杏眼、整圈包邊，一道直的黑瞳；眉毛粗、往鼻樑那一側狠狠壓下來。 */
-  glare(g) {
+  glare(g, brow = true) {
     g.beginPath();
     g.moveTo(-0.75, 0.05);
     g.quadraticCurveTo(-0.05, -0.75, 0.68, -0.18);
@@ -174,7 +174,11 @@ const FACES = {
     g.strokeStyle = INK;
     g.stroke();
     ellipse(g, 0, -0.04, 0.09, 0.3, INK);
-    stroke(g, [[-0.9, -0.95], [0.75, -0.35]], 0.32);
+    if (brow) stroke(g, [[-0.9, -0.95], [0.75, -0.35]], 0.32);
+  },
+  /** 頭盔裡瞪人（戴頭盔的怪物）：眉毛被頭盔蓋住了，只剩面甲縫裡那一雙紅色的杏眼。 */
+  visor(g) {
+    FACES.glare(g, false);
   },
   /** 倒下（怪物被打倒）：叉叉眼——兩道交叉的線（跟靈魂的叉叉同一個記號）。 */
   ko(g) {
