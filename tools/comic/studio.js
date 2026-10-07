@@ -46,6 +46,10 @@
 import * as THREE from '/test/vendor/three.module.js';
 import { loadZoo, Critter, LIGHT_DIR } from '/test/src/critter.js';
 import { Crown } from '/test/src/crown.js';
+import { Helm } from '/test/src/helm.js';
+import { ShieldRing } from '/test/src/shield.js';
+import { SoulLook } from '/test/src/soul.js';
+import { makeMonsterCritter, sizeOf, GHOST_ALPHA } from '/test/src/monster.js';
 import { Blade } from '/test/src/blade.js';
 import * as Pieces from '/test/src/pieces.js';
 import { Build } from '/test/src/geom.js';
@@ -101,33 +105,83 @@ const screenCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
 /* ── 角色 ────────────────────────────────────────────────────────
    主角：遊戲預設那一隻（立耳犬、黃、戴漁夫帽）。國王：活著的時候——垂耳犬、灰、王冠、
-   1.4 倍高（怪物的國王是同一隻，只是穿幽靈那一件、半透明，monster.js 的 LOOKS.king）。 */
+   1.4 倍高。怪物是遊戲裡那幾隻本人（monster.js 的 makeMonsterCritter：同一件毛、同樣大、
+   幽靈一樣半透明），頭盔、王冠、盾照 fight.js 那樣戴上去。
+
+     hero         主角                       king         活著的國王
+     zombie       殭屍                       boss         殭屍 BOSS（兩倍大、頭盔）
+     knight       騎士（1.2 倍高、頭盔）     ghost        幽靈
+     ghostKing    國王的亡魂（幽靈那一件、王冠、shields 幾面盾繞著轉）
+     knightGhost  騎士幽靈（幽靈加頭盔，劇本說的「先拼」：幽靈＋頭盔＋劍）
+     folk         王國的人民：look 給哪一隻、哪一件毛（'cat/tabby'、'dog-drop/cow'……）
+
+   同一種角色一格裡可以有好幾隻：照 cast 的順序一隻一隻借，不夠就再做一隻。 */
 const zoo = await loadZoo({ look: 'dog-prick/yellow', height: 1.0 });
 const ROLES = {
-  hero: { model: 'dog-prick', skin: 'yellow', height: 1.0, hat: true },
-  king: { model: 'dog-drop', skin: 'grey', height: 1.4, hat: false, crown: true },
+  hero: { look: 'dog-prick/yellow', height: 1.0, hat: true },
+  king: { look: 'dog-drop/grey', height: 1.4, crown: true },
+  zombie: { monster: 'minion' },
+  boss: { monster: 'boss', helm: true },
+  knight: { monster: 'knight', helm: true },
+  ghost: { monster: 'ghost' },
+  ghostKing: { monster: 'king', crown: true },
+  knightGhost: { monster: 'ghost', helm: true },
+  folk: {},
 };
-/** 每一種角色一隻（一格裡同一種角色只會出現一次）。 */
-const actors = {};
-for (const [who, r] of Object.entries(ROLES)) {
-  const c = new Critter(zoo.critters.get(r.model).data, r.model, { height: r.height, skin: r.skin });
-  c.setCoat(r.skin);
-  c.setHat(r.hat);
+/** 腳下的影子的材質（每一隻一塊，共用材質）。 */
+const shadowMat = new THREE.MeshBasicMaterial({ color: INK, transparent: true, opacity: 0.22, depthWrite: false });
+
+/** 做一隻：who 是 ROLES 的鍵，look 是 folk 的那一件（'模型/毛色'）。 */
+function makeActor(who, look) {
+  const r = ROLES[who];
+  if (!r) throw new Error(`沒有這種角色：${who}`);
+  let c, height;
+  if (r.monster) {
+    c = makeMonsterCritter(zoo, r.monster);
+    height = sizeOf(r.monster);
+  } else {
+    const [model, skin] = (r.look || look || '').split('/');
+    const own = zoo.critters.get(model);
+    if (!own) throw new Error(`沒有這一隻：${look}`);
+    height = r.height ?? own.height;
+    c = new Critter(own.data, model, { height, skin });
+    c.setCoat(skin);
+    c.setHat(!!r.hat);
+  }
   const crown = r.crown ? new Crown() : null;
   if (crown) crown.follow(c);
+  const helm = r.helm ? new Helm() : null;
+  if (helm) helm.follow(c);
+  /* 半透明的（幽靈）是兩個網格，上色的那一個照 alpha 混色（monster.js 的 seeThrough）：
+     找出來，散掉的幽靈（spec.alpha）調它的不透明度。 */
+  const seeThrough = c.mesh.material[0]?.colorWrite === false;
+  const tint = seeThrough ? c.mesh.parent.children.find((m) => m !== c.mesh && m.geometry === c.geometry) : null;
   // 倒下轉的是外面這一層（death.js 轉 Zoo 的 root 也是一樣的道理：朝向在裡面那一層）。
   const wrap = new THREE.Group();
   wrap.add(c.root);
   // 腳下一塊墨色的影子：沒有地面的時候，它是唯一告訴人「牠站在地上」的東西。
-  const shadow = new THREE.Mesh(
-    new THREE.CircleGeometry(0.42 * r.height, 40),
-    new THREE.MeshBasicMaterial({ color: INK, transparent: true, opacity: 0.22, depthWrite: false }),
-  );
+  const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.42 * height, 40), shadowMat);
   shadow.rotation.x = -Math.PI / 2;
   shadow.scale.set(1, 1.6, 1);
   scene.add(wrap, shadow);
-  actors[who] = { c, crown, wrap, shadow, height: r.height, blades: {} };
+  return { c, crown, helm, tint, wrap, shadow, height, blades: {}, shields: null };
 }
+
+/** 每一種角色（folk 是每一件）借出去的那幾隻。 */
+const pool = new Map();
+/** 這一格第幾次借這一種：照 cast 的順序借，不夠就再做一隻。 */
+function borrow(spec, used) {
+  const key = spec.who === 'folk' ? `folk:${spec.look}` : spec.who;
+  if (!pool.has(key)) pool.set(key, []);
+  const list = pool.get(key);
+  const k = (used[key] = (used[key] || 0) + 1);
+  while (list.length < k) list.push(makeActor(spec.who, spec.look));
+  return list[k - 1];
+}
+const allActors = () => [...pool.values()].flat();
+pool.set('hero', [makeActor('hero')]);
+/** 一公尺高的動物，一個模型單位是幾公尺：刀劍是模型單位做的（blade.js），掉在地上的照它縮。 */
+const UNIT = pool.get('hero')[0].c.mesh.scale.x;
 
 /** 這一隻嘴裡咬著哪一把（blade.js 的 SWORDS：knife、knight、king），null 是空手。第一次用到才做。 */
 function arm(a, kind) {
@@ -152,7 +206,7 @@ const PIECES = {
   ...Object.fromEntries([
     'column', 'banner', 'pavilion', 'weaponRack', 'standard', 'dummy', 'archeryTarget', 'sackStack',
     'woodpile', 'deadTree', 'knight', 'rubble', 'rubbleHeap', 'well', 'pointedArch', 'arcade', 'stair',
-    'gargoyle', 'wall', 'throneSeat',
+    'gargoyle', 'wall', 'throneSeat', 'sarcophagus', 'portcullis', 'chain', 'buttress',
   ].map((n) => [n, Pieces[n]])),
   brazier: (B, o) => Pieces.brazier(B, o, []),
   campfire: (B, o) => Pieces.campfire(B, o, []),
@@ -160,6 +214,22 @@ const PIECES = {
   barrel: (B, o) => Pieces.barrel(B, 0, o.y || 0, 0),
   /** 城牆：牆加牆頂一排垛口（兵營那道幕牆的樣子）。 */
   rampart: (B, o) => Pieces.merlons(B, { ...o, on: Pieces.wall(B, o), y: (o.y || 0) + o.h }),
+  /** 窄巷的連棟屋：W 寬、D 深、簷口 e 高，立面朝 −z。 */
+  house: (B, o) => Pieces.house(B, o.seed, { W: 5, D: 4, e: 5.2, alt: false, ...o, vx: false, us: 1, at: (u, v) => [u, v] }),
+  /** 門洞：一道尖拱加兩側一段牆（中庭門樓、水窖與墓室的門），lift 給了就是拱裡升到那裡的鐵閘。 */
+  gateway: (B, o) => {
+    const { span = 5, rise = 3.6, y: _y, h = 6.4, side = 4, thick = 1.2, lift } = o;
+    const half = span / 2;
+    Pieces.wall(B, { from: [-half - side, 0], to: [-half, 0], h, thick, ruin: o.ruin ?? 0.2, seed: 3 });
+    Pieces.wall(B, { from: [half, 0], to: [half + side, 0], h, thick, ruin: o.ruin ?? 0.2, seed: 4 });
+    const ARCH = { y: h * 0.56, span, rise, thick: 0.55 };
+    Pieces.pointedArch(B, { x: 0, z: 0, ...ARCH, yaw: 0, depth: thick + 0.1, ruin: 0, seed: 5 });
+    if (lift !== undefined) {
+      const e = (rise * rise - half * half) / (2 * half), ri = half + e - ARCH.thick / 2;
+      const ceil = (t) => ARCH.y + Math.sqrt(Math.max(0, ri * ri - (Math.abs(t) + e) ** 2));
+      Pieces.portcullis(B, { x: 0, z: 0, y: 0, w: span - 0.6, h: ARCH.y - 0.2, yaw: 0, lift, ceil, solid: false });
+    }
+  },
 };
 const KIT = new Pieces.Kit();
 const silMat = new THREE.MeshBasicMaterial({ color: SIL });
@@ -174,19 +244,62 @@ function silhouette({ piece, at, yaw, scale, view, tilt, x, y, size, flip, ...o 
 }
 
 /* ── 道具：角色碰得到的那幾件，3D ─────────────────────────────────
-   { piece, at: [x, z], yaw, scale, ...o }：擺在場景裡，跟角色一起拍（國王坐在王座上）。 */
+   { piece, at: [x, z], yaw, scale, ...o }：擺在場景裡，跟角色一起拍（國王坐在王座上），剪影的顏色。
+   { blade, at: [x, z], y, yaw, size }：一把掉在地上的刀劍（blade.js，原本的顏色）——刀面是平的，
+   所以平放在地上就是轉一個 yaw；size 是拿它的那一隻多高（騎士 1.2）。 */
 const set = new THREE.Group();
 scene.add(set);
+/** 掉在地上的刀劍：每一種一把，放好的時候才掛上來。 */
+const loose = {};
+const looseSet = new THREE.Group();
+scene.add(looseSet);
 function buildProps(props) {
   for (const m of set.children) m.geometry.dispose();
   set.clear();
+  looseSet.clear();
   for (const spec of props || []) {
+    if (spec.blade) {
+      const g = (loose[spec.blade] ??= new THREE.Group());
+      if (!g.children.length) g.add(new Blade(spec.blade).node);
+      // 刀劍是模型單位做的：一隻 size 公尺高的動物的一個模型單位多長，就照那個比例縮。
+      g.scale.setScalar(UNIT * (spec.size || 1));
+      g.position.set(spec.at[0], spec.y ?? 0.03, spec.at[1]);
+      g.rotation.set(spec.tilt || 0, spec.yaw || 0, 0, 'YXZ');
+      looseSet.add(g);
+      continue;
+    }
     const m = silhouette(spec);
-    m.position.set(spec.at[0], 0, spec.at[1]);
+    m.position.set(spec.at[0], spec.y || 0, spec.at[1]);
     m.rotation.y = spec.yaw || 0;
     m.scale.setScalar(spec.scale || 1);
     set.add(m);
   }
+}
+
+/* ── 靈魂：發光的狗頭（soul.js），3D ───────────────────────────────
+   { at: [x, y, z], yaw, scale, seed }：頭、光暈、周圍冒的小球。小球是 soul.js 用 Math.random 撒的，
+   這裡借固定種子的亂數撒一段，重拍才一樣。 */
+let soulLook = null;
+const souls = [];
+function placeSouls(list) {
+  for (const v of souls) v.root.visible = false;
+  if (!list?.length) return;
+  soulLook ??= new SoulLook(zoo);
+  list.forEach((sl, i) => {
+    if (!souls[i]) { souls[i] = soulLook.make(); scene.add(souls[i].root); }
+    const v = souls[i];
+    const [x, y, z] = sl.at;
+    const keep = Math.random;
+    Math.random = rng(sl.seed ?? 5 + i);
+    try {
+      v.bubbles.clear();
+      v.node.scale.setScalar(sl.scale || 1);
+      for (let k = 0; k < 90; k++) v.bubbles.step(1 / 60, x, y, z);
+      v.show({ x, y, z, yaw: sl.yaw || 0 }, 0, camera);
+    } finally {
+      Math.random = keep;
+    }
+  });
 }
 
 /* ── 背景：照構圖拼貼的剪影，2D ───────────────────────────────────
@@ -322,14 +435,17 @@ function faceAt(c, out) {
 /**
  * 擺鏡頭。兩種寫法：
  *   { pos, look, fov }                       世界座標
- *   { focus, yaw, pitch, dist, fov, frame }  對準 focus 那一隻的臉：從臉往 yaw（世界方位，0 = +Z 那一側）、
+ *   { focus, yaw, pitch, dist, fov, frame }  對準 focus 那一隻的臉（cast 裡 name 或 who 是它的第一隻）：
+ *                                            從臉往 yaw（世界方位，0 = +Z 那一側）、
  *                                            pitch（仰角，負的是從下往上拍）退 dist 公尺看著臉；frame [fx, fy]
  *                                            是臉落在畫面上的哪裡（從正中間算，畫面寬高的幾分之幾，+y 往下）
  */
-function aim(cam, w, h) {
+function aim(cam, w, h, who) {
   camera.clearViewOffset();
   if (cam.focus) {
-    const f = faceAt(actors[cam.focus].c, new THREE.Vector3());
+    const a = who(cam.focus);
+    if (!a) throw new Error(`鏡頭要對準的那一隻不在場：${cam.focus}`);
+    const f = faceAt(a.c, new THREE.Vector3());
     const cp = Math.cos(cam.pitch || 0);
     camera.position.set(
       f.x + cam.dist * cp * Math.sin(cam.yaw), f.y + cam.dist * Math.sin(cam.pitch || 0), f.z + cam.dist * cp * Math.cos(cam.yaw),
@@ -361,26 +477,45 @@ function fresh(c) {
   c._mvYaw = c._mvYawPrev = c._mvTail = c._mvPitch = 0;
 }
 
-/** 擺好一隻：站哪、面朝哪、什麼姿勢、倒了幾度。姿勢跑幾十幀讓呼吸與尾巴的彈簧穩下來。 */
+/**
+ * 擺好一隻：站哪、面朝哪、什麼姿勢、倒了幾度。姿勢跑幾十幀讓呼吸與尾巴的彈簧穩下來。
+ * speed（公尺／秒）是在跑：步態跑 frames 幀（預設 45）停在那一格——換 frames 就是換一個步伐。
+ * air 是在空中，值是垂直速度（正的往上衝、負的往下掉：critter.js 的空中姿勢）。
+ * scale 整隻放大（騎士幽靈 1.2）；alpha 是半透明的那幾隻（幽靈）散到剩幾成；
+ * shields 是國王的亡魂繞著幾面盾。
+ */
 function pose(a, spec, cam) {
-  const { c, crown, wrap, shadow } = a;
+  const { c, crown, helm, wrap, shadow } = a;
   fresh(c);
   const [x, z] = spec.at;
   const y0 = spec.y || 0;
+  const k = spec.scale || 1, height = a.height * k;
   c._yaw = c._yawGoal = spec.yaw;
   const viewYaw = camYawFrom(cam, x, z);
-  for (let i = 0; i < 45; i++) c.update(1 / 60, { speed: 0, grounded: true, vy: 0, viewYaw, move: spec.move });
+  const st = { speed: spec.speed || 0, grounded: spec.air === undefined, vy: spec.air || 0, viewYaw, move: spec.move };
+  for (let i = 0, n = spec.frames || 45; i < n; i++) c.update(1 / 60, st);
   if (crown) crown.update();
+  if (helm) helm.update();
   arm(a, spec.blade)?.update();
+  if (a.tint) for (const m of a.tint.material) m.opacity = spec.alpha ?? GHOST_ALPHA;
+  wrap.scale.setScalar(k);
   // 往牠自己的 +X 側倒：支點在那一側的身體外緣（大約半個身寬）。
-  const tip = spec.tip || 0, half = 0.28 * a.height;
+  const tip = spec.tip || 0, half = 0.28 * height;
   _side.set(Math.cos(spec.yaw), 0, -Math.sin(spec.yaw));
   _axis.crossVectors(UP, _side).normalize();
   wrap.quaternion.setFromAxisAngle(_axis, tip);
   wrap.position.set(x + half * _side.x * (1 - Math.cos(tip)), y0 + half * Math.sin(tip), z + half * _side.z * (1 - Math.cos(tip)));
-  shadow.position.set(x + half * _side.x * Math.sin(tip) * 0.6, y0 + 0.002, z + half * _side.z * Math.sin(tip) * 0.6);
+  shadow.position.set(x + half * _side.x * Math.sin(tip) * 0.6, (spec.ground ?? y0) + 0.002, z + half * _side.z * Math.sin(tip) * 0.6);
   shadow.visible = spec.shadow !== false;
   shadow.rotation.z = -spec.yaw;
+  shadow.scale.set(k, 1.6 * k, 1);
+  if (spec.shields) {
+    if (!a.shields) { a.shields = new ShieldRing(spec.shields); a.shields.follow(c); scene.add(a.shields.node); }
+    a.shields._spin = spec.spin || 0;
+    a.shields._t = 0;
+    a.shields.snap(spec.shields);
+    a.shields.show(0, spec.shields, x, y0, z, height);
+  }
 }
 
 /** 固定種子的亂數（mulberry32）：集中線每次重拍都一樣。 */
@@ -418,6 +553,87 @@ function focusLines(g, w, h, cx, cy, { n = 110, clear = 0.42, width = 0.012, see
   g.restore();
 }
 
+/**
+ * 光芒（光從哪裡透出來、從誰身上擴散出去）：從 at（畫面的比例）往外放的 n 道光，等角度、等寬，
+ * 一道光一道空——規則的排法。from、to 是放射的角度範圍（弳，canvas 的角度：0 往右、π/2 往下），
+ * 沒給就是一整圈；inner 是內端離中心多遠（畫面高的幾倍）；width 是一道光佔它那一份角度的幾成；
+ * color、alpha 是光的顏色。畫在角色底下。光芒是效果線，不是紋理。
+ */
+function rays(g, w, h, { at = [0.5, 0.5], n = 24, from = 0, to = Math.PI * 2, inner = 0.08, width = 0.5, color = '#fff6d8', alpha = 0.9 } = {}) {
+  const cx = at[0] * w, cy = at[1] * h;
+  const R = Math.hypot(Math.max(cx, w - cx), Math.max(cy, h - cy)) + 4;
+  const r0 = inner * h, step = (to - from) / n, half = (step * width) / 2;
+  g.save();
+  g.globalAlpha = alpha;
+  g.fillStyle = color;
+  g.beginPath();
+  for (let i = 0; i < n; i++) {
+    const a = from + (i + 0.5) * step;
+    g.moveTo(cx + Math.cos(a - half * 0.25) * r0, cy + Math.sin(a - half * 0.25) * r0);
+    g.lineTo(cx + Math.cos(a - half) * R, cy + Math.sin(a - half) * R);
+    g.lineTo(cx + Math.cos(a + half) * R, cy + Math.sin(a + half) * R);
+    g.lineTo(cx + Math.cos(a + half * 0.25) * r0, cy + Math.sin(a + half * 0.25) * r0);
+    g.closePath();
+  }
+  g.fill();
+  g.restore();
+}
+
+/**
+ * 速度線（跑過去、掉下去）：沿 angle（弳，canvas 的角度）的一列一列平行長線，等間隔，每一列
+ * 一條、兩頭收尖，長度是畫面寬的 len 倍（一列一列輪流長短）。rows 是幾列，band [y0, y1] 是
+ * 排在畫面的哪一段（沿垂直於線的方向，畫面的比例）。畫在角色底下，墨色。
+ */
+function speedLines(g, w, h, { angle = 0, rows = 16, band = [0.1, 0.9], len = [0.35, 0.6], width = 0.006, seed = 3 } = {}) {
+  const rand = rng(seed);
+  const ux = Math.cos(angle), uy = Math.sin(angle), nx = -uy, ny = ux;
+  const D = Math.hypot(w, h), hw = (width * h) / 2;
+  g.save();
+  g.fillStyle = `#${INK.toString(16).padStart(6, '0')}`;
+  for (let i = 0; i < rows; i++) {
+    const t = band[0] + ((i + 0.5) / rows) * (band[1] - band[0]);
+    // 這一列的中線：畫面中心沿法線方向偏 (t − 0.5) 個對角線。
+    const ox = w / 2 + nx * (t - 0.5) * D, oy = h / 2 + ny * (t - 0.5) * D;
+    const L = w * (i % 2 ? len[0] : len[1]);
+    const s = (rand() - 0.5) * D * 0.5;
+    const ax = ox + ux * (s - L / 2), ay = oy + uy * (s - L / 2);
+    const bx = ox + ux * (s + L / 2), by = oy + uy * (s + L / 2);
+    const mx = (ax + bx) / 2, my = (ay + by) / 2;
+    g.beginPath();
+    g.moveTo(ax, ay);
+    g.quadraticCurveTo(mx + nx * hw * 2, my + ny * hw * 2, bx, by);
+    g.quadraticCurveTo(mx - nx * hw * 2, my - ny * hw * 2, ax, ay);
+    g.fill();
+  }
+  g.restore();
+}
+
+/**
+ * 霧與塵（幽靈散掉的霧、砸起來的塵土）：幾團大圓，同一團的圓聯成一個形狀（一條路徑一次塗），
+ * 沒有墨線、半透明。不規則，所以照紋理規則要夠大、成叢：每一團是畫面上看得出形狀的一塊。
+ * 每一團 { x, y, r, color, alpha, n, seed }：中心（畫面的比例）、大小（畫面高的比例），圓的個數。
+ * 畫在最上層（角色前面）。
+ */
+function puffs(g, w, h, list) {
+  for (const { x, y, r, color = '#e8f1fa', alpha = 0.8, n = 6, seed = 1 } of list) {
+    const rand = rng(seed);
+    g.save();
+    g.globalAlpha = alpha;
+    g.fillStyle = color;
+    g.beginPath();
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + rand() * 0.6;
+      const d = i ? r * h * (0.45 + rand() * 0.3) : 0;
+      const rr = r * h * (i ? 0.45 + rand() * 0.25 : 0.62);
+      const px = x * w + Math.cos(a) * d * 1.3, py = y * h + Math.sin(a) * d * 0.8;
+      g.moveTo(px + rr, py);
+      g.arc(px, py, rr, 0, Math.PI * 2);
+    }
+    g.fill();
+    g.restore();
+  }
+}
+
 /** 拍好的那一張（網點之後）再畫上表情：一張 2D 畫布。 */
 const sheet = document.createElement('canvas');
 /** 拍好的角色（網點之後）：背景拍完再疊上去。 */
@@ -436,19 +652,26 @@ function render(id) {
   const key = new THREE.Vector3(...(shot.light || KEY_POS)).normalize();
   LIGHT_DIR.value.copy(key);
   U_KEYDIR.value.copy(key);
-  for (const a of Object.values(actors)) { a.wrap.visible = false; a.shadow.visible = false; }
+  for (const a of allActors()) {
+    a.wrap.visible = false;
+    a.shadow.visible = false;
+    a.shields?.hide();
+  }
   buildProps(shot.props);
-  const faces = [];
-  for (const spec of shot.cast) {
-    const a = actors[spec.who];
+  const used = {};
+  const cast = shot.cast.map((spec) => [spec, borrow(spec, used)]);
+  for (const [spec, a] of cast) {
     a.wrap.visible = true;
     a.c.setInkPx(shot.ink, h);
     pose(a, spec, shot.cam);
   }
   scene.updateMatrixWorld(true);
-  aim(shot.cam, w, h);
-  for (const spec of shot.cast) {
-    if (spec.face) faces.push([spec.face, eyeAnchors(actors[spec.who].c, w, h), spec.eyes]);
+  aim(shot.cam, w, h, (name) => cast.find(([s]) => (s.name ?? s.who) === name)?.[1]);
+  placeSouls(shot.souls);
+  scene.updateMatrixWorld(true);
+  const faces = [];
+  for (const [spec, a] of cast) {
+    if (spec.face) faces.push([spec.face, eyeAnchors(a.c, w, h), spec.eyes]);
   }
   target.setSize(w, h);
   screen.material.uniforms.uCell.value = h / HALFTONE.cells;
@@ -468,14 +691,18 @@ function render(id) {
   sheetG.clearRect(0, 0, w, h);
   if (shot.horizon !== undefined) hatchGround(sheetG, w, h, shot.horizon);
   for (const spec of shot.bg || []) drawCutout(sheetG, spec, w, h);
+  for (const r of [shot.rays || []].flat()) rays(sheetG, w, h, r);
   if (shot.focusLines) {
-    // 收向鏡頭對準的那張臉（cam.focus），沒有就是畫面正中間。
+    // 收向鏡頭對準的那張臉（cam.focus），沒有就是畫面正中間；at 給了就收向那裡（畫面的比例）。
+    const o = shot.focusLines === true ? {} : shot.focusLines;
     const [fx, fy] = shot.cam.frame || [0, 0];
-    const [cx, cy] = shot.cam.focus ? [(0.5 + fx) * w, (0.5 + fy) * h] : [w / 2, h / 2];
-    focusLines(sheetG, w, h, cx, cy, shot.focusLines === true ? {} : shot.focusLines);
+    const [cx, cy] = o.at ? [o.at[0] * w, o.at[1] * h] : shot.cam.focus ? [(0.5 + fx) * w, (0.5 + fy) * h] : [w / 2, h / 2];
+    focusLines(sheetG, w, h, cx, cy, o);
   }
+  if (shot.speedLines) speedLines(sheetG, w, h, shot.speedLines);
   sheetG.drawImage(layer, 0, 0);
   for (const [face, anchors, eyes] of faces) drawFace(sheetG, face, anchors, shot.ink, eyes);
+  if (shot.puffs) puffs(sheetG, w, h, shot.puffs);
   return sheet.toDataURL('image/png');
 }
 

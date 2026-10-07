@@ -10,7 +10,7 @@
 | --- | --- |
 | 劇本 | `STORY.md`：14 頁、每一格的畫面、鏡頭、字 |
 | 第 1 頁（兵營開場） | 已畫：`public/test/comic/p1-1.png` ～ `p1-4.png` |
-| 第 2～14 頁 | 佔位（書頁上是「分格 n、待繪：…」） |
+| 第 2～14 頁 | 見 `comic.js`：有 `src` 的格子畫好了，其餘是佔位（書頁上是「分格 n、待繪：…」） |
 | 背景剪影 | 第 1 頁有了：王座廳的柱子與垂旗、兵器架與營帳、地平線上的營區與城牆，地面是排線。零件見 `studio.js` 的 `PIECES` |
 
 ## 畫風規則
@@ -89,10 +89,21 @@
   bg: [{ piece: 'column', x, y, size, view, tilt, flip, ...零件的參數 }],   // 背景：照構圖拼貼的剪影（見下面）
   horizon: 0.8,            // 地平線在畫面高的幾成，往下畫滿地面的排線；沒給就沒有地面
   props: [{ piece: 'throneSeat', at: [x, z], yaw }],   // 角色碰得到的道具，3D
-  focusLines: true,        // 集中線，或 { n, clear, width, seed }
+  focusLines: true,        // 集中線，或 { n, clear, width, seed, at }
+  rays: { at: [fx, fy], n, from, to, inner, width, color, alpha },   // 光芒（可以是陣列）
+  speedLines: { angle, rows, band, len, width, seed },              // 速度線
+  puffs: [{ x, y, r, color, alpha, n, seed }],                      // 霧與塵
+  souls: [{ at: [x, y, z], yaw, scale, seed }],                     // 靈魂（發光的狗頭），3D
   cast: [{
-    who: 'hero',           // 'hero'（立耳犬黃、漁夫帽、高 1）或 'king'（垂耳犬灰、王冠、高 1.4）
+    who: 'hero',           // 見下面「角色」
+    look: 'cat/tabby',     // who 是 'folk' 的時候：哪一隻、哪一件毛
+    name: 'a',             // 同一種好幾隻時，鏡頭要對準第二隻以後的那一隻，用名字指
     at: [x, z], yaw,       // 公尺；yaw 0 = 面朝 +Z，π/2 = 面朝 +X
+    speed: 4, frames: 45,  // 在跑（公尺／秒）；步態跑幾幀停在那一格，換 frames 就是換一個步伐
+    air: -6,               // 在空中，值是垂直速度（負的往下掉）
+    scale: 1.2,            // 整隻放大（騎士幽靈）
+    alpha: 0.25,           // 半透明的那幾隻（幽靈）散到剩幾成
+    shields: 3,            // 國王的亡魂繞著幾面盾
     y: 0.7,                // 墊高（坐在王座上）
     shadow: false,         // 不畫腳下的影子
     move: { ... },         // 姿勢，見下面
@@ -108,11 +119,21 @@
 
 - **`cam.focus`**：鏡頭從那一隻的臉（兩眼中點），往世界方位 `yaw`（0 是 +Z 那一側）、仰角 `pitch`（負的是從下往上拍）退 `dist` 公尺看著臉。`frame` 是臉落在畫面上的哪裡，從正中間算、以寬高的比例表示，+y 往下。
   - 要拍到臉，`yaw` 約等於角色的 `yaw` 加減 0～0.8。
-- **背景 `bg`**：`piece` 是 `studio.js` 的 `PIECES` 裡的名字（`column`、`banner`、`pavilion`、`weaponRack`、`standard`、`dummy`、`archeryTarget`、`rampart`（城牆加垛口）、`throneSeat`、`deadTree`、`well`……），其餘的參數原樣交給那支零件（`pavilion` 的 `R`、`h`，`rampart` 的 `from`、`to`、`h`）。
+- **背景 `bg`**：`piece` 是 `studio.js` 的 `PIECES` 裡的名字（`column`、`banner`、`pavilion`、`weaponRack`、`standard`、`dummy`、`archeryTarget`、`rampart`（城牆加垛口）、`throneSeat`、`deadTree`、`well`、`house`（窄巷的連棟屋）、`sarcophagus`（石棺）、`gateway`（門洞：尖拱加兩側的牆，給 `lift` 就有鐵閘）、`arcade`、`pointedArch`、`chain`、`gargoyle`、`knight`（騎士石像）……），其餘的參數原樣交給那支零件（`pavilion` 的 `R`、`h`，`rampart` 的 `from`、`to`、`h`）。
   - 剪影的底邊正中間放在畫面的 `(x, y)`（寬高的比例，y 往下），高 `size`（畫面高的比例），寬照零件的比例。超出畫面的照裁，大柱子裁出畫面就是框。
   - `view` 是零件繞直軸轉幾弳再拍（要側面就 π/2），`tilt` 往前傾、看得到一點頂，`flip` 左右翻。
   - 後面的先畫，寫在陣列後面的蓋在前面。
-- **道具 `props`**：`{ piece, at: [x, z], yaw, scale }`，擺在 3D 場景裡跟角色一起拍。`throneSeat` 的座面頂在 0.5 公尺、面朝 −Z。
+- **角色 `who`**：都是遊戲裡那幾隻本人，怪物是 `monster.js` 的 `makeMonsterCritter`（同一件毛、同樣大、幽靈一樣半透明），頭盔、王冠、盾照 `fight.js` 戴。同一種角色一格裡可以有好幾隻。
+  - `hero` 主角（立耳犬黃、漁夫帽、高 1）、`king` 活著的國王（垂耳犬灰、王冠、高 1.4）。
+  - `zombie` 殭屍、`boss`（兩倍大、頭盔）、`knight`（1.2 倍高、頭盔；劍用 `blade: 'knight'`）、`ghost` 幽靈。
+  - `ghostKing` 國王的亡魂（幽靈那一件、王冠；劍用 `blade: 'king'`，盾用 `shields`）。
+  - `knightGhost` 騎士幽靈：幽靈加頭盔（劇本的「先拼」），`scale: 1.2`、`blade: 'knight'`。
+  - `folk` 王國的人民：`look` 給 `'cat/orangin'`、`'cat/tabby'`、`'cat/calico'`、`'dog-prick/grey'`、`'dog-drop/cow'`……
+- **道具 `props`**：`{ piece, at: [x, z], y, yaw, scale }`，擺在 3D 場景裡跟角色一起拍。`throneSeat` 的座面頂在 0.5 公尺、面朝 −Z。`{ blade: 'knight', at, y, yaw, size }` 是一把掉在地上的刀劍（原本的顏色，`size` 是拿它的那一隻多高）。
+- **效果**：都是效果線或大團，不是紋理（規則 10）。
+  - `rays` 光芒：從 `at`（畫面的比例）往外放、等角度等寬的光，`from`／`to` 是角度範圍。光從縫裡透上來、從誰身上擴散出去、門後的冷光。畫在角色底下。
+  - `speedLines` 速度線：沿 `angle` 一列一列等間隔的長線，跑過去、掉下去。畫在角色底下。
+  - `puffs` 霧與塵：幾團大圓聯成的形狀，沒有墨線、半透明。幽靈散掉的霧、砸起來的塵。畫在最上層。
 - **姿勢 `move`**（`critter.js` 的 `moveOverlay`）：
   - `pitch`：身體仰俯，正值是低頭那一側往下。
   - `headPitch`：正值低頭、負值抬頭。`headYaw`、`headTilt` 是頭轉、頭歪。
@@ -133,13 +154,19 @@
 
 ## 表情（faces.js）
 
-現有六種：
+現有這幾種：
 - `proud`：堅定、濃眉壓下來。
 - `calm`：半睜、沉穩（國王）。
 - `tears`：嚇哭，每隻眼睛下眼眶一顆大淚珠、一顆汗。
 - `shock`：驚醒，白眼、瞳孔一點、眉彈高、驚嚇線，每隻眼睛一顆大淚珠。
 - `tired`：橫線眼加眼袋。
 - `dazed`：豆眼、一邊挑眉、一顆汗。
+- `pant`：喘，眼睛擠成尖朝鼻樑的「＞」、八字眉、一顆汗。
+- `hope`：盼，圓的大黑眼珠、兩顆高光、眉抬高。
+- `sad`：難過，八字眉、下眼眶一顆大淚珠。
+- `glare`：瞪（怪物），紅色杏眼整圈包邊、一道直瞳、粗眉狠壓。
+- `ko`：被打倒的怪物，叉叉眼（跟靈魂的叉叉同一個記號）。
+- `rest`：安息，閉眼、往下彎的弧。
 
 **怎麼運作**：拍之前把模型的兩片眼睛藏起來。從眼睛的骨頭投影出每一隻眼睛在畫面上的中心、大小（眼睛半高 `r`）、頭頂方向、鼻樑在哪一側。拍完、網點之後，用 2D 畫上去。
 
@@ -148,6 +175,9 @@
 **新增表情**：在 `FACES` 加一個函式。座標是那一隻眼睛自己的：原點是眼睛中心，−y 是頭頂，+x 是鼻樑那一側，單位是 `r`。左右不對稱的用 `a.i`（第幾隻眼睛）分。畫完照規則 5 自己檢查一次。
 
 ## 踩過的坑
+
+- **倒下的怪物**：照 `death.js` 那樣側倒（`tip`），鏡頭不高的時候只看得到肚子與四隻腳，或一整片背，讀起來是一團綠色。漫畫裡倒下的怪物趴平（`shots.js` 的 `FLOP`：下巴貼地、四腳攤開）、臉朝鏡頭、`face: 'ko'`。
+- **過肩鏡頭**：鏡頭朝 +Z 看的時候，世界的 +X 在畫面的**左邊**。對準被看的那一隻（`cam.focus`），鏡頭的 `yaw` 從主角背後再偏開 0.8～1 弳，主角才不會整個擋在牠前面——擋到臉的話，畫在最上層的表情會浮在主角身上。
 
 - **剪影裡透光的縫**：零件是一塊一塊砌的（柱子分鼓、牆分磚），縫拍出來是空的，剪影上會有一條條紙色的線。攝影棚把每一張剪影往外補幾個像素（同色錯開疊幾次）把縫合起來；新加的零件縫比較寬的話，調 `drawCutout` 裡的 `r`。
 

@@ -6,14 +6,19 @@
      id     圖檔名（public/test/comic/<id>.png），也是 comic.js 那一格的 src
      size   出圖的像素（寬、高）。比例照它在橫向版面裡那一格（四格頁：a 約 2.9、b 1.3、c 1.7、d 2.6 比 1）；
             直向或別的比例由書頁照 comic.js 的 focus 裁
-     cast   在場的角色：
-              who    'hero'（主角：立耳犬、黃、戴漁夫帽）或 'king'（活著的國王：垂耳犬、灰、王冠、1.4 倍高）
+     cast   在場的角色（同一種可以好幾隻）：
+              who    'hero'（主角：立耳犬、黃、戴漁夫帽）、'king'（活著的國王：垂耳犬、灰、王冠、1.4 倍高）、
+                     怪物 'zombie'、'boss'、'knight'、'ghost'、'ghostKing'（國王的亡魂）、'knightGhost'
+                     （騎士幽靈），或 'folk'（王國的人民，look 給哪一隻：'cat/tabby'、'dog-drop/cow'……）
+              name   鏡頭要對準同一種的第二隻以後的那一隻時，給牠一個名字（cam.focus 用）
               at     [x, z]（公尺），yaw 面朝哪（0 = +Z，π/2 = +X）
+              speed  在跑（公尺／秒）：步態跑 frames 幀（預設 45）停在那一格；air 在空中（垂直速度）
+              scale  整隻放大；alpha 半透明的那幾隻散到剩幾成；shields 國王的亡魂繞著幾面盾
               move   疊在上面的姿勢（critter.js 的 moveOverlay：pitch、headPitch、front、knee、legs…）
               tip    整隻往側邊倒幾弳（0 = 站著、π/2 = 躺平；death.js 那一種倒法，往牠自己的 +X 側倒）
               blade  嘴裡橫咬哪一把（blade.js：'knife' 主角的刀、'knight'、'king'），沒給是空手
               y      墊高幾公尺（坐在王座上）；shadow: false 不畫腳下的影子
-              face   漫畫的表情（faces.js：proud、calm、tears、shock、tired、dazed），沒給就是模型原本的眼睛
+              face   漫畫的表情（faces.js 的 FACES），沒給就是模型原本的眼睛
               eyes   { lift, spread }：畫上去的眼睛往額頭抬、往外分開多少（眼睛半高的幾倍；正面特寫用）
      bg     背景：遊戲地形零件的剪影，照構圖拼貼（不是擺在 3D 場景裡）。每一件
             { piece, x, y, size, view, tilt, flip, ...零件自己的參數 }：piece 見 studio.js 的 PIECES（column、
@@ -21,10 +26,14 @@
             (x, y)（寬高的比例，y 往下），高 size（畫面高的比例）；view 轉幾弳再從正面平拍，tilt 往前傾、
             flip 左右翻。剪影只取形狀：一個顏色、沒有透視、不分遠近，排在哪裡是構圖的事
      horizon  地平線在畫面高的幾成（0 = 頂、1 = 底），從這裡往下畫滿地面的排線；沒給就沒有地面
-     props  角色碰得到的道具（國王坐的王座）：{ piece, at: [x, z], yaw, scale, ...零件的參數 }，擺在 3D 場景裡
-            跟角色一起拍，顏色跟背景的剪影一樣
+     props  角色碰得到的道具（國王坐的王座）：{ piece, at: [x, z], y, yaw, scale, ...零件的參數 }，擺在 3D 場景裡
+            跟角色一起拍，顏色跟背景的剪影一樣；{ blade, at, y, yaw, size } 是一把掉在地上的刀劍（原本的顏色）
+     souls  靈魂（發光的狗頭）：[{ at: [x, y, z], yaw, scale, seed }]
+     rays   光芒：{ at: [fx, fy], n, from, to, inner, width, color, alpha }（或好幾道的陣列），畫在角色底下
+     speedLines  速度線：{ angle, rows, band, len, width, seed }，畫在角色底下
+     puffs  霧與塵：[{ x, y, r, color, alpha, n, seed }]，大團、沒有墨線，畫在最上層
      focusLines  集中線（緊張的格子）：true，或 { n, clear, width, seed }——幾條、中間留多大的空白
-            （畫面高的幾倍）、外端多寬、亂數種子。收向 cam.focus 那張臉
+            （畫面高的幾倍）、外端多寬、亂數種子。收向 cam.focus 那張臉，給了 at（畫面的比例）就收向那裡
      cam    鏡頭，兩種寫法：{ pos, look, fov }（世界座標），或 { focus: 'hero', yaw, pitch, dist, fov, frame }
             ——對準那一隻的臉，從臉往 yaw 方位、pitch 仰角（負的是從下往上拍）退 dist 公尺；frame [fx, fy]
             是臉落在畫面上哪裡（從正中間算，寬高的幾分之幾，+y 往下）。特寫用後面那一種。
