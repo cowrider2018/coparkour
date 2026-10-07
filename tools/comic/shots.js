@@ -275,4 +275,54 @@ export const SHOTS = [
     cast: [{ who: 'hero', at: [0, 0], yaw: Math.PI + 0.35, move: { headPitch: -0.05, headYaw: 0.15, w: 1 }, face: 'hope', eyes: { lift: 0.2 } }],
     cam: { focus: 'hero', yaw: 0.25, pitch: 0.05, dist: 1.6, fov: 40, frame: [0.3, 0.32] },
   },
+
+  /* ── 第 5 頁　窄巷・開場 ─────────────────────────────────────── */
+  {
+    // 找到了。：主角的視角往巷底看。兩側的連棟屋從畫面的左右兩邊夾進來（大、裁出畫面），越往中間越小，
+    // 貼在拉高的地平線上；巷底小廣場的正中間是那口井。主角的帽頂在畫面最下面。
+    id: 'p5-1', size: [1800, 620], ink: 3.5,
+    horizon: 0.62,
+    bg: [
+      { piece: 'house', W: 4.6, D: 4, e: 5.0, seed: 7, x: 0.36, y: 0.63, size: 0.36 },
+      { piece: 'house', W: 4.6, D: 4, e: 4.6, seed: 8, x: 0.64, y: 0.63, size: 0.34 },
+      { piece: 'well', r: 1.1, seed: 2, x: 0.5, y: 0.64, size: 0.13 },
+      { piece: 'house', W: 4.6, D: 4, e: 5.6, seed: 3, x: 0.2, y: 0.7, size: 0.62 },
+      { piece: 'house', W: 4.6, D: 4, e: 5.2, seed: 4, x: 0.8, y: 0.7, size: 0.6 },
+      { piece: 'house', W: 4.6, D: 4, e: 6.0, seed: 5, x: 0.01, y: 0.8, size: 1.05 },
+      { piece: 'house', W: 4.6, D: 4, e: 5.6, seed: 6, x: 0.99, y: 0.8, size: 1.0 },
+    ],
+    cast: [{ who: 'hero', at: [0, 0], yaw: Math.PI, move: { headPitch: -0.1, w: 1 } }],
+    cam: { focus: 'hero', yaw: 0, pitch: 0.12, dist: 1.6, fov: 34, frame: [0, 0.62] },
+  },
+  {
+    // 井口特寫：井（絞盤、垂下去的繩與吊桶）佔滿畫面，主角從左邊探出頭來，盯著井眼睛發亮。
+    id: 'p5-2', size: [900, 720], ink: 4,
+    horizon: 0.86,
+    bg: [{ piece: 'well', r: 1.1, seed: 2, x: 0.58, y: 0.94, size: 0.84 }],
+    cast: [{ who: 'hero', at: [0, 0], yaw: 1.1, move: { headPitch: 0.05, w: 1 }, face: 'hope', eyes: { lift: 0.3 } }],
+    cam: { focus: 'hero', yaw: 0.3, pitch: 0.0, dist: 1.35, fov: 36, frame: [-0.3, -0.02] },
+    light: [-2, 7, 6],
+  },
+  {
+    // 井後面的騎士：中景。井在前面（道具），殭屍騎士在井的後面背對著我們遊蕩，劍從頭的兩側伸出去。
+    id: 'p5-3', size: [1150, 720], ink: 3.5,
+    horizon: 0.5,
+    bg: [
+      { piece: 'house', W: 4.6, D: 4, e: 5.4, seed: 3, x: 0.12, y: 0.5, size: 0.6 },
+      { piece: 'house', W: 4.6, D: 4, e: 5.0, seed: 4, x: 0.9, y: 0.5, size: 0.56 },
+      { piece: 'barrel', x: 0.75, y: 0.52, size: 0.09 },
+      { piece: 'crate', s: 0.9, x: 0.8, y: 0.52, size: 0.09 },
+    ],
+    props: [{ piece: 'well', r: 1.1, seed: 2, at: [0, 0] }],
+    cast: [{ who: 'knight', at: [2.3, -2.0], yaw: Math.PI - 0.9, blade: 'knight', move: { headPitch: 0.1, tailPitch: -0.2, w: 1 }, speed: 1.2, frames: 50 }],
+    cam: { pos: [-0.6, 1.9, 6.0], look: [1.0, 0.75, -1.2], fov: 32 },
+  },
+  {
+    // 騎士轉頭，看見主角：騎士的頭的大特寫，從肩膀上轉過來，紅眼瞪著鏡頭；集中線。
+    id: 'p5-4', size: [1800, 720], ink: 4.5,
+    focusLines: { clear: 0.4 },
+    cast: [{ who: 'knight', at: [0, 0], yaw: Math.PI - 0.4, blade: 'knight', move: { headYaw: -1.0, headPitch: 0.15, twist: -0.3, w: 1 }, face: 'visor', eyes: { lift: 0.35, spread: 0.1 } }],
+    cam: { focus: 'knight', yaw: 0.45, pitch: 0.02, dist: 1.5, fov: 34, frame: [0.12, 0.05] },
+    light: [3, 6, 6],
+  },
 ];

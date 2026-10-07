@@ -41,10 +41,10 @@ export const PAGES = [
     { note: '從西拱洞望出去，窄巷盡頭的井', say: '窄巷有口井。', src: 'comic/p4-3.png', focus: '55% 55%' },
   ] },
   { title: '城內窄巷', panels: [
-    { note: '兩側木構連棟屋夾著窄巷，盡頭小廣場上的井', say: '找到了。' },
-    { note: '井口特寫，繩子垂下去' },
-    { note: '井後面一隻殭屍騎士背對著遊蕩，嘴裡咬著雙刃劍' },
-    { note: '騎士轉頭，看見主角' },
+    { note: '兩側木構連棟屋夾著窄巷，盡頭小廣場上的井', say: '找到了。', src: 'comic/p5-1.png', focus: '50% 60%' },
+    { note: '井口特寫，繩子垂下去', src: 'comic/p5-2.png', focus: '35% 50%' },
+    { note: '井後面一隻殭屍騎士背對著遊蕩，嘴裡咬著雙刃劍', src: 'comic/p5-3.png', focus: '50% 55%' },
+    { note: '騎士轉頭，看見主角', src: 'comic/p5-4.png', focus: '62% 50%' },
   ] },
   { title: '城內窄巷', panels: [
     { note: '騎士倒下，劍掉在井邊' },
