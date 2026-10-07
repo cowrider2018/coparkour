@@ -47,9 +47,9 @@ export const PAGES = [
     { note: '騎士轉頭，看見主角', src: 'comic/p5-4.png', focus: '62% 50%' },
   ] },
   { title: '城內窄巷', panels: [
-    { note: '騎士倒下，劍掉在井邊' },
-    { note: '主角再次看向井口' },
-    { note: '從井底往上：主角的臉探進井口', say: '水……' },
+    { note: '騎士倒下，劍掉在井邊', src: 'comic/p6-1.png', focus: '50% 50%' },
+    { note: '主角再次看向井口', src: 'comic/p6-2.png', focus: '55% 55%' },
+    { note: '從井底往上：主角的臉探進井口', say: '水……', src: 'comic/p6-3.png', focus: '50% 70%' },
   ] },
   { title: '圓塔水窖', panels: [
     { note: '主角趴在井緣，脖子伸得長長的往下' },

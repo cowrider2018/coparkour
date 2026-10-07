@@ -325,4 +325,42 @@ export const SHOTS = [
     cam: { focus: 'knight', yaw: 0.45, pitch: 0.02, dist: 1.5, fov: 34, frame: [0.12, 0.05] },
     light: [3, 6, 6],
   },
+
+  /* ── 第 6 頁　窄巷・戰後 ─────────────────────────────────────── */
+  {
+    // 騎士倒下，劍掉在井邊：中景。騎士側著趴平在井旁（頭盔還戴著），那把雙刃劍掉在井腳下。
+    id: 'p6-1', size: [860, 720], ink: 3.5,
+    horizon: 0.5,
+    bg: [
+      { piece: 'house', W: 4.6, D: 4, e: 5.4, seed: 3, x: 0.1, y: 0.52, size: 0.5 },
+      { piece: 'house', W: 4.6, D: 4, e: 5.0, seed: 4, x: 0.92, y: 0.52, size: 0.46 },
+    ],
+    props: [
+      { piece: 'well', r: 1.1, seed: 2, at: [-1.6, -0.6] },
+      { blade: 'knight', at: [-0.2, 0.9], yaw: -0.5, size: 1.2 },
+    ],
+    cast: [{ who: 'knight', at: [0.9, -0.3], yaw: 2.2, move: { ...FLOP, headTilt: 0.35 } }],
+    cam: { pos: [1.6, 2.4, 5.4], look: [-0.2, 0.4, -0.2], fov: 40 },
+  },
+  {
+    // 主角再次看向井口：過肩，井在畫面正中，主角的頭與肩在右下角。
+    id: 'p6-2', size: [1200, 720], ink: 3.5,
+    horizon: 0.66,
+    bg: [
+      { piece: 'house', W: 4.6, D: 4, e: 5.4, seed: 3, x: 0.08, y: 0.67, size: 0.75 },
+      { piece: 'house', W: 4.6, D: 4, e: 5.0, seed: 5, x: 0.9, y: 0.67, size: 0.7 },
+      { piece: 'well', r: 1.1, seed: 2, x: 0.47, y: 0.7, size: 0.42 },
+    ],
+    cast: [{ who: 'hero', at: [0, 0], yaw: Math.PI + 0.35, move: { headPitch: 0.1, w: 1 }, face: 'hope', eyes: { lift: 0.2 } }],
+    cam: { focus: 'hero', yaw: 0.25, pitch: 0.05, dist: 1.6, fov: 40, frame: [0.3, 0.32] },
+  },
+  {
+    // 水……：從井底往上拍。四周密密的集中線是井壁，中間留出一圈天空；主角站在井緣上，頭從圈的下緣探進來
+    // 往下看。
+    id: 'p6-3', size: [1200, 720], ink: 4,
+    focusLines: { clear: 0.5, n: 220, width: 0.02, at: [0.5, 0.42] },
+    cast: [{ who: 'hero', at: [0, -1.05], yaw: 0, move: { pitch: 0.35, headPitch: 0.7, w: 1 }, face: 'hope', eyes: { lift: 0.9, spread: 0.4 }, shadow: false }],
+    cam: { pos: [0, -1.7, 0.05], look: [0, 0.9, -0.05], fov: 46 },
+    light: [0, -2, 5],
+  },
 ];
