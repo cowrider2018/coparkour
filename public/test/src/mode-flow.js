@@ -7,7 +7,9 @@
 
    ── 一場的一生 ──────────────────────────────────────────────────
      走進第 k 場的範圍   所有的門關上、所有的傳送不通；一秒後 BOSS 出現。
-     打死 BOSS           這一場清完：只開通往下一場的門（route.js 的 OPEN）。
+     打死 BOSS           這一場清完：只開通往下一場的門（route.js 的 OPEN）。斬殺的那一刻起
+                         演一段劇情（story.js）：慢動作，一大張書頁跑進來蓋住畫面，上面是
+                         一頁漫畫；點一下（或按跳）書頁跑走，接著玩。
      挨打                扣血（頭頂的愛心，fight.js）。BOSS 死掉掉出的靈魂撿起來
                          最大血量 +1，一路帶到後面的場。
      不在戰鬥中          清完一場之後、還沒走進下一場之前：很快回血到最大血量
@@ -38,6 +40,7 @@ import { createLight } from './light.js';
 import { makeHero, steerHero, moveHero } from './hero.js';
 import { Transit } from './transit.js';
 import { Death } from './death.js';
+import { Story } from './story.js';
 import { Fight, DEATH_TEXT } from './fight.js';
 import { Sound } from './sound.js';
 import { Music } from './music.js';
@@ -91,6 +94,9 @@ const death = new Death(scene, zoo, {
   fade: document.getElementById('fade'), view: canvas, words: document.getElementById('dream'),
 });
 
+/** 清完一場之後的那一段：慢動作、書頁、漫畫（story.js）。 */
+const story = new Story(document.getElementById('story'));
+
 /* ── 路線 ────────────────────────────────────────────────────────
    run 是路線的狀態（route.js 的 makeRun）：下一場是第幾場、是不是正在打。
    `spawnIn` 是開打之後離 BOSS 出現還有幾秒（0 = 已經出現或沒在打）。 */
@@ -127,6 +133,7 @@ function place(at) {
 function startFrom(k) {
   transit.cancel();
   death.cancel();
+  story.cancel();
   run = makeRun(k);
   spawnIn = 0;
   deaths = 0;
@@ -147,13 +154,18 @@ function engage() {
   hud.flash(`第 ${run.next + 1} 場：${stageName(run.next)}`);
 }
 
-/** BOSS 打死了：這一場清完，開往下一場的門。 */
+/**
+ * BOSS 打死了：這一場清完，開往下一場的門，演劇情（慢動作、書頁、漫畫）。門現在就開
+ * ——開門的那一下在慢動作裡、被書頁蓋住之前看得到。字等書頁走了才浮，不然被蓋住。
+ */
 function clear() {
   run.active = false;
   run.next++;
   applyDoors();
   const done = run.next >= STAGES.length;
-  hud.flash(done ? '六場全部打完——門全開了' : `打倒 BOSS！撿起牠的靈魂，最大血量 +1。下一場：${stageName(run.next)}`);
+  const k = run.next - 1;
+  story.start(k, STAGES[k].name, () => hud.flash(done ? '六場全部打完——門全開了'
+    : `打倒 BOSS！撿起牠的靈魂，最大血量 +1。下一場：${stageName(run.next)}`));
   if (!done) hud.paint({ block: STAGES[run.next].id });
 }
 
@@ -167,6 +179,7 @@ function clear() {
  */
 function fall(cause) {
   transit.cancel();
+  story.cancel();
   deaths++;
   player.guard = Infinity;
   fight.disarm();
@@ -211,19 +224,33 @@ const controls = new Controls(canvas, pad, cam, (k, e) => {
 
 /* ── 主迴圈 ──────────────────────────────────────────────────── */
 let last = performance.now();
+/** 世界的時鐘（毫秒）：跟著慢動作走、書頁蓋住的時候停住。火光、旗子這些照它動。 */
+let clock = last;
 let fpsAcc = 0, fpsN = 0, hudAcc = 0;
 
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const real = Math.min(0.05, (now - last) / 1000);
   last = now;
-  pad.update(dt);
+  pad.update(real);
+
+  /* 劇情（story.js）先決定世界這一幀走多快：慢動作的時候慢、書頁整個蓋住的時候停——
+     那時候整幀不算也不畫，畫面上反正只有書頁。這一下跳是給書頁的還是給連段的，
+     也是它先問。 */
+  const tapped = controls.jumpPressed();
+  const dt = real * story.update(real, tapped);
+  if (story.covered) {
+    hud.tick(real, null);
+    requestAnimationFrame(frame);
+    return;
+  }
+  clock += dt * 1000;
 
   /* 連段先決定這一下跳是什麼（破防攻擊一發動就接管速度），然後操控、移動——
      破防攻擊裡不操控、迴旋中不移動（見 fight.js）。滑落的時候不能跳。 */
-  // 快被送走的那一段（畫面正在暗下去）與倒下的那一段不操作：身體照慣性停下。
-  const still = transit.busy || death.busy;
+  // 快被送走的那一段（畫面正在暗下去）、倒下的那一段與劇情的慢動作不操作：身體照慣性停下。
+  const still = transit.busy || death.busy || story.busy;
   const input = still ? STILL : controls.axis();
-  const pressed = controls.jumpPressed() && !still;
+  const pressed = tapped && !still;
   const sliding = player.grounded && player.slip === 'fall';
   if (!death.busy) fight.lead(dt, player, pressed && !sliding);
   // 被擊退的那一段（combat.js 的 knockHero）也不操控：照那一下的速度飛，落地才還回來。
@@ -232,10 +259,11 @@ function frame(now) {
   const speed = fight.spinning ? 0 : moveHero(player, dt, COLS, portals, doors);
 
   // 感測區：打的時候全部不通。畫面先暗下去，全黑的時候才送（transit.js）。
+  // 劇情的慢動作裡也不問：門剛開，暗下去的黑幕跟書頁搶同一個畫面。
   {
     const due = transit.update(dt);
     if (due) warp(due);
-    const gate = !transit.busy && portalAt(portals, player.x, player.y, player.z, doors);
+    const gate = !transit.busy && !story.busy && portalAt(portals, player.x, player.y, player.z, doors);
     if (gate) transit.go(gate.dest);
   }
   player.block = arenaAt(player.x, player.z).id;
@@ -264,7 +292,7 @@ function frame(now) {
   const viewYaw = Math.atan2(camera.position.x - player.x, camera.position.z - player.z);
   zoo.update(dt, { speed, grounded: player.grounded, vy: player.vy, viewYaw, move: fight.move(dt) });
 
-  stage.animate(now);
+  stage.animate(clock);
 
   // 相機
   {
@@ -275,11 +303,11 @@ function frame(now) {
 
   fight.draw(dt, camera, player);
   if (death.update(dt, player, viewYaw)) rest();
-  light.update({ dt, now, player, block: player.block, foes: fight.foes.map((f) => f.m) });
+  light.update({ dt, now: clock, player, block: player.block, foes: fight.foes.map((f) => f.m) });
   light.render();
   pad.draw();
 
-  fpsAcc += dt; fpsN++; hudAcc += dt;
+  fpsAcc += real; fpsN++; hudAcc += real;
   let line = null;
   if (hudAcc > 0.25) {
     const st = fight.status();
@@ -290,7 +318,7 @@ function frame(now) {
       + `x ${player.x.toFixed(1)} y ${player.y.toFixed(1)} z ${player.z.toFixed(1)}`;
     fpsAcc = 0; fpsN = 0; hudAcc = 0;
   }
-  hud.tick(dt, line);
+  hud.tick(real, line);
   requestAnimationFrame(frame);
 }
 
@@ -305,7 +333,7 @@ requestAnimationFrame(frame);
 
 // 給主控台一個把手，方便手動看東西。run 會被換掉，所以是 getter。
 window.flowArea = {
-  scene, camera, renderer, zoo, player, ruins, cam, pad, hud, fight, music, doors, death, startFrom,
+  scene, camera, renderer, zoo, player, ruins, cam, pad, hud, fight, music, doors, death, story, startFrom,
   get run() { return run; },
   get foes() { return fight.foes; },
 };
