@@ -234,19 +234,20 @@ function drawCutout(g, spec, W, H) {
 
 /* ── 地面：排線 ──────────────────────────────────────────────────
    空地不能是一片白紙——那看起來像沒畫完。從地平線（構圖給的 horizon，畫面高的比例）往下，
-   一排一排橫的短線排滿：每一排斷成長短不一的幾筆，每一筆兩頭收尖，像筆畫出來的；有些筆整筆
-   不畫，地面才透氣。線距與線寬以出圖的高度算，特寫與遠景一樣比例；亂數有固定的種子。 */
-const HATCH = { rows: 64, w: 1 / 420, keep: 0.55, color: '#9c8a70', seed: 11 };
+   一排一排橫的短線排滿，每一筆兩頭收尖，像筆畫出來的。
+
+   排法是**規則的**（README 的紋理規則：紋理一律是排線、網點這種規則的；不規則的只能是大塊
+   或稀疏成叢，不能平均密密一片）：每一筆一樣長、筆與筆之間一樣寬的空，隔一排錯開半格，
+   像砌磚。不用亂數。線距、線長、線寬以出圖的高度算，特寫與遠景一樣比例。 */
+const HATCH = { rows: 64, dash: 6, gap: 3, w: 1 / 420, color: '#9c8a70' };
 function hatchGround(g, W, H, horizon) {
-  const rand = rng(HATCH.seed);
   const S = H / HATCH.rows, hw = 0.5 * HATCH.w * H;
+  const len = S * HATCH.dash, step = S * (HATCH.dash + HATCH.gap);
   g.save();
   g.fillStyle = HATCH.color;
-  for (let y = horizon * H + S / 2; y < H; y += S) {
-    const L = S * (5 + rand() * 11);
-    for (let x = -rand() * L; x < W; x += L) {
-      const len = L * 0.82;
-      if (rand() > HATCH.keep) continue;
+  let row = 0;
+  for (let y = horizon * H + S / 2; y < H; y += S, row++) {
+    for (let x = row % 2 ? -step / 2 : 0; x < W; x += step) {
       g.beginPath();
       g.moveTo(x, y);
       g.quadraticCurveTo(x + len / 2, y - hw * 2, x + len, y);
