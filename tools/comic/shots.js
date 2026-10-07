@@ -15,9 +15,14 @@
               y      墊高幾公尺（坐在王座上）；shadow: false 不畫腳下的影子
               face   漫畫的表情（faces.js：proud、calm、tears、shock、tired、dazed），沒給就是模型原本的眼睛
               eyes   { lift, spread }：畫上去的眼睛往額頭抬、往外分開多少（眼睛半高的幾倍；正面特寫用）
-     props  背景與道具的剪影：{ shape, at: [x, z], yaw, scale, y, color, len }。shape 見 studio.js 的 SHAPES
-            （throne、column、banner、tent、rack、wall、tower、flag、sun）。顏色照離鏡頭多遠自動褪向紙色，
-            遠景要放得真的遠（幾十公尺）才讀得出遠；color 只給太陽那種不照距離的
+     bg     背景：遊戲地形零件的剪影，照構圖拼貼（不是擺在 3D 場景裡）。每一件
+            { piece, x, y, size, view, tilt, flip, ...零件自己的參數 }：piece 見 studio.js 的 PIECES（column、
+            banner、pavilion、weaponRack、standard、dummy、rampart、throneSeat……）；底邊正中間放在畫面的
+            (x, y)（寬高的比例，y 往下），高 size（畫面高的比例）；view 轉幾弳再從正面平拍，tilt 往前傾、
+            flip 左右翻。剪影只取形狀：一個顏色、沒有透視、不分遠近，排在哪裡是構圖的事
+     horizon  地平線在畫面高的幾成（0 = 頂、1 = 底），從這裡往下畫滿地面的排線；沒給就沒有地面
+     props  角色碰得到的道具（國王坐的王座）：{ piece, at: [x, z], yaw, scale, ...零件的參數 }，擺在 3D 場景裡
+            跟角色一起拍，顏色跟背景的剪影一樣
      focusLines  集中線（緊張的格子）：true，或 { n, clear, width, seed }——幾條、中間留多大的空白
             （畫面高的幾倍）、外端多寬、亂數種子。收向 cam.focus 那張臉
      cam    鏡頭，兩種寫法：{ pos, look, fov }（世界座標），或 { focus: 'hero', yaw, pitch, dist, fov, frame }
@@ -52,26 +57,8 @@ const DROWSY = { headPitch: 0.28, headTilt: 0.22, pitch: 0.06, tailPitch: -0.5, 
 /** 四處張望：頭轉向一邊、抬起來。 */
 const LOOK_AROUND = { headYaw: 0.35, headPitch: -0.4, tailPitch: -0.3, w: 1 };
 
-/**
- * 擺背景用：從 o 往鏡頭看過去的方向（鏡頭方位 camYaw 的反方向）走 t 公尺、再往畫面右邊走 s 公尺，
- * 回傳 [x, z]。背景都在主體後面，用「多遠、偏左偏右」想比用世界座標好想。
- */
-const behind = (camYaw, t, s, o = [0, 0]) => [
-  o[0] - Math.sin(camYaw) * t + Math.cos(camYaw) * s,
-  o[1] - Math.cos(camYaw) * t - Math.sin(camYaw) * s,
-];
-/** 一排剪影：shape 從 behind(camYaw, t, s0) 往右每 step 公尺一個，共 n 個，正面朝鏡頭。 */
-const row = (shape, camYaw, t, s0, step, n, extra = {}) => Array.from({ length: n }, (_, i) => (
-  { shape, at: behind(camYaw, t, s0 + i * step), yaw: camYaw, ...extra }
-));
-
-/* p1-1 王座廳：鏡頭往 −Z 看，兩排柱子橫在後面，柱子之間垂著旗。 */
-const HALL = [
-  ...[-10.4, -7.8, -5.2, 5.2, 7.8, 10.4].map((x) => ({ shape: 'column', at: [x, -5.0] })),
-  ...[-9.1, -6.5, 6.5, 9.1].map((x) => ({ shape: 'banner', at: [x, -5.3] })),
-  ...[-12, -8, -4, 0, 4, 8, 12].map((x) => ({ shape: 'column', at: [x, -11.0] })),
-  { shape: 'banner', at: [-2.0, -11.3] }, { shape: 'banner', at: [2.0, -11.3] },
-];
+/* p1-1 王座廳：王座（遊戲王座廳那一張）是國王坐的，是 3D 的道具。 */
+const THRONE_AT = [-2.2, -4.2];
 
 export const SHOTS = [
   {
@@ -79,9 +66,19 @@ export const SHOTS = [
     // 王座廳的柱子與垂旗在更後面。刀要橫過畫面，所以臉幾乎正對鏡頭——側過去的話刀柄或刀身會
     // 橫在眼睛前面。頭不抬（抬頭從下面看，吻部會壓到眼睛），眼睛往額頭抬、分開。
     id: 'p1-1', size: [1800, 620], ink: 3.5,
-    props: [{ shape: 'throne', at: [-2.2, -4.2], yaw: 0.3, scale: 1.4 }, ...HALL],
+    // 構圖：大柱子框住左右兩邊、裁出畫面，兩根小一號的柱子夾著王座，大柱與小柱之間垂著旗。
+    props: [{ piece: 'throneSeat', at: THRONE_AT, yaw: Math.PI + 0.3 }],
+    horizon: 0.82,
+    bg: [
+      { piece: 'column', r: 0.5, h: 6.4, x: 0.04, y: 0.9, size: 1.05 },
+      { piece: 'column', r: 0.5, h: 6.4, x: 0.96, y: 0.9, size: 1.05 },
+      { piece: 'column', r: 0.5, h: 6.4, x: 0.24, y: 0.85, size: 0.8 },
+      { piece: 'column', r: 0.5, h: 6.4, x: 0.6, y: 0.85, size: 0.8 },
+      { piece: 'banner', s: 0.9, x: 0.14, y: 0.5, size: 0.42 },
+      { piece: 'banner', s: 0.9, x: 0.86, y: 0.5, size: 0.42 },
+    ],
     cast: [
-      { who: 'king', at: [-2.2, -4.15], y: 0.7, yaw: 0.3, move: SIT, face: 'calm', shadow: false, eyes: { lift: 0.25, spread: 0.2 } },
+      { who: 'king', at: [THRONE_AT[0] + 0.05, THRONE_AT[1] + 0.1], y: 0.5, yaw: 0.3, move: SIT, face: 'calm', shadow: false, eyes: { lift: 0.25, spread: 0.2 } },
       { who: 'hero', at: [0, 0], yaw: -0.4, move: { ...HEROIC, headPitch: 0 }, face: 'proud', blade: 'knife', eyes: { lift: 1.1, spread: 0.45 } },
     ],
     cam: { focus: 'hero', yaw: -0.1, pitch: -0.1, dist: 1.7, fov: 34, frame: [0.17, 0.02] },
@@ -98,11 +95,11 @@ export const SHOTS = [
     // ……睡過頭了：近景，橫線的疲憊眼睛。鏡頭在眼睛的高度，帽簷不擋。後面是兵器架（武器一把都沒少）、
     // 隔壁的營帳，太陽已經很高。
     id: 'p1-3', size: [1200, 720], ink: 4,
-    props: [
-      { shape: 'rack', at: behind(-0.8, 4.5, 1.6), yaw: -0.8 },
-      { shape: 'tent', at: behind(-0.8, 6.5, -2.6), yaw: -0.8 + Math.PI / 2 },
-      { shape: 'tent', at: behind(-0.8, 9, 4.2), yaw: -0.8 + Math.PI / 2 },
-      { shape: 'sun', at: behind(-0.8, 80, 30), y: 24, scale: 6, color: 0xf7dc8c },
+    // 構圖：臉佔左邊，右邊是插滿長槍的兵器架（一把都沒少），後面露出一角營帳。
+    horizon: 0.8,
+    bg: [
+      { piece: 'pavilion', R: 1.9, h: 1.45, roof: 1.25, x: 0.98, y: 0.82, size: 0.46 },
+      { piece: 'weaponRack', x: 0.77, y: 0.86, size: 0.5 },
     ],
     cast: [{ who: 'hero', at: [0, 0], yaw: -0.45, move: DROWSY, face: 'tired' }],
     cam: { focus: 'hero', yaw: -0.8, pitch: -0.08, dist: 1.0, fov: 32, frame: [-0.12, 0.08] },
@@ -112,14 +109,13 @@ export const SHOTS = [
     // 人呢？：中景、裁到腳，抬頭張望、冒汗。背景比其他格遠得多（其他格幾公尺，這一格幾十公尺）：
     // 一排排空帳篷、旗桿，更遠的城牆與城樓，小小一條貼在地平線上、淡得快融進紙裡。
     id: 'p1-4', size: [1600, 620], ink: 3.5,
-    props: [
-      ...row('tent', 0.55, 34, -30, 8, 8, { yaw: 0.55 + Math.PI / 2 }),
-      ...row('tent', 0.55, 46, -38, 9, 9, { yaw: 0.55 + Math.PI / 2 }),
-      ...row('flag', 0.55, 40, -24, 16, 4),
-      { shape: 'wall', at: behind(0.55, 80, 0), yaw: 0.55, len: 140 },
-      { shape: 'tower', at: behind(0.55, 80, -34), yaw: 0.55 },
-      { shape: 'tower', at: behind(0.55, 80, 6), yaw: 0.55 },
-      { shape: 'tower', at: behind(0.55, 80, 46), yaw: 0.55 },
+    // 構圖：地平線拉得很高、背景縮成很小的一條貼在地平線上（城牆、一排帳篷、軍旗），底下一大片
+    // 排線的空地——比其他格遠，靠的是構圖，不是透視。
+    horizon: 0.34,
+    bg: [
+      { piece: 'rampart', from: [-60, 0], to: [60, 0], h: 3.6, thick: 2.2, ruin: 0, x: 0.5, y: 0.3, size: 0.07 },
+      ...[0.05, 0.17, 0.29, 0.79, 0.91].map((x) => ({ piece: 'pavilion', R: 1.9, h: 1.45, roof: 1.25, x, y: 0.35, size: 0.09 })),
+      ...[0.23, 0.85].map((x) => ({ piece: 'standard', x, y: 0.35, size: 0.16 })),
     ],
     cast: [{ who: 'hero', at: [0, 0], yaw: 0.3, move: LOOK_AROUND, face: 'dazed' }],
     cam: { focus: 'hero', yaw: 0.55, pitch: 0.12, dist: 1.9, fov: 30, frame: [0.08, -0.05] },

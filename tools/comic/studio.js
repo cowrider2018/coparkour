@@ -22,8 +22,11 @@
    遠的那一隻照模型自己的遠眼收合（critter.js）縮小：模型那一片縮到幾成，畫上去的就縮到幾成，
    四分之三側的遠眼才不會原尺寸壓在吻部上；收到幾乎沒有就不畫。
 
-   ── 剪影：背景與道具 ──────────────────────────────────────────
-   背景與道具是素色的剪影：一個顏色、不分階、沒有墨線，越遠越淡（見下面 SIL）。
+   ── 剪影：背景 ────────────────────────────────────────────────
+   背景是遊戲地形零件（pieces.js）的剪影拼貼。剪影只取零件的形狀：一個顏色、不分階、沒有墨線，
+   從正面平拍（正交，沒有透視），不拿來做遠近與空間感。每一件放在畫面上哪裡、多大，照構圖給
+   （畫面的比例），跟 3D 場景無關；角色拍好之後疊在背景上面。地面是漫畫的橫排線，從構圖給的
+   地平線往下排滿。角色碰得到的東西（國王坐的王座）才是 3D 的道具（props），同一個顏色。
 
    ── 集中線 ────────────────────────────────────────────────────
    緊張的格子（focusLines）在紙上畫一圈往臉收的墨線：一條一條細長的楔形，外粗內尖，中間留一圈
@@ -44,6 +47,8 @@ import * as THREE from '/test/vendor/three.module.js';
 import { loadZoo, Critter, LIGHT_DIR } from '/test/src/critter.js';
 import { Crown } from '/test/src/crown.js';
 import { Blade } from '/test/src/blade.js';
+import * as Pieces from '/test/src/pieces.js';
+import { Build } from '/test/src/geom.js';
 import { INK, KEY_POS, U_KEYDIR } from '/test/src/palette.js';
 import * as shadowLight from '/test/src/light/shadow.js';
 import { Driver, Sway } from '/src/cat/pose.js';
@@ -134,156 +139,122 @@ function arm(a, kind) {
   return b;
 }
 
-/* ── 剪影：背景與道具 ──────────────────────────────────────────
-   書頁的紙色上一塊一塊素色的剪影：一個顏色、不分階、沒有墨線（MeshBasicMaterial，不吃光）。
-   每一塊的顏色照它離鏡頭多遠，從 SIL.near 往紙色那一側的 SIL.far 褪——近的深一點、遠的淡得
-   快要融進紙裡，「背景很遠」就是靠這個讀出來的。兩端都夠亮（感知亮度 > 網點的 hi），剪影上
-   不會長網點。給了 color 的（太陽）用它自己的顏色，不照距離褪。
+/* ── 剪影 ────────────────────────────────────────────────────────
+   零件照它們在關卡裡的砌法砌出來（pieces.js），整個塗成 SIL 一個顏色（MeshBasicMaterial，不吃光，
+   墨線那一份不用）。顏色夠亮（感知亮度 > 網點的 hi），不長網點。
 
-   每一種形狀是 scale = 1 時的尺寸（公尺），原點在底面正中間，正面朝 +Z：
-     throne   王座：座面頂在 THRONE_SEAT × scale，椅背、扶手、椅背頂上兩顆圓頭
-     column   柱子：柱礎、圓柱身、柱頭，6 公尺高
-     banner   從高處垂下來的旗（底下燕尾），上緣在 5.6 公尺
-     tent     營帳：人字形的帳篷，2.1 公尺高、3 公尺深，頂上一根小旗桿
-     rack     兵器架：兩根柱、兩道橫木，插滿長槍、靠著兩把劍
-     wall     城牆：len 公尺長（預設 14），垛口一個接一個
-     tower    城樓：方塔加垛口
-     flag     旗桿，頂上一面旗
-     sun      太陽：一個圓（永遠正對鏡頭），半徑 1 × scale，用 y 放到天上 */
-const THRONE_SEAT = 0.5;
-const SIL = { near: new THREE.Color(0xa8977c), far: new THREE.Color(0xe4d8bc), d0: 3, d1: 45 };
+   一件零件：{ piece, ...o }。piece 是 PIECES 裡的名字，o 原樣交給那支零件（pavilion 的 R、h，
+   wall 的 from、to……），零件自己的 x、z 是 0。 */
+const SIL = 0xa8977c;
 
-/** 一組剪影零件：同一個材質（一個顏色），box／cyl／cone／ball／flat 往 g 裡加。 */
-function kit() {
-  const mat = new THREE.MeshBasicMaterial();
-  const g = new THREE.Group();
-  g.userData.mat = mat;
-  const put = (geo, x, y, z, rx = 0, ry = 0, rz = 0) => {
-    const m = new THREE.Mesh(geo, mat);
-    m.position.set(x, y, z);
-    m.rotation.set(rx, ry, rz);
-    g.add(m);
-    return m;
-  };
-  return {
-    g,
-    box: (w, h, d, x, y, z, rx, ry, rz) => put(new THREE.BoxGeometry(w, h, d), x, y, z, rx, ry, rz),
-    cyl: (r, h, x, y, z, rx, ry, rz) => put(new THREE.CylinderGeometry(r, r, h, 24), x, y, z, rx, ry, rz),
-    cone: (r, h, x, y, z, rx, ry, rz) => put(new THREE.ConeGeometry(r, h, 16), x, y, z, rx, ry, rz),
-    ball: (r, x, y, z) => put(new THREE.SphereGeometry(r, 20, 14), x, y, z),
-    /** 一片有厚度的平面形狀：pts 是 XY 平面上的輪廓。 */
-    flat: (pts, t, x, y, z, rx, ry, rz) => {
-      const shape = new THREE.Shape(pts.map(([a, b]) => new THREE.Vector2(a, b)));
-      const geo = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false });
-      geo.translate(0, 0, -t / 2);
-      return put(geo, x, y, z, rx, ry, rz);
-    },
-  };
+/** 吃 (B, o) 的零件照抄；其餘的包一層。火焰（brazier、campfire 回報的座標）不要。 */
+const PIECES = {
+  ...Object.fromEntries([
+    'column', 'banner', 'pavilion', 'weaponRack', 'standard', 'dummy', 'archeryTarget', 'sackStack',
+    'woodpile', 'deadTree', 'knight', 'rubble', 'rubbleHeap', 'well', 'pointedArch', 'arcade', 'stair',
+    'gargoyle', 'wall', 'throneSeat',
+  ].map((n) => [n, Pieces[n]])),
+  brazier: (B, o) => Pieces.brazier(B, o, []),
+  campfire: (B, o) => Pieces.campfire(B, o, []),
+  crate: (B, o) => Pieces.crate(B, 0, o.y || 0, 0, 0, o.s),
+  barrel: (B, o) => Pieces.barrel(B, 0, o.y || 0, 0),
+  /** 城牆：牆加牆頂一排垛口（兵營那道幕牆的樣子）。 */
+  rampart: (B, o) => Pieces.merlons(B, { ...o, on: Pieces.wall(B, o), y: (o.y || 0) + o.h }),
+};
+const KIT = new Pieces.Kit();
+const silMat = new THREE.MeshBasicMaterial({ color: SIL });
+
+/** 砌一件零件，回傳它的剪影 mesh（原點在零件的原點）。 */
+function silhouette({ piece, at, yaw, scale, view, tilt, x, y, size, flip, ...o }) {
+  const make = PIECES[piece];
+  if (!make) throw new Error(`沒有這種零件：${piece}`);
+  const B = new Build(KIT);
+  make(B, { x: 0, z: 0, y: 0, seed: 1, ...o });
+  return new THREE.Mesh(B.finish().geometry, silMat);
 }
 
-const SHAPES = {
-  throne() {
-    const k = kit();
-    k.box(1.15, THRONE_SEAT, 0.95, 0, THRONE_SEAT / 2, 0);            // 座
-    k.box(1.15, 1.75, 0.18, 0, 1.75 / 2, -0.48);                       // 椅背
-    for (const s of [-1, 1]) {
-      k.box(0.14, 0.32, 0.9, s * 0.58, THRONE_SEAT + 0.16, 0.02);     // 扶手
-      k.ball(0.11, s * 0.5, 1.8, -0.48);
-    }
-    return k.g;
-  },
-  column() {
-    const k = kit();
-    k.box(1.0, 0.32, 1.0, 0, 0.16, 0);
-    k.cyl(0.36, 5.3, 0, 0.32 + 5.3 / 2, 0);
-    k.box(1.0, 0.38, 1.0, 0, 5.62 + 0.19, 0);
-    return k.g;
-  },
-  banner() {
-    const k = kit();
-    k.cyl(0.035, 1.15, 0, 5.6, 0, 0, 0, Math.PI / 2);
-    k.flat([[-0.45, 0], [0.45, 0], [0.45, -2.6], [0, -2.15], [-0.45, -2.6]], 0.04, 0, 5.6, 0);
-    return k.g;
-  },
-  tent() {
-    const k = kit();
-    k.flat([[-1.3, 0], [1.3, 0], [0, 2.1]], 3.0, 0, 0, 0);
-    k.cyl(0.03, 0.9, 0, 2.5, 1.35);
-    k.flat([[0, 0], [0.5, -0.13], [0, -0.26]], 0.02, 0, 2.93, 1.35);
-    return k.g;
-  },
-  rack() {
-    const k = kit();
-    for (const s of [-1, 1]) k.box(0.12, 1.7, 0.12, s * 1.1, 0.85, 0);
-    k.box(2.4, 0.1, 0.12, 0, 0.45, 0);
-    k.box(2.4, 0.1, 0.12, 0, 1.45, 0);
-    for (let i = 0; i < 7; i++) {
-      const x = -0.9 + i * 0.3;
-      k.cyl(0.025, 2.3, x, 1.15, -0.05, -0.08);
-      k.cone(0.06, 0.28, x, 2.42, -0.14, -0.08);
-    }
-    for (const s of [-1, 1]) {
-      k.box(0.07, 1.0, 0.02, s * 1.45, 0.75, 0.1, 0, 0, s * 0.12);   // 劍身
-      k.box(0.32, 0.05, 0.05, s * 1.39, 1.28, 0.1, 0, 0, s * 0.12);  // 護手
-      k.box(0.05, 0.25, 0.05, s * 1.37, 1.42, 0.1, 0, 0, s * 0.12);  // 柄
-    }
-    return k.g;
-  },
-  wall(spec) {
-    const k = kit();
-    const len = spec.len || 14;
-    k.box(len, 3.2, 1.2, 0, 1.6, 0);
-    for (let x = -len / 2 + 0.3; x <= len / 2 - 0.3; x += 1.0) k.box(0.6, 0.7, 1.2, x, 3.55, 0);
-    return k.g;
-  },
-  tower() {
-    const k = kit();
-    k.box(3.2, 6.5, 3.2, 0, 3.25, 0);
-    for (const x of [-1.25, 0, 1.25]) for (const z of [-1.25, 0, 1.25]) if (x || z) k.box(0.7, 0.8, 0.7, x, 6.9, z);
-    return k.g;
-  },
-  flag() {
-    const k = kit();
-    k.cyl(0.05, 5.0, 0, 2.5, 0);
-    k.flat([[0, 0], [1.4, -0.12], [1.3, -0.5], [1.45, -0.9], [0, -0.85]], 0.03, 0.04, 4.95, 0);
-    return k.g;
-  },
-  sun() {
-    const k = kit();
-    k.g.add(new THREE.Mesh(new THREE.CircleGeometry(1, 64), k.g.userData.mat));
-    k.g.userData.billboard = true;
-    return k.g;
-  },
-};
-
-/** 這一格的剪影（每一格重新搭，搭完照距離上色）。 */
+/* ── 道具：角色碰得到的那幾件，3D ─────────────────────────────────
+   { piece, at: [x, z], yaw, scale, ...o }：擺在場景裡，跟角色一起拍（國王坐在王座上）。 */
 const set = new THREE.Group();
 scene.add(set);
-function buildSet(props) {
-  for (const o of set.children) o.traverse((m) => { if (m.geometry) m.geometry.dispose(); });
+function buildProps(props) {
+  for (const m of set.children) m.geometry.dispose();
   set.clear();
   for (const spec of props || []) {
-    const make = SHAPES[spec.shape];
-    if (!make) throw new Error(`沒有這種剪影：${spec.shape}`);
-    const g = make(spec);
-    g.position.set(spec.at[0], spec.y || 0, spec.at[1]);
-    g.rotation.y = spec.yaw || 0;
-    g.scale.setScalar(spec.scale || 1);
-    g.userData.color = spec.color;
-    set.add(g);
+    const m = silhouette(spec);
+    m.position.set(spec.at[0], 0, spec.at[1]);
+    m.rotation.y = spec.yaw || 0;
+    m.scale.setScalar(spec.scale || 1);
+    set.add(m);
   }
 }
-/** 鏡頭擺好之後：每一塊照離鏡頭多遠上色，太陽轉過來正對鏡頭。 */
-function tintSet() {
-  const at = new THREE.Vector3();
-  for (const g of set.children) {
-    const mat = g.userData.mat;
-    if (g.userData.billboard) g.quaternion.copy(camera.quaternion);
-    if (g.userData.color !== undefined) { mat.color.set(g.userData.color); continue; }
-    const d = g.getWorldPosition(at).distanceTo(camera.position);
-    const t = Math.min(1, Math.max(0, (d - SIL.d0) / (SIL.d1 - SIL.d0)));
-    mat.color.lerpColors(SIL.near, SIL.far, Math.sqrt(t));
+
+/* ── 背景：照構圖拼貼的剪影，2D ───────────────────────────────────
+   { piece, x, y, size, view, tilt, flip, ...o }：零件從正面平拍成一張剪影（正交鏡頭，view 是繞直軸
+   轉幾弳再拍——要拍側面就給 π/2；tilt 往前傾幾弳，看得到一點頂），底邊正中間放在畫面的
+   (x, y)（寬高的比例，y 往下），高 size（畫面高的比例），flip 左右翻。超出畫面的照裁。 */
+const cutScene = new THREE.Scene();
+const cutCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
+const cutCanvas = document.createElement('canvas');
+function drawCutout(g, spec, W, H) {
+  const m = silhouette(spec);
+  m.rotation.set(spec.tilt || 0, spec.view || 0, 0, 'YXZ');
+  cutScene.add(m);
+  m.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(m);
+  const bw = box.max.x - box.min.x, bh = box.max.y - box.min.y;
+  const ph = Math.max(2, Math.round(spec.size * H));
+  const pw = Math.max(2, Math.round(ph * bw / bh));
+  Object.assign(cutCam, { left: box.min.x, right: box.max.x, top: box.max.y, bottom: box.min.y, far: box.max.z - box.min.z + 2 });
+  cutCam.position.set(0, 0, box.max.z + 1);              // 沒轉過的正交鏡頭本來就朝 −Z 看
+  cutCam.updateProjectionMatrix();
+  cutCam.updateMatrixWorld();
+  renderer.setSize(pw, ph, false);
+  renderer.setRenderTarget(null);
+  renderer.setClearColor(0x000000, 0);
+  renderer.clear();
+  renderer.render(cutScene, cutCam);
+  cutScene.remove(m);
+  m.geometry.dispose();
+  cutCanvas.width = pw;
+  cutCanvas.height = ph;
+  cutCanvas.getContext('2d').drawImage(canvas, 0, 0, pw, ph, 0, 0, pw, ph);
+  // 零件是一塊一塊砌的，磚縫、鼓與鼓之間的縫拍出來會透光；剪影要是實心的，所以往外補 r 像素
+  // （同一個顏色錯開疊幾次），縫就合起來了。
+  const r = Math.max(1, Math.round(H / 300));
+  g.save();
+  g.translate(spec.x * W, spec.y * H);
+  if (spec.flip) g.scale(-1, 1);
+  for (let k = 0; k < 9; k++) {
+    const a = (k / 8) * Math.PI * 2, d = k === 8 ? 0 : r;
+    g.drawImage(cutCanvas, -pw / 2 + Math.cos(a) * d, -ph + Math.sin(a) * d);
   }
+  g.restore();
+}
+
+/* ── 地面：排線 ──────────────────────────────────────────────────
+   空地不能是一片白紙——那看起來像沒畫完。從地平線（構圖給的 horizon，畫面高的比例）往下，
+   一排一排橫的短線排滿：每一排斷成長短不一的幾筆，每一筆兩頭收尖，像筆畫出來的；有些筆整筆
+   不畫，地面才透氣。線距與線寬以出圖的高度算，特寫與遠景一樣比例；亂數有固定的種子。 */
+const HATCH = { rows: 64, w: 1 / 420, keep: 0.55, color: '#9c8a70', seed: 11 };
+function hatchGround(g, W, H, horizon) {
+  const rand = rng(HATCH.seed);
+  const S = H / HATCH.rows, hw = 0.5 * HATCH.w * H;
+  g.save();
+  g.fillStyle = HATCH.color;
+  for (let y = horizon * H + S / 2; y < H; y += S) {
+    const L = S * (5 + rand() * 11);
+    for (let x = -rand() * L; x < W; x += L) {
+      const len = L * 0.82;
+      if (rand() > HATCH.keep) continue;
+      g.beginPath();
+      g.moveTo(x, y);
+      g.quadraticCurveTo(x + len / 2, y - hw * 2, x + len, y);
+      g.quadraticCurveTo(x + len / 2, y + hw * 2, x, y);
+      g.fill();
+    }
+  }
+  g.restore();
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -443,6 +414,8 @@ function focusLines(g, w, h, cx, cy, { n = 110, clear = 0.42, width = 0.012, see
 
 /** 拍好的那一張（網點之後）再畫上表情：一張 2D 畫布。 */
 const sheet = document.createElement('canvas');
+/** 拍好的角色（網點之後）：背景拍完再疊上去。 */
+const layer = document.createElement('canvas');
 const sheetG = sheet.getContext('2d');
 
 /** 拍第 id 格：回傳 PNG 的 data URL。 */
@@ -458,7 +431,7 @@ function render(id) {
   LIGHT_DIR.value.copy(key);
   U_KEYDIR.value.copy(key);
   for (const a of Object.values(actors)) { a.wrap.visible = false; a.shadow.visible = false; }
-  buildSet(shot.props);
+  buildProps(shot.props);
   const faces = [];
   for (const spec of shot.cast) {
     const a = actors[spec.who];
@@ -468,7 +441,6 @@ function render(id) {
   }
   scene.updateMatrixWorld(true);
   aim(shot.cam, w, h);
-  tintSet();
   for (const spec of shot.cast) {
     if (spec.face) faces.push([spec.face, eyeAnchors(actors[spec.who].c, w, h), spec.eyes]);
   }
@@ -481,16 +453,22 @@ function render(id) {
   renderer.setRenderTarget(null);
   renderer.clear();
   renderer.render(screenScene, screenCam);
+  // 角色拍好了，先收起來：背景的剪影要借同一個畫布一件一件拍。
+  layer.width = w;
+  layer.height = h;
+  layer.getContext('2d').drawImage(canvas, 0, 0);
   sheet.width = w;
   sheet.height = h;
   sheetG.clearRect(0, 0, w, h);
+  if (shot.horizon !== undefined) hatchGround(sheetG, w, h, shot.horizon);
+  for (const spec of shot.bg || []) drawCutout(sheetG, spec, w, h);
   if (shot.focusLines) {
     // 收向鏡頭對準的那張臉（cam.focus），沒有就是畫面正中間。
     const [fx, fy] = shot.cam.frame || [0, 0];
     const [cx, cy] = shot.cam.focus ? [(0.5 + fx) * w, (0.5 + fy) * h] : [w / 2, h / 2];
     focusLines(sheetG, w, h, cx, cy, shot.focusLines === true ? {} : shot.focusLines);
   }
-  sheetG.drawImage(canvas, 0, 0);
+  sheetG.drawImage(layer, 0, 0);
   for (const [face, anchors, eyes] of faces) drawFace(sheetG, face, anchors, shot.ink, eyes);
   return sheet.toDataURL('image/png');
 }
