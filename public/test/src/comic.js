@@ -20,7 +20,7 @@
 /** 十四頁，照頁碼排（PAGES[0] 是第 1 頁）。 */
 export const PAGES = [
   { title: '兵營', panels: [
-    { note: '回憶：王座廳裡主角單膝跪在國王面前受封', say: '旁白：王國最強的戰士。', src: 'comic/p1-1.png', memory: true, focus: '62% 40%' },
+    { note: '回憶：王座廳裡主角單膝跪在國王面前受封', say: '旁白：王國最強的戰士。', src: 'comic/p1-1.png', memory: true, focus: '67% 48%' },
     { note: '主角在帳篷裡猛然彈起來', say: '——！', src: 'comic/p1-2.png', capAt: 'bottom', focus: '50% 40%' },
     { note: '帳篷外太陽已經很高，兵器架上的武器一把都沒少', say: '……睡過頭了。', src: 'comic/p1-3.png', focus: '40% 50%' },
     { note: '整片兵營空蕩蕩，主角小小一隻站在中間', say: '人呢？', src: 'comic/p1-4.png', focus: '60% 35%' },

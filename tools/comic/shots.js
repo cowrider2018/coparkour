@@ -52,35 +52,75 @@ const DROWSY = { headPitch: 0.28, headTilt: 0.22, pitch: 0.06, tailPitch: -0.5, 
 /** 四處張望：頭轉向一邊、抬起來。 */
 const LOOK_AROUND = { headYaw: 0.35, headPitch: -0.4, tailPitch: -0.3, w: 1 };
 
+/**
+ * 擺背景用：從 o 往鏡頭看過去的方向（鏡頭方位 camYaw 的反方向）走 t 公尺、再往畫面右邊走 s 公尺，
+ * 回傳 [x, z]。背景都在主體後面，用「多遠、偏左偏右」想比用世界座標好想。
+ */
+const behind = (camYaw, t, s, o = [0, 0]) => [
+  o[0] - Math.sin(camYaw) * t + Math.cos(camYaw) * s,
+  o[1] - Math.cos(camYaw) * t - Math.sin(camYaw) * s,
+];
+/** 一排剪影：shape 從 behind(camYaw, t, s0) 往右每 step 公尺一個，共 n 個，正面朝鏡頭。 */
+const row = (shape, camYaw, t, s0, step, n, extra = {}) => Array.from({ length: n }, (_, i) => (
+  { shape, at: behind(camYaw, t, s0 + i * step), yaw: camYaw, ...extra }
+));
+
+/* p1-1 王座廳：鏡頭往 −Z 看，兩排柱子橫在後面，柱子之間垂著旗。 */
+const HALL = [
+  ...[-10.4, -7.8, -5.2, 5.2, 7.8, 10.4].map((x) => ({ shape: 'column', at: [x, -5.0] })),
+  ...[-9.1, -6.5, 6.5, 9.1].map((x) => ({ shape: 'banner', at: [x, -5.3] })),
+  ...[-12, -8, -4, 0, 4, 8, 12].map((x) => ({ shape: 'column', at: [x, -11.0] })),
+  { shape: 'banner', at: [-2.0, -11.3] }, { shape: 'banner', at: [2.0, -11.3] },
+];
+
 export const SHOTS = [
   {
-    // 王國最強的戰士：主角昂首在前（從下往上拍、裁到胸口），國王坐在後面的王座上。
+    // 王國最強的戰士：主角橫咬著刀在前（略從下往上拍、裁到胸口），國王坐在後面的王座上，
+    // 王座廳的柱子與垂旗在更後面。刀要橫過畫面，所以臉幾乎正對鏡頭——側過去的話刀柄或刀身會
+    // 橫在眼睛前面。頭不抬（抬頭從下面看，吻部會壓到眼睛），眼睛往額頭抬、分開。
     id: 'p1-1', size: [1800, 620], ink: 3.5,
-    props: [{ shape: 'throne', at: [-2.7, -2.0], yaw: 0.6, scale: 1.4 }],
+    props: [{ shape: 'throne', at: [-2.2, -4.2], yaw: 0.3, scale: 1.4 }, ...HALL],
     cast: [
-      { who: 'king', at: [-2.7, -1.95], y: 0.7, yaw: 0.6, move: SIT, face: 'calm', shadow: false },
-      { who: 'hero', at: [0, 0], yaw: -0.5, move: HEROIC, face: 'proud' },
+      { who: 'king', at: [-2.2, -4.15], y: 0.7, yaw: 0.3, move: SIT, face: 'calm', shadow: false, eyes: { lift: 0.25, spread: 0.2 } },
+      { who: 'hero', at: [0, 0], yaw: -0.4, move: { ...HEROIC, headPitch: 0 }, face: 'proud', blade: 'knife', eyes: { lift: 1.1, spread: 0.45 } },
     ],
-    cam: { focus: 'hero', yaw: 0.35, pitch: -0.28, dist: 1.5, fov: 34, frame: [0.17, 0.02] },
+    cam: { focus: 'hero', yaw: -0.1, pitch: -0.1, dist: 1.7, fov: 34, frame: [0.17, 0.02] },
     light: [-4, 7, 5],
   },
   {
-    // 驚醒：臉的大特寫，嚇出眼淚。頭往後仰，鏡頭從前上方對著臉。
-    id: 'p1-2', size: [900, 700], ink: 4.5,
+    // 驚醒：臉的大特寫，嚇出眼淚，集中線。頭往後仰，鏡頭從前上方對著臉。
+    id: 'p1-2', size: [900, 700], ink: 4.5, focusLines: true,
     cast: [{ who: 'hero', at: [0, 0], yaw: 0.75, move: STARTLE, face: 'shock', eyes: { lift: 0.9, spread: 0.35 } }],
     cam: { focus: 'hero', yaw: 0.95, pitch: 0.08, dist: 1.0, fov: 32, frame: [0, 0.08] },
     light: [5, 7, 4],
   },
   {
-    // ……睡過頭了：近景，橫線的疲憊眼睛。鏡頭在眼睛的高度，帽簷不擋。
+    // ……睡過頭了：近景，橫線的疲憊眼睛。鏡頭在眼睛的高度，帽簷不擋。後面是兵器架（武器一把都沒少）、
+    // 隔壁的營帳，太陽已經很高。
     id: 'p1-3', size: [1200, 720], ink: 4,
+    props: [
+      { shape: 'rack', at: behind(-0.8, 4.5, 1.6), yaw: -0.8 },
+      { shape: 'tent', at: behind(-0.8, 6.5, -2.6), yaw: -0.8 + Math.PI / 2 },
+      { shape: 'tent', at: behind(-0.8, 9, 4.2), yaw: -0.8 + Math.PI / 2 },
+      { shape: 'sun', at: behind(-0.8, 80, 30), y: 24, scale: 6, color: 0xf7dc8c },
+    ],
     cast: [{ who: 'hero', at: [0, 0], yaw: -0.45, move: DROWSY, face: 'tired' }],
     cam: { focus: 'hero', yaw: -0.8, pitch: -0.08, dist: 1.0, fov: 32, frame: [-0.12, 0.08] },
     light: [-3, 6, 6],
   },
   {
-    // 人呢？：中景、裁到腳，抬頭張望、冒汗。
+    // 人呢？：中景、裁到腳，抬頭張望、冒汗。背景比其他格遠得多（其他格幾公尺，這一格幾十公尺）：
+    // 一排排空帳篷、旗桿，更遠的城牆與城樓，小小一條貼在地平線上、淡得快融進紙裡。
     id: 'p1-4', size: [1600, 620], ink: 3.5,
+    props: [
+      ...row('tent', 0.55, 34, -30, 8, 8, { yaw: 0.55 + Math.PI / 2 }),
+      ...row('tent', 0.55, 46, -38, 9, 9, { yaw: 0.55 + Math.PI / 2 }),
+      ...row('flag', 0.55, 40, -24, 16, 4),
+      { shape: 'wall', at: behind(0.55, 80, 0), yaw: 0.55, len: 140 },
+      { shape: 'tower', at: behind(0.55, 80, -34), yaw: 0.55 },
+      { shape: 'tower', at: behind(0.55, 80, 6), yaw: 0.55 },
+      { shape: 'tower', at: behind(0.55, 80, 46), yaw: 0.55 },
+    ],
     cast: [{ who: 'hero', at: [0, 0], yaw: 0.3, move: LOOK_AROUND, face: 'dazed' }],
     cam: { focus: 'hero', yaw: 0.55, pitch: 0.12, dist: 1.9, fov: 30, frame: [0.08, -0.05] },
   },
