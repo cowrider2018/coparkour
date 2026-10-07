@@ -1,6 +1,6 @@
 /* ── tools/comic/shots.js ─────────────────────────────────────────────
    漫畫每一格的鏡頭（攝影棚 studio.js 照這張表擺、拍、出圖）：誰在場、站哪、
-   面朝哪、什麼姿勢，鏡頭在哪、看哪。只畫主體，背景是透明的——書頁上看到的是紙。
+   面朝哪、什麼姿勢，鏡頭在哪、看哪，背後有哪些剪影。剪影以外是透明的——書頁上看到的是紙。
 
    每一格：
      id     圖檔名（public/test/comic/<id>.png），也是 comic.js 那一格的 src
@@ -15,7 +15,9 @@
               y      墊高幾公尺（坐在王座上）；shadow: false 不畫腳下的影子
               face   漫畫的表情（faces.js：proud、calm、tears、shock、tired、dazed），沒給就是模型原本的眼睛
               eyes   { lift, spread }：畫上去的眼睛往額頭抬、往外分開多少（眼睛半高的幾倍；正面特寫用）
-     props  剪影的道具：{ shape: 'throne', at: [x, z], yaw, scale }（座面頂在 0.5 × scale 公尺）
+     props  背景與道具的剪影：{ shape, at: [x, z], yaw, scale, y, color, len }。shape 見 studio.js 的 SHAPES
+            （throne、column、banner、tent、rack、wall、tower、flag、sun）。顏色照離鏡頭多遠自動褪向紙色，
+            遠景要放得真的遠（幾十公尺）才讀得出遠；color 只給太陽那種不照距離的
      cam    鏡頭，兩種寫法：{ pos, look, fov }（世界座標），或 { focus: 'hero', yaw, pitch, dist, fov, frame }
             ——對準那一隻的臉，從臉往 yaw 方位、pitch 仰角（負的是從下往上拍）退 dist 公尺；frame [fx, fy]
             是臉落在畫面上哪裡（從正中間算，寬高的幾分之幾，+y 往下）。特寫用後面那一種。

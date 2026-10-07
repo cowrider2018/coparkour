@@ -22,8 +22,8 @@
    遠的那一隻照模型自己的遠眼收合（critter.js）縮小：模型那一片縮到幾成，畫上去的就縮到幾成，
    四分之三側的遠眼才不會原尺寸壓在吻部上；收到幾乎沒有就不畫。
 
-   ── 剪影的道具 ────────────────────────────────────────────────
-   背景與道具是素色的剪影：一個顏色、不分階、沒有墨線（現在只有王座）。
+   ── 剪影：背景與道具 ──────────────────────────────────────────
+   背景與道具是素色的剪影：一個顏色、不分階、沒有墨線，越遠越淡（見下面 SIL）。
 
    ── 投影的深度圖 ───────────────────────────────────────────────
    毛皮與王冠的著色器宣告了接收投影的 sampler2DShadow（light/shadow.js）。沒有綁一張設了
@@ -130,30 +130,157 @@ function arm(a, kind) {
   return b;
 }
 
-/* ── 剪影的道具 ──────────────────────────────────────────────────
-   王座：座面、椅背、扶手、椅背頂上兩顆圓頭，一個顏色。尺寸是 scale = 1 的時候（公尺）；座面頂在
-   THRONE_SEAT × scale。 */
+/* ── 剪影：背景與道具 ──────────────────────────────────────────
+   書頁的紙色上一塊一塊素色的剪影：一個顏色、不分階、沒有墨線（MeshBasicMaterial，不吃光）。
+   每一塊的顏色照它離鏡頭多遠，從 SIL.near 往紙色那一側的 SIL.far 褪——近的深一點、遠的淡得
+   快要融進紙裡，「背景很遠」就是靠這個讀出來的。兩端都夠亮（感知亮度 > 網點的 hi），剪影上
+   不會長網點。給了 color 的（太陽）用它自己的顏色，不照距離褪。
+
+   每一種形狀是 scale = 1 時的尺寸（公尺），原點在底面正中間，正面朝 +Z：
+     throne   王座：座面頂在 THRONE_SEAT × scale，椅背、扶手、椅背頂上兩顆圓頭
+     column   柱子：柱礎、圓柱身、柱頭，6 公尺高
+     banner   從高處垂下來的旗（底下燕尾），上緣在 5.6 公尺
+     tent     營帳：人字形的帳篷，2.1 公尺高、3 公尺深，頂上一根小旗桿
+     rack     兵器架：兩根柱、兩道橫木，插滿長槍、靠著兩把劍
+     wall     城牆：len 公尺長（預設 14），垛口一個接一個
+     tower    城樓：方塔加垛口
+     flag     旗桿，頂上一面旗
+     sun      太陽：一個圓（永遠正對鏡頭），半徑 1 × scale，用 y 放到天上 */
 const THRONE_SEAT = 0.5;
-function makeThrone(color) {
-  const mat = new THREE.MeshBasicMaterial({ color });
+const SIL = { near: new THREE.Color(0xa8977c), far: new THREE.Color(0xe4d8bc), d0: 3, d1: 45 };
+
+/** 一組剪影零件：同一個材質（一個顏色），box／cyl／cone／ball／flat 往 g 裡加。 */
+function kit() {
+  const mat = new THREE.MeshBasicMaterial();
   const g = new THREE.Group();
-  const box = (w, h, d, x, y, z) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  g.userData.mat = mat;
+  const put = (geo, x, y, z, rx = 0, ry = 0, rz = 0) => {
+    const m = new THREE.Mesh(geo, mat);
     m.position.set(x, y, z);
+    m.rotation.set(rx, ry, rz);
     g.add(m);
+    return m;
   };
-  box(1.15, THRONE_SEAT, 0.95, 0, THRONE_SEAT / 2, 0);            // 座
-  box(1.15, 1.75, 0.18, 0, 1.75 / 2, -0.48);                       // 椅背
-  for (const s of [-1, 1]) {
-    box(0.14, 0.32, 0.9, s * 0.58, THRONE_SEAT + 0.16, 0.02);     // 扶手
-    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.11, 20, 14), mat);
-    knob.position.set(s * 0.5, 1.8, -0.48);
-    g.add(knob);
-  }
-  return g;
+  return {
+    g,
+    box: (w, h, d, x, y, z, rx, ry, rz) => put(new THREE.BoxGeometry(w, h, d), x, y, z, rx, ry, rz),
+    cyl: (r, h, x, y, z, rx, ry, rz) => put(new THREE.CylinderGeometry(r, r, h, 24), x, y, z, rx, ry, rz),
+    cone: (r, h, x, y, z, rx, ry, rz) => put(new THREE.ConeGeometry(r, h, 16), x, y, z, rx, ry, rz),
+    ball: (r, x, y, z) => put(new THREE.SphereGeometry(r, 20, 14), x, y, z),
+    /** 一片有厚度的平面形狀：pts 是 XY 平面上的輪廓。 */
+    flat: (pts, t, x, y, z, rx, ry, rz) => {
+      const shape = new THREE.Shape(pts.map(([a, b]) => new THREE.Vector2(a, b)));
+      const geo = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false });
+      geo.translate(0, 0, -t / 2);
+      return put(geo, x, y, z, rx, ry, rz);
+    },
+  };
 }
-const PROPS = { throne: makeThrone(0x7a6650) };
-for (const p of Object.values(PROPS)) scene.add(p);
+
+const SHAPES = {
+  throne() {
+    const k = kit();
+    k.box(1.15, THRONE_SEAT, 0.95, 0, THRONE_SEAT / 2, 0);            // 座
+    k.box(1.15, 1.75, 0.18, 0, 1.75 / 2, -0.48);                       // 椅背
+    for (const s of [-1, 1]) {
+      k.box(0.14, 0.32, 0.9, s * 0.58, THRONE_SEAT + 0.16, 0.02);     // 扶手
+      k.ball(0.11, s * 0.5, 1.8, -0.48);
+    }
+    return k.g;
+  },
+  column() {
+    const k = kit();
+    k.box(1.0, 0.32, 1.0, 0, 0.16, 0);
+    k.cyl(0.36, 5.3, 0, 0.32 + 5.3 / 2, 0);
+    k.box(1.0, 0.38, 1.0, 0, 5.62 + 0.19, 0);
+    return k.g;
+  },
+  banner() {
+    const k = kit();
+    k.cyl(0.035, 1.15, 0, 5.6, 0, 0, 0, Math.PI / 2);
+    k.flat([[-0.45, 0], [0.45, 0], [0.45, -2.6], [0, -2.15], [-0.45, -2.6]], 0.04, 0, 5.6, 0);
+    return k.g;
+  },
+  tent() {
+    const k = kit();
+    k.flat([[-1.3, 0], [1.3, 0], [0, 2.1]], 3.0, 0, 0, 0);
+    k.cyl(0.03, 0.9, 0, 2.5, 1.35);
+    k.flat([[0, 0], [0.5, -0.13], [0, -0.26]], 0.02, 0, 2.93, 1.35);
+    return k.g;
+  },
+  rack() {
+    const k = kit();
+    for (const s of [-1, 1]) k.box(0.12, 1.7, 0.12, s * 1.1, 0.85, 0);
+    k.box(2.4, 0.1, 0.12, 0, 0.45, 0);
+    k.box(2.4, 0.1, 0.12, 0, 1.45, 0);
+    for (let i = 0; i < 7; i++) {
+      const x = -0.9 + i * 0.3;
+      k.cyl(0.025, 2.3, x, 1.15, -0.05, -0.08);
+      k.cone(0.06, 0.28, x, 2.42, -0.14, -0.08);
+    }
+    for (const s of [-1, 1]) {
+      k.box(0.07, 1.0, 0.02, s * 1.45, 0.75, 0.1, 0, 0, s * 0.12);   // 劍身
+      k.box(0.32, 0.05, 0.05, s * 1.39, 1.28, 0.1, 0, 0, s * 0.12);  // 護手
+      k.box(0.05, 0.25, 0.05, s * 1.37, 1.42, 0.1, 0, 0, s * 0.12);  // 柄
+    }
+    return k.g;
+  },
+  wall(spec) {
+    const k = kit();
+    const len = spec.len || 14;
+    k.box(len, 3.2, 1.2, 0, 1.6, 0);
+    for (let x = -len / 2 + 0.3; x <= len / 2 - 0.3; x += 1.0) k.box(0.6, 0.7, 1.2, x, 3.55, 0);
+    return k.g;
+  },
+  tower() {
+    const k = kit();
+    k.box(3.2, 6.5, 3.2, 0, 3.25, 0);
+    for (const x of [-1.25, 0, 1.25]) for (const z of [-1.25, 0, 1.25]) if (x || z) k.box(0.7, 0.8, 0.7, x, 6.9, z);
+    return k.g;
+  },
+  flag() {
+    const k = kit();
+    k.cyl(0.05, 5.0, 0, 2.5, 0);
+    k.flat([[0, 0], [1.4, -0.12], [1.3, -0.5], [1.45, -0.9], [0, -0.85]], 0.03, 0.04, 4.95, 0);
+    return k.g;
+  },
+  sun() {
+    const k = kit();
+    k.g.add(new THREE.Mesh(new THREE.CircleGeometry(1, 64), k.g.userData.mat));
+    k.g.userData.billboard = true;
+    return k.g;
+  },
+};
+
+/** 這一格的剪影（每一格重新搭，搭完照距離上色）。 */
+const set = new THREE.Group();
+scene.add(set);
+function buildSet(props) {
+  for (const o of set.children) o.traverse((m) => { if (m.geometry) m.geometry.dispose(); });
+  set.clear();
+  for (const spec of props || []) {
+    const make = SHAPES[spec.shape];
+    if (!make) throw new Error(`沒有這種剪影：${spec.shape}`);
+    const g = make(spec);
+    g.position.set(spec.at[0], spec.y || 0, spec.at[1]);
+    g.rotation.y = spec.yaw || 0;
+    g.scale.setScalar(spec.scale || 1);
+    g.userData.color = spec.color;
+    set.add(g);
+  }
+}
+/** 鏡頭擺好之後：每一塊照離鏡頭多遠上色，太陽轉過來正對鏡頭。 */
+function tintSet() {
+  const at = new THREE.Vector3();
+  for (const g of set.children) {
+    const mat = g.userData.mat;
+    if (g.userData.billboard) g.quaternion.copy(camera.quaternion);
+    if (g.userData.color !== undefined) { mat.color.set(g.userData.color); continue; }
+    const d = g.getWorldPosition(at).distanceTo(camera.position);
+    const t = Math.min(1, Math.max(0, (d - SIL.d0) / (SIL.d1 - SIL.d0)));
+    mat.color.lerpColors(SIL.near, SIL.far, Math.sqrt(t));
+  }
+}
 
 const UP = new THREE.Vector3(0, 1, 0);
 const _side = new THREE.Vector3(), _axis = new THREE.Vector3();
@@ -292,14 +419,7 @@ function render(id) {
   LIGHT_DIR.value.copy(key);
   U_KEYDIR.value.copy(key);
   for (const a of Object.values(actors)) { a.wrap.visible = false; a.shadow.visible = false; }
-  for (const p of Object.values(PROPS)) p.visible = false;
-  for (const spec of shot.props || []) {
-    const p = PROPS[spec.shape];
-    p.visible = true;
-    p.position.set(spec.at[0], 0, spec.at[1]);
-    p.rotation.y = spec.yaw || 0;
-    p.scale.setScalar(spec.scale || 1);
-  }
+  buildSet(shot.props);
   const faces = [];
   for (const spec of shot.cast) {
     const a = actors[spec.who];
@@ -309,6 +429,7 @@ function render(id) {
   }
   scene.updateMatrixWorld(true);
   aim(shot.cam, w, h);
+  tintSet();
   for (const spec of shot.cast) {
     if (spec.face) faces.push([spec.face, eyeAnchors(actors[spec.who].c, w, h), spec.eyes]);
   }
