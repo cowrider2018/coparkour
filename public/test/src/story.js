@@ -226,6 +226,7 @@ export class Story {
         const img = document.createElement('img');
         img.src = p.src;
         img.alt = p.note || '';
+        if (p.focus) img.style.objectPosition = p.focus;
         cell.append(img);
         if (p.say) {
           const cap = caption(p.say);

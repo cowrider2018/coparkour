@@ -353,14 +353,17 @@
     background: #f7eedb;
     transform: translateX(110vw);          /* 還沒輪到：在畫面外。滑進來的位置由 story.js 每幀寫 */
   }
-  /* 畫好的格子：圖只有主體、背景透明，整張放進格子裡（不裁），底下是格子的紙色。 */
-  #story .panel-cell img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  /* 畫好的格子：圖鋪滿格子（特寫本來就是出格的，邊要對齊格框），裁的時候對準那一格的重點
+     （comic.js 的 focus，story.js 寫進 object-position）。背景透明，底下是格子的紙色。 */
+  #story .panel-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
   /* 疊在圖上的字：旁白在左上角的方框裡；心聲、對白在上面正中（那一格標了 capAt: 'bottom' 的在下面）。 */
   #story .panel-cell .cap {
     position: absolute; display: flex; flex-direction: column; align-items: center; gap: .3vmin;
     font-size: clamp(11px, 2.2vmin, 19px); font-weight: 700; letter-spacing: .1em;
   }
-  #story .panel-cell .cap q { quotes: "「" "」"; }
+  /* 心聲、對白直接壓在圖上：一圈紙色的描邊，壓在深色的帽簷或吻部上也讀得到。 */
+  #story .panel-cell .cap q { quotes: "「" "」";
+    text-shadow: 0 0 2px #fbf5e6, 0 0 2px #fbf5e6, 0 0 4px #fbf5e6, 0 0 6px #fbf5e6; }
   #story .panel-cell .cap.narr { left: 1.4vmin; top: 1.4vmin; }
   #story .panel-cell .cap.narr q { quotes: none; border: 1px solid var(--ink-page); padding: .5vmin 1.4vmin; background: #fbf5e6; }
   #story .panel-cell .cap.thought, #story .panel-cell .cap.speech { left: 0; right: 0; top: 1.8vmin; }

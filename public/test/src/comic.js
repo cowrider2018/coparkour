@@ -5,7 +5,8 @@
    每一格是 { note, say, src?, memory? }：note 是這一格要畫什麼，say 是格子裡的字（旁白／
    心聲／對白，沒有字就省略）。還沒畫的格子是佔位：書頁上畫「分格 n、待繪：note」與 say。
    畫好了的有 src（圖的網址，相對於 /test/）：圖是 tools/make-comic.mjs 照 shots.js 拍的，
-   只有主體、背景透明，say 疊在圖上（心聲、對白預設在上面，capAt: 'bottom' 放下面）。
+   只有主體、背景透明，say 疊在圖上（心聲、對白預設在上面，capAt: 'bottom' 放下面）。圖鋪滿
+   格子，格子比例跟圖不同的時候對準 focus（CSS 的 object-position，例如 '70% 40%'）裁。
    memory 是回憶的那幾格：暖色、柔邊，沒有格框。
 
    ── 哪一刻翻哪幾頁（SCRIPT，頁碼從 1 起，跟 STORY.md 一樣）──────────
@@ -19,10 +20,10 @@
 /** 十四頁，照頁碼排（PAGES[0] 是第 1 頁）。 */
 export const PAGES = [
   { title: '兵營', panels: [
-    { note: '回憶：王座廳裡主角單膝跪在國王面前受封', say: '旁白：王國最強的戰士。', src: 'comic/p1-1.png', memory: true },
-    { note: '主角在帳篷裡猛然彈起來', say: '——！', src: 'comic/p1-2.png', capAt: 'bottom' },
-    { note: '帳篷外太陽已經很高，兵器架上的武器一把都沒少', say: '……睡過頭了。', src: 'comic/p1-3.png' },
-    { note: '整片兵營空蕩蕩，主角小小一隻站在中間', say: '人呢？', src: 'comic/p1-4.png' },
+    { note: '回憶：王座廳裡主角單膝跪在國王面前受封', say: '旁白：王國最強的戰士。', src: 'comic/p1-1.png', memory: true, focus: '62% 40%' },
+    { note: '主角在帳篷裡猛然彈起來', say: '——！', src: 'comic/p1-2.png', capAt: 'bottom', focus: '50% 40%' },
+    { note: '帳篷外太陽已經很高，兵器架上的武器一把都沒少', say: '……睡過頭了。', src: 'comic/p1-3.png', focus: '40% 50%' },
+    { note: '整片兵營空蕩蕩，主角小小一隻站在中間', say: '人呢？', src: 'comic/p1-4.png', focus: '60% 35%' },
   ] },
   { title: '兵營', panels: [
     { note: '殭屍倒了一地，主角站在中間喘氣' },
