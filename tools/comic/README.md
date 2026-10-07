@@ -131,7 +131,7 @@
   - `folk` 王國的人民：`look` 給 `'cat/orangin'`、`'cat/tabby'`、`'cat/calico'`、`'dog-prick/grey'`、`'dog-drop/cow'`……
 - **道具 `props`**：`{ piece, at: [x, z], y, yaw, scale }`，擺在 3D 場景裡跟角色一起拍。`throneSeat` 的座面頂在 0.5 公尺、面朝 −Z。`{ blade: 'knight', at, y, yaw, size }` 是一把掉在地上的刀劍（原本的顏色，`size` 是拿它的那一隻多高）。
 - **效果**：都是效果線或大團，不是紋理（規則 10）。
-  - `rays` 光芒：從 `at`（畫面的比例）往外放、等角度等寬的光，`from`／`to` 是角度範圍。光從縫裡透上來、從誰身上擴散出去、門後的冷光。畫在角色底下。
+  - `rays` 光芒：從 `at`（畫面的比例）往外放、等角度等寬的光，`from`／`to` 是角度範圍。光從縫裡透上來、從誰身上擴散出去、門後的冷光。畫在角色底下、背景剪影後面（門後的光被門擋住）；`front: true` 畫在剪影前面。
   - `speedLines` 速度線：沿 `angle` 一列一列等間隔的長線，跑過去、掉下去。畫在角色底下。
   - `puffs` 霧與塵：幾團大圓聯成的形狀，沒有墨線、半透明。幽靈散掉的霧、砸起來的塵。畫在最上層。
 - **姿勢 `move`**（`critter.js` 的 `moveOverlay`）：

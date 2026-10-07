@@ -557,7 +557,8 @@ function focusLines(g, w, h, cx, cy, { n = 110, clear = 0.42, width = 0.012, see
  * 光芒（光從哪裡透出來、從誰身上擴散出去）：從 at（畫面的比例）往外放的 n 道光，等角度、等寬，
  * 一道光一道空——規則的排法。from、to 是放射的角度範圍（弳，canvas 的角度：0 往右、π/2 往下），
  * 沒給就是一整圈；inner 是內端離中心多遠（畫面高的幾倍）；width 是一道光佔它那一份角度的幾成；
- * color、alpha 是光的顏色。畫在角色底下。光芒是效果線，不是紋理。
+ * color、alpha 是光的顏色。畫在角色底下、剪影後面（門後的光被門擋住）；front: true 的畫在剪影前面。
+ * 光芒是效果線，不是紋理。
  */
 function rays(g, w, h, { at = [0.5, 0.5], n = 24, from = 0, to = Math.PI * 2, inner = 0.08, width = 0.5, color = '#fff6d8', alpha = 0.9 } = {}) {
   const cx = at[0] * w, cy = at[1] * h;
@@ -690,8 +691,11 @@ function render(id) {
   sheet.height = h;
   sheetG.clearRect(0, 0, w, h);
   if (shot.horizon !== undefined) hatchGround(sheetG, w, h, shot.horizon);
+  // 光芒預設在剪影後面（門後透出來的光被門擋住）；front 的在剪影前面（從誰身上擴散出來的光）。
+  const light = [shot.rays || []].flat();
+  for (const r of light) if (!r.front) rays(sheetG, w, h, r);
   for (const spec of shot.bg || []) drawCutout(sheetG, spec, w, h);
-  for (const r of [shot.rays || []].flat()) rays(sheetG, w, h, r);
+  for (const r of light) if (r.front) rays(sheetG, w, h, r);
   if (shot.focusLines) {
     // 收向鏡頭對準的那張臉（cam.focus），沒有就是畫面正中間；at 給了就收向那裡（畫面的比例）。
     const o = shot.focusLines === true ? {} : shot.focusLines;
