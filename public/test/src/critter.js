@@ -160,7 +160,7 @@ export const GUARD_INK = new THREE.Color(0xf2b705);
  * 同一盞燈打的，只是狗的色階照遊戲的來（三階、ACES），石頭照場景的
  * 來（五階、線性）。
  */
-const LIGHT_DIR = { value: new THREE.Vector3(...KEY_POS).normalize() };
+export const LIGHT_DIR = { value: new THREE.Vector3(...KEY_POS).normalize() };
 
 /* 顏色 alpha 位元組的編碼，跟 src/cat/cat.js 一樣：低五位是骨號，
    高三位是彈簧群組。 */

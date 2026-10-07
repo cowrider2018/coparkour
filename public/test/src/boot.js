@@ -19,6 +19,7 @@ export const MODES = {
   terrain: { title: '試玩場：城堡遺跡', entry: './mode-terrain.js' },
   combat: { title: '試打場', entry: './mode-combat.js' },
   flow: { title: '完整流程', entry: './mode-flow.js' },
+  comic: { title: '漫畫攝影棚', entry: './mode-comic.js' },
 };
 
 /** 沒給模式的時候：完整流程——另外兩個是它的零件各自拿出來試。 */
