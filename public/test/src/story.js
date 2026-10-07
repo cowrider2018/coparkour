@@ -44,6 +44,26 @@ export const PANEL = { step: 0.28, dur: 0.5 };
 /** n 格的一頁，從開始拼到最後一格落定要幾秒。 */
 export const builtIn = (n) => (n - 1) * PANEL.step + PANEL.dur;
 
+/**
+ * 格子裡的字：「誰：說什麼」。旁白放進方框；有人名的（對白）人名另起一行；沒有的是心聲。
+ * 回傳一個 .cap，裡面是（人名）與那一句。
+ */
+function caption(say) {
+  const [, who, words] = /^(?:(.+?)：)?(.+)$/.exec(say);
+  const box = document.createElement('div');
+  box.className = `cap ${who === '旁白' ? 'narr' : who ? 'speech' : 'thought'}`;
+  if (who && who !== '旁白') {
+    const w = document.createElement('small');
+    w.textContent = who;
+    box.append(w);
+  }
+  const q = document.createElement('q');
+  if (who === '旁白') q.className = 'narr';
+  q.textContent = words;
+  box.append(q);
+  return box;
+}
+
 const easeOut = (u) => 1 - (1 - u) ** 3;
 const easeIn = (u) => u * u * u;
 const clamp01 = (u) => Math.min(1, Math.max(0, u));
@@ -201,11 +221,17 @@ export class Story {
       const cell = document.createElement('div');
       cell.className = 'panel-cell';
       cell.style.gridArea = 'abcdefgh'[k];
+      if (p.memory) cell.classList.add('memory');
       if (p.src) {
         const img = document.createElement('img');
         img.src = p.src;
         img.alt = p.note || '';
         cell.append(img);
+        if (p.say) {
+          const cap = caption(p.say);
+          if (p.capAt === 'bottom') cap.classList.add('low');
+          cell.append(cap);
+        }
       } else {
         cell.classList.add('todo');
         const n = document.createElement('b');
@@ -213,19 +239,7 @@ export class Story {
         const s = document.createElement('span');
         s.textContent = p.note ? `待繪：${p.note}` : '待繪';
         cell.append(n, s);
-        // 字：「誰：說什麼」。旁白放進方框；有人名的（對白）人名另起一行；沒有的是心聲。
-        if (p.say) {
-          const [, who, words] = /^(?:(.+?)：)?(.+)$/.exec(p.say);
-          if (who && who !== '旁白') {
-            const w = document.createElement('small');
-            w.textContent = who;
-            cell.append(w);
-          }
-          const q = document.createElement('q');
-          if (who === '旁白') q.className = 'narr';
-          q.textContent = words;
-          cell.append(q);
-        }
+        if (p.say) cell.append(...caption(p.say).childNodes);
       }
       box.append(cell);
     });

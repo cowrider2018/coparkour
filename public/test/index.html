@@ -353,7 +353,29 @@
     background: #f7eedb;
     transform: translateX(110vw);          /* 還沒輪到：在畫面外。滑進來的位置由 story.js 每幀寫 */
   }
-  #story .panel-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* 畫好的格子：圖只有主體、背景透明，整張放進格子裡（不裁），底下是格子的紙色。 */
+  #story .panel-cell img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  /* 疊在圖上的字：旁白在左上角的方框裡；心聲、對白在上面正中（那一格標了 capAt: 'bottom' 的在下面）。 */
+  #story .panel-cell .cap {
+    position: absolute; display: flex; flex-direction: column; align-items: center; gap: .3vmin;
+    font-size: clamp(11px, 2.2vmin, 19px); font-weight: 700; letter-spacing: .1em;
+  }
+  #story .panel-cell .cap q { quotes: "「" "」"; }
+  #story .panel-cell .cap.narr { left: 1.4vmin; top: 1.4vmin; }
+  #story .panel-cell .cap.narr q { quotes: none; border: 1px solid var(--ink-page); padding: .5vmin 1.4vmin; background: #fbf5e6; }
+  #story .panel-cell .cap.thought, #story .panel-cell .cap.speech { left: 0; right: 0; top: 1.8vmin; }
+  #story .panel-cell .cap.low { top: auto; bottom: 1.6vmin; }
+  #story .panel-cell .cap small { font-size: .7em; opacity: .6; }
+  /* 回憶：沒有格框，底色與圖的邊緣暈進紙裡，整格偏暖、褪一點色。字不暈。 */
+  #story .panel-cell.memory {
+    border-color: transparent;
+    background: radial-gradient(ellipse 72% 68% at 50% 50%, #f2e0bb 55%, rgba(242, 224, 187, 0) 100%);
+  }
+  #story .panel-cell.memory img {
+    filter: sepia(.5) saturate(.85) brightness(1.04);
+    -webkit-mask-image: radial-gradient(ellipse 72% 68% at 50% 50%, #000 62%, transparent 100%);
+    mask-image: radial-gradient(ellipse 72% 68% at 50% 50%, #000 62%, transparent 100%);
+  }
   /* 還沒畫的那一格：斜線網點、格號、要畫什麼。 */
   #story .panel-cell.todo {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .6vmin;

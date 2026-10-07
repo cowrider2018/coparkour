@@ -2,9 +2,11 @@
    漫畫的內容（完整流程模式）：十四頁、每一頁幾格，以及哪一刻翻哪幾頁。劇本在
    STORY.md，這裡是它的抄本——頁碼、格數、每一格的畫面與字一對一。
 
-   每一格是 { note, say }：note 是這一格要畫什麼，say 是格子裡的字（旁白／心聲／對白，
-   沒有字就省略）。現在全部是佔位，書頁上畫的是「分格 n、待繪：note」與 say。漫畫畫好了，
-   在那一格加上 src（圖的網址），書頁就換成那張圖。
+   每一格是 { note, say, src?, memory? }：note 是這一格要畫什麼，say 是格子裡的字（旁白／
+   心聲／對白，沒有字就省略）。還沒畫的格子是佔位：書頁上畫「分格 n、待繪：note」與 say。
+   畫好了的有 src（圖的網址，相對於 /test/）：圖是 tools/make-comic.mjs 照 shots.js 拍的，
+   只有主體、背景透明，say 疊在圖上（心聲、對白預設在上面，capAt: 'bottom' 放下面）。
+   memory 是回憶的那幾格：暖色、柔邊，沒有格框。
 
    ── 哪一刻翻哪幾頁（SCRIPT，頁碼從 1 起，跟 STORY.md 一樣）──────────
      start     重玩（R）、一開始：兵營開場，醒來的那一頁。
@@ -17,10 +19,10 @@
 /** 十四頁，照頁碼排（PAGES[0] 是第 1 頁）。 */
 export const PAGES = [
   { title: '兵營', panels: [
-    { note: '回憶：王座廳裡主角單膝跪在國王面前受封', say: '旁白：王國最強的戰士。' },
-    { note: '主角在帳篷裡猛然彈起來', say: '——！' },
-    { note: '帳篷外太陽已經很高，兵器架上的武器一把都沒少', say: '……睡過頭了。' },
-    { note: '整片兵營空蕩蕩，主角小小一隻站在中間', say: '人呢？' },
+    { note: '回憶：王座廳裡主角單膝跪在國王面前受封', say: '旁白：王國最強的戰士。', src: 'comic/p1-1.png', memory: true },
+    { note: '主角在帳篷裡猛然彈起來', say: '——！', src: 'comic/p1-2.png', capAt: 'bottom' },
+    { note: '帳篷外太陽已經很高，兵器架上的武器一把都沒少', say: '……睡過頭了。', src: 'comic/p1-3.png' },
+    { note: '整片兵營空蕩蕩，主角小小一隻站在中間', say: '人呢？', src: 'comic/p1-4.png' },
   ] },
   { title: '兵營', panels: [
     { note: '殭屍倒了一地，主角站在中間喘氣' },
@@ -104,6 +106,11 @@ export const SCRIPT = {
   open: [null, [3], [5], [7], [9], [13]],
   after: [[2], [4], [6], [8], [10, 11, 12], [14]],
 };
+
+/** 先把畫好的圖讀進來：分格滑進來的那一刻才讀，滑到一半圖才出現。 */
+export function preloadComic() {
+  for (const page of PAGES) for (const p of page.panels) if (p.src) new Image().src = p.src;
+}
 
 /** 頁碼 → 頁（帶著頁碼，書頁的頁腳要印）。 */
 export const pagesOf = (nums) => (nums || []).map((n) => ({ ...PAGES[n - 1], folio: n }));

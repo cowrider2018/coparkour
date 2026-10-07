@@ -43,7 +43,7 @@ import { makeHero, steerHero, moveHero } from './hero.js';
 import { Transit } from './transit.js';
 import { Death } from './death.js';
 import { Story } from './story.js';
-import { SCRIPT, pagesOf } from './comic.js';
+import { SCRIPT, pagesOf, preloadComic } from './comic.js';
 import { Fight, DEATH_TEXT } from './fight.js';
 import { Sound } from './sound.js';
 import { Music } from './music.js';
@@ -99,6 +99,7 @@ const death = new Death(scene, zoo, {
 
 /** 場與場之間的漫畫：書頁、翻頁、戰後的慢動作（story.js），翻哪幾頁照 comic.js。 */
 const story = new Story(document.getElementById('story'));
+preloadComic();
 
 /* ── 路線 ────────────────────────────────────────────────────────
    run 是路線的狀態（route.js 的 makeRun）：下一場是第幾場、是不是正在打。
