@@ -7,7 +7,9 @@
 
    每一隻眼睛一個錨點（studio.js 從眼睛那根骨頭投影出來）：
      x, y    眼睛中心（畫布像素）
-     r       眼睛的半高（像素）——所有尺寸都是它的倍數，所以特寫與遠景一樣比例
+     r       眼睛的半高（像素，沒收合的原尺寸）——所有尺寸都是它的倍數，所以特寫與遠景一樣比例
+     s       這一隻縮到幾成（模型的遠眼收合，critter.js）：近的那隻是 1，四分之三側的遠眼小一號。
+             整個表情（眼、眉、淚、汗）一起縮，「單邊縮小」
      up      畫面上「頭頂」的方向（弳，canvas 座標：0 = 往右，−π/2 = 往上）
      inward  +1 / −1：眼睛自己的 +x 是往鼻樑那一側（+1）還是往外（−1）
      i       第幾隻（0、1）：左右不對稱的表情（愣住時挑一邊的眉）用
@@ -153,7 +155,7 @@ export function drawFace(g, face, anchors, ink, { lift = 0, spread = 0 } = {}) {
     g.save();
     g.translate(a.x, a.y);
     g.rotate(a.up + Math.PI / 2);          // 讓 −y 對到頭頂
-    const r = Math.max(a.r, ink * 2.2);
+    const r = Math.max(a.r, ink * 2.2) * (a.s ?? 1);
     g.scale(r * a.inward, r);
     g.translate(-spread, -lift);
     draw(g, a);

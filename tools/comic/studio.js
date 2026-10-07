@@ -19,7 +19,8 @@
    模型的眼睛演不了戲，漫畫的表情靠眼睛與眉毛。有指定表情（face）的那一隻，拍之前把兩隻
    眼睛的骨頭縮成零（模型那兩片藏起來），從眼睛骨頭投影出每一隻眼睛在畫面上的位置、大小、
    頭頂朝哪、鼻樑在哪一側，拍完之後用 2D 照 faces.js 畫上去——在網點之後畫，線是乾淨的。
-   側面的時候遠的那一隻本來就收掉了（critter.js 的遠眼收合），那一隻不畫。
+   遠的那一隻照模型自己的遠眼收合（critter.js）縮小：模型那一片縮到幾成，畫上去的就縮到幾成，
+   四分之三側的遠眼才不會原尺寸壓在吻部上；收到幾乎沒有就不畫。
 
    ── 剪影的道具 ────────────────────────────────────────────────
    背景與道具是素色的剪影：一個顏色、不分階、沒有墨線（現在只有王座）。
@@ -154,13 +155,18 @@ function toScreen(c, b, x, y, z, w, h, out) {
   return [(out.x + 1) / 2 * w, (1 - out.y) / 2 * h];
 }
 
+/** 遠眼收到原本的幾成以下就不畫了（只剩一點，畫出來是一顆浮著的墨點）。 */
+const EYE_GONE = 0.15;
+
 /**
  * 藏起模型的兩隻眼睛，回傳看得到的那幾隻在畫面上的錨點（faces.js 的格式）。要在姿勢擺好、
- * 世界矩陣更新之後叫。遠的那一隻被收掉（縮到原本的一半以下）就當作看不到。
+ * 世界矩陣更新之後叫。每一隻帶著模型那一片縮到幾成（s，遠眼收合）；r 是沒縮的原尺寸，
+ * 縮多少由 drawFace 照 s 乘上去（最細的線寬限制要算在原尺寸上，遠眼才縮得下去）。
  */
 function eyeAnchors(c, w, h) {
   const eyes = [c._eyeMinusX, c._eyePlusX];
-  const shown = eyes.map((b) => c.rig.scale[b * 3] > 0.5 * c.rig.rest.scale[b * 3]);
+  const s = eyes.map((b) => c.rig.scale[b * 3] / c.rig.rest.scale[b * 3]);
+  const shown = s.map((v) => v > EYE_GONE);
   const at = eyes.map((b) => {
     const o = toScreen(c, b, 0, 0, 0.05, w, h, _p);
     const top = toScreen(c, b, 0, 0.21, 0.05, w, h, _q);
@@ -172,14 +178,14 @@ function eyeAnchors(c, w, h) {
   const out = [];
   at.forEach(({ o, top, front }, i) => {
     if (!shown[i]) return;
-    const r = Math.hypot(top[0] - o[0], top[1] - o[1]);
+    const r = Math.hypot(top[0] - o[0], top[1] - o[1]) / s[i];
     const up = Math.atan2(top[1] - o[1], top[0] - o[0]);
     // 鼻樑在哪一側：兩隻都看得到就是往另一隻；只看得到一隻就是往眼睛的正前方（側面時那是吻部）。
     const other = at[1 - i].o;
     const [dx, dy] = shown[1 - i] ? [other[0] - o[0], other[1] - o[1]] : [front[0] - o[0], front[1] - o[1]];
     // 眼睛自己的 +x 在畫面上是 up 轉 +90°（canvas 的 y 往下，所以是順時針）。
     const side = dx * Math.cos(up + Math.PI / 2) + dy * Math.sin(up + Math.PI / 2);
-    out.push({ x: o[0], y: o[1], r, up, inward: side >= 0 ? 1 : -1, i });
+    out.push({ x: o[0], y: o[1], r, s: s[i], up, inward: side >= 0 ? 1 : -1, i });
   });
   return out;
 }
