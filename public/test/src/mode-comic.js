@@ -11,6 +11,15 @@
    點是那一塊自己的顏色壓暗——全彩，不是黑白網點）。先畫進一張離屏的圖，再整張過一次網點
    畫到畫布上；透明的地方留透明。
 
+   ── 表情：畫在圖上 ────────────────────────────────────────────
+   模型的眼睛演不了戲，漫畫的表情靠眼睛與眉毛。有指定表情（face）的那一隻，拍之前把兩隻
+   眼睛的骨頭縮成零（模型那兩片藏起來），從眼睛骨頭投影出每一隻眼睛在畫面上的位置、大小、
+   頭頂朝哪、鼻樑在哪一側，拍完之後用 2D 照 faces.js 畫上去——在網點之後畫，線是乾淨的。
+   側面的時候遠的那一隻本來就收掉了（critter.js 的遠眼收合），那一隻不畫。
+
+   ── 剪影的道具 ────────────────────────────────────────────────
+   背景與道具是素色的剪影：一個顏色、不分階、沒有墨線（現在只有王座）。
+
    ── 投影的深度圖 ───────────────────────────────────────────────
    毛皮與王冠的著色器宣告了接收投影的 sampler2DShadow（light/shadow.js）。沒有綁一張設了
    比較模式的深度圖，ANGLE 會整個 draw 不畫——畫面是一片墨色（戰鬥場的地面當初就是這樣
@@ -28,6 +37,7 @@ import { Crown } from './crown.js';
 import { INK, KEY_POS, U_KEYDIR } from './palette.js';
 import * as shadowLight from './light/shadow.js';
 import { SHOTS } from './shots.js';
+import { drawFace } from './faces.js';
 
 const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -103,15 +113,118 @@ for (const [who, r] of Object.entries(ROLES)) {
   actors[who] = { c, crown, wrap, shadow, height: r.height };
 }
 
+/* ── 剪影的道具 ──────────────────────────────────────────────────
+   王座：座面、椅背、扶手、椅背頂上兩顆圓頭，一個顏色。尺寸是 scale = 1 的時候（公尺）；座面頂在
+   THRONE_SEAT × scale。 */
+const THRONE_SEAT = 0.5;
+function makeThrone(color) {
+  const mat = new THREE.MeshBasicMaterial({ color });
+  const g = new THREE.Group();
+  const box = (w, h, d, x, y, z) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    g.add(m);
+  };
+  box(1.15, THRONE_SEAT, 0.95, 0, THRONE_SEAT / 2, 0);            // 座
+  box(1.15, 1.75, 0.18, 0, 1.75 / 2, -0.48);                       // 椅背
+  for (const s of [-1, 1]) {
+    box(0.14, 0.32, 0.9, s * 0.58, THRONE_SEAT + 0.16, 0.02);     // 扶手
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.11, 20, 14), mat);
+    knob.position.set(s * 0.5, 1.8, -0.48);
+    g.add(knob);
+  }
+  return g;
+}
+const PROPS = { throne: makeThrone(0x7a6650) };
+for (const p of Object.values(PROPS)) scene.add(p);
+
 const UP = new THREE.Vector3(0, 1, 0);
 const _side = new THREE.Vector3(), _axis = new THREE.Vector3();
+const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Vector3(), _f = new THREE.Vector3();
+
+/** 骨頭 b 的局部座標 (x, y, z) → 畫布像素 [x, y]。 */
+function toScreen(c, b, x, y, z, w, h, out) {
+  _m.fromArray(c.rig.matrices, b * 16);
+  out.set(x, y, z).applyMatrix4(_m).applyMatrix4(c.mesh.matrixWorld).project(camera);
+  return [(out.x + 1) / 2 * w, (1 - out.y) / 2 * h];
+}
+
+/**
+ * 藏起模型的兩隻眼睛，回傳看得到的那幾隻在畫面上的錨點（faces.js 的格式）。要在姿勢擺好、
+ * 世界矩陣更新之後叫。遠的那一隻被收掉（縮到原本的一半以下）就當作看不到。
+ */
+function eyeAnchors(c, w, h) {
+  const eyes = [c._eyeMinusX, c._eyePlusX];
+  const shown = eyes.map((b) => c.rig.scale[b * 3] > 0.5 * c.rig.rest.scale[b * 3]);
+  const at = eyes.map((b) => {
+    const o = toScreen(c, b, 0, 0, 0.05, w, h, _p);
+    const top = toScreen(c, b, 0, 0.21, 0.05, w, h, _q);
+    const front = toScreen(c, b, 0, 0, 1.0, w, h, _f);
+    return { o, top, front };
+  });
+  for (const b of eyes) for (let k = 0; k < 3; k++) c.rig.scale[b * 3 + k] = 0;
+  c.rig.update();
+  const out = [];
+  at.forEach(({ o, top, front }, i) => {
+    if (!shown[i]) return;
+    const r = Math.hypot(top[0] - o[0], top[1] - o[1]);
+    const up = Math.atan2(top[1] - o[1], top[0] - o[0]);
+    // 鼻樑在哪一側：兩隻都看得到就是往另一隻；只看得到一隻就是往眼睛的正前方（側面時那是吻部）。
+    const other = at[1 - i].o;
+    const [dx, dy] = shown[1 - i] ? [other[0] - o[0], other[1] - o[1]] : [front[0] - o[0], front[1] - o[1]];
+    // 眼睛自己的 +x 在畫面上是 up 轉 +90°（canvas 的 y 往下，所以是順時針）。
+    const side = dx * Math.cos(up + Math.PI / 2) + dy * Math.sin(up + Math.PI / 2);
+    out.push({ x: o[0], y: o[1], r, up, inward: side >= 0 ? 1 : -1, i });
+  });
+  return out;
+}
+
+/** 一隻的臉在哪（世界座標）：兩隻眼睛骨頭的中點。 */
+function faceAt(c, out) {
+  const a = new THREE.Vector3(), b = new THREE.Vector3();
+  for (const [bone, v] of [[c._eyeMinusX, a], [c._eyePlusX, b]]) {
+    _m.fromArray(c.rig.matrices, bone * 16);
+    v.set(0, 0, 0.05).applyMatrix4(_m).applyMatrix4(c.mesh.matrixWorld);
+  }
+  return out.addVectors(a, b).multiplyScalar(0.5);
+}
+
+/**
+ * 擺鏡頭。兩種寫法：
+ *   { pos, look, fov }                       世界座標
+ *   { focus, yaw, pitch, dist, fov, frame }  對準 focus 那一隻的臉：從臉往 yaw（世界方位，0 = +Z 那一側）、
+ *                                            pitch（仰角，負的是從下往上拍）退 dist 公尺看著臉；frame [fx, fy]
+ *                                            是臉落在畫面上的哪裡（從正中間算，畫面寬高的幾分之幾，+y 往下）
+ */
+function aim(cam, w, h) {
+  camera.clearViewOffset();
+  if (cam.focus) {
+    const f = faceAt(actors[cam.focus].c, new THREE.Vector3());
+    const cp = Math.cos(cam.pitch || 0);
+    camera.position.set(
+      f.x + cam.dist * cp * Math.sin(cam.yaw), f.y + cam.dist * Math.sin(cam.pitch || 0), f.z + cam.dist * cp * Math.cos(cam.yaw),
+    );
+    camera.lookAt(f);
+    const [fx, fy] = cam.frame || [0, 0];
+    if (fx || fy) camera.setViewOffset(w, h, -fx * w, -fy * h, w, h);
+  } else {
+    camera.position.set(...cam.pos);
+    camera.lookAt(...cam.look);
+  }
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+}
+
+/** 鏡頭大概在哪個方位（擺姿勢的時候要知道：頭會稍微轉向鏡頭）。 */
+const camYawFrom = (cam, x, z) => (cam.focus ? cam.yaw : Math.atan2(cam.pos[0] - x, cam.pos[2] - z));
 
 /** 擺好一隻：站哪、面朝哪、什麼姿勢、倒了幾度。姿勢跑幾十幀讓呼吸與尾巴的彈簧穩下來。 */
 function pose(a, spec, cam) {
   const { c, crown, wrap, shadow } = a;
   const [x, z] = spec.at;
+  const y0 = spec.y || 0;
   c._yaw = c._yawGoal = spec.yaw;
-  const viewYaw = Math.atan2(cam.pos[0] - x, cam.pos[2] - z);
+  const viewYaw = camYawFrom(cam, x, z);
   for (let i = 0; i < 45; i++) c.update(1 / 60, { speed: 0, grounded: true, vy: 0, viewYaw, move: spec.move });
   if (crown) crown.update();
   // 往牠自己的 +X 側倒：支點在那一側的身體外緣（大約半個身寬）。
@@ -119,10 +232,15 @@ function pose(a, spec, cam) {
   _side.set(Math.cos(spec.yaw), 0, -Math.sin(spec.yaw));
   _axis.crossVectors(UP, _side).normalize();
   wrap.quaternion.setFromAxisAngle(_axis, tip);
-  wrap.position.set(x + half * _side.x * (1 - Math.cos(tip)), half * Math.sin(tip), z + half * _side.z * (1 - Math.cos(tip)));
-  shadow.position.set(x + half * _side.x * Math.sin(tip) * 0.6, 0.002, z + half * _side.z * Math.sin(tip) * 0.6);
+  wrap.position.set(x + half * _side.x * (1 - Math.cos(tip)), y0 + half * Math.sin(tip), z + half * _side.z * (1 - Math.cos(tip)));
+  shadow.position.set(x + half * _side.x * Math.sin(tip) * 0.6, y0 + 0.002, z + half * _side.z * Math.sin(tip) * 0.6);
+  shadow.visible = spec.shadow !== false;
   shadow.rotation.z = -spec.yaw;
 }
+
+/** 拍好的那一張（網點之後）再畫上表情：一張 2D 畫布。 */
+const sheet = document.createElement('canvas');
+const sheetG = sheet.getContext('2d');
 
 /** 拍第 id 格：回傳 PNG 的 data URL。 */
 function render(id) {
@@ -132,20 +250,30 @@ function render(id) {
   renderer.setSize(w, h, false);
   camera.fov = shot.cam.fov;
   camera.aspect = w / h;
-  camera.position.set(...shot.cam.pos);
-  camera.lookAt(...shot.cam.look);
-  camera.updateProjectionMatrix();
   // 主光從哪裡來：這一格自己的（世界方向，指向光），沒給就是遊戲那一盞。毛皮與王冠各讀一份。
   const key = new THREE.Vector3(...(shot.light || KEY_POS)).normalize();
   LIGHT_DIR.value.copy(key);
   U_KEYDIR.value.copy(key);
   for (const a of Object.values(actors)) { a.wrap.visible = false; a.shadow.visible = false; }
+  for (const p of Object.values(PROPS)) p.visible = false;
+  for (const spec of shot.props || []) {
+    const p = PROPS[spec.shape];
+    p.visible = true;
+    p.position.set(spec.at[0], 0, spec.at[1]);
+    p.rotation.y = spec.yaw || 0;
+    p.scale.setScalar(spec.scale || 1);
+  }
+  const faces = [];
   for (const spec of shot.cast) {
     const a = actors[spec.who];
     a.wrap.visible = true;
-    a.shadow.visible = true;
     a.c.setInkPx(shot.ink, h);
     pose(a, spec, shot.cam);
+  }
+  scene.updateMatrixWorld(true);
+  aim(shot.cam, w, h);
+  for (const spec of shot.cast) {
+    if (spec.face) faces.push([spec.face, eyeAnchors(actors[spec.who].c, w, h), spec.eyes]);
   }
   target.setSize(w, h);
   screen.material.uniforms.uCell.value = h / HALFTONE.cells;
@@ -156,17 +284,24 @@ function render(id) {
   renderer.setRenderTarget(null);
   renderer.clear();
   renderer.render(screenScene, screenCam);
-  return canvas.toDataURL('image/png');
+  sheet.width = w;
+  sheet.height = h;
+  sheetG.clearRect(0, 0, w, h);
+  sheetG.drawImage(canvas, 0, 0);
+  for (const [face, anchors, eyes] of faces) drawFace(sheetG, face, anchors, shot.ink, eyes);
+  return sheet.toDataURL('image/png');
 }
 
 /* ── 打開來看 ─────────────────────────────────────────────────── */
 const label = document.createElement('div');
 label.id = 'shot-label';
-document.body.append(label);
+const shown = document.createElement('img');
+shown.id = 'shot';
+document.body.append(shown, label);
 let at = 0;
 function show(i) {
   at = (i + SHOTS.length) % SHOTS.length;
-  render(SHOTS[at].id);
+  shown.src = render(SHOTS[at].id);
   label.textContent = `${SHOTS[at].id}　（← → 換一格）`;
 }
 addEventListener('keydown', (e) => {
