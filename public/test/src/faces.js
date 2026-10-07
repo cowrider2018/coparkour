@@ -74,7 +74,7 @@ function drop(g, x, y, rx, ry, color, line, rot = 0) {
  * ——不要一排小淚珠、也不要飛出去的一串。
  */
 function bigTear(g, ex, ey) {
-  drop(g, -ex * 0.4, ey * 0.86, ex * 0.72, ey * 0.42, TEAR, 0.08);
+  drop(g, -ex * 0.4, ey * 0.95, ex * 1.08, ey * 0.63, TEAR, 0.1);
 }
 
 /** 實心的眼睛加一顆高光（模型原本那一種，畫成漫畫的）。 */
