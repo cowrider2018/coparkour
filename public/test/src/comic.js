@@ -31,9 +31,9 @@ export const PAGES = [
     { note: '主角轉向南邊的黑霧', say: '去中庭問問其他人。', src: 'comic/p2-3.png', focus: '30% 55%' },
   ] },
   { title: '崩塌中庭', panels: [
-    { note: '中庭一圈斷柱、兩側拱廊，還是沒有人', say: '有人嗎？' },
-    { note: '地面震一下，碎石跳起來' },
-    { note: 'BOSS 在門樓前站起來，兩倍大、戴頭盔', say: '……問錯人了。' },
+    { note: '中庭一圈斷柱、兩側拱廊，還是沒有人', say: '有人嗎？', src: 'comic/p3-1.png', capAt: 'bottom', focus: '68% 70%' },
+    { note: '地面震一下，碎石跳起來', src: 'comic/p3-2.png', focus: '50% 40%' },
+    { note: 'BOSS 在門樓前站起來，兩倍大、戴頭盔', say: '……問錯人了。', src: 'comic/p3-3.png', capAt: 'bottom', focus: '50% 35%' },
   ] },
   { title: '崩塌中庭', panels: [
     { note: 'BOSS 倒下，靈魂從身上浮出來' },

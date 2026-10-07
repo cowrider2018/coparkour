@@ -67,6 +67,11 @@ const DROWSY = { headPitch: 0.28, headTilt: 0.22, pitch: 0.06, tailPitch: -0.5, 
 const LOOK_AROUND = { headYaw: 0.35, headPitch: -0.4, tailPitch: -0.3, w: 1 };
 /** 倒下（被打倒的怪物）：整隻趴平、下巴貼地，前腳往前、後腳往後攤開，尾巴垂在地上。 */
 const FLOP = { drop: 0.35, pitch: 0.1, headPitch: 0.45, front: -1.4, hind: 1.4, knee: 0, legs: 1, tailPitch: -0.6, w: 1 };
+/** 立起來（BOSS 扇形地震的起手，monster.js 的 REAR）：整個前半身立起來、兩隻前腳收在胸前。 */
+const REAR = {
+  pitch: -0.80, headPitch: 0.95, drop: -0.12, tailPitch: 0.40,
+  front: -1.10, knee: 0.70, hind: -0.20, legs: 1, w: 1,
+};
 /** 喘氣：身體往前沉、頭垂一點，尾巴放低。 */
 const PANT = { pitch: 0.12, headPitch: 0.12, drop: 0.05, tailPitch: -0.35, w: 1 };
 
@@ -177,5 +182,54 @@ export const SHOTS = [
     ],
     cast: [{ who: 'hero', at: [0, 0], yaw: Math.PI, move: { headYaw: -0.15, tailPitch: -0.1, w: 1 }, blade: 'knife' }],
     cam: { focus: 'hero', yaw: -0.3, pitch: 0.1, dist: 2.9, fov: 34, frame: [-0.22, 0.02] },
+  },
+
+  /* ── 第 3 頁　中庭・開場 ─────────────────────────────────────── */
+  {
+    // 有人嗎？：遠景，一整隻小小的、孤單地站在空中庭的一角（整隻入鏡只給這種格子）。兩側的拱廊框住畫面，
+    // 一圈斷柱排在地平線上，最後面是門樓。主角剛從東拱洞（右邊）走出來，四處張望。
+    id: 'p3-1', size: [860, 720], ink: 3,
+    horizon: 0.56,
+    bg: [
+      { piece: 'gateway', span: 5, rise: 3.6, h: 6.4, side: 5, x: 0.5, y: 0.57, size: 0.17 },
+      ...[[0.08, 0.5], [0.25, 0], [0.36, 0.7], [0.66, 0.6], [0.77, 0], [0.93, 0.4]].map(([x, broken], i) => (
+        { piece: 'column', r: 0.46, h: 5.2, broken, seed: 3 + i, x, y: 0.575, size: 0.15 * (1 - broken * 0.8) })),
+      { piece: 'arcade', bays: 1, span: 3.1, pier: 0.95, legH: 2.6, depth: 1.0, ruin: 0.5, seed: 7, x: 0.0, y: 0.62, size: 0.3 },
+      { piece: 'arcade', bays: 1, span: 3.1, pier: 0.95, legH: 2.6, depth: 1.0, ruin: 0.22, seed: 9, x: 1.0, y: 0.62, size: 0.3 },
+    ],
+    cast: [{ who: 'hero', at: [0, 0], yaw: -0.5, move: LOOK_AROUND, face: 'dazed' }],
+    cam: { focus: 'hero', yaw: -0.15, pitch: 0.12, dist: 17, fov: 30, frame: [0.2, 0.2] },
+  },
+  {
+    // 地面震一下：貼著地面拍，碎石在鏡頭前跳起來、塵土噴開；主角後面被震得一愣（驚嚇的白眼、驚嚇線）。
+    id: 'p3-2', size: [1200, 720], ink: 3.5,
+    horizon: 0.74,
+    bg: [
+      { piece: 'rubble', r: 0.5, n: 6, seed: 3, x: 0.13, y: 0.5, size: 0.12 },
+      { piece: 'rubble', r: 0.4, n: 5, seed: 8, x: 0.86, y: 0.36, size: 0.1 },
+      { piece: 'rubble', r: 0.4, n: 4, seed: 12, x: 0.7, y: 0.14, size: 0.08 },
+      { piece: 'rubble', r: 0.6, n: 7, seed: 21, x: 0.3, y: 0.22, size: 0.07 },
+    ],
+    puffs: [
+      { x: 0.14, y: 0.86, r: 0.12, color: '#cdbb9c', alpha: 0.8, seed: 4 },
+      { x: 0.9, y: 0.84, r: 0.14, color: '#cdbb9c', alpha: 0.8, seed: 6 },
+    ],
+    cast: [{ who: 'hero', at: [0, 0], yaw: 0.35, move: { drop: -0.05, tailPitch: 0.8, w: 1 }, face: 'shock', eyes: { lift: 0.9, spread: 0.35 } }],
+    cam: { focus: 'hero', yaw: 0.5, pitch: -0.1, dist: 2.3, fov: 38, frame: [0.02, -0.14] },
+    light: [4, 7, 5],
+  },
+  {
+    // ……問錯人了。：仰角。BOSS 在門樓前立起來（兩倍大、頭盔、紅眼瞪著），壓在畫面上方；主角是前景右下角
+    // 的背影，抬頭看著牠。集中線收向 BOSS 的臉。
+    id: 'p3-3', size: [1200, 720], ink: 3.5,
+    horizon: 0.86,
+    bg: [{ piece: 'gateway', span: 5, rise: 3.6, h: 6.4, side: 6, x: 0.44, y: 1.05, size: 1.45 }],
+    focusLines: { clear: 0.26, n: 90 },
+    cast: [
+      { who: 'boss', at: [0, 0], yaw: 0.1, move: { ...REAR, headPitch: 0.6 }, face: 'glare', eyes: { lift: 0.4 } },
+      { who: 'hero', at: [1.45, 0.75], yaw: Math.PI + 0.9, move: { tailPitch: -0.5, headPitch: -0.3, w: 1 } },
+    ],
+    cam: { focus: 'boss', yaw: 0.36, pitch: -0.42, dist: 3.6, fov: 54, frame: [-0.06, -0.2] },
+    light: [2, 6, 6],
   },
 ];
