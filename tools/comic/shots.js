@@ -29,7 +29,8 @@
      props  角色碰得到的道具（國王坐的王座）：{ piece, at: [x, z], y, yaw, scale, ...零件的參數 }，擺在 3D 場景裡
             跟角色一起拍，顏色跟背景的剪影一樣；{ blade, at, y, yaw, size } 是一把掉在地上的刀劍（原本的顏色）
      souls  靈魂（發光的狗頭）：[{ at: [x, y, z], yaw, scale, seed }]
-     rays   光芒：{ at: [fx, fy], n, from, to, inner, width, color, alpha }（或好幾道的陣列），畫在角色底下
+     rays   光芒：{ at: [fx, fy], n, from, to, inner, width, color, alpha, front }（或好幾道的陣列），畫在角色底下、
+            剪影後面；front 的畫在剪影前面
      speedLines  速度線：{ angle, rows, band, len, width, seed }，畫在角色底下
      puffs  霧與塵：[{ x, y, r, color, alpha, n, seed }]，大團、沒有墨線，畫在最上層
      focusLines  集中線（緊張的格子）：true，或 { n, clear, width, seed }——幾條、中間留多大的空白
@@ -419,5 +420,62 @@ export const SHOTS = [
       { who: 'ghost', at: [6.8, -8.5], yaw: -0.6, y: 1.0, air: 0, face: 'glare', shadow: false },
     ],
     cam: { pos: [0, 2.2, 8.5], look: [0, 1.0, -2], fov: 42 },
+  },
+
+  /* ── 第 8 頁　水窖・戰後 ─────────────────────────────────────── */
+  {
+    // 最後一隻幽靈散成霧：中景。主角咬著刀剛砍完（左），最後一隻幽靈（右）淡得快看不見，叉叉眼，
+    // 身上一團一團的霧散開。
+    id: 'p8-1', size: [1800, 620], ink: 3.5,
+    horizon: 0.8,
+    bg: [
+      { piece: 'arcade', bays: 1, span: 3.0, pier: 0.9, legH: 2.8, depth: 1.0, ruin: 0.3, seed: 12, x: 0.5, y: 0.81, size: 0.62 },
+      { piece: 'column', r: 0.42, h: 4.4, seed: 22, x: 0.05, y: 0.81, size: 0.9 },
+      { piece: 'column', r: 0.42, h: 4.4, broken: 0.5, seed: 23, x: 0.93, y: 0.81, size: 0.5 },
+    ],
+    cast: [
+      { who: 'hero', at: [-0.9, 0], yaw: 1.1, move: { headYaw: -0.5, twist: -0.25, pitch: 0.08, tailPitch: 0.4, w: 1 }, face: 'proud', blade: 'knife' },
+      { who: 'ghost', at: [1.0, -0.2], y: 0.35, yaw: -1.3, air: 0, alpha: 0.22, tip: 0.35, face: 'ko', shadow: false },
+    ],
+    puffs: [
+      { x: 0.66, y: 0.42, r: 0.11, alpha: 0.7, seed: 3 },
+      { x: 0.78, y: 0.3, r: 0.08, alpha: 0.6, seed: 5 },
+      { x: 0.72, y: 0.62, r: 0.07, alpha: 0.6, seed: 9 },
+    ],
+    cam: { pos: [0.1, 1.0, 5.2], look: [0.1, 0.7, 0], fov: 32 },
+  },
+  {
+    // 霧往南邊的鐵閘飄：遠景。拱門裡放下來的鐵閘，閘後透出冷光（光芒），幾團霧往閘飄過去。
+    id: 'p8-2', size: [900, 720], ink: 3.5,
+    horizon: 0.78,
+    rays: { at: [0.5, 0.62], n: 18, from: Math.PI, to: Math.PI * 2, inner: 0.05, width: 0.45, color: '#d7ecf8', alpha: 0.95 },
+    bg: [{ piece: 'gateway', span: 3.0, rise: 2.4, h: 5.6, side: 4, lift: 0, x: 0.5, y: 0.8, size: 0.8 }],
+    puffs: [
+      { x: 0.26, y: 0.66, r: 0.07, alpha: 0.7, seed: 3 },
+      { x: 0.4, y: 0.6, r: 0.055, alpha: 0.6, seed: 5 },
+      { x: 0.14, y: 0.74, r: 0.09, alpha: 0.7, seed: 7 },
+    ],
+    cast: [{ who: 'ghost', at: [0, -6], y: 0.2, yaw: Math.PI, air: 0, alpha: 0.15, shadow: false }],
+    cam: { pos: [-1.5, 1.6, 4], look: [0.2, 1.2, -6], fov: 40 },
+  },
+  {
+    // 牠們是從那裡來的。：主角的臉的近景，瞇眼盯著畫面外的鐵閘，閘後的冷光從那一側照過來。
+    id: 'p8-3', size: [1150, 720], ink: 4.5,
+    rays: { at: [1.1, 0.4], n: 14, from: Math.PI * 0.75, to: Math.PI * 1.25, inner: 0.3, width: 0.5, color: '#d7ecf8', alpha: 0.9 },
+    cast: [{ who: 'hero', at: [0, 0], yaw: 0.9, move: { headPitch: -0.05, tailPitch: 0.3, w: 1 }, face: 'proud', eyes: { lift: 0.3 } }],
+    cam: { focus: 'hero', yaw: 0.35, pitch: 0.0, dist: 1.2, fov: 32, frame: [-0.16, 0.2] },
+    light: [6, 3, 2],
+  },
+  {
+    // 去查清楚。：背影。主角往鐵閘走去，鐵閘在畫面正前方，閘後透出冷光。
+    id: 'p8-4', size: [1800, 720], ink: 3.5,
+    horizon: 0.74,
+    rays: { at: [0.58, 0.55], n: 22, from: Math.PI * 0.95, to: Math.PI * 2.05, inner: 0.06, width: 0.45, color: '#d7ecf8', alpha: 0.95 },
+    bg: [
+      { piece: 'gateway', span: 3.0, rise: 2.4, h: 5.6, side: 5, lift: 0, x: 0.58, y: 0.76, size: 0.7 },
+      { piece: 'column', r: 0.42, h: 4.4, seed: 22, x: 0.08, y: 0.76, size: 0.66 },
+    ],
+    cast: [{ who: 'hero', at: [0, 0], yaw: Math.PI + 0.1, speed: 1.6, frames: 52, blade: 'knife' }],
+    cam: { focus: 'hero', yaw: 0.35, pitch: 0.12, dist: 2.6, fov: 36, frame: [-0.2, 0.08] },
   },
 ];

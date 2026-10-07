@@ -58,10 +58,10 @@ export const PAGES = [
     { note: '摔在水窖地上，幽靈從拱廊後面浮出來', src: 'comic/p7-4.png', focus: '50% 55%' },
   ] },
   { title: '圓塔水窖', panels: [
-    { note: '最後一隻幽靈散成霧' },
-    { note: '霧往南邊的鐵閘飄，鐵閘後面透出冷光' },
-    { note: '主角盯著那扇鐵閘', say: '牠們是從那裡來的。' },
-    { note: '主角走向鐵閘', say: '去查清楚。' },
+    { note: '最後一隻幽靈散成霧', src: 'comic/p8-1.png', focus: '50% 45%' },
+    { note: '霧往南邊的鐵閘飄，鐵閘後面透出冷光', src: 'comic/p8-2.png', focus: '45% 55%' },
+    { note: '主角盯著那扇鐵閘', say: '牠們是從那裡來的。', src: 'comic/p8-3.png', focus: '35% 65%' },
+    { note: '主角走向鐵閘', say: '去查清楚。', src: 'comic/p8-4.png', capAt: 'bottom', focus: '40% 50%' },
   ] },
   { title: '地下墓室', panels: [
     { note: '鐵閘升起，主角走進去' },
