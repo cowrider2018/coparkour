@@ -39,6 +39,7 @@
 import * as THREE from '/test/vendor/three.module.js';
 import { loadZoo, Critter, LIGHT_DIR } from '/test/src/critter.js';
 import { Crown } from '/test/src/crown.js';
+import { Blade } from '/test/src/blade.js';
 import { INK, KEY_POS, U_KEYDIR } from '/test/src/palette.js';
 import * as shadowLight from '/test/src/light/shadow.js';
 import { Driver, Sway } from '/src/cat/pose.js';
@@ -116,7 +117,17 @@ for (const [who, r] of Object.entries(ROLES)) {
   shadow.rotation.x = -Math.PI / 2;
   shadow.scale.set(1, 1.6, 1);
   scene.add(wrap, shadow);
-  actors[who] = { c, crown, wrap, shadow, height: r.height };
+  actors[who] = { c, crown, wrap, shadow, height: r.height, blades: {} };
+}
+
+/** 這一隻嘴裡咬著哪一把（blade.js 的 SWORDS：knife、knight、king），null 是空手。第一次用到才做。 */
+function arm(a, kind) {
+  for (const b of Object.values(a.blades)) b.node.visible = false;
+  if (!kind) return null;
+  const b = a.blades[kind] ??= new Blade(kind);
+  b.follow(a.c);
+  b.node.visible = true;
+  return b;
 }
 
 /* ── 剪影的道具 ──────────────────────────────────────────────────
@@ -252,6 +263,7 @@ function pose(a, spec, cam) {
   const viewYaw = camYawFrom(cam, x, z);
   for (let i = 0; i < 45; i++) c.update(1 / 60, { speed: 0, grounded: true, vy: 0, viewYaw, move: spec.move });
   if (crown) crown.update();
+  arm(a, spec.blade)?.update();
   // 往牠自己的 +X 側倒：支點在那一側的身體外緣（大約半個身寬）。
   const tip = spec.tip || 0, half = 0.28 * a.height;
   _side.set(Math.cos(spec.yaw), 0, -Math.sin(spec.yaw));
