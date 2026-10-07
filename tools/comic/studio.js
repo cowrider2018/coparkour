@@ -25,6 +25,10 @@
    ── 剪影：背景與道具 ──────────────────────────────────────────
    背景與道具是素色的剪影：一個顏色、不分階、沒有墨線，越遠越淡（見下面 SIL）。
 
+   ── 集中線 ────────────────────────────────────────────────────
+   緊張的格子（focusLines）在紙上畫一圈往臉收的墨線：一條一條細長的楔形，外粗內尖，中間留一圈
+   空白給臉。畫在角色與剪影底下（先畫線、再把拍好的圖疊上去）。亂數有固定的種子，重拍一樣。
+
    ── 投影的深度圖 ───────────────────────────────────────────────
    毛皮與王冠的著色器宣告了接收投影的 sampler2DShadow（light/shadow.js）。沒有綁一張設了
    比較模式的深度圖，ANGLE 會整個 draw 不畫——畫面是一片墨色（戰鬥場的地面當初就是這樣
@@ -402,6 +406,41 @@ function pose(a, spec, cam) {
   shadow.rotation.z = -spec.yaw;
 }
 
+/** 固定種子的亂數（mulberry32）：集中線每次重拍都一樣。 */
+function rng(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * 集中線：從畫面外往 (cx, cy) 收的 n 條楔形，內端尖、落在 clear × h 外面（每條長短不一），
+ * 外端寬 width × h 上下。線本身就是「線」，沒有邊。
+ */
+function focusLines(g, w, h, cx, cy, { n = 110, clear = 0.42, width = 0.012, seed = 7 } = {}) {
+  const rand = rng(seed);
+  const R = Math.hypot(Math.max(cx, w - cx), Math.max(cy, h - cy)) + 4;
+  g.save();
+  g.fillStyle = `#${INK.toString(16).padStart(6, '0')}`;
+  for (let i = 0; i < n; i++) {
+    const a = (i + rand() * 0.8) / n * Math.PI * 2;
+    const r0 = clear * h * (0.9 + rand() * rand() * 0.9);
+    const half = width * h * (0.25 + rand() ** 2 * 1.2) / 2;
+    const ux = Math.cos(a), uy = Math.sin(a);
+    g.beginPath();
+    g.moveTo(cx + ux * r0, cy + uy * r0);
+    g.lineTo(cx + ux * R - uy * half, cy + uy * R + ux * half);
+    g.lineTo(cx + ux * R + uy * half, cy + uy * R - ux * half);
+    g.closePath();
+    g.fill();
+  }
+  g.restore();
+}
+
 /** 拍好的那一張（網點之後）再畫上表情：一張 2D 畫布。 */
 const sheet = document.createElement('canvas');
 const sheetG = sheet.getContext('2d');
@@ -445,6 +484,12 @@ function render(id) {
   sheet.width = w;
   sheet.height = h;
   sheetG.clearRect(0, 0, w, h);
+  if (shot.focusLines) {
+    // 收向鏡頭對準的那張臉（cam.focus），沒有就是畫面正中間。
+    const [fx, fy] = shot.cam.frame || [0, 0];
+    const [cx, cy] = shot.cam.focus ? [(0.5 + fx) * w, (0.5 + fy) * h] : [w / 2, h / 2];
+    focusLines(sheetG, w, h, cx, cy, shot.focusLines === true ? {} : shot.focusLines);
+  }
   sheetG.drawImage(canvas, 0, 0);
   for (const [face, anchors, eyes] of faces) drawFace(sheetG, face, anchors, shot.ink, eyes);
   return sheet.toDataURL('image/png');

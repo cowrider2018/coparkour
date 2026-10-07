@@ -18,6 +18,8 @@
      props  背景與道具的剪影：{ shape, at: [x, z], yaw, scale, y, color, len }。shape 見 studio.js 的 SHAPES
             （throne、column、banner、tent、rack、wall、tower、flag、sun）。顏色照離鏡頭多遠自動褪向紙色，
             遠景要放得真的遠（幾十公尺）才讀得出遠；color 只給太陽那種不照距離的
+     focusLines  集中線（緊張的格子）：true，或 { n, clear, width, seed }——幾條、中間留多大的空白
+            （畫面高的幾倍）、外端多寬、亂數種子。收向 cam.focus 那張臉
      cam    鏡頭，兩種寫法：{ pos, look, fov }（世界座標），或 { focus: 'hero', yaw, pitch, dist, fov, frame }
             ——對準那一隻的臉，從臉往 yaw 方位、pitch 仰角（負的是從下往上拍）退 dist 公尺；frame [fx, fy]
             是臉落在畫面上哪裡（從正中間算，寬高的幾分之幾，+y 往下）。特寫用後面那一種。
