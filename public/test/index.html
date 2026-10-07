@@ -331,23 +331,29 @@
     margin: 0; flex: 0 0 auto;
     font-size: clamp(15px, 3.6vmin, 30px); font-weight: 700; letter-spacing: .3em;
   }
+  /* 分格的版面照格數（story.js 寫在 data-n）。橫向：三格是左大右兩小、四格一寬兩窄再一寬、
+     五格上兩下三；直向：三格疊三層、四格上寬中兩格下寬、五格上寬再兩層各兩格。 */
   #story .panels {
     flex: 1 1 auto; min-height: 0;
     display: grid; gap: 1.6vmin;
     grid-template-columns: 1.3fr 1fr 1fr; grid-template-rows: 1fr 1fr;
     grid-template-areas: "a a b" "c d d";
   }
+  #story .panels[data-n="3"] { grid-template-columns: 1.5fr 1fr; grid-template-areas: "a b" "a c"; }
+  #story .panels[data-n="5"] { grid-template-columns: repeat(6, 1fr); grid-template-areas: "a a a b b b" "c c d d e e"; }
   body.pad-port #story .panels {
     grid-template-columns: 1fr 1fr; grid-template-rows: 1.1fr 1fr 1.1fr;
     grid-template-areas: "a a" "b c" "d d";
   }
+  body.pad-port #story .panels[data-n="3"] { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr 1fr; grid-template-areas: "a" "b" "c"; }
+  body.pad-port #story .panels[data-n="5"] { grid-template-rows: 1.2fr 1fr 1fr; grid-template-areas: "a a" "b c" "d e"; }
   #story .panel-cell {
     position: relative; min-width: 0; min-height: 0; overflow: hidden;
     border: max(2px, .45vmin) solid var(--ink-page);
     background: #f7eedb;
     opacity: 0; transform: translateY(1.2vmin) scale(.985);
   }
-  #story.shown .panel-cell {
+  #story .page.shown .panel-cell {
     transition: opacity .35s ease-out var(--delay), transform .45s var(--ease-out) var(--delay);
     opacity: 1; transform: none;
   }
@@ -358,7 +364,13 @@
     background-image: repeating-linear-gradient(135deg, rgba(43, 35, 32, .07) 0 1px, transparent 1px 9px);
   }
   #story .panel-cell.todo b { font-size: clamp(12px, 2.6vmin, 22px); letter-spacing: .2em; }
-  #story .panel-cell.todo span { font-size: clamp(10px, 1.8vmin, 15px); opacity: .55; letter-spacing: .15em; }
+  #story .panel-cell.todo span { font-size: clamp(10px, 1.8vmin, 15px); opacity: .55; letter-spacing: .15em;
+    max-width: 88%; text-align: center; }
+  /* 格子裡的字（旁白／心聲／對白）：佔位上先寫出來，排版的時候看得到這一格要放多少字。 */
+  #story .panel-cell.todo q { font-size: clamp(11px, 2vmin, 17px); font-weight: 600; letter-spacing: .1em;
+    max-width: 88%; text-align: center; margin-top: .8vmin; quotes: "「" "」"; }
+  #story .panel-cell.todo q.narr { quotes: none; border: 1px solid var(--ink-page); padding: .4vmin 1.2vmin; background: #fbf5e6; }
+  #story .panel-cell.todo small { font-size: clamp(9px, 1.5vmin, 13px); opacity: .6; letter-spacing: .15em; margin-top: .8vmin; }
   #story .folio {
     flex: 0 0 auto; text-align: center;
     font-size: clamp(10px, 1.8vmin, 14px); letter-spacing: .3em; opacity: .5;
@@ -368,7 +380,7 @@
     font-size: clamp(11px, 2vmin, 16px); letter-spacing: .2em;
     opacity: 0; transition: opacity .3s ease-out;
   }
-  #story.ready .next { opacity: .75; animation: story-next 1.6s ease-in-out .3s infinite; }
+  #story .page.ready .next { opacity: .75; animation: story-next 1.6s ease-in-out .3s infinite; }
   @keyframes story-next { 50% { opacity: .3; } }
 
   #boot {

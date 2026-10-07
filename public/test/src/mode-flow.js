@@ -6,10 +6,12 @@
    （開打、關門、打完開門、倒下、重玩），不設計關卡。
 
    ── 一場的一生 ──────────────────────────────────────────────────
-     走進第 k 場的範圍   所有的門關上、所有的傳送不通；一秒後怪物出現。
+     一開始（含 R）      兵營開場那一頁漫畫（comic.js 的 SCRIPT.start）。
+     走進第 k 場的範圍   所有的門關上、所有的傳送不通。這一場有開場頁、這一輪還沒翻過的話，
+                         書頁直接進來（不放慢動作）；書頁走了一秒後怪物出現。
      打死全部            這一場清完：只開通往下一場的門（route.js 的 OPEN）。斬殺的那一刻起
                          演一段劇情（story.js）：慢動作，一大張書頁跑進來蓋住畫面，上面是
-                         一頁漫畫；點一下（或按跳）書頁跑走，接著玩。
+                         戰後那一頁漫畫；點一下（或按跳）翻頁、最後一頁書頁跑走，接著玩。
      挨打                扣血（頭頂的愛心，fight.js）。BOSS 死掉掉出的靈魂撿起來
                          最大血量 +1，一路帶到後面的場。
      不在戰鬥中          清完一場之後、還沒走進下一場之前：很快回血到最大血量
@@ -41,6 +43,7 @@ import { makeHero, steerHero, moveHero } from './hero.js';
 import { Transit } from './transit.js';
 import { Death } from './death.js';
 import { Story } from './story.js';
+import { SCRIPT, pagesOf } from './comic.js';
 import { Fight, DEATH_TEXT } from './fight.js';
 import { Sound } from './sound.js';
 import { Music } from './music.js';
@@ -94,7 +97,7 @@ const death = new Death(scene, zoo, {
   fade: document.getElementById('fade'), view: canvas, words: document.getElementById('dream'),
 });
 
-/** 清完一場之後的那一段：慢動作、書頁、漫畫（story.js）。 */
+/** 場與場之間的漫畫：書頁、翻頁、戰後的慢動作（story.js），翻哪幾頁照 comic.js。 */
 const story = new Story(document.getElementById('story'));
 
 /* ── 路線 ────────────────────────────────────────────────────────
@@ -102,6 +105,8 @@ const story = new Story(document.getElementById('story'));
    `spawnIn` 是開打之後離怪物出現還有幾秒（0 = 已經出現或沒在打）。 */
 let run = makeRun();
 let spawnIn = 0;
+/** 這一輪翻過開場頁的那幾場：倒下之後走回去重打不再翻。 */
+let opened = new Set();
 /** 倒下幾次（這一輪）。 */
 let deaths = 0;
 /** 怪物出現前的那一下：門關上、人站穩，再讓牠出來。 */
@@ -136,22 +141,33 @@ function startFrom(k) {
   story.cancel();
   run = makeRun(k);
   spawnIn = 0;
+  opened = new Set();
   deaths = 0;
   resetLife(player);
   fight.lineup([], fieldOf('wallwalk'));
   fight.reset();                          // 地上沒撿的靈魂一起清掉
   applyDoors();
   place(k === 0 ? { ...ruins.arrivals[START] } : restAt(k, ruins));
-  hud.flash(k === 0 ? `從頭開始：${STAGES[0].name}` : `從第 ${k + 1} 場開始：${STAGES[k].name}`);
+  const say = k === 0 ? `從頭開始：${STAGES[0].name}` : `從第 ${k + 1} 場開始：${STAGES[k].name}`;
+  if (k === 0) story.start(pagesOf(SCRIPT.start), { then: () => hud.flash(say) });
+  else hud.flash(say);
   hud.paint({ block: STAGES[k].id });
 }
 
-/** 走進了下一場：關門、斷傳送，怪物等一下出現。 */
+/**
+ * 走進了下一場：關門、斷傳送，怪物等一下出現。有開場頁的話先翻（這一輪第一次進來才翻），
+ * 怪物等書頁走了才開始倒數（見主迴圈）。
+ */
 function engage() {
+  const k = run.next;
   run.active = true;
   spawnIn = SPAWN_DELAY;
   applyDoors();
-  hud.flash(`第 ${run.next + 1} 場：${stageName(run.next)}`);
+  const say = () => hud.flash(`第 ${k + 1} 場：${stageName(k)}`);
+  if (SCRIPT.open[k] && !opened.has(k)) {
+    opened.add(k);
+    story.start(pagesOf(SCRIPT.open[k]), { then: say });
+  } else say();
 }
 
 /**
@@ -166,8 +182,10 @@ function clear() {
   const k = run.next - 1;
   // 墓室打完不走回去：書頁蓋住的時候直接送到下一場的休息點（route.js 的 warp）。
   const warpTo = STAGES[k].warp && !done ? () => place(restAt(run.next, ruins)) : null;
-  story.start(k, STAGES[k].name, () => hud.flash(done ? '六場全部打完——門全開了'
-    : `這一場清完了。下一場：${stageName(run.next)}`), warpTo);
+  story.start(pagesOf(SCRIPT.after[k]), {
+    slow: true, cover: warpTo,
+    then: () => hud.flash(done ? '六場全部打完——門全開了' : `這一場清完了。下一場：${stageName(run.next)}`),
+  });
   if (!done) hud.paint({ block: STAGES[run.next].id });
 }
 
@@ -231,7 +249,8 @@ let clock = last;
 let fpsAcc = 0, fpsN = 0, hudAcc = 0;
 
 function frame(now) {
-  const real = Math.min(0.05, (now - last) / 1000);
+  // 第一幀的時間戳可能比 `last`（載入完的那一刻）早：夾在 0 以上，不然劇情的鐘會倒退。
+  const real = Math.max(0, Math.min(0.05, (now - last) / 1000));
   last = now;
   pad.update(real);
 
@@ -272,7 +291,7 @@ function frame(now) {
 
   // 路線：走進下一場就開打；怪物等一下出現；全部打死就清完。
   if (!run.active && run.next < STAGES.length && inStage(run.next, player.block, player.x, player.y, player.z)) engage();
-  if (run.active && spawnIn > 0) {
+  if (run.active && spawnIn > 0 && !story.on) {
     spawnIn -= dt;
     if (spawnIn <= 0) {
       spawnIn = 0;

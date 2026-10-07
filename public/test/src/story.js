@@ -1,47 +1,46 @@
 /* ── test/src/story.js ───────────────────────────────────────────────
-   關卡與關卡之間的劇情（完整流程模式，mode-flow.js）：斬殺最後一隻怪物的那一刻
-   起，慢動作一小段，一大張書頁從右邊跑進畫面把它整個蓋住，書頁上是一頁漫畫；
-   點一下（或按跳）書頁往左邊跑走，遊戲接著玩。
+   場與場之間的劇情（完整流程模式，mode-flow.js）：一大張書頁從右邊跑進畫面把它
+   整個蓋住，書頁上是一頁漫畫；點一下（或按跳）翻到下一頁，最後一頁再點一下書頁
+   往左邊跑走，遊戲接著玩。翻哪幾頁、什麼時候翻是 comic.js 的 SCRIPT。
 
    ── 一次劇情 ────────────────────────────────────────────────────
-     慢動作   STORY.slow 秒（真實時間）。世界的時間乘上 STORY.scale：最後那一下的
-              擊退、血、靈魂掉出來都慢慢地走。操作收起來（身體照慣性停下）。
-     書頁進來 STORY.enter 秒。世界還是慢動作，書頁從右邊斜著滑進來，越來越慢，
-              停下來的時候是正的、四邊都超出畫面。
+     慢動作   只有戰後頁有（`slow`）：STORY.slow 秒（真實時間），世界的時間乘上
+              STORY.scale——最後那一下的擊退、血、靈魂掉出來都慢慢地走。開場頁沒有
+              這一段，書頁直接進來。操作收起來（身體照慣性停下）。
+     書頁進來 STORY.enter 秒，書頁從右邊斜著滑進來，越來越慢，停下來的時候是正的、
+              四邊都超出畫面。世界照常走（戰後頁還是慢動作）。
      蓋住     世界停住（scale 0、模式整幀不算也不畫——反正看不到）。分格一格一格
-              浮出來；STORY.ready 秒之後才收按鍵——在那之前按的（打怪的時候一直在
-              按跳）都不算，不然最後一刀的那一下跳就把漫畫跳過了。
-     書頁離開 點一下（或按跳）：STORY.leave 秒往左邊滑走、越走越快。世界一開始走就
-              是正常速度，操作也還回來了——跟 transit.js 亮回來那一段一樣，書頁走到
-              一半就想走是對的。走完之後 `then`（模式要浮的那一行字）。
+              浮出來。第一頁 STORY.ready 秒之後才收按鍵——在那之前按的（打怪的時候
+              一直在按跳）都不算，不然最後一刀的那一下跳就把漫畫跳過了；後面幾頁是
+              STORY.readyNext 秒（翻頁的時候手已經停了，只防連按兩下翻過一頁）。
+     翻頁     不是最後一頁：STORY.turn 秒，這一頁往左邊翻走，底下已經是下一頁。
+     書頁離開 最後一頁：STORY.leave 秒往左邊滑走、越走越快。世界一開始走就是正常
+              速度，操作也還回來了——跟 transit.js 亮回來那一段一樣，書頁走到一半就
+              想走是對的。走完之後 `then`。
+
+   書頁是兩張輪流用的 .page：在上面的那一張是這一頁，翻頁的時候下一頁先畫在底下那一張，
+   上面那一張翻走之後兩張對調。
 
    ── 漫畫 ────────────────────────────────────────────────────────
-   COMICS 照場次排：第 k 場打完放第 k 頁。每一格是 { src }（圖）或 { note }（還沒畫，
-   放佔位：格號與這一格要畫什麼）。現在全部是佔位；漫畫畫好了，把 src 填進去就好，
-   版面（index.html 的 #story，照直向／橫向各一套）不用動。
+   每一頁 { title, folio, panels }（comic.js 的 pagesOf）。每一格是 { src }（圖）或
+   { note, say }（還沒畫，放佔位：格號、這一格要畫什麼、格子裡的字）。版面照格數
+   （3～5 格）與直向／橫向各一套，在 index.html 的 #story。
 
    `el` 給 null 也跑得動（node 裡驗時間軸用）。
    ------------------------------------------------------------------ */
 
-/** 慢動作幾秒、慢成幾倍、書頁進來幾秒、蓋住之後幾秒才收按鍵、書頁離開幾秒（全部是真實時間）。 */
-export const STORY = { slow: 1.1, scale: 0.15, enter: 0.7, ready: 0.9, leave: 0.6 };
+/**
+ * 慢動作幾秒、慢成幾倍、書頁進來幾秒、蓋住之後第一頁／後面幾頁幾秒才收按鍵、翻一頁幾秒、
+ * 書頁離開幾秒（全部是真實時間）。
+ */
+export const STORY = { slow: 1.1, scale: 0.15, enter: 0.7, ready: 0.9, readyNext: 0.35, turn: 0.55, leave: 0.6 };
 
 /** 分格一格一格浮出來，每一格比前一格晚幾秒。 */
 const STAGGER = 0.12;
 
-/** 還沒畫的一格：只有佔位。 */
-const TODO = { note: '' };
-
-/**
- * 每一場打完的那一頁的分格，照場次排（跟 route.js 的 STAGES 一樣長；少了的那幾場用 FALLBACK）。
- * 現在全部是佔位。版面是四格（styles 在 index.html 的 #story：橫向一寬兩窄再一寬，
- * 直向上寬、中間兩格、下寬），第 i 格放進 grid-area 'abcd'[i]。
- */
-export const COMICS = Array.from({ length: 6 }, () => ({ panels: [TODO, TODO, TODO, TODO] }));
-const FALLBACK = { panels: [TODO, TODO, TODO, TODO] };
-
 const easeOut = (u) => 1 - (1 - u) ** 3;
 const easeIn = (u) => u * u * u;
+const clamp01 = (u) => Math.min(1, Math.max(0, u));
 
 export class Story {
   /** @param {HTMLElement | null} el 整張書頁的容器（#story） */
@@ -49,45 +48,71 @@ export class Story {
     this.el = el;
     /** 這一次劇情開始之後幾秒（真實時間）；-1 = 沒在演。 */
     this.t = -1;
+    this.pages = [];
+    /** 現在是第幾頁（pages 的索引）。 */
+    this.i = 0;
+    /** 這一頁蓋住（或翻到）之後幾秒。 */
+    this.since = 0;
+    /** 翻頁開始之後幾秒；-1 = 沒在翻。 */
+    this.turn = -1;
     /** 書頁開始離開之後幾秒；-1 = 還沒離開。 */
     this.out = -1;
+    this.slow = false;
     this.then = null;
     this.cover = null;
     /** 點了書頁（DOM 的 click 沒辦法等到下一幀才發生，先記著）。 */
     this._tapped = false;
     if (el) {
-      el.innerHTML = '<div class="page"><div class="sheet"><h3 class="title"></h3>'
-        + '<div class="panels"></div><div class="folio"></div><div class="next">點一下或按跳繼續</div></div></div>';
-      this.page = el.querySelector('.page');
+      const page = '<div class="page"><div class="sheet"><h3 class="title"></h3>'
+        + '<div class="panels"></div><div class="folio"></div><div class="next"></div></div></div>';
+      el.innerHTML = page + page;
+      /** [上面那一張, 底下那一張]。 */
+      this.sheets = [...el.querySelectorAll('.page')];
       el.addEventListener('pointerdown', (e) => { e.preventDefault(); this._tapped = true; });
     }
     this._paint();
   }
 
-  /** 慢動作、書頁進來、蓋住的時候：操作收起來。書頁一開始離開就還回來。 */
+  /** 在演（從開始到書頁走完）。 */
+  get on() { return this.t >= 0; }
+
+  /** 慢動作、書頁進來、蓋住、翻頁的時候：操作收起來。書頁一開始離開就還回來。 */
   get busy() { return this.t >= 0 && this.out < 0; }
 
+  /** 書頁從開始到整個蓋住要幾秒（戰後頁多一段慢動作）。 */
+  get _lead() { return (this.slow ? STORY.slow : 0) + STORY.enter; }
+
   /** 書頁整個蓋住畫面（世界停住，不用算也不用畫）。 */
-  get covered() { return this.t >= STORY.slow + STORY.enter && this.out < 0; }
+  get covered() { return this.t >= this._lead && this.out < 0; }
 
   /**
-   * 第 k 場（名字是 `name`）打完：開始演。`then` 在書頁走完的時候叫（模式拿來浮字——書頁還在的時候浮
-   * 的字被蓋住了，看不到）。`cover` 在書頁剛好整個蓋住的那一幀叫一次（模式拿來把人送走——
-   * 那一跳落在書頁底下，看不到）。
+   * 開始翻 `pages`（comic.js 的 pagesOf）。
+   *   slow   先慢動作再進來（戰後頁）；否則書頁直接進來（開場頁）。
+   *   then   書頁走完的時候叫（模式拿來浮字、讓怪物出來——書頁還在的時候都看不到）。
+   *   cover  書頁剛好整個蓋住的那一幀叫一次（模式拿來把人送走——那一跳落在書頁底下）。
    */
-  start(k, name, then = null, cover = null) {
+  start(pages, { slow = false, then = null, cover = null } = {}) {
     this.t = 0;
+    this.pages = pages;
+    this.i = 0;
+    this.since = 0;
+    this.turn = -1;
     this.out = -1;
+    this.slow = slow;
     this.then = then;
     this.cover = cover;
     this._tapped = false;
-    if (this.el) this._fill(COMICS[k] || FALLBACK, k, name);
+    if (this.el) {
+      this._fill(this.sheets[0], 0);
+      this.sheets[1].style.visibility = 'hidden';
+    }
     this._paint();
   }
 
-  /** 不演了（重玩、從第幾場開始、倒下）：書頁直接收掉，`then` 不叫。 */
+  /** 不演了（重玩、從第幾場開始、倒下）：書頁直接收掉，`then`、`cover` 都不叫。 */
   cancel() {
     this.t = -1;
+    this.turn = -1;
     this.out = -1;
     this.then = null;
     this.cover = null;
@@ -121,24 +146,52 @@ export class Story {
       this.cover = null;
       cover();
     }
-    if ((pressed || tapped) && this.t >= STORY.slow + STORY.enter + STORY.ready) this.out = 0;
+    if (this.turn >= 0) {
+      this.turn += real;
+      if (this.turn >= STORY.turn) this._turned();
+    } else if (this.covered) {
+      this.since += real;
+      const wait = this.i === 0 ? STORY.ready : STORY.readyNext;
+      if ((pressed || tapped) && this.since >= wait) {
+        if (this.i + 1 < this.pages.length) this._turn();
+        else this.out = 0;
+      }
+    }
     this._paint();
     if (this.out >= 0) return 1;
-    return this.covered ? 0 : STORY.scale;
+    if (this.covered) return 0;
+    return this.slow ? STORY.scale : 1;
   }
 
-  /** 換成第 k 場那一頁：標題、分格、頁碼。分格浮出來的動畫由 CSS 管（蓋住、.shown 加上去的時候開始）。 */
-  _fill(comic, k, name) {
-    const sheet = this.el.querySelector('.sheet');
-    sheet.querySelector('.title').textContent = `第 ${k + 1} 場・${name}`;
-    sheet.querySelector('.folio').textContent = `— ${k + 1} —`;
-    const box = sheet.querySelector('.panels');
+  /** 開始翻到下一頁：下一頁先畫在底下那一張。 */
+  _turn() {
+    this.turn = 0;
+    if (this.el) this._fill(this.sheets[1], this.i + 1);
+  }
+
+  /** 翻完：底下那一張變成這一頁。 */
+  _turned() {
+    this.turn = -1;
+    this.i++;
+    this.since = 0;
+    if (this.el) this.sheets.reverse();
+  }
+
+  /** 把第 i 頁畫進 `page`：標題、分格、頁碼、提示。分格浮出來由 CSS 管（.shown 加上去的時候開始）。 */
+  _fill(page, i) {
+    const comic = this.pages[i];
+    page.classList.remove('shown', 'ready');
+    page.querySelector('.title').textContent = comic.title;
+    page.querySelector('.folio').textContent = `— ${comic.folio} —`;
+    page.querySelector('.next').textContent = i + 1 < this.pages.length ? '點一下或按跳翻頁' : '點一下或按跳繼續';
+    const box = page.querySelector('.panels');
+    box.dataset.n = comic.panels.length;
     box.textContent = '';
-    comic.panels.forEach((p, i) => {
+    comic.panels.forEach((p, k) => {
       const cell = document.createElement('div');
       cell.className = 'panel-cell';
-      cell.style.gridArea = 'abcdefgh'[i];
-      cell.style.setProperty('--delay', `${(i * STAGGER).toFixed(2)}s`);
+      cell.style.gridArea = 'abcdefgh'[k];
+      cell.style.setProperty('--delay', `${(k * STAGGER).toFixed(2)}s`);
       if (p.src) {
         const img = document.createElement('img');
         img.src = p.src;
@@ -147,10 +200,23 @@ export class Story {
       } else {
         cell.classList.add('todo');
         const n = document.createElement('b');
-        n.textContent = `分格 ${i + 1}`;
+        n.textContent = `分格 ${k + 1}`;
         const s = document.createElement('span');
         s.textContent = p.note ? `待繪：${p.note}` : '待繪';
         cell.append(n, s);
+        // 字：「誰：說什麼」。旁白放進方框；有人名的（對白）人名另起一行；沒有的是心聲。
+        if (p.say) {
+          const [, who, words] = /^(?:(.+?)：)?(.+)$/.exec(p.say);
+          if (who && who !== '旁白') {
+            const w = document.createElement('small');
+            w.textContent = who;
+            cell.append(w);
+          }
+          const q = document.createElement('q');
+          if (who === '旁白') q.className = 'narr';
+          q.textContent = words;
+          cell.append(q);
+        }
       }
       box.append(cell);
     });
@@ -160,18 +226,27 @@ export class Story {
     if (!this.el) return;
     const on = this.t >= 0;
     this.el.classList.toggle('on', on);
+    const [top, under] = this.sheets;
     // 分格照劇情的時間浮出來（不是照 CSS 自己的鐘：卡頓的時候兩個鐘會差開）。
-    this.el.classList.toggle('shown', on && (this.out >= 0 || this.t >= STORY.slow + STORY.enter));
-    this.el.classList.toggle('ready', on && this.out < 0 && this.t >= STORY.slow + STORY.enter + STORY.ready);
-    // 書頁：進來是從右邊斜著滑進來、越來越慢；離開是往左邊滑走、越來越快，一邊再斜回去。
+    top.classList.toggle('shown', on && (this.out >= 0 || this.covered));
+    top.classList.toggle('ready', on && this.out < 0 && this.turn < 0 && this.covered
+      && this.since >= (this.i === 0 ? STORY.ready : STORY.readyNext));
+    // 上面那一張：進來是從右邊斜著滑進來、越來越慢；翻走與離開是往左邊滑走、越來越快，一邊再斜回去。
     let x = 130, rot = 9;
-    if (this.out >= 0) {
-      const u = easeIn(Math.min(1, this.out / STORY.leave));
+    if (this.out >= 0 || this.turn >= 0) {
+      const u = easeIn(clamp01(this.out >= 0 ? this.out / STORY.leave : this.turn / STORY.turn));
       x = -135 * u; rot = -7 * u;
     } else if (on) {
-      const u = easeOut(Math.min(1, Math.max(0, (this.t - STORY.slow) / STORY.enter)));
+      const u = easeOut(clamp01((this.t - (this.slow ? STORY.slow : 0)) / STORY.enter));
       x = 130 * (1 - u); rot = 9 * (1 - u);
     }
-    this.page.style.transform = `translateX(${x.toFixed(2)}vw) rotate(${rot.toFixed(2)}deg)`;
+    top.style.transform = `translateX(${x.toFixed(2)}vw) rotate(${rot.toFixed(2)}deg)`;
+    top.style.zIndex = '2';
+    top.style.visibility = '';
+    // 底下那一張：翻頁的時候已經擺正在原位，分格跟著浮出來；其他時候藏起來。
+    under.style.zIndex = '1';
+    under.style.transform = 'none';
+    under.style.visibility = this.turn >= 0 ? '' : 'hidden';
+    under.classList.toggle('shown', this.turn >= 0);
   }
 }
