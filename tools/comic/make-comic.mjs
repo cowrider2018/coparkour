@@ -1,13 +1,15 @@
-/* ── tools/make-comic.mjs ────────────────────────────────────────────
-   把漫畫的每一格拍成圖：public/test/comic/<id>.png（id 是 public/test/src/shots.js 那一格）。
+/* ── tools/comic/make-comic.mjs ──────────────────────────────────────
+   把漫畫的每一格拍成圖：public/test/comic/<id>.png（id 是 shots.js 那一格）。
 
-   拍照的是試玩場的攝影棚模式（/test/?mode=comic），也就是遊戲本身的渲染器——角色、
-   著色、墨線跟遊戲裡一模一樣。這台機器沒有 headless WebGL 給 node 用，所以開一個無頭
-   Chrome（軟體 GL：SwiftShader）來拍：這支起一個只供 public/ 的靜態伺服器，用 DevTools
-   協定叫頁面上的 window.comic.render(id)，把回來的 PNG 存檔。
+   拍照的是攝影棚（studio.html／studio.js，就在這個資料夾），它用的是遊戲本身的渲染器——
+   角色、著色、墨線跟遊戲裡一模一樣。這台機器沒有 headless WebGL 給 node 用，所以開一個
+   無頭 Chrome（軟體 GL：SwiftShader）來拍：這支起一個靜態伺服器，供 public/（遊戲的
+   模組與 cat.bin）以及這個資料夾（在 /studio/ 底下），用 DevTools 協定叫頁面上的
+   window.comic.render(id)，把回來的 PNG 存檔。攝影棚因此不在網站上、不會被部署。
 
-   跑法：node tools/make-comic.mjs [id …]      不給 id 就全部重拍
-   Chrome 不在預設位置的話：CHROME=/path/to/chrome node tools/make-comic.mjs
+   跑法：node tools/comic/make-comic.mjs [id …]   不給 id 就全部重拍
+         node tools/comic/make-comic.mjs --serve  只起伺服器，印出攝影棚的網址，用瀏覽器打開來看
+   Chrome 不在預設位置的話：CHROME=/path/to/chrome node tools/comic/make-comic.mjs
    ------------------------------------------------------------------ */
 
 import http from 'node:http';
@@ -17,9 +19,38 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
+/** 這個資料夾（攝影棚在這裡），與遊戲的 public/。 */
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(HERE, '..', '..', 'public');
 const OUT = path.join(ROOT, 'test', 'comic');
 const PORT = 9333;
+
+const TYPES = {
+  '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
+  '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.bin': 'application/octet-stream',
+  '.m4a': 'audio/mp4', '.mp3': 'audio/mpeg',
+};
+/* /studio/… 是這個資料夾（首頁是 studio.html），其餘的是 public/。 */
+const server = http.createServer((q, r) => {
+  let p = decodeURIComponent(new URL(q.url, 'http://x').pathname);
+  const studio = p === '/studio' || p.startsWith('/studio/');
+  const base = studio ? HERE : ROOT;
+  if (studio) p = p.slice('/studio'.length) || '/';
+  if (p.endsWith('/')) p += studio ? 'studio.html' : 'index.html';
+  const f = path.join(base, p);
+  if (!f.startsWith(base)) { r.writeHead(403); r.end(); return; }
+  fs.readFile(f, (e, d) => {
+    if (e) { r.writeHead(404); r.end(); return; }
+    r.writeHead(200, { 'content-type': TYPES[path.extname(f)] || 'application/octet-stream' });
+    r.end(d);
+  });
+}).listen(process.argv.includes('--serve') ? 8790 : 0);
+const site = `http://127.0.0.1:${server.address().port}`;
+
+if (process.argv.includes('--serve')) {
+  console.log(`攝影棚：${site}/studio/   （← → 換一格；Ctrl+C 結束）`);
+  await new Promise(() => {});
+}
 
 const CHROMES = [
   process.env.CHROME,
@@ -34,23 +65,6 @@ if (!chromePath) {
   process.exit(1);
 }
 
-const TYPES = {
-  '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
-  '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.bin': 'application/octet-stream',
-  '.m4a': 'audio/mp4', '.mp3': 'audio/mpeg',
-};
-const server = http.createServer((q, r) => {
-  let p = decodeURIComponent(new URL(q.url, 'http://x').pathname);
-  if (p.endsWith('/')) p += 'index.html';
-  const f = path.join(ROOT, p);
-  if (!f.startsWith(ROOT)) { r.writeHead(403); r.end(); return; }
-  fs.readFile(f, (e, d) => {
-    if (e) { r.writeHead(404); r.end(); return; }
-    r.writeHead(200, { 'content-type': TYPES[path.extname(f)] || 'application/octet-stream' });
-    r.end(d);
-  });
-}).listen(0);
-const site = `http://127.0.0.1:${server.address().port}`;
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'make-comic-'));
 const chrome = spawn(chromePath, [
@@ -102,7 +116,7 @@ const evaluate = async (expression) => {
 
 await send('Runtime.enable');
 await send('Page.enable');
-await send('Page.navigate', { url: `${site}/test/?mode=comic` });
+await send('Page.navigate', { url: `${site}/studio/` });
 let ids = null;
 for (let i = 0; i < 600 && !ids; i++) {
   ids = await evaluate('window.comic ? window.comic.ids : null').catch(() => null);

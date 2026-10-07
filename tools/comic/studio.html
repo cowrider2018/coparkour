@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>漫畫攝影棚</title>
+<!--
+  漫畫的攝影棚（studio.js）。不在網站上：由 make-comic.mjs 的伺服器供出來（/studio/），
+  它同時供 public/，所以 studio.js 可以直接 import 遊戲的 /test/src/…。
+
+  打開來看：node tools/comic/make-comic.mjs --serve，照它印的網址開。
+  畫面是紙色，上面是那一格拍出來的樣子（含表情）；← → 換一格。
+-->
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #efe3c6; }
+  /* WebGL 那一張只是拍照用的底片，看的是合成好（網點、表情）的那一張圖。 */
+  #view { position: fixed; inset: 0; width: 100%; height: 100%; visibility: hidden; }
+  #shot { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  #shot-label {
+    position: fixed; left: 12px; top: 10px;
+    color: rgb(43, 35, 32); font: 13px system-ui, "Noto Sans TC", sans-serif; letter-spacing: .1em;
+  }
+  #boot { position: fixed; inset: 0; display: grid; place-items: center; color: rgb(43, 35, 32); font: 14px system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="boot">正在佈置攝影棚…</div>
+<script type="module" src="./studio.js"></script>
+</body>
+</html>

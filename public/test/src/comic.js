@@ -4,7 +4,7 @@
 
    每一格是 { note, say, src?, memory? }：note 是這一格要畫什麼，say 是格子裡的字（旁白／
    心聲／對白，沒有字就省略）。還沒畫的格子是佔位：書頁上畫「分格 n、待繪：note」與 say。
-   畫好了的有 src（圖的網址，相對於 /test/）：圖是 tools/make-comic.mjs 照 shots.js 拍的，
+   畫好了的有 src（圖的網址，相對於 /test/）：圖是 tools/comic/ 的攝影棚照那裡的 shots.js 拍的，
    只有主體、背景透明，say 疊在圖上（心聲、對白預設在上面，capAt: 'bottom' 放下面）。圖鋪滿
    格子，格子比例跟圖不同的時候對準 focus（CSS 的 object-position，例如 '70% 40%'）裁。
    memory 是回憶的那幾格：暖色、柔邊，沒有格框。

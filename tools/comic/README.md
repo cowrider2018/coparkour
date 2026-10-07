@@ -1,11 +1,8 @@
----
-name: comic
-description: 畫完整流程模式（/test/?mode=flow）場與場之間的漫畫：照 STORY.md 的劇本一格一格擺 3D 角色、拍成圖、放進書頁。凡是要畫、重畫、修改漫畫的某一頁或某一格，調表情、姿勢、鏡頭、背景剪影，或改漫畫的畫風規則時都用這一份。
----
-
 # 畫漫畫
 
-場與場之間的劇情是一頁一頁的漫畫，翻在一大張書頁上（`public/test/src/story.js`）。這份文件是**畫風的規則**與**畫一格的做法**。規則是使用者定的，不要自己放寬；覺得哪一條擋路，先問。
+完整流程模式（`/test/?mode=flow`）場與場之間的劇情是一頁一頁的漫畫，翻在一大張書頁上（`public/test/src/story.js`）。這個資料夾是畫漫畫用的全部工具；這份文件是**畫風的規則**與**畫一格的做法**。規則是使用者定的，不要自己放寬；覺得哪一條擋路，先問。
+
+畫漫畫的工具都在這裡、不在網站上：攝影棚由 `make-comic.mjs` 自己的伺服器供出來，不會被部署。遊戲執行時用得到的（書頁、14 頁的資料、拍好的圖）才在 `public/`。
 
 ## 現況
 
@@ -39,22 +36,27 @@ description: 畫完整流程模式（/test/?mode=flow）場與場之間的漫畫
 ## 東西在哪
 
 ```
-STORY.md                       劇本（頁、格、畫面、鏡頭、字）
-public/test/src/comic.js       14 頁的資料：每一格的 note、say、src、focus、capAt、memory；SCRIPT 是哪一刻翻哪幾頁
-public/test/src/shots.js       每一格怎麼拍：誰、站哪、姿勢、表情、鏡頭、光、道具
-public/test/src/faces.js       漫畫的表情（2D，畫在拍好的圖上）
-public/test/src/mode-comic.js  攝影棚：/test/?mode=comic，擺角色、拍、網點、畫表情、出 PNG
-tools/make-comic.mjs           開無頭 Chrome 進攝影棚，把每一格存成 public/test/comic/<id>.png
-public/test/src/story.js       書頁：滑進來、分格一格一格拼上去、翻頁
-public/test/index.html         #story 底下的 CSS：版面（3／4／5 格，橫向／直向）、字、回憶格
+這個資料夾（tools/comic/）——畫的工具
+  README.md                    這份：規則與做法
+  shots.js                     每一格怎麼拍：誰、站哪、姿勢、表情、鏡頭、光、道具
+  faces.js                     漫畫的表情（2D，畫在拍好的圖上）
+  studio.html／studio.js       攝影棚：擺角色、拍、網點、畫表情、出 PNG（import 遊戲的 /test/src/…）
+  make-comic.mjs               起伺服器、開無頭 Chrome 進攝影棚，把每一格存成 public/test/comic/<id>.png
+
+遊戲裡——畫出來的東西放哪、怎麼翻
+  STORY.md                     劇本（頁、格、畫面、鏡頭、字）
+  public/test/src/comic.js     14 頁的資料：每一格的 note、say、src、focus、capAt、memory；SCRIPT 是哪一刻翻哪幾頁
+  public/test/comic/           拍好的圖（<id>.png）
+  public/test/src/story.js     書頁：滑進來、分格一格一格拼上去、翻頁
+  public/test/index.html       #story 底下的 CSS：版面（3／4／5 格，橫向／直向）、字、回憶格
 ```
 
 ## 畫一格的流程
 
 1. **讀劇本**：在 `STORY.md` 找那一頁那一格的畫面、鏡頭、字。在 `comic.js` 找那一頁的格數。
 2. **想鏡頭**：特寫還是中景、裁到哪裡、從哪個角度、用哪個表情，對照上面的規則 3、4、6。
-3. **寫 `shots.js`**：加一筆 `{ id: 'p<頁>-<格>', ... }`。欄位見下一節。
-4. **拍**：在 repo 根目錄跑 `node tools/make-comic.mjs p2-1`（不給 id 就全部重拍），一格大約 3 秒。
+3. **寫 `tools/comic/shots.js`**：加一筆 `{ id: 'p<頁>-<格>', ... }`。欄位見下一節。
+4. **拍**：在 repo 根目錄跑 `node tools/comic/make-comic.mjs p2-1`（不給 id 就全部重拍），一格大約 3 秒。想用瀏覽器邊調邊看：`node tools/comic/make-comic.mjs --serve`，打開它印出來的網址（← → 換一格），改了 `shots.js` 重新整理就好。
 5. **看圖**：用 Read 打開 `public/test/comic/p2-1.png`。透明的地方在檢視器裡可能顯示成黑或白，都是正常的。不滿意就回到第 3 步。
 6. **接進書頁**：在 `comic.js` 那一格加 `src: 'comic/p2-1.png'`，需要的話加 `focus`、`capAt`、`memory`。
 7. **看整頁**：開 `/test/?mode=flow`，在主控台跑下面這段，橫向、直向都看（直向會照 `focus` 裁）：
@@ -63,6 +65,8 @@ public/test/index.html         #story 底下的 CSS：版面（3／4／5 格，�
    flowArea.story.start(c.pagesOf([2]));
    ```
 8. **檢查、提交**：跑 `node tools/verify-story.mjs` 與 `node tools/verify-flow.mjs`，然後 commit。一頁畫完提交一次；改了攝影棚或 `faces.js` 的能力，另外先提交。
+
+重拍是確定的：同一份 `shots.js` 與 `faces.js` 拍出來就是同一張圖，所以要精準重現某個表情或某一格，引用那一筆設定（`face: 'shock'`、或抄那一格的 `cast`／`cam`）就好。反過來，改了 `faces.js` 裡某個表情的畫法，用到它的舊格子重拍也會跟著變。
 
 ## shots.js 的欄位
 
@@ -124,7 +128,7 @@ public/test/index.html         #story 底下的 CSS：版面（3／4／5 格，�
 
 ## 踩過的坑
 
-- **全黑**：毛皮與王冠的著色器要一張投影深度圖。沒有綁的話，ANGLE 會整個不畫，畫面是一片墨色。攝影棚已經讓 `light/shadow.js` 綁一張空的；新增別的材質時注意這件事。
+- **全黑**：毛皮與王冠的著色器要一張投影深度圖。沒有綁的話，ANGLE 會整個不畫，畫面是一片墨色。攝影棚已經讓遊戲的 `light/shadow.js` 綁一張空的；新增別的材質時注意這件事。
 - **帽簷擋眼睛**：主角戴帽子，從上往下拍時帽簷蓋住眼睛。鏡頭放在眼睛高度或更低，或讓牠抬頭（`headPitch` 負值）。
 - **吻部擋眼睛**：模型的眼睛貼在吻部的上角，正面或仰頭時，吻部會擋在眼睛前面。表情是畫在最上層的，擋住的眼睛也照畫，看起來會像眼睛畫在鼻子上。選側一點、低一點的角度；正面特寫用 `eyes: { lift: 0.9, spread: 0.35 }`。
 - **側面**：遠的那隻眼睛會自動收掉、不畫。三分之四側時，遠的那隻可能還在、卻疊到吻部上；轉多一點或轉少一點。

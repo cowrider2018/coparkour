@@ -404,15 +404,6 @@
   #story .page.ready .next { opacity: .75; animation: story-next 1.6s ease-in-out .3s infinite; }
   @keyframes story-next { 50% { opacity: .3; } }
 
-  /* 漫畫攝影棚（mode-comic.js）：沒有操作列與面板，畫面是紙色，拍出來的那一格（背景透明）
-     照比例放在正中間——看起來就是印在書頁上的樣子。 */
-  body[data-mode="comic"] { background: #efe3c6; }
-  body[data-mode="comic"] .rail, body[data-mode="comic"] .panel,
-  body[data-mode="comic"] #pad, body[data-mode="comic"] #toast { display: none; }
-  body[data-mode="comic"] #view { visibility: hidden; }
-  #shot { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-  #shot-label { position: fixed; left: 12px; top: 10px; color: rgb(43, 35, 32); font-size: 13px; letter-spacing: .1em; }
-
   #boot {
     position: fixed; inset: 0; z-index: 9;
     display: grid; place-items: center;
@@ -452,7 +443,6 @@
 <div id="boot">
   <div data-for="terrain"><b>正在砌城堡…</b><br />四個區塊約三十萬個三角形，外加 cat.bin 那三隻動物</div>
   <div data-for="flow"><b>正在砌城堡…</b><br />六場照順序打，場與場之間是漫畫</div>
-  <div data-for="comic"><b>正在佈置攝影棚…</b><br />照 shots.js 一格一格拍漫畫</div>
   <div data-for="combat"><b>正在放狗…</b><br />cat.bin 那三隻動物，外加兩隻綠的、一隻紫的</div>
 </div>
 
