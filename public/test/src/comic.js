@@ -76,9 +76,9 @@ export const PAGES = [
     { note: '騎士幽靈指向上方，身體開始散掉', say: '騎士幽靈：國王……拜託你了。', src: 'comic/p10-5.png', focus: '50% 60%' },
   ] },
   { title: '回程', panels: [
-    { note: '主角沿著水窖貼牆的旋轉梯往上跑' },
-    { note: '主角跑過窄巷，經過井邊那把劍' },
-    { note: '主角衝進中庭' },
+    { note: '主角沿著水窖貼牆的旋轉梯往上跑', src: 'comic/p11-1.png', focus: '58% 45%' },
+    { note: '主角跑過窄巷，經過井邊那把劍', src: 'comic/p11-2.png', focus: '60% 50%' },
+    { note: '主角衝進中庭', src: 'comic/p11-3.png', focus: '50% 50%' },
   ] },
   { title: '崩塌中庭', panels: [
     { note: '主角站在中庭中央，抬頭看門樓' },

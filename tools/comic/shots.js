@@ -585,4 +585,51 @@ export const SHOTS = [
     ],
     cam: { focus: 'knightGhost', yaw: 0.55, pitch: -0.32, dist: 3.0, fov: 40, frame: [0.05, 0.12] },
   },
+
+  /* ── 第 11 頁　回程 ──────────────────────────────────────────── */
+  {
+    // 沿著水窖貼牆的旋轉梯往上跑：由下往上拍。一級一級的懸臂石階（道具）往右上爬，主角咬著刀、
+    // 拿著騎士給的靈魂往上衝；斜的速度線。
+    id: 'p11-1', size: [860, 720], ink: 3.5,
+    speedLines: { angle: -0.6, rows: 12, band: [0.15, 0.85], len: [0.4, 0.7], seed: 7 },
+    bg: [
+      { piece: 'arcade', bays: 1, span: 3.0, pier: 0.9, legH: 2.8, depth: 1.0, ruin: 0.4, seed: 12, x: 0.72, y: 1.0, size: 0.75 },
+      { piece: 'chain', from: [0, 3.2, 0], to: [1.4, 0, 0], n: 12, sag: 0.9, x: 0.2, y: 0.55, size: 0.5 },
+    ],
+    props: [{ piece: 'stair', x: 0, z: 0, y: 0, yaw: -Math.PI / 2, steps: 10, rise: 0.32, run: 0.62, w: 2.0, seed: 4, at: [0, 0] }],
+    cast: [{ who: 'hero', at: [-3.4, 0.6], y: 1.92, yaw: -Math.PI / 2 + 0.3, speed: 6, frames: 37, blade: 'knife', face: 'proud', eyes: { lift: 0.5, spread: 0.2 } }],
+    cam: { focus: 'hero', yaw: -0.3, pitch: -0.14, dist: 4.2, fov: 40, frame: [0.05, -0.12] },
+    light: [-4, 6, 6],
+  },
+  {
+    // 跑過窄巷，經過井邊那把劍：側面追拍。主角往右跑，井與掉在井腳的雙刃劍從後面掠過；橫的速度線。
+    id: 'p11-2', size: [1200, 720], ink: 3.5,
+    horizon: 0.78,
+    speedLines: { angle: 0, rows: 14, band: [0.1, 0.75], len: [0.35, 0.6], seed: 9 },
+    bg: [
+      { piece: 'house', W: 4.6, D: 4, e: 5.4, seed: 3, x: 0.12, y: 0.8, size: 0.9 },
+      { piece: 'house', W: 4.6, D: 4, e: 5.0, seed: 4, x: 0.92, y: 0.8, size: 0.85 },
+    ],
+    props: [
+      { piece: 'well', r: 1.1, seed: 2, at: [-1.6, -1.6] },
+      { blade: 'knight', at: [-1.0, -0.2], yaw: 0.3, size: 1.2 },
+    ],
+    cast: [{ who: 'hero', at: [0.6, 0.6], yaw: Math.PI / 2, speed: 7, frames: 33, blade: 'knife', face: 'proud', eyes: { lift: 0.3 } }],
+    cam: { focus: 'hero', yaw: 0.25, pitch: 0.05, dist: 4.2, fov: 36, frame: [0.15, -0.05] },
+    light: [3, 7, 6],
+  },
+  {
+    // 衝進中庭：正面，主角迎著鏡頭衝過來；集中線收向牠，背後是中庭的斷柱與拱廊。
+    id: 'p11-3', size: [1200, 720], ink: 4,
+    horizon: 0.74,
+    focusLines: { clear: 0.36, n: 100 },
+    bg: [
+      { piece: 'arcade', bays: 1, span: 3.1, pier: 0.95, legH: 2.6, depth: 1.0, ruin: 0.3, seed: 9, x: 0.1, y: 0.76, size: 0.55 },
+      { piece: 'column', r: 0.46, h: 5.2, broken: 0.5, seed: 4, x: 0.82, y: 0.76, size: 0.36 },
+      { piece: 'column', r: 0.46, h: 5.2, seed: 5, x: 0.95, y: 0.76, size: 0.62 },
+    ],
+    cast: [{ who: 'hero', at: [0, 0], yaw: 0.1, speed: 7, frames: 31, blade: 'knife', face: 'proud', eyes: { lift: 0.9, spread: 0.35 } }],
+    cam: { focus: 'hero', yaw: 0.05, pitch: -0.08, dist: 2.2, fov: 40, frame: [0, 0.02] },
+    light: [2, 6, 6],
+  },
 ];
