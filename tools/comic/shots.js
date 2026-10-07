@@ -232,4 +232,47 @@ export const SHOTS = [
     cam: { focus: 'boss', yaw: 0.36, pitch: -0.42, dist: 3.6, fov: 54, frame: [-0.06, -0.2] },
     light: [2, 6, 6],
   },
+
+  /* ── 第 4 頁　中庭・戰後 ─────────────────────────────────────── */
+  {
+    // BOSS 倒下，靈魂從身上浮出來：中景，BOSS 側著趴平（頭盔蓋住了臉），一顆發光的狗頭從牠背上升起來。
+    id: 'p4-1', size: [860, 720], ink: 3.5,
+    horizon: 0.62,
+    bg: [
+      { piece: 'gateway', span: 5, rise: 3.6, h: 6.4, side: 5, x: 0.5, y: 0.63, size: 0.36 },
+      { piece: 'column', r: 0.46, h: 5.2, broken: 0.6, seed: 4, x: 0.08, y: 0.64, size: 0.2 },
+      { piece: 'column', r: 0.46, h: 5.2, seed: 5, x: 0.93, y: 0.64, size: 0.44 },
+    ],
+    cast: [{ who: 'boss', at: [0, 0], yaw: 2.0, move: { ...FLOP, headTilt: 0.35 } }],
+    souls: [{ at: [-0.3, 2.6, -0.2], yaw: 0.6, scale: 1.3 }],
+    cam: { pos: [3.2, 1.1, 5.6], look: [0.0, 1.35, 0], fov: 42 },
+  },
+  {
+    // 好渴……：近景。主角坐在一根斷得很低的柱子上，累得眼睛擠成一條、喘氣。三分之四側拍，正面的話
+    // 表情會畫到吻部上。
+    id: 'p4-2', size: [1200, 720], ink: 4,
+    horizon: 0.82,
+    bg: [
+      { piece: 'arcade', bays: 1, span: 3.1, pier: 0.95, legH: 2.6, depth: 1.0, ruin: 0.3, seed: 9, x: 0.88, y: 0.84, size: 0.7 },
+      { piece: 'column', r: 0.46, h: 5.2, broken: 0.45, seed: 2, x: 0.06, y: 0.84, size: 0.6 },
+    ],
+    props: [{ piece: 'column', r: 0.46, h: 5.2, broken: 0.86, seed: 1, at: [0, 0] }],
+    cast: [{ who: 'hero', at: [0, 0.05], y: 1.1, yaw: 0.2, move: { ...SIT, headPitch: 0.05, tailPitch: -0.7 }, face: 'pant', shadow: false, eyes: { lift: 0.3 } }],
+    cam: { focus: 'hero', yaw: 1.3, pitch: -0.05, dist: 2.4, fov: 34, frame: [-0.12, -0.05] },
+    light: [4, 7, 5],
+  },
+  {
+    // 窄巷有口井：過肩。主角的後腦勺與肩在右下，往西拱洞看出去——拱洞框住遠遠的窄巷，兩排房子的盡頭
+    // 是小廣場上的那口井。
+    id: 'p4-3', size: [1200, 720], ink: 3.5,
+    horizon: 0.6,
+    bg: [
+      { piece: 'house', W: 4.6, D: 4, e: 5.4, seed: 3, x: 0.35, y: 0.6, size: 0.3 },
+      { piece: 'house', W: 4.6, D: 4, e: 4.8, seed: 5, x: 0.62, y: 0.6, size: 0.27 },
+      { piece: 'well', r: 1.1, seed: 2, x: 0.485, y: 0.62, size: 0.1 },
+      { piece: 'gateway', span: 3.1, rise: 2.6, h: 5.6, side: 6, x: 0.48, y: 1.25, size: 1.6 },
+    ],
+    cast: [{ who: 'hero', at: [0, 0], yaw: Math.PI + 0.35, move: { headPitch: -0.05, headYaw: 0.15, w: 1 }, face: 'hope', eyes: { lift: 0.2 } }],
+    cam: { focus: 'hero', yaw: 0.25, pitch: 0.05, dist: 1.6, fov: 40, frame: [0.3, 0.32] },
+  },
 ];
