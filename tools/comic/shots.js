@@ -478,4 +478,43 @@ export const SHOTS = [
     cast: [{ who: 'hero', at: [0, 0], yaw: Math.PI + 0.1, speed: 1.6, frames: 52, blade: 'knife' }],
     cam: { focus: 'hero', yaw: 0.35, pitch: 0.12, dist: 2.6, fov: 36, frame: [-0.2, 0.08] },
   },
+
+  /* ── 第 9 頁　墓室・開場 ─────────────────────────────────────── */
+  {
+    // 鐵閘升起，主角走進來：從墓室裡往外拍。門洞的鐵閘升到頂，主角從門洞走進來（迎著鏡頭），
+    // 背後是水窖那一頭的冷光。
+    id: 'p9-1', size: [860, 720], ink: 3.5,
+    horizon: 0.84,
+    rays: { at: [0.5, 0.62], n: 18, from: Math.PI, to: Math.PI * 2, inner: 0.05, width: 0.45, color: '#d7ecf8', alpha: 0.95 },
+    bg: [{ piece: 'gateway', span: 3.0, rise: 2.4, h: 5.6, side: 4, lift: 2.4, x: 0.5, y: 0.86, size: 1.0 }],
+    cast: [{ who: 'hero', at: [0, 0], yaw: 0.1, speed: 1.4, frames: 40, move: { headYaw: 0.15, headPitch: -0.1, tailPitch: -0.3, w: 1 }, face: 'dazed', blade: 'knife', eyes: { lift: 0.9, spread: 0.35 } }],
+    cam: { focus: 'hero', yaw: 0.05, pitch: -0.05, dist: 4.2, fov: 32, frame: [0, 0.12] },
+    light: [2, 6, 6],
+  },
+  {
+    // ……墓室？：大遠景。頭頂一道一道拱肋框住畫面，兩排石棺一路排到地平線，棺蓋上點著蠟燭；主角在
+    // 正中間，小小的背影。
+    id: 'p9-2', size: [1200, 720], ink: 3,
+    horizon: 0.6,
+    // 兩排石棺從左右兩邊往中間的地平線排過去（構圖給的大小：近的大、裁出畫面），每一具棺蓋上一根蠟燭。
+    bg: [
+      { piece: 'pointedArch', span: 14, rise: 9, thick: 0.5, depth: 0.55, ruin: 0, seed: 10, x: 0.5, y: 0.63, size: 0.5 },
+      { piece: 'pointedArch', span: 14, rise: 9, thick: 0.5, depth: 0.55, ruin: 0, seed: 11, x: 0.5, y: 1.0, size: 1.15 },
+      ...[[0.38, 0.62, 0.05], [0.31, 0.64, 0.065], [0.21, 0.67, 0.09], [0.06, 0.72, 0.13]].flatMap(([x, y, size], i) => [
+        { piece: 'sarcophagus', candle: [-0.42, i % 2 ? 0.85 : -0.85], view: Math.PI / 2, x, y, size },
+        { piece: 'sarcophagus', candle: [0.42, i % 2 ? -0.85 : 0.85], view: Math.PI / 2, x: 1 - x, y, size },
+      ]),
+    ],
+    cast: [{ who: 'hero', at: [0, 0], yaw: Math.PI, move: { headPitch: -0.3, headYaw: 0.2, w: 1 } }],
+    cam: { focus: 'hero', yaw: 0.1, pitch: 0.12, dist: 9, fov: 32, frame: [0, 0.3] },
+  },
+  {
+    // 石棺縫裡冒出幽靈：近景。棺蓋滑開一截，一隻幽靈從縫裡升起來（下半身還在棺裡），紅眼瞪著鏡頭；集中線。
+    id: 'p9-3', size: [1200, 720], ink: 4,
+    focusLines: { clear: 0.42 },
+    props: [{ piece: 'sarcophagus', slide: 0.45, yaw: 0.1, candle: [-0.42, -0.85], at: [0, 0] }],
+    cast: [{ who: 'ghost', at: [0, -0.92], y: 0.62, yaw: 0.35, air: 0, move: { headPitch: 0.15, pitch: -0.25, w: 1 }, face: 'glare', eyes: { lift: 0.3 }, shadow: false }],
+    cam: { focus: 'ghost', yaw: 0.6, pitch: 0.12, dist: 3.0, fov: 36, frame: [0.08, -0.12] },
+    light: [3, 6, 5],
+  },
 ];
