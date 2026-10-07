@@ -50,6 +50,7 @@ import {
   knight, gargoyle, rubble, rubbleHeap, brazier, banner, chain, portcullis, deadTree, well,
   mossTuft, crate, barrel,
   pavilion, weaponRack, dummy, archeryTarget, campfire, sackStack, woodpile, logSeat, standard, throneSeat,
+  house, sarcophagus,
 } from './pieces.js';
 
 /** 區塊在世界裡的間距。中間那片空地是走廊，四個區塊互相看得到。 */
@@ -1148,16 +1149,12 @@ function crypt(B, flames, seed, A) {
   for (const side of [-1, 1]) {
     for (let i = 0; i < 4; i++) {
       const x = side * 4.2, z = -6.4 + i * 4.2;
-      B.add(B.kit.brick(1.2, 0.8, 2.3, 0.05), { p: [x, 0.4, z], color: i % 2 ? C.stone : C.stoneDark });
+      // 亂數照原本的順序抽：開不開、蓋子歪多少、蠟燭在哪一頭。
       const open = r() < 0.35;
       const dz = open ? 0.45 : 0, yaw = open ? r.range(-0.12, 0.12) : 0;
-      if (open) B.add(B.kit.brick(1.0, 0.04, 2.1, 0.01), { p: [x, 0.8, z], color: 0x161310, ink: false });
-      B.add(B.kit.brick(1.34, 0.22, 2.44, 0.05), { p: [x, 0.91, z + dz], r: [0, yaw, 0], color: C.stoneLit });
-      // 碰撞蓋住棺身加滑開的那一截蓋子。
-      B.block(x, 0.51, z + dz / 2, 1.4, 1.02, 2.5 + dz, { kind: 'floor', base: 0 });
       // 蠟燭：棺蓋的一角一根，火苗交給 stage.js 做（跟火盆同一份火焰，縮小）。
       const cz = z + dz + (r() < 0.5 ? -0.85 : 0.85), cx = x - side * 0.42;
-      B.add(B.kit.drum(0.06, 0.07, 0.22, 7), { p: [cx, 1.13, cz], color: C.bone });
+      sarcophagus(B, { x, z, dark: i % 2 === 0, slide: dz, yaw, candle: [cx, cz] });
       flames.push({ x: cx, y: 1.29, z: cz, s: 0.22 });
     }
   }
@@ -1216,191 +1213,6 @@ function crypt(B, flames, seed, A) {
    房子是封起來的，進不去也上不去（簷口最低 4.6，木箱疊兩層只到 1.8，
    加上跳躍的 1.74 還差一公尺）。所以房子的碰撞就是一個盒子，屋頂另一個
    盒子擋鏡頭——不需要一個「站在屋頂上會怎樣」的答案。 */
-
-/**
- * 一棟木構的連棟屋。`at(u, v)` 把房子自己的座標換成世界的 x, z：u 沿著
- * 立面（−W/2..W/2），v 從立面往後（0..D）。`vx` 表示 v 軸是不是沿著 x
- * ——斜的木料與屋頂要繞著某一根世界軸轉，而 three 的旋轉是照世界軸給的。
- * `us` 是 u 軸在世界裡的正負號（±1），斜板往哪一邊倒靠它。
- */
-function house(B, seed, o) {
-  const r = rng(seed);
-  const { at, W, D, e, vx } = o;
-  const PL = 0.9;                         // 石砌牆基多高
-  const GT = 0.5;                         // 山牆多厚
-  const gh = (W / 2) * 1.1;               // 山牆多高（屋頂約 48°）
-  const FL = Math.max(PL + 1.9, e * 0.5); // 二樓的樓板線
-  const wallC = o.alt ? C.plasterAlt : C.plaster;
-  const size = (u, v) => (vx ? [v, u] : [u, v]);   // (沿立面, 往後) → (x, z)
-  const [cx, cz] = at(0, D / 2);
-
-  /* 牆身：一塊牆基加一塊抹灰。碰撞一個盒子從地面到簷口——房子進不去，
-     裡面是空的還是實的沒有人看得到。
-
-     立面那一層（v 0～RD）另外砌，因為門要嵌進牆裡：牆面在門口開一個洞，
-     門板退到洞底，比牆面深 RD − 0.06。一整塊牆身的話門只能貼在牆面外面，
-     看起來像靠在牆上的一片木板。 */
-  const RD = 0.18;                        // 立面那一層多厚，也就是門洞多深
-  const du = (r() < 0.5 ? -1 : 1) * W / 4;  // 門的位置
-  const DW = 1.1, DH = 2.2;               // 門洞寬、高
-  const slab = (u0, u1, v0, v1, y0, y1, color) => {
-    const [x, z] = at((u0 + u1) / 2, (v0 + v1) / 2);
-    const [sx, sz] = size(u1 - u0, v1 - v0);
-    B.add(B.kit.brick(sx, y1 - y0, sz, 0.03), { p: [x, (y0 + y1) / 2, z], color });
-  };
-  {
-    const a = du - DW / 2, b = du + DW / 2;
-    // 後面那一大塊：牆基往兩側與背面外放 0.04，抹灰就是房子本身。
-    slab(-W / 2 - 0.04, W / 2 + 0.04, RD, D + 0.04, 0, PL, C.stoneDark);
-    slab(-W / 2, W / 2, RD, D, PL, e, wallC);
-    // 立面那一層：牆基（外放 0.04）與抹灰，都在門洞兩側斷開；門洞上方補一塊。
-    slab(-W / 2 - 0.04, a, -0.04, RD, 0, PL, C.stoneDark);
-    slab(b, W / 2 + 0.04, -0.04, RD, 0, PL, C.stoneDark);
-    slab(-W / 2, a, 0, RD, PL, e, wallC);
-    slab(b, W / 2, 0, RD, PL, e, wallC);
-    slab(a, b, 0, RD, DH, e, wallC);
-    const [bx, bz] = size(W, D);
-    B.block(cx, e / 2, cz, bx, e, bz, { kind: 'shell', base: 0 });
-  }
-
-  // 山牆：前後各一片抹灰的三角形。
-  for (const v of [GT / 2, D - GT / 2]) {
-    const [x, z] = at(0, v);
-    B.add(B.kit.gable(W, gh, GT), { p: [x, e, z], r: [0, vx ? Math.PI / 2 : 0, 0], color: wallC });
-  }
-
-  /* 屋頂：兩塊斜板，從簷口斜到屋脊，前後各挑出山牆 0.15。木構房子的屋頂
-     本來就壓在山牆外面，挑出去的那一截是山牆上最好認的一條影子。 */
-  const th = Math.atan2(gh, W / 2);
-  const slope = (W / 2) / Math.cos(th) + 0.3;
-  for (const side of [-1, 1]) {
-    const [x, z] = at(side * W / 4, D / 2);
-    const y = e + gh / 2 + 0.08;
-    /* 往屋脊的方向要往上：繞 x 轉 a 時局部 +z 的斜率是 −tan a，繞 z 轉時局部
-       +x 的斜率是 +tan a，而屋脊在這塊板的 −us·side 那一邊——兩個正負號
-       就是從這裡來的。 */
-    const tilt = side * o.us * th;
-    const tc = side < 0 ? C.tile : C.tileDark;
-    if (vx) B.add(B.kit.brick(D + 0.3, 0.16, slope, 0.03), { p: [x, y, z], r: [tilt, 0, 0], color: tc });
-    else B.add(B.kit.brick(slope, 0.16, D + 0.3, 0.03), { p: [x, y, z], r: [0, 0, -tilt], color: tc });
-    /* 瓦：斜板上一排一排疊上去，從簷口往屋脊。每一排比斜板多翹 5°——下緣
-       離開斜板 2 公分、上緣壓在斜板上，下一排再蓋住它的上緣。所以從側面看
-       屋面是一道一道的階，每一階底下一條影子；那就是「瓦」這件事在輪廓上
-       的全部證據，貼圖只負責一排裡面一片一片的縫。
-
-       旋轉只有一根軸（vx 繞 x、否則繞 z），所以斜板的座標可以直接寫：
-       b 是順著坡的那一軸、n 是斜板的法線。簷口在 b 的哪一端（ev）是從轉角
-       的正負號推出來的：繞 x 轉 θ 時局部 +z 的高度是 −z·sinθ，繞 z 轉 φ
-       時局部 +x 的高度是 x·sinφ。 */
-    const ang = vx ? tilt : -tilt;
-    const ev = Math.sign(tilt) || 1;              // 簷口在 b = ev·slope/2
-    const RW = 0.42, RP = 0.32, LIFT = 0.087;     // 一排多寬、排距、翹多少（5°）
-    const rows = Math.max(2, Math.ceil((slope - RW) / RP) + 1);
-    for (let i = 0; i < rows; i++) {
-      const b = ev * Math.max(slope / 2 - RW / 2 - i * RP, -(slope / 2 - RW / 2));
-      const n = 0.08 + 0.025 + (RW / 2) * LIFT;
-      const cs = Math.cos(ang), sn = Math.sin(ang);
-      if (vx) {
-        // 繞 x：(0, n, b) → (0, n·cos − b·sin, n·sin + b·cos)
-        B.add(B.kit.brick(D + 0.34, 0.05, RW, 0.015), {
-          p: [x, y + n * cs - b * sn, z + n * sn + b * cs], r: [ang - ev * LIFT, 0, 0], color: tc,
-        });
-      } else {
-        // 繞 z：(b, n, 0) → (b·cos − n·sin, b·sin + n·cos, 0)
-        B.add(B.kit.brick(RW, 0.05, D + 0.34, 0.015), {
-          p: [x + b * cs - n * sn, y + b * sn + n * cs, z], r: [0, 0, ang + ev * LIFT], color: tc,
-        });
-      }
-    }
-  }
-  /* 壓脊：一根轉了 45° 的方料，沿著屋脊壓住兩面瓦的上緣。 */
-  {
-    const [x, z] = at(0, D / 2);
-    const len = D + 0.4;
-    B.add(B.kit.brick(vx ? len : 0.2, 0.2, vx ? 0.2 : len, 0.02), {
-      p: [x, e + gh + 0.27, z], r: vx ? [Math.PI / 4, 0, 0] : [0, 0, Math.PI / 4], color: C.tileDark,
-    });
-  }
-  /* 屋頂的碰撞：一個從簷口到屋脊的盒子。人上不去，但鏡頭上得去——沒有
-     它的話吊臂會從屋頂穿進房子裡面。 */
-  {
-    const [bx, bz] = size(W, D);
-    B.block(cx, e + gh / 2, cz, bx, gh, bz, { kind: 'shell' });
-  }
-
-  /* ── 立面的木頭 ──
-     `beam(u0, y0, u1, y1)` 在立面上釘一根木料，兩端是立面座標。木料埋進牆面
-     4 公分（有東西托著），凸出來 8 公分（有影子）。 */
-  const V0 = -0.04;
-  const beam = (u0, y0, u1, y1, t = 0.16) => {
-    const [x0, z0] = at(u0, V0), [x1, z1] = at(u1, V0);
-    const dx = x1 - x0, dz = z1 - z0, dy = y1 - y0;
-    const len = Math.hypot(dx, dy, dz);
-    const p = [(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2];
-    if (vx) B.add(B.kit.brick(0.12, t, len, 0.02), { p, r: [-Math.atan2(dy, dz), 0, 0], color: C.woodDark });
-    else B.add(B.kit.brick(len, t, 0.12, 0.02), { p, r: [0, 0, Math.atan2(dy, dx)], color: C.woodDark });
-  };
-  const U = W / 2 - 0.1;
-  // 牆基上的地檻，在門那裡斷開。
-  beam(-U - 0.08, PL + 0.08, du - 0.55, PL + 0.08);
-  beam(du + 0.55, PL + 0.08, U + 0.08, PL + 0.08);
-  beam(-U - 0.08, FL, U + 0.08, FL);                            // 樓板線
-  beam(-U - 0.08, e - 0.08, U + 0.08, e - 0.08);                // 簷口
-  for (const u of [-U, 0, U]) beam(u, PL + 0.16, u, e - 0.16, 0.16); // 三根柱
-  /* 二樓兩角的斜撐：從角柱斜上 0.6。短一點，窗戶才不會被它穿過去——窗在
-     角柱與中柱的正中間。 */
-  for (const s of [-1, 1]) beam(s * (U - 0.6), FL + 0.08, s * U, FL + 0.6);
-  // 山牆上：一根中柱、一根橫樑。
-  beam(0, e + 0.08, 0, e + gh * 0.72);
-  beam(-(W / 2) * 0.52, e + gh * 0.45, (W / 2) * 0.52, e + gh * 0.45);
-
-  /* 門：嵌在門洞底的一片木門，兩側一對門框、上面一根門楣，門上一個鐵
-     門把。門板的正面在 v = RD − 0.06，比牆面深 12 公分——那一段陰影就是
-     「這裡是一個洞」的全部證據。 */
-  {
-    /* 門板：四片直板，板縫 1.5 公分，縫後面是一片暗色的襯板——不然縫裡
-       看到的是牆洞底的灰泥。正面仍然在 RD − 0.06，跟以前那一整片同一個
-       深度。兩根橫檔把板子串起來，橫檔上各一條鐵帶，從門軸那一側釘過來。 */
-    const DWI = DW - 0.08, NP = 4, PW = DWI / NP;
-    {
-      const [x, z] = at(du, RD);
-      const [bw, bd] = size(DWI, 0.02);
-      B.add(B.kit.brick(bw, DH - 0.04, bd, 0.005), { p: [x, (DH - 0.04) / 2, z], color: C.woodDark, ink: false });
-    }
-    for (let i = 0; i < NP; i++) {
-      const [x, z] = at(du - DWI / 2 + PW * (i + 0.5), RD - 0.025);
-      const [pw, pd] = size(PW - 0.015, 0.07);
-      B.add(B.kit.brick(pw, DH - 0.04, pd, 0.012), { p: [x, (DH - 0.04) / 2, z], color: C.wood });
-    }
-    for (const ly of [0.45, 1.65]) {
-      const [x, z] = at(du, RD - 0.078);
-      const [lw, ld] = size(DWI - 0.1, 0.035);
-      B.add(B.kit.brick(lw, 0.14, ld, 0.01), { p: [x, ly, z], color: C.woodDark });
-      // 鐵帶從門軸那一側（離房子中線遠的那一邊）伸到門的三分之二。
-      const hinge = Math.sign(du) || 1, sl = DWI * 0.66;
-      const [sx2, sz2] = at(du + hinge * (DWI / 2 - sl / 2 - 0.02), RD - 0.1);
-      const [sw, sd] = size(sl, 0.012);
-      B.add(B.kit.brick(sw, 0.05, sd, 0.004), { p: [sx2, ly, sz2], color: C.iron, ink: false });
-    }
-    for (const s of [-1, 1]) slab(du + s * (DW / 2 - 0.05) - 0.05, du + s * (DW / 2 - 0.05) + 0.05, 0.0, RD, 0, DH, C.woodDark);
-    beam(du - 0.72, DH + 0.06, du + 0.72, DH + 0.06, 0.18);
-    // 門把開在離門軸遠的那一側（離房子中線近的那一邊）。
-    const hu = du - Math.sign(du) * 0.32;
-    const [px, pz] = at(hu, RD - 0.075);
-    const [qx, qz] = at(hu, RD - 0.12);
-    const [pw, pd] = size(0.07, 0.03);
-    B.add(B.kit.brick(pw, 0.18, pd, 0.01), { p: [px, 1.0, pz], color: C.iron, ink: false });
-    B.add(B.kit.blob(0.045), { p: [qx, 1.0, qz], color: C.ironLit });
-  }
-  // 二樓兩扇窗，窗台是一根木料。
-  for (const wu of [-(U / 2 - 0.05), U / 2 - 0.05]) {
-    const wy = FL + 0.5;
-    const [x, z] = at(wu, -0.02);
-    const [pw, pd] = size(0.7, 0.06);
-    B.add(B.kit.brick(pw, 0.95, pd, 0.01), { p: [x, wy + 0.47, z], color: 0x161310, ink: false });
-    beam(wu - 0.45, wy - 0.02, wu + 0.45, wy - 0.02, 0.12);
-  }
-}
 
 function alley(B, flames, seed, A) {
   const r = rng(seed);
