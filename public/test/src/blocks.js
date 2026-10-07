@@ -49,7 +49,7 @@ import {
   Kit, flagstones, wall, merlons, column, pointedArch, arcade, stair,
   knight, gargoyle, rubble, rubbleHeap, brazier, banner, chain, portcullis, deadTree, well,
   mossTuft, crate, barrel,
-  pavilion, weaponRack, dummy, archeryTarget, campfire, sackStack, woodpile, logSeat, standard,
+  pavilion, weaponRack, dummy, archeryTarget, campfire, sackStack, woodpile, logSeat, standard, throneSeat,
 } from './pieces.js';
 
 /** 區塊在世界裡的間距。中間那片空地是走廊，四個區塊互相看得到。 */
@@ -279,13 +279,7 @@ function throne(B, flames, seed, A) {
      B.block），而石頭以前從 13.4 才開始——中間那 1.1 公尺是一片看不見
      的地板，站得上去、什麼都沒有。 */
   B.add(B.kit.brick(9, 0.9, 5.4, 0.09), { p: [0, 0.45, 15.1], color: C.granite, solid: 'floor' });
-  // 王座：座、背、兩個扶手，全部是倒角石塊。
-  B.add(B.kit.brick(1.9, 0.5, 1.7, 0.08), { p: [0, 1.15, 16.2], color: C.stoneLit, solid: 'floor' });
-  B.add(B.kit.brick(1.9, 2.6, 0.5, 0.09), { p: [0, 2.6, 17.0], color: C.stone, solid: 'block', base: 0.9 });
-  for (const side of [-1, 1]) {
-    B.add(B.kit.brick(0.4, 0.7, 1.6, 0.06), { p: [side * 0.95, 1.65, 16.2], color: C.stone });
-    B.add(B.kit.cone(0.22, 0.5, 6), { p: [side * 0.8, 4.05, 17.0], color: C.gold, ink: false });
-  }
+  throneSeat(B, { x: 0, z: 16.2, y: 0.9 });
   wall(B, { from: [-7.6, 18.4], to: [7.6, 18.4], h: 7.2, thick: 1.1, ruin: 0.4, seed: seed + 110 });
   pointedArch(B, { x: 0, z: 18.4, y: 4.4, span: 4.6, rise: 3.4, yaw: 0, thick: 0.5, depth: 1.2, ruin: 0.22, seed: seed + 111 });
   for (const side of [-1, 1]) {

@@ -1498,6 +1498,20 @@ export function logSeat(B, x, z, turn = false, len = 1.6) {
 }
 
 /**
+ * 王座：座、背、兩個扶手，全部是倒角石塊，椅背頂上兩顆金色的尖。(x, z) 是座面的中心、
+ * y 是它站的那一層（台座頂），座面頂在 y + 0.5；椅背在 +z 那一側，所以王座面朝 −z。
+ */
+export function throneSeat(B, o) {
+  const { x, z } = o, y = o.y || 0;
+  B.add(B.kit.brick(1.9, 0.5, 1.7, 0.08), { p: [x, y + 0.25, z], color: C.stoneLit, solid: 'floor' });
+  B.add(B.kit.brick(1.9, 2.6, 0.5, 0.09), { p: [x, y + 1.7, z + 0.8], color: C.stone, solid: 'block', base: y });
+  for (const side of [-1, 1]) {
+    B.add(B.kit.brick(0.4, 0.7, 1.6, 0.06), { p: [x + side * 0.95, y + 0.75, z], color: C.stone });
+    B.add(B.kit.cone(0.22, 0.5, 6), { p: [x + side * 0.8, y + 3.15, z + 0.8], color: C.gold, ink: false });
+  }
+}
+
+/**
  * 營前的軍旗：兩根高柱夾著一面大旗。旗面朝 local +z，柱子在旗的兩側——
  * 一根柱子立在旗後面的話，布的波浪會跟柱子撞在一起。旗的下擺在 1.6 公尺，
  * 狗從旗底下走得過去。
