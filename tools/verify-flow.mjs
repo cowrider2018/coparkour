@@ -6,14 +6,15 @@
    所以這裡把遺跡砌一遍，把感測區當成一張圖（房間是點、感測區是單向的邊），
    照每一步的門走走看。
 
-     1. 站位      每一隻 BOSS 站在自己那一場的房間裡、黑牆裡面、腳下那一層地板
+     1. 站位      每一隻怪物站在自己那一場的房間裡、黑牆裡面、腳下那一層地板
                   就是站位的高度、沒有嵌在任何碰撞盒裡。
      2. 觸發      每一條進得了那一場的路（送進那個房間的感測區），到達點都在
                   觸發範圍裡——一進門就開打；休息點（與起點）都在外面。兵營是
-                  例外：起點就在兵營裡，往城門走一段才開打，BOSS 站在那一段裡。
+                  例外：起點就在兵營裡，往城門走一段才開打，怪物站在那一段裡。
      3. 休息點    每一場的休息點與入口都找得到，休息點不在那一場的房間裡（兵營
                   除外，同上），面朝入口，而且從休息點照當時的門走得回那一場。
-     4. 往下一場  第 k 場打完，照那時的門走得到第 k + 1 場、走不到更後面任何一場；
+     4. 往下一場  第 k 場打完，照那時的門走得到第 k + 1 場、走不到更後面任何一場
+                  （墓室打完是直接送到下一場的休息點，從那裡走）；
                   打的時候哪裡都去不了（門全關、傳送全不通）；全部打完之後
                   每一個房間都走得到。
 
@@ -26,7 +27,7 @@
 import { buildRuins, BLOCKS } from '../public/test/src/blocks.js';
 import { PHYS, arenaGap, solveXZ, supportInfo } from '../public/test/src/walk.js';
 import {
-  STAGES, OPEN, START, roomOf, bossPost, inStage, makeRun, doorsFor, portalsOn, restAt,
+  STAGES, OPEN, START, roomOf, foesOf, inStage, makeRun, doorsFor, portalsOn, restAt,
 } from '../public/test/src/route.js';
 
 let fails = 0;
@@ -45,12 +46,15 @@ const edges = ruins.portals.map((p) => ({
   p, from: roomOf(p.block, p.y0 + 0.5), to: roomOf(p.dest.block, p.dest.y),
 }));
 
-/** 照這一組門與傳送開關，從 `start` 走得到的房間。 */
-function reach(start, doors, portals) {
+/**
+ * 照這一組門與傳送開關，從 `start` 走得到的房間。`stop` 是走進去就停的房間：下一場的
+ * 房間一走進去就開打、門全關，不會從那裡再走到別處（窄巷的井就在窄巷這一場裡）。
+ */
+function reach(start, doors, portals, stop = null) {
   const seen = new Set([start]), todo = [start];
   while (todo.length) {
     const r = todo.pop();
-    if (!portals) continue;
+    if (!portals || (r === stop && r !== start)) continue;
     for (const e of edges) {
       if (e.from !== r || (e.p.door && !doors[e.p.door]) || seen.has(e.to)) continue;
       seen.add(e.to);
@@ -63,23 +67,23 @@ function reach(start, doors, portals) {
 /* ── 1. 站位 ─────────────────────────────────────────────────── */
 console.log('1. 站位');
 STAGES.forEach((s, k) => {
-  const b = bossPost(k);
   const block = s.room.split(':')[0];
-  const gap = arenaGap(arenaOf(block), b.x, b.z);
-  const floor = supportInfo(COLS, b.x, b.z, b.y + 0.3).y;
-  const [sx, sz] = solveXZ(COLS, b.x, b.z, b.y, shut);
-  ok(roomOf(block, b.y) === s.room && gap > PHYS.radius && Math.abs(floor - b.y) < 1e-6
-    && Math.hypot(sx - b.x, sz - b.z) < 1e-6,
-  `${s.name}：BOSS 在房間裡、離黑牆 ${gap.toFixed(1)}、腳下 ${floor.toFixed(2)}、沒嵌進東西`);
+  foesOf(k).forEach((b, i) => {
+    const gap = arenaGap(arenaOf(block), b.x, b.z);
+    const floor = supportInfo(COLS, b.x, b.z, b.y + 0.3).y;
+    const [sx, sz] = solveXZ(COLS, b.x, b.z, b.y, shut);
+    ok(roomOf(block, b.y) === s.room && gap > PHYS.radius && Math.abs(floor - b.y) < 1e-6
+      && Math.hypot(sx - b.x, sz - b.z) < 1e-6,
+    `${s.name}：第 ${i + 1} 隻（${b.kind}）在房間裡、離黑牆 ${gap.toFixed(1)}、腳下 ${floor.toFixed(2)}、沒嵌進東西`);
+  });
 });
 
 /* ── 2. 觸發 ─────────────────────────────────────────────────── */
 console.log('2. 觸發');
 STAGES.forEach((s, k) => {
   if (s.enter) {
-    // 房間裡還要再走一段才開打（兵營：起點就在這個房間裡）。BOSS 要站在那一段裡。
-    const b = bossPost(k);
-    ok(inStage(k, s.room.split(':')[0], b.x, b.y, b.z), `${s.name}：走進房間裡那一段才開打，BOSS 站在那一段裡`);
+    // 房間裡還要再走一段才開打（兵營：起點就在這個房間裡）。怪物要站在那一段裡。
+    ok(foesOf(k).every((b) => inStage(k, s.room.split(':')[0], b.x, b.y, b.z)), `${s.name}：走進房間裡那一段才開打，怪物都站在那一段裡`);
   } else {
     const ins = edges.filter((e) => e.to === s.room && e.from !== s.room);
     const bad = ins.filter((e) => !inStage(k, e.p.dest.block, e.p.dest.x, e.p.dest.y, e.p.dest.z));
@@ -125,11 +129,13 @@ STAGES.forEach((s, k) => {
   const stuck = reach(s.room, doorsFor(fighting), portalsOn(fighting));
   ok(stuck.size === 1 && Object.values(doorsFor(fighting)).every((o) => !o), `${s.name}：打的時候門全關、哪裡都去不了`);
   const after = makeRun(k + 1);
-  const got = reach(s.room, doorsFor(after), portalsOn(after));
+  const to = s.warp && restAt(k + 1, ruins);
+  const next = k + 1 < STAGES.length ? STAGES[k + 1].room : null;
+  const got = reach(to ? roomOf(to.block, to.y) : s.room, doorsFor(after), portalsOn(after), next);
   if (k + 1 < STAGES.length) {
     const early = STAGES.slice(k + 2).filter((t) => got.has(t.room) && t.room !== STAGES[k + 1].room);
     ok(got.has(STAGES[k + 1].room) && early.length === 0,
-      `${s.name}打完：走得到${STAGES[k + 1].name}${early.length ? `，也走得到 ${early.map((t) => t.name).join('、')}` : '、走不到更後面的'}`);
+      `${s.name}打完${s.warp ? `（送到 ${STAGES[k + 1].rest}）` : ''}：走得到${STAGES[k + 1].name}${early.length ? `，也走得到 ${early.map((t) => t.name).join('、')}` : '、走不到更後面的'}`);
   } else {
     const all = new Set([...BLOCKS.map((b) => b.id), 'wallwalk:top']);
     ok([...all].every((r) => got.has(r)), `${s.name}打完：全部的門都開，${all.size} 個房間都走得到`);

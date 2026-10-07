@@ -52,6 +52,7 @@ export class Story {
     /** 書頁開始離開之後幾秒；-1 = 還沒離開。 */
     this.out = -1;
     this.then = null;
+    this.cover = null;
     /** 點了書頁（DOM 的 click 沒辦法等到下一幀才發生，先記著）。 */
     this._tapped = false;
     if (el) {
@@ -71,12 +72,14 @@ export class Story {
 
   /**
    * 第 k 場（名字是 `name`）打完：開始演。`then` 在書頁走完的時候叫（模式拿來浮字——書頁還在的時候浮
-   * 的字被蓋住了，看不到）。
+   * 的字被蓋住了，看不到）。`cover` 在書頁剛好整個蓋住的那一幀叫一次（模式拿來把人送走——
+   * 那一跳落在書頁底下，看不到）。
    */
-  start(k, name, then = null) {
+  start(k, name, then = null, cover = null) {
     this.t = 0;
     this.out = -1;
     this.then = then;
+    this.cover = cover;
     this._tapped = false;
     if (this.el) this._fill(COMICS[k] || FALLBACK, k, name);
     this._paint();
@@ -87,6 +90,7 @@ export class Story {
     this.t = -1;
     this.out = -1;
     this.then = null;
+    this.cover = null;
     this._paint();
   }
 
@@ -112,6 +116,11 @@ export class Story {
       return 1;
     }
     this.t += real;
+    if (this.covered && this.cover) {
+      const cover = this.cover;
+      this.cover = null;
+      cover();
+    }
     if ((pressed || tapped) && this.t >= STORY.slow + STORY.enter + STORY.ready) this.out = 0;
     this._paint();
     if (this.out >= 0) return 1;

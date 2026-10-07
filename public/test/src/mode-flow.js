@@ -2,12 +2,12 @@
    /test/?mode=flow：完整流程模式的組裝與操作。
 
    地形模式的遺跡（stage.js、hero.js）加上戰鬥模式的戰鬥（fight.js），照
-   route.js 的路線一場一場打。每一場一隻 BOSS——這個模式現在只確認流程
+   route.js 的路線一場一場打。每一場的怪物照劇本（STORY.md）——這個模式現在只確認流程
    （開打、關門、打完開門、倒下、重玩），不設計關卡。
 
    ── 一場的一生 ──────────────────────────────────────────────────
-     走進第 k 場的範圍   所有的門關上、所有的傳送不通；一秒後 BOSS 出現。
-     打死 BOSS           這一場清完：只開通往下一場的門（route.js 的 OPEN）。斬殺的那一刻起
+     走進第 k 場的範圍   所有的門關上、所有的傳送不通；一秒後怪物出現。
+     打死全部            這一場清完：只開通往下一場的門（route.js 的 OPEN）。斬殺的那一刻起
                          演一段劇情（story.js）：慢動作，一大張書頁跑進來蓋住畫面，上面是
                          一頁漫畫；點一下（或按跳）書頁跑走，接著玩。
      挨打                扣血（頭頂的愛心，fight.js）。BOSS 死掉掉出的靈魂撿起來
@@ -44,9 +44,9 @@ import { Story } from './story.js';
 import { Fight, DEATH_TEXT } from './fight.js';
 import { Sound } from './sound.js';
 import { Music } from './music.js';
-import { resetLife, refill, regen } from './combat.js';
+import { resetLife, refill, regen, KINDS } from './combat.js';
 import { BLOCKS } from './blocks.js';
-import { STAGES, START, bossPost, inStage, makeRun, doorsFor, portalsOn, restAt } from './route.js';
+import { STAGES, START, foesOf, inStage, makeRun, doorsFor, portalsOn, restAt } from './route.js';
 
 const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -75,10 +75,10 @@ scene.add(zoo.root);
 
 const player = { ...makeHero(0, 0, 0), block: 'wallwalk' };
 
-/* 戰鬥：打死的 BOSS 就沒了（不重生），場上沒有怪物就是這一場清完。每一場的 BOSS 現在就把
+/* 戰鬥：打死的怪物就沒了（不重生），場上沒有怪物就是這一場清完。每一場的怪物現在就把
    外觀建好——牠是進場之後才上場的，那時候才建就是一頓。 */
 const fight = new Fight(scene, zoo, { respawn: false, renderer, sound: new Sound() });
-fight.preload(STAGES.map((_, k) => [bossPost(k)]));
+fight.preload(STAGES.map((_, k) => foesOf(k)));
 
 /** 背景音樂：探索與戰鬥兩首，換的時候淡出淡入（music.js）。 */
 const music = new Music();
@@ -99,12 +99,12 @@ const story = new Story(document.getElementById('story'));
 
 /* ── 路線 ────────────────────────────────────────────────────────
    run 是路線的狀態（route.js 的 makeRun）：下一場是第幾場、是不是正在打。
-   `spawnIn` 是開打之後離 BOSS 出現還有幾秒（0 = 已經出現或沒在打）。 */
+   `spawnIn` 是開打之後離怪物出現還有幾秒（0 = 已經出現或沒在打）。 */
 let run = makeRun();
 let spawnIn = 0;
 /** 倒下幾次（這一輪）。 */
 let deaths = 0;
-/** BOSS 出現前的那一下：門關上、人站穩，再讓牠出來。 */
+/** 怪物出現前的那一下：門關上、人站穩，再讓牠出來。 */
 const SPAWN_DELAY = 1.0;
 
 const stageName = (k) => (k < STAGES.length ? STAGES[k].name : '全部打完');
@@ -146,7 +146,7 @@ function startFrom(k) {
   hud.paint({ block: STAGES[k].id });
 }
 
-/** 走進了下一場：關門、斷傳送，BOSS 等一下出現。 */
+/** 走進了下一場：關門、斷傳送，怪物等一下出現。 */
 function engage() {
   run.active = true;
   spawnIn = SPAWN_DELAY;
@@ -155,7 +155,7 @@ function engage() {
 }
 
 /**
- * BOSS 打死了：這一場清完，開往下一場的門，演劇情（慢動作、書頁、漫畫）。門現在就開
+ * 怪物全部打死了：這一場清完，開往下一場的門，演劇情（慢動作、書頁、漫畫）。門現在就開
  * ——開門的那一下在慢動作裡、被書頁蓋住之前看得到。字等書頁走了才浮，不然被蓋住。
  */
 function clear() {
@@ -164,8 +164,10 @@ function clear() {
   applyDoors();
   const done = run.next >= STAGES.length;
   const k = run.next - 1;
+  // 墓室打完不走回去：書頁蓋住的時候直接送到下一場的休息點（route.js 的 warp）。
+  const warpTo = STAGES[k].warp && !done ? () => place(restAt(run.next, ruins)) : null;
   story.start(k, STAGES[k].name, () => hud.flash(done ? '六場全部打完——門全開了'
-    : `打倒 BOSS！撿起牠的靈魂，最大血量 +1。下一場：${stageName(run.next)}`));
+    : `這一場清完了。下一場：${stageName(run.next)}`), warpTo);
   if (!done) hud.paint({ block: STAGES[run.next].id });
 }
 
@@ -188,7 +190,7 @@ function fall(cause) {
   hud.flash(DEATH_TEXT[cause]);
 }
 
-/** 倒下演完、畫面全黑：BOSS 收起來，血補滿（guard 一起清掉），回到這一場的入口外面休息。 */
+/** 倒下演完、畫面全黑：怪物收起來，血補滿（guard 一起清掉），回到這一場的入口外面休息。 */
 function rest() {
   refill(player);
   const k = run.next;
@@ -268,14 +270,14 @@ function frame(now) {
   }
   player.block = arenaAt(player.x, player.z).id;
 
-  // 路線：走進下一場就開打；BOSS 等一下出現；打死就清完。
+  // 路線：走進下一場就開打；怪物等一下出現；全部打死就清完。
   if (!run.active && run.next < STAGES.length && inStage(run.next, player.block, player.x, player.y, player.z)) engage();
   if (run.active && spawnIn > 0) {
     spawnIn -= dt;
     if (spawnIn <= 0) {
       spawnIn = 0;
-      fight.lineup([bossPost(run.next)], fieldOf(STAGES[run.next].room.split(':')[0]));
-      hud.flash('BOSS 出現了');
+      fight.lineup(foesOf(run.next), fieldOf(STAGES[run.next].room.split(':')[0]));
+      hud.flash(`${foesOf(run.next).length > 1 ? '怪物' : KINDS[foesOf(run.next)[0].kind].name}出現了`);
     }
   }
   const { hit, died, souls } = fight.resolve(dt, player);

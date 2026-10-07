@@ -6,16 +6,17 @@
    node 底下驗得到「每一步開的門走得到下一場、而且走不到更後面的」。
 
    ── 路線 ────────────────────────────────────────────────────────
-     兵營 → 中庭 → 窄巷（不打）→ 井（不打）→ 水窖 → 墓室 → 水窖、窄巷、中庭、
-     兵營（走過，不打）→ 牆頂 → 兵營、中庭（走過，不打）→ 王座廳
+     兵營 → 中庭 → 窄巷 → 井（不打）→ 水窖 → 墓室 →（傳送）中庭 → 王座廳
 
-   每一場一隻 BOSS（試玩：只確認流程，不設計關卡）。「走過不打」不用另外處理：
-   每一場只打一次，清完就是清完。
+   照劇本（STORY.md）：兵營殭屍三隻、中庭 BOSS、窄巷騎士、水窖與墓室幽靈各六隻、
+   王座廳國王。「走過不打」不用另外處理：每一場只打一次，清完就是清完。
+   墓室打完不走回去：漫畫翻過回程那一頁，書頁還蓋著的時候直接送到王座廳那一場
+   的休息點（`warp`）。
 
    ── 門 ──────────────────────────────────────────────────────────
      打的時候    所有的門都關上，所有的傳送（包括井與水窖殘階這兩條單向的）都不通。
-     沒在打的時候 只開通往下一場的那幾扇（`OPEN`）——下一場在好幾張圖之外的時候
-                 （墓室打完要走回牆頂），整條路上的門一起開。
+     沒在打的時候 只開通往下一場的那幾扇（`OPEN`）——下一場在好幾張圖之外的時候，
+                 整條路上的門一起開。
      全部打完    所有的門都開，隨便逛。
 
    ── 倒下 ────────────────────────────────────────────────────────
@@ -40,60 +41,73 @@ export const roomOf = (block, y) => (block === 'wallwalk' && y > TOP ? 'wallwalk
  *   id, name   給人看的名字；hint 是面板上那一行說明
  *   room       在哪個房間打（roomOf 的那一種）
  *   enter      房間裡還要再滿足這個（區塊的局部座標）才開打；沒有就是一進房間就打
- *   boss       BOSS 的站位，區塊的局部座標（y 是腳下那一層地板）
+ *   foes       怪物的種類與站位，區塊的局部座標（y 是腳下那一層地板）
  *   rest       倒下之後在哪裡休息：一個到達點的名字（blocks.js 的 arrivals）
  *   entry      這一場的入口：感測區在哪個區塊、送到哪個到達點——休息的時候面朝它
+ *   warp       打完不走過去：直接送到下一場的休息點（墓室 → 中庭）
  */
+/** 一圈 n 隻：半徑 r、中心 (cx, cz)，都面朝中心。 */
+const ring = (kind, n, r, cx = 0, cz = 0, a0 = 0) => Array.from({ length: n }, (_, i) => {
+  const a = a0 + (2 * Math.PI * i) / n;
+  const x = cx + r * Math.sin(a), z = cz + r * Math.cos(a);
+  return { kind, x, y: 0, z, yaw: Math.atan2(cx - x, cz - z) };
+});
+
 export const STAGES = [
   {
-    id: 'barracks', name: '兵營', hint: '起點。往城門走，BOSS 在城門前。',
+    id: 'barracks', name: '兵營', hint: '起點。往城門走，殭屍在城門前。',
     room: 'wallwalk', enter: (x, z) => z > -14,
-    boss: { x: 0, y: 0, z: -7, yaw: Math.PI },
+    foes: [
+      { kind: 'minion', x: -2.5, y: 0, z: -6.5, yaw: Math.PI },
+      { kind: 'minion', x: 0, y: 0, z: -8, yaw: Math.PI },
+      { kind: 'minion', x: 2.5, y: 0, z: -6.5, yaw: Math.PI },
+    ],
     rest: 'wallwalk.fog', entry: null,
   },
   {
     id: 'courtyard', name: '崩塌中庭', hint: '從兵營南邊的黑霧過去。',
     room: 'courtyard',
-    boss: { x: -4, y: 0, z: 0, yaw: Math.PI / 2 },
+    foes: [{ kind: 'boss', x: -4, y: 0, z: 0, yaw: Math.PI / 2 }],
     rest: 'wallwalk.fog', entry: { from: 'wallwalk', to: 'courtyard.east' },
   },
   {
-    id: 'cistern', name: '圓塔水窖', hint: '中庭西拱洞 → 窄巷 → 跳進井裡。',
+    id: 'alley', name: '城內窄巷', hint: '中庭的西拱洞過去，騎士在井後面。',
+    room: 'alley',
+    foes: [{ kind: 'knight', x: 0, y: 0, z: 11.6, yaw: Math.PI }],
+    rest: 'courtyard.west', entry: { from: 'courtyard', to: 'alley.fog' },
+  },
+  {
+    id: 'cistern', name: '圓塔水窖', hint: '跳進窄巷的井裡。',
     room: 'cistern',
-    boss: { x: 0, y: 0, z: -6, yaw: 0 },
+    foes: ring('ghost', 6, 7, 0, 0, Math.PI / 6),
     rest: 'alley.stair', entry: { from: 'alley', to: 'cistern.well' },
   },
   {
     id: 'crypt', name: '地下墓室', hint: '水窖南邊的鐵閘。',
     room: 'crypt',
-    boss: { x: 0, y: 0, z: 5, yaw: Math.PI },
+    foes: [-1, 1].flatMap((sx) => [1, 5, 9].map((z) => ({ kind: 'ghost', x: sx * 1.2, y: 0, z, yaw: Math.PI }))),
     rest: 'cistern.gate', entry: { from: 'cistern', to: 'crypt.gate' },
+    warp: true,
   },
   {
-    id: 'rampart', name: '牆頂', hint: '走回兵營（殘階 → 窄巷 → 中庭 → 兵營），從圓塔上去。',
-    room: 'wallwalk:top',
-    boss: { x: -4, y: 5.2, z: 0, yaw: Math.PI / 2 },
-    rest: 'wallwalk.towerBase', entry: { from: 'wallwalk', to: 'wallwalk.towerTop' },
-  },
-  {
-    id: 'throne', name: '王座廳', hint: '走回中庭，門樓的鐵閘升起來了。',
+    id: 'throne', name: '王座廳', hint: '回到中庭，門樓的鐵閘升起來了。',
     room: 'throne',
-    boss: { x: 0, y: 0, z: 6, yaw: Math.PI },
+    foes: [{ kind: 'king', x: 0, y: 0, z: 6, yaw: Math.PI }],
     rest: 'courtyard.gate', entry: { from: 'courtyard', to: 'throne.gate' },
   },
 ];
 
 /**
  * 沒在打的時候開哪幾扇門：下一場是第 k 場就開 OPEN[k]——從上一場走到這一場的
- * 路上所有的門。
+ * 路上所有的門。窄巷到水窖是井（單向，沒有門）；墓室到王座廳是傳送過去的，只開中庭到王座廳那一扇。
  */
 export const OPEN = [
   [],
   ['courtyard-wallwalk'],
   ['courtyard-alley'],
+  [],
   ['cistern-crypt'],
-  ['cistern-crypt', 'courtyard-alley', 'courtyard-wallwalk', 'wallwalk-tower'],
-  ['wallwalk-tower', 'courtyard-wallwalk', 'courtyard-throne'],
+  ['courtyard-throne'],
 ];
 
 /** 一開始站在哪：第一場的休息點（兵營南端，黑霧前、面朝城門）。 */
@@ -102,10 +116,10 @@ export const START = STAGES[0].rest;
 /** 區塊的原點（世界座標）。 */
 const origin = (room) => BLOCKS.find((b) => b.id === room.split(':')[0]).origin;
 
-/** 第 k 場 BOSS 的站位，世界座標（combat.js 的 makeMonster 吃的那一種）。 */
-export function bossPost(k) {
+/** 第 k 場的怪物與站位，世界座標（combat.js 的 makeMonster 吃的那一種）。 */
+export function foesOf(k) {
   const s = STAGES[k], [ox, oz] = origin(s.room);
-  return { kind: 'boss', x: s.boss.x + ox, y: s.boss.y, z: s.boss.z + oz, yaw: s.boss.yaw };
+  return s.foes.map((f) => ({ ...f, x: f.x + ox, z: f.z + oz }));
 }
 
 /** 站在 (x, y, z)、區塊 `block` 裡：是不是進了第 k 場的範圍（進了就開打）。 */
