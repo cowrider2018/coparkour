@@ -40,6 +40,7 @@ import { loadZoo, Critter, LIGHT_DIR } from '/test/src/critter.js';
 import { Crown } from '/test/src/crown.js';
 import { INK, KEY_POS, U_KEYDIR } from '/test/src/palette.js';
 import * as shadowLight from '/test/src/light/shadow.js';
+import { Driver, Sway } from '/src/cat/pose.js';
 import { SHOTS } from './shots.js';
 import { drawFace } from './faces.js';
 
@@ -222,9 +223,23 @@ function aim(cam, w, h) {
 /** 鏡頭大概在哪個方位（擺姿勢的時候要知道：頭會稍微轉向鏡頭）。 */
 const camYawFrom = (cam, x, z) => (cam.focus ? cam.yaw : Math.atan2(cam.pos[0] - x, cam.pos[2] - z));
 
+/**
+ * 一隻角色的動態狀態歸零成剛建好的樣子（critter.js 的 Critter 建構子裡那幾個）：呼吸與步態的
+ * 驅動、尾巴的彈簧、空中姿勢的權重、出招的累積量。同一隻角色在每一格之間共用，不歸零的話
+ * 上一格的狀態會帶進這一格——同一筆設定單獨拍跟接在別格後面拍，會是兩張不一樣的圖。
+ */
+function fresh(c) {
+  c.drv = new Driver();
+  c.sway = new Sway();
+  c._vySmooth = c._airW = c._riseW = c._dip = c._dipV = c._lastVy = 0;
+  c._wasGrounded = true;
+  c._mvYaw = c._mvYawPrev = c._mvTail = c._mvPitch = 0;
+}
+
 /** 擺好一隻：站哪、面朝哪、什麼姿勢、倒了幾度。姿勢跑幾十幀讓呼吸與尾巴的彈簧穩下來。 */
 function pose(a, spec, cam) {
   const { c, crown, wrap, shadow } = a;
+  fresh(c);
   const [x, z] = spec.at;
   const y0 = spec.y || 0;
   c._yaw = c._yawGoal = spec.yaw;
