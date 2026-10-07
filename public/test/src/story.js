@@ -10,10 +10,13 @@
      書頁進來 STORY.enter 秒，書頁從右邊斜著滑進來，越來越慢，停下來的時候是正的、
               四邊都超出畫面。世界照常走（戰後頁還是慢動作）。
      蓋住     世界停住（scale 0、模式整幀不算也不畫——反正看不到）。分格一格一格
-              浮出來。第一頁 STORY.ready 秒之後才收按鍵——在那之前按的（打怪的時候
+              從右邊滑進來、落到自己的位置（跟書頁進來一樣：斜著、越來越慢、停下來的
+              時候擺正），每一格比前一格晚 PANEL.step 秒，拼完這一頁才算翻得動——拼到一半
+              按一下是把剩下的直接拼好。第一頁 STORY.ready 秒之後才收按鍵——在那之前按的（打怪的時候
               一直在按跳）都不算，不然最後一刀的那一下跳就把漫畫跳過了；後面幾頁是
               STORY.readyNext 秒（翻頁的時候手已經停了，只防連按兩下翻過一頁）。
-     翻頁     不是最後一頁：STORY.turn 秒，這一頁往左邊翻走，底下已經是下一頁。
+     翻頁     不是最後一頁：STORY.turn 秒，這一頁往左邊翻走，底下已經是下一頁的紙
+              （標題、頁碼），分格等翻完才一格一格滑進來。
      書頁離開 最後一頁：STORY.leave 秒往左邊滑走、越走越快。世界一開始走就是正常
               速度，操作也還回來了——跟 transit.js 亮回來那一段一樣，書頁走到一半就
               想走是對的。走完之後 `then`。
@@ -35,8 +38,11 @@
  */
 export const STORY = { slow: 1.1, scale: 0.15, enter: 0.7, ready: 0.9, readyNext: 0.35, turn: 0.55, leave: 0.6 };
 
-/** 分格一格一格浮出來，每一格比前一格晚幾秒。 */
-const STAGGER = 0.12;
+/** 分格滑進來：每一格比前一格晚幾秒、一格滑幾秒（真實時間）。 */
+export const PANEL = { step: 0.28, dur: 0.5 };
+
+/** n 格的一頁，從開始拼到最後一格落定要幾秒。 */
+export const builtIn = (n) => (n - 1) * PANEL.step + PANEL.dur;
 
 const easeOut = (u) => 1 - (1 - u) ** 3;
 const easeIn = (u) => u * u * u;
@@ -153,7 +159,8 @@ export class Story {
       this.since += real;
       const wait = this.i === 0 ? STORY.ready : STORY.readyNext;
       if ((pressed || tapped) && this.since >= wait) {
-        if (this.i + 1 < this.pages.length) this._turn();
+        if (!this._built) this.since = builtIn(this.pages[this.i].panels.length);
+        else if (this.i + 1 < this.pages.length) this._turn();
         else this.out = 0;
       }
     }
@@ -162,6 +169,9 @@ export class Story {
     if (this.covered) return 0;
     return this.slow ? STORY.scale : 1;
   }
+
+  /** 這一頁的分格全部拼好了。 */
+  get _built() { return this.since >= builtIn(this.pages[this.i].panels.length); }
 
   /** 開始翻到下一頁：下一頁先畫在底下那一張。 */
   _turn() {
@@ -177,10 +187,10 @@ export class Story {
     if (this.el) this.sheets.reverse();
   }
 
-  /** 把第 i 頁畫進 `page`：標題、分格、頁碼、提示。分格浮出來由 CSS 管（.shown 加上去的時候開始）。 */
+  /** 把第 i 頁畫進 `page`：標題、分格、頁碼、提示。分格滑進來由 _paint 照劇情的時間擺。 */
   _fill(page, i) {
     const comic = this.pages[i];
-    page.classList.remove('shown', 'ready');
+    page.classList.remove('ready');
     page.querySelector('.title').textContent = comic.title;
     page.querySelector('.folio').textContent = `— ${comic.folio} —`;
     page.querySelector('.next').textContent = i + 1 < this.pages.length ? '點一下或按跳翻頁' : '點一下或按跳繼續';
@@ -191,7 +201,6 @@ export class Story {
       const cell = document.createElement('div');
       cell.className = 'panel-cell';
       cell.style.gridArea = 'abcdefgh'[k];
-      cell.style.setProperty('--delay', `${(k * STAGGER).toFixed(2)}s`);
       if (p.src) {
         const img = document.createElement('img');
         img.src = p.src;
@@ -227,10 +236,12 @@ export class Story {
     const on = this.t >= 0;
     this.el.classList.toggle('on', on);
     const [top, under] = this.sheets;
-    // 分格照劇情的時間浮出來（不是照 CSS 自己的鐘：卡頓的時候兩個鐘會差開）。
-    top.classList.toggle('shown', on && (this.out >= 0 || this.covered));
-    top.classList.toggle('ready', on && this.out < 0 && this.turn < 0 && this.covered
+    top.classList.toggle('ready', on && this.out < 0 && this.turn < 0 && this.covered && this._built
       && this.since >= (this.i === 0 ? STORY.ready : STORY.readyNext));
+    // 分格照劇情的時間滑進來（不是照 CSS 自己的鐘：卡頓的時候兩個鐘會差開）。書頁走的時候是拼好的。
+    const since = !on ? 0 : this.out >= 0 || this.turn >= 0 ? Infinity : this.covered ? this.since : 0;
+    this._lay(top, since);
+    this._lay(under, 0);
     // 上面那一張：進來是從右邊斜著滑進來、越來越慢；翻走與離開是往左邊滑走、越來越快，一邊再斜回去。
     let x = 130, rot = 9;
     if (this.out >= 0 || this.turn >= 0) {
@@ -247,6 +258,24 @@ export class Story {
     under.style.zIndex = '1';
     under.style.transform = 'none';
     under.style.visibility = this.turn >= 0 ? '' : 'hidden';
-    under.classList.toggle('shown', this.turn >= 0);
+  }
+
+  /**
+   * 拼到 `since` 秒的時候每一格在哪：還沒輪到的在右邊畫面外，滑的時候斜著、浮起來一點、
+   * 底下有影子（一張紙片蓋上去），越來越慢，落定的時候擺正、貼平。
+   */
+  _lay(page, since) {
+    page.querySelectorAll('.panel-cell').forEach((cell, k) => {
+      const e = easeOut(clamp01((since - k * PANEL.step) / PANEL.dur));
+      if (e >= 1) {
+        cell.style.transform = 'none';       // 不是 ''：那會退回 CSS 的「在畫面外」
+        cell.style.boxShadow = '';
+        return;
+      }
+      const u = 1 - e;
+      cell.style.transform = `translate(${(110 * u).toFixed(2)}vw, ${(-2 * u).toFixed(2)}vmin) `
+        + `rotate(${(7 * u).toFixed(2)}deg) scale(${(1 + 0.04 * u).toFixed(4)})`;
+      cell.style.boxShadow = `0 ${(1.5 * u).toFixed(2)}vmin ${(4 * u).toFixed(2)}vmin rgba(0, 0, 0, ${(0.35 * u).toFixed(3)})`;
+    });
   }
 }

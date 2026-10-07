@@ -351,11 +351,7 @@
     position: relative; min-width: 0; min-height: 0; overflow: hidden;
     border: max(2px, .45vmin) solid var(--ink-page);
     background: #f7eedb;
-    opacity: 0; transform: translateY(1.2vmin) scale(.985);
-  }
-  #story .page.shown .panel-cell {
-    transition: opacity .35s ease-out var(--delay), transform .45s var(--ease-out) var(--delay);
-    opacity: 1; transform: none;
+    transform: translateX(110vw);          /* 還沒輪到：在畫面外。滑進來的位置由 story.js 每幀寫 */
   }
   #story .panel-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
   /* 還沒畫的那一格：斜線網點、格號、要畫什麼。 */
