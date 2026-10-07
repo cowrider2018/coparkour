@@ -13,6 +13,12 @@
      i       第幾隻（0、1）：左右不對稱的表情（愣住時挑一邊的眉）用
 
    在每一隻眼睛自己的座標裡畫：原點是眼睛中心，−y 是頭頂，+x 是往鼻樑那一側，單位是 r。
+
+   ── 規則 ──────────────────────────────────────────────────────
+     · 沒有「不完全包覆的邊線」：一個形狀的墨線要嘛整圈包住它，要嘛不畫。沿著眼睛下緣描半圈淚光
+       那種線不行——要表示淚就在那個位置放淚珠（各自整圈包邊）。眉毛、橫線眼、眼瞼那一刀是
+       「線」本身，不是誰的邊，不受這一條限制。
+     · 水滴（淚、汗）一律是橢圓，沒有尖角。
    ------------------------------------------------------------------ */
 
 const INK = 'rgb(43, 35, 32)';
@@ -49,20 +55,30 @@ function ellipse(g, x, y, rx, ry, fill, line = 0) {
   if (line) { g.lineWidth = line; g.strokeStyle = INK; g.stroke(); }
 }
 
-/** 一滴水（眼淚、汗）：尖端朝 −y，圓底在 (x, y)，半徑 s。 */
-function drop(g, x, y, s, color, line) {
-  g.beginPath();
-  g.moveTo(x, y - s * 2.1);
-  g.bezierCurveTo(x + s * 0.35, y - s * 1.2, x + s, y - s * 0.6, x + s, y);
-  g.arc(x, y, s, 0, Math.PI);
-  g.bezierCurveTo(x - s, y - s * 0.6, x - s * 0.35, y - s * 1.2, x, y - s * 2.1);
-  g.fillStyle = color;
-  g.fill();
-  g.lineWidth = line;
-  g.strokeStyle = INK;
-  g.stroke();
-  // 高光
-  ellipse(g, x - s * 0.35, y - s * 0.15, s * 0.22, s * 0.32, 'rgba(255,255,255,0.85)');
+/**
+ * 一滴水（眼淚、汗）：橢圓，沒有尖角，整圈包邊，左上一點高光。中心 (x, y)、半徑 rx × ry、
+ * 長軸轉 rot 弳（飛出去的淚沿著飛的方向拉長一點）。
+ */
+function drop(g, x, y, rx, ry, color, line, rot = 0) {
+  g.save();
+  g.translate(x, y);
+  g.rotate(rot);
+  ellipse(g, 0, 0, rx, ry, color, line);
+  ellipse(g, -rx * 0.35, -ry * 0.3, rx * 0.28, ry * 0.26, 'rgba(255,255,255,0.85)');
+  g.restore();
+}
+
+/**
+ * 眼眶積著的淚：一排淚珠貼著眼睛（半徑 ex × ey）的下緣，從外眼角排到內眼角，中間的最大。
+ * 每一顆都是整圈包邊的橢圓——不是沿著眼睛下緣描的半圈線。
+ */
+function welling(g, ex, ey, size) {
+  const n = 4;
+  for (let k = 0; k < n; k++) {
+    const t = Math.PI * (0.2 + (0.6 * k) / (n - 1));      // 外眼角（−x）到內眼角（+x）
+    const s = size * (0.75 + 0.25 * Math.sin(Math.PI * (k + 0.5) / n));
+    drop(g, -ex * 0.92 * Math.cos(t), ey * 0.9 * Math.sin(t), s * 1.15, s * 0.85, TEAR, 0.07);
+  }
 }
 
 /** 實心的眼睛加一顆高光（模型原本那一種，畫成漫畫的）。 */
@@ -96,45 +112,21 @@ const FACES = {
     ellipse(g, 0, 0, 0.78, 1.0, '#fff', 0.14);
     ellipse(g, 0.05, 0.08, 0.2, 0.24, INK);
     arc(g, [-0.9, -1.35], [-0.1, -1.95], [0.75, -1.75], 0.24);
-    // 下眼眶積著的淚
-    g.beginPath();
-    g.ellipse(0, 0, 0.78, 1.0, 0, Math.PI * 0.12, Math.PI * 0.88);
-    g.lineWidth = 0.16;
-    g.strokeStyle = TEAR;
-    g.stroke();
+    welling(g, 0.78, 1.0, 0.25);
     // 從外眼角飛出去的兩顆
-    g.save();
-    g.translate(-0.95, 0.55);
-    g.rotate(-0.9);
-    drop(g, 0, 0, 0.26, TEAR, 0.07);
-    g.translate(-0.15, 0.85);
-    drop(g, 0, 0, 0.18, TEAR, 0.06);
-    g.restore();
+    drop(g, -1.05, 0.6, 0.27, 0.2, TEAR, 0.07, 0.6);
+    drop(g, -1.4, 1.2, 0.19, 0.14, TEAR, 0.06, 0.8);
     // 一顆汗（只畫在第一隻眼睛那一側）
-    if (a.i === 0) {
-      g.save();
-      g.translate(-1.35, -1.55);
-      g.rotate(0.35);
-      drop(g, 0, 0, 0.3, SWEAT, 0.07);
-      g.restore();
-    }
+    if (a.i === 0) drop(g, -1.35, -1.45, 0.22, 0.3, SWEAT, 0.07);
   },
   /** 驚醒：白眼睜到最大、瞳孔縮成一點，眉毛彈得老高；嚇出眼淚——眼眶積滿、從外眼角噴出一串。 */
   shock(g, a) {
     ellipse(g, 0, 0, 0.82, 1.08, '#fff', 0.15);
     ellipse(g, 0, 0, 0.13, 0.13, INK);
     arc(g, [-0.9, -1.55], [0, -2.15], [0.8, -1.7], 0.26);
-    g.beginPath();
-    g.ellipse(0, 0, 0.82, 1.08, 0, Math.PI * 0.1, Math.PI * 0.9);
-    g.lineWidth = 0.2;
-    g.strokeStyle = TEAR;
-    g.stroke();
-    for (const [x, y, s, rot] of [[-1.05, 0.55, 0.36, -1.25], [-1.75, 0.95, 0.27, -1.4], [-2.3, 1.45, 0.19, -1.5]]) {
-      g.save();
-      g.translate(x, y);
-      g.rotate(rot);
-      drop(g, 0, 0, s, TEAR, 0.07);
-      g.restore();
+    welling(g, 0.82, 1.08, 0.27);
+    for (const [x, y, s, rot] of [[-1.15, 0.55, 0.42, 0.45], [-1.85, 1.0, 0.32, 0.55], [-2.45, 1.5, 0.22, 0.6]]) {
+      drop(g, x, y, s, s * 0.74, TEAR, 0.07, rot);
     }
     if (a.i === 0) {
       // 驚嚇線：頭頂外側三道短線
@@ -152,13 +144,7 @@ const FACES = {
     ellipse(g, 0, 0.05, 0.24, 0.3, INK);
     if (a.i === 0) arc(g, [-0.75, -1.05], [0, -1.6], [0.6, -1.25], 0.2);
     else stroke(g, [[-0.7, -0.95], [0.6, -0.95]], 0.2);
-    if (a.i === 0) {
-      g.save();
-      g.translate(-1.25, -0.9);
-      g.rotate(0.3);
-      drop(g, 0, 0, 0.32, SWEAT, 0.07);
-      g.restore();
-    }
+    if (a.i === 0) drop(g, -1.25, -0.85, 0.24, 0.32, SWEAT, 0.07);
   },
 };
 
