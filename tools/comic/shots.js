@@ -65,6 +65,10 @@ const STARTLE = {
 const DROWSY = { headPitch: 0.28, headTilt: 0.22, pitch: 0.06, tailPitch: -0.5, w: 1 };
 /** 四處張望：頭轉向一邊、抬起來。 */
 const LOOK_AROUND = { headYaw: 0.35, headPitch: -0.4, tailPitch: -0.3, w: 1 };
+/** 倒下（被打倒的怪物）：整隻趴平、下巴貼地，前腳往前、後腳往後攤開，尾巴垂在地上。 */
+const FLOP = { drop: 0.35, pitch: 0.1, headPitch: 0.45, front: -1.4, hind: 1.4, knee: 0, legs: 1, tailPitch: -0.6, w: 1 };
+/** 喘氣：身體往前沉、頭垂一點，尾巴放低。 */
+const PANT = { pitch: 0.12, headPitch: 0.12, drop: 0.05, tailPitch: -0.35, w: 1 };
 
 /* p1-1 王座廳：王座（遊戲王座廳那一張）是國王坐的，是 3D 的道具。 */
 const THRONE_AT = [-2.2, -4.2];
@@ -128,5 +132,50 @@ export const SHOTS = [
     ],
     cast: [{ who: 'hero', at: [0, 0], yaw: 0.3, move: LOOK_AROUND, face: 'dazed' }],
     cam: { focus: 'hero', yaw: 0.55, pitch: 0.12, dist: 1.9, fov: 30, frame: [0.08, -0.05] },
+  },
+
+  /* ── 第 2 頁　兵營・戰後 ─────────────────────────────────────── */
+  {
+    // 殭屍倒了一地，主角站在中間喘氣：略低的中景，裁到前腳，三隻殭屍躺在四周（前景那一隻只露一截）。
+    id: 'p2-1', size: [860, 720], ink: 3.5,
+    horizon: 0.5,
+    bg: [
+      { piece: 'pavilion', R: 1.9, h: 1.45, roof: 1.25, x: 0.1, y: 0.52, size: 0.26 },
+      { piece: 'weaponRack', x: 0.88, y: 0.52, size: 0.26 },
+      { piece: 'standard', x: 0.7, y: 0.52, size: 0.36 },
+    ],
+    // 殭屍趴平在地上、下巴貼地、叉叉眼，頭朝各個方向。鏡頭從高一點的地方往下看，看得到牠們躺著；
+    // 主角仰著頭喘，帽簷才不會擋住眼睛。
+    cast: [
+      { who: 'zombie', at: [-1.9, -1.2], yaw: 0.9, move: { ...FLOP, headTilt: 0.4 }, face: 'ko', eyes: { lift: 0.3 } },
+      { who: 'zombie', at: [1.3, -1.1], yaw: -0.3, move: { ...FLOP, headTilt: -0.3 }, face: 'ko', eyes: { lift: 0.3 } },
+      { who: 'zombie', at: [-2.4, 0.7], yaw: 1.2, move: { ...FLOP, headTilt: 0.5 }, face: 'ko', eyes: { lift: 0.3 } },
+      { who: 'hero', at: [0, 0], yaw: 0.35, move: { ...PANT, headPitch: -0.3 }, face: 'pant', blade: 'knife' },
+    ],
+    cam: { focus: 'hero', yaw: 0.45, pitch: 0.3, dist: 3.9, fov: 34, frame: [0.02, -0.04] },
+    light: [3, 7, 5],
+  },
+  {
+    // 這些傢伙從哪來的？：過肩往下看，主角的頭與肩在左下（背對我們、低著頭），腳邊趴著一隻殭屍。
+    id: 'p2-2', size: [1200, 720], ink: 3.5,
+    horizon: -0.1,
+    cast: [
+      { who: 'zombie', at: [0.35, 1.6], yaw: Math.PI + 0.75, move: { ...FLOP, headPitch: 0.2, headTilt: 0.35 }, face: 'ko', eyes: { lift: 0.3 } },
+      { who: 'hero', at: [0, 0], yaw: 0.15, move: { headPitch: 0.6, pitch: 0.12, tailPitch: -0.3, w: 1 } },
+    ],
+    cam: { focus: 'zombie', yaw: Math.PI + 1.0, pitch: 0.5, dist: 3.4, fov: 40, frame: [0.15, 0] },
+  },
+  {
+    // 去中庭問問其他人：背影，裁到腰，面朝南邊——兵營南端的城牆開了一個缺口，路從那裡出去。
+    id: 'p2-3', size: [1200, 720], ink: 3.5,
+    horizon: 0.72,
+    bg: [
+      { piece: 'rampart', from: [-30, 0], to: [0, 0], h: 4.2, thick: 2.2, ruin: 0.3, x: 0.2, y: 0.73, size: 0.16 },
+      { piece: 'rampart', from: [0, 0], to: [30, 0], h: 4.2, thick: 2.2, ruin: 0.3, x: 0.98, y: 0.73, size: 0.16 },
+      { piece: 'pavilion', R: 1.9, h: 1.45, roof: 1.25, x: 0.9, y: 0.75, size: 0.2 },
+      { piece: 'standard', x: 0.5, y: 0.74, size: 0.24 },
+    ],
+    cast: [{ who: 'hero', at: [0, 0], yaw: Math.PI, move: { headYaw: -0.15, tailPitch: -0.1, w: 1 }, blade: 'knife' }],
+    cam: { focus: 'hero', yaw: -0.3, pitch: 0.1, dist: 2.9, fov: 34, frame: [-0.22, 0.02] },
   },
 ];

@@ -26,9 +26,9 @@ export const PAGES = [
     { note: '整片兵營空蕩蕩，主角小小一隻站在中間', say: '人呢？', src: 'comic/p1-4.png', focus: '60% 35%' },
   ] },
   { title: '兵營', panels: [
-    { note: '殭屍倒了一地，主角站在中間喘氣' },
-    { note: '主角低頭看著腳邊一隻殭屍', say: '這些傢伙從哪來的？' },
-    { note: '主角轉向南邊的黑霧', say: '去中庭問問其他人。' },
+    { note: '殭屍倒了一地，主角站在中間喘氣', src: 'comic/p2-1.png', focus: '50% 40%' },
+    { note: '主角低頭看著腳邊一隻殭屍', say: '這些傢伙從哪來的？', src: 'comic/p2-2.png', focus: '50% 60%' },
+    { note: '主角轉向南邊的黑霧', say: '去中庭問問其他人。', src: 'comic/p2-3.png', focus: '30% 55%' },
   ] },
   { title: '崩塌中庭', panels: [
     { note: '中庭一圈斷柱、兩側拱廊，還是沒有人', say: '有人嗎？' },
