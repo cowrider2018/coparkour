@@ -179,7 +179,7 @@ export const FIELD = { arena: ARENA, cols: COLS, doors: {} };
  *
  * 碰撞的身體一樣大（同一個 PHYS 的圓柱）；外觀（同一件毛、BOSS 畫兩倍大、騎士 1.2 倍）在 monster.js。
  *
- * `bite` 是衝刺咬到玩家扣幾點血：小怪 1、騎士 2、BOSS 3。`soul`：死掉的時候掉出一顆靈魂（見 SOUL）。
+ * `bite` 是衝刺咬到玩家扣幾點血：小怪 1、騎士 2、BOSS 3。`soul`：死掉的時候掉出一顆靈魂（見 SOUL）——殭屍與幽靈以外都會掉。
  *
  * `breakAt` 是破防門檻。現在每一類都是 BREAK_AT，但它是逐類登記的——哪天某一類
  * 要比較硬，改那一筆就好。
@@ -189,8 +189,8 @@ export const KINDS = {
   minion: { name: '殭屍', hp: 4, speed: 3.4, breakAt: BREAK_AT, bite: 1 },
   boss: { name: 'BOSS', hp: 20, speed: 4, breakAt: BREAK_AT, bite: 3, soul: true, steady: true, skills: ['orb', 'leap', 'cone'], every: 3 },
   ghost: { name: '幽靈', hp: 4, speed: 3.4, breakAt: BREAK_AT, bite: 1, fly: true },
-  knight: { name: '騎士', hp: 10, speed: 3.6, breakAt: BREAK_AT, bite: 2, skills: ['whirl', 'cleave'], every: 2.5 },
-  king: { name: '國王', hp: 40, speed: 3.8, breakAt: BREAK_AT, bite: 2, lunges: 2, shields: 3, shieldEvery: 8, skills: ['hew', 'summon', 'gale'], every: 3 },
+  knight: { name: '騎士', hp: 10, speed: 3.6, breakAt: BREAK_AT, bite: 2, soul: true, skills: ['whirl', 'cleave'], every: 2.5 },
+  king: { name: '國王', hp: 40, speed: 3.8, breakAt: BREAK_AT, bite: 2, soul: true, lunges: 2, shields: 3, shieldEvery: 8, skills: ['hew', 'summon', 'gale'], every: 3 },
 };
 
 /**
@@ -255,7 +255,7 @@ export function harm(p, dmg) {
 }
 
 /**
- * 靈魂：KINDS 裡帶 `soul` 的那一類（BOSS）死掉的那一刻掉出一顆靈魂（畫成一顆
+ * 靈魂：KINDS 裡帶 `soul` 的那幾類（BOSS、騎士、國王）死掉的那一刻掉出一顆靈魂（畫成一顆
  * 半透明、發光的狗頭，眼睛是黑色的叉叉，見 soul.js）。
  *
  *   從牠（畫成兩倍大的）身體中間那個高度受重力往下掉，落到腳下那一層地板上

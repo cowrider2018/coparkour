@@ -1349,7 +1349,8 @@ console.log('19. 玩家的血');
 /* ── 20. 靈魂 ────────────────────────────────────────────────────── */
 console.log('20. 靈魂');
 {
-  ok(KINDS.boss.soul && !KINDS.minion.soul && !KINDS.ghost.soul, '只有 BOSS 會掉靈魂');
+  ok(KINDS.boss.soul && KINDS.knight.soul && KINDS.king.soul && !KINDS.minion.soul && !KINDS.ghost.soul,
+    '殭屍與幽靈以外（BOSS、騎士、國王）都會掉靈魂');
 
   // 在平地上被打死：從身體中間掉下來，落在地板上 0.5 公尺停住。
   const s = dropSoul({ x: 1, y: 0, z: 2, field: FIELD });
@@ -2185,8 +2186,8 @@ console.log('27. 王冠');
 console.log('28. 國王');
 {
   const K = KINDS.king;
-  ok(K.hp === 40 && K.speed === 3.8 && K.bite === 2 && !K.fly && !K.steady && !K.soul,
-    '國王：血 40、腳程 3.8、咬 2、走路受重力、衝刺打得斷、不掉靈魂');
+  ok(K.hp === 40 && K.speed === 3.8 && K.bite === 2 && !K.fly && !K.steady && K.soul,
+    '國王：血 40、腳程 3.8、咬 2、走路受重力、衝刺打得斷、會掉靈魂');
   const king = () => makeMonster({ kind: 'king', x: 0, z: 0, yaw: 0 });
   const hero = (x, z) => ({ ...body(x, z), hp: 10, max: 10, guard: 0 });
 
