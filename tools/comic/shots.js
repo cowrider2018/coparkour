@@ -73,6 +73,10 @@ const REAR = {
   pitch: -0.80, headPitch: 0.95, drop: -0.12, tailPitch: 0.40,
   front: -1.10, knee: 0.70, hind: -0.20, legs: 1, w: 1,
 };
+/** 跪下：前半身伏低、頭垂下去（騎士幽靈在主角面前行禮）。 */
+const KNEEL = { pitch: 0.35, headPitch: 0.55, drop: 0.3, front: 1.2, knee: -1.6, hind: 0, legs: 1, tailPitch: -0.5, w: 1 };
+/** 捧著：上半身立起來，兩隻前腳收在胸前（捧出自己的靈魂）。 */
+const OFFER = { pitch: -0.8, headPitch: 0.6, drop: -0.1, front: -1.2, knee: 1.2, hind: -0.2, legs: 1, tailPitch: 0.3, w: 1 };
 /** 喘氣：身體往前沉、頭垂一點，尾巴放低。 */
 const PANT = { pitch: 0.12, headPitch: 0.12, drop: 0.05, tailPitch: -0.35, w: 1 };
 
@@ -516,5 +520,69 @@ export const SHOTS = [
     cast: [{ who: 'ghost', at: [0, -0.92], y: 0.62, yaw: 0.35, air: 0, move: { headPitch: 0.15, pitch: -0.25, w: 1 }, face: 'glare', eyes: { lift: 0.3 }, shadow: false }],
     cam: { focus: 'ghost', yaw: 0.6, pitch: 0.12, dist: 3.0, fov: 36, frame: [0.08, -0.12] },
     light: [3, 6, 5],
+  },
+
+  /* ── 第 10 頁　墓室・戰後 ────────────────────────────────────── */
+  {
+    // 幽靈散去，墓室只剩燭火：中景。主角站在兩排石棺之間的走道上，愣愣地四處看；最後幾團霧散掉。
+    id: 'p10-1', size: [1500, 720], ink: 3.5,
+    horizon: 0.66,
+    bg: [
+      { piece: 'pointedArch', span: 14, rise: 9, thick: 0.5, depth: 0.55, ruin: 0, seed: 11, x: 0.5, y: 1.0, size: 1.3 },
+      ...[[0.06, 0.2], [0.24, 0.14], [0.76, 0.14], [0.94, 0.2]].map(([x, size], i) => (
+        { piece: 'sarcophagus', candle: [0.42 * (x < 0.5 ? 1 : -1), i % 2 ? 0.85 : -0.85], view: Math.PI / 2, x, y: 0.68 + size * 0.15, size })),
+    ],
+    puffs: [
+      { x: 0.2, y: 0.3, r: 0.06, alpha: 0.5, seed: 3 },
+      { x: 0.83, y: 0.22, r: 0.05, alpha: 0.45, seed: 5 },
+    ],
+    cast: [{ who: 'hero', at: [0, 0], yaw: 0.3, move: LOOK_AROUND, face: 'dazed', eyes: { lift: 0.4, spread: 0.15 } }],
+    cam: { focus: 'hero', yaw: 0.8, pitch: 0.06, dist: 3.4, fov: 34, frame: [0, 0.05] },
+    light: [4, 7, 6],
+  },
+  {
+    // 全都……在這裡。：主角的臉在左邊（難過、一顆大淚珠），右邊一排一排的石棺一路排到很遠——
+    // 地平線拉高，石棺縮成一列一列，數不完。
+    id: 'p10-2', size: [1500, 720], ink: 4,
+    horizon: 0.42,
+    bg: [
+      ...[0, 1, 2, 3].flatMap((row) => Array.from({ length: 8 - row }, (_, i) => ({
+        piece: 'sarcophagus', view: Math.PI / 2, candle: [0.42, i % 2 ? 0.85 : -0.85],
+        x: 0.42 + (i + 0.5 + (row % 2) * 0.35) / (8 - row) * 0.6, y: 0.43 + row * 0.15, size: 0.045 + row * 0.02,
+      }))),
+    ],
+    cast: [{ who: 'hero', at: [0, 0], yaw: 1.35, move: { headPitch: 0.1, tailPitch: -0.6, w: 1 }, face: 'sad', eyes: { lift: 0.2 } }],
+    cam: { focus: 'hero', yaw: 0.85, pitch: 0.0, dist: 1.25, fov: 34, frame: [-0.28, 0.1] },
+    light: [4, 6, 6],
+  },
+  {
+    // 騎士幽靈跪下：中景、側面。騎士幽靈（頭盔、半透明、劍擱在嘴裡）伏在主角面前行禮，主角愣著。
+    id: 'p10-3', size: [1000, 720], ink: 3.5,
+    horizon: 0.66,
+    bg: [{ piece: 'pointedArch', span: 14, rise: 9, thick: 0.5, depth: 0.55, ruin: 0, seed: 11, x: 0.5, y: 0.66, size: 0.62 }],
+    cast: [
+      { who: 'knightGhost', at: [0.9, 0], yaw: -Math.PI / 2 + 0.3, scale: 1.2, blade: 'knight', move: KNEEL },
+      { who: 'hero', at: [-1.0, 0], yaw: Math.PI / 2 - 0.5, move: { headPitch: 0.15, w: 1 }, face: 'dazed' },
+    ],
+    cam: { pos: [0.4, 0.9, 4.0], look: [0, 0.55, 0], fov: 38 },
+  },
+  {
+    // 捧出靈魂：特寫。騎士幽靈立起上半身，兩隻前腳在胸前捧著一顆發光的狗頭（自己的靈魂），遞過來。
+    id: 'p10-4', size: [1000, 720], ink: 4,
+    cast: [{ who: 'knightGhost', at: [0, 0], yaw: 0, scale: 1.2, move: { ...OFFER, headPitch: 0.9 } }],
+    souls: [{ at: [0, 0.64, 0.62], yaw: 0.9, scale: 0.6, seed: 8 }],
+    cam: { pos: [1.9, 0.75, 1.5], look: [0.0, 0.95, 0.35], fov: 40 },
+  },
+  {
+    // 國王……拜託你了。：側面的仰角。騎士幽靈仰起頭往上看（國王在上面），身體越來越淡、散成霧往上飄。
+    id: 'p10-5', size: [1000, 720], ink: 3.5,
+    cast: [{ who: 'knightGhost', at: [0, 0], yaw: 0, scale: 1.2, alpha: 0.3, blade: 'knight', move: { pitch: -0.25, headPitch: -0.4, tailPitch: -0.4, w: 1 } }],
+    puffs: [
+      { x: 0.32, y: 0.2, r: 0.07, alpha: 0.6, seed: 3 },
+      { x: 0.7, y: 0.14, r: 0.06, alpha: 0.55, seed: 5 },
+      { x: 0.76, y: 0.42, r: 0.08, alpha: 0.6, seed: 9 },
+      { x: 0.24, y: 0.5, r: 0.05, alpha: 0.5, seed: 11 },
+    ],
+    cam: { focus: 'knightGhost', yaw: 0.55, pitch: -0.32, dist: 3.0, fov: 40, frame: [0.05, 0.12] },
   },
 ];
