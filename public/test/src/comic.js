@@ -52,10 +52,10 @@ export const PAGES = [
     { note: '從井底往上：主角的臉探進井口', say: '水……', src: 'comic/p6-3.png', focus: '50% 70%' },
   ] },
   { title: '圓塔水窖', panels: [
-    { note: '主角趴在井緣，脖子伸得長長的往下' },
-    { note: '腳下的石頭鬆脫，前腳一滑' },
-    { note: '主角四腳朝天往下掉', say: '啊——' },
-    { note: '摔在水窖地上，幽靈從拱廊後面浮出來' },
+    { note: '主角趴在井緣，脖子伸得長長的往下', src: 'comic/p7-1.png', focus: '50% 40%' },
+    { note: '腳下的石頭鬆脫，前腳一滑', src: 'comic/p7-2.png', focus: '60% 35%' },
+    { note: '主角四腳朝天往下掉', say: '啊——', src: 'comic/p7-3.png', focus: '50% 50%' },
+    { note: '摔在水窖地上，幽靈從拱廊後面浮出來', src: 'comic/p7-4.png', focus: '50% 55%' },
   ] },
   { title: '圓塔水窖', panels: [
     { note: '最後一隻幽靈散成霧' },

@@ -363,4 +363,61 @@ export const SHOTS = [
     cam: { pos: [0, -1.7, 0.05], look: [0, 0.9, -0.05], fov: 46 },
     light: [0, -2, 5],
   },
+
+  /* ── 第 7 頁　水窖・開場 ─────────────────────────────────────── */
+  {
+    // 趴在井緣上往下看：側面中景。主角整隻趴上井圈，前半身探出井口、脖子伸得長長的往下。
+    id: 'p7-1', size: [1800, 620], ink: 3.5,
+    horizon: 0.78,
+    bg: [
+      { piece: 'house', W: 4.6, D: 4, e: 5.4, seed: 3, x: 0.08, y: 0.8, size: 1.0 },
+      { piece: 'house', W: 4.6, D: 4, e: 5.0, seed: 4, x: 0.93, y: 0.8, size: 0.95 },
+    ],
+    props: [{ piece: 'well', r: 1.1, seed: 2, at: [0, 0] }],
+    cast: [{ who: 'hero', at: [0, -1.05], y: 0.7, yaw: 0, move: { pitch: 0.55, headPitch: 0.55, drop: 0.12, front: -0.9, hind: 0.6, legs: 0.8, tailPitch: 0.7, w: 1 }, face: 'hope', shadow: false }],
+    cam: { pos: [4.2, 1.15, -0.6], look: [0, 0.75, -0.6], fov: 30 },
+    light: [5, 7, 2],
+  },
+  {
+    // 腳下的石頭鬆脫：主角探出井口的前半身，前腳踩空往下滑，嚇一跳；碎石與速度線往下掉（井緣不入鏡，
+    // 擋在臉前面的話表情會畫在石頭上）。
+    id: 'p7-2', size: [900, 720], ink: 4,
+    bg: [
+      { piece: 'rubble', r: 0.4, n: 5, seed: 8, x: 0.24, y: 0.88, size: 0.11 },
+      { piece: 'rubble', r: 0.4, n: 4, seed: 12, x: 0.5, y: 1.0, size: 0.09 },
+      { piece: 'rubble', r: 0.5, n: 6, seed: 3, x: 0.74, y: 0.8, size: 0.08 },
+    ],
+    speedLines: { angle: Math.PI / 2, rows: 12, band: [0.2, 0.8], len: [0.35, 0.55], seed: 5 },
+    cast: [{ who: 'hero', at: [0, 0], y: 0.7, yaw: 0, move: { pitch: 0.55, headPitch: -0.45, drop: 0.05, front: -1.2, hind: 0.6, legs: 0.9, tailPitch: 0.9, w: 1 }, face: 'shock', eyes: { lift: 0.6, spread: 0.3 }, shadow: false }],
+    cam: { focus: 'hero', yaw: 0.8, pitch: -0.3, dist: 1.8, fov: 40, frame: [0.06, -0.2] },
+    light: [4, 7, 5],
+  },
+  {
+    // 啊——：從井底往上拍。主角四腳朝天往下掉，哭出來；四周的集中線是井壁，中間一圈天空（跟上一頁同一個井）。
+    id: 'p7-3', size: [1150, 720], ink: 4,
+    focusLines: { clear: 0.46, n: 220, width: 0.02, at: [0.5, 0.45] },
+    cast: [{ who: 'hero', at: [0, 0], y: 1.2, yaw: 0, tip: 1.9, air: -6, move: { headPitch: -0.1, tailPitch: 0.8, w: 1 }, face: 'tears', eyes: { lift: 0.6, spread: 0.3 }, shadow: false }],
+    cam: { focus: 'hero', yaw: 0.1, pitch: -0.4, dist: 2.2, fov: 44, frame: [0, -0.02] },
+    light: [0, -3, 4],
+  },
+  {
+    // 摔在水窖地上，幽靈浮出來：大遠景。一圈拱廊與斷柱、垂下來的鎖鏈；主角小小一隻趴在正中間發愣，
+    // 拱廊後面幾隻幽靈浮出來，紅眼睛。
+    id: 'p7-4', size: [1800, 720], ink: 3,
+    horizon: 0.62,
+    bg: [
+      ...[0.06, 0.3, 0.7, 0.94].map((x, i) => ({ piece: 'arcade', bays: 1, span: 3.0, pier: 0.9, legH: 2.8, depth: 1.0, ruin: 0.3 + i * 0.1, seed: 11 + i, x, y: 0.63, size: 0.42 })),
+      ...[0.18, 0.42, 0.58, 0.82].map((x, i) => ({ piece: 'column', r: 0.42, h: 4.4, broken: [0, 0.5, 0, 0.35][i], seed: 21 + i, x, y: 0.64, size: [0.36, 0.18, 0.36, 0.24][i] })),
+      { piece: 'chain', from: [0, 3.2, 0], to: [1.4, 0, 0], n: 12, sag: 0.9, x: 0.26, y: 0.36, size: 0.36 },
+      { piece: 'chain', from: [0, 3.2, 0], to: [-1.4, 0, 0], n: 12, sag: 0.9, x: 0.76, y: 0.34, size: 0.34 },
+    ],
+    cast: [
+      { who: 'hero', at: [0, 0], yaw: 0.2, move: { ...FLOP, headPitch: -0.1, headTilt: 0.2 }, face: 'dazed' },
+      { who: 'ghost', at: [-6.5, -9], yaw: 0.6, y: 0.5, air: 0, face: 'glare', shadow: false },
+      { who: 'ghost', at: [-2.8, -10], yaw: 0.3, y: 0.9, air: 0, face: 'glare', shadow: false },
+      { who: 'ghost', at: [3.0, -9.5], yaw: -0.3, y: 0.6, air: 0, face: 'glare', shadow: false },
+      { who: 'ghost', at: [6.8, -8.5], yaw: -0.6, y: 1.0, air: 0, face: 'glare', shadow: false },
+    ],
+    cam: { pos: [0, 2.2, 8.5], look: [0, 1.0, -2], fov: 42 },
+  },
 ];
