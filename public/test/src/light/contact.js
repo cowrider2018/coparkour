@@ -13,7 +13,8 @@
        在哪，腳就落在哪。站在盒子或圓柱頂上的時候，影子裁在那一面的邊界裡
        （碰撞體的那個矩形或圓）：站在台子邊上，另一半不會懸在半空中。
      · 長軸朝著角色面向的方向（狗是長的）。大小照體型：怪物看 monster.js 的
-       sizeOf（BOSS 兩倍、騎士 1.2 倍），玩家是 1。
+       sizeOf（BOSS 兩倍、騎士 1.2 倍），玩家是 1。不是怪物的那幾隻（國王復活之後的人民與
+       國王，f.crowd）自己帶著 size。
 
    怎麼畫：一個 InstancedMesh、固定 POOL 片，一個 draw call；每幀只改實例
    矩陣與兩個實例屬性，不配置任何東西。不寫深度、往鏡頭拉一點（polygonOffset）
@@ -191,6 +192,7 @@ export function setup(ctx) {
         const m = foes[j];
         if (place(n, m, (sizeOf && sizeOf(m.kind)) || 1)) n++;
       }
+      for (let j = 0; j < f.crowd.length && n < POOL; j++) if (place(n, f.crowd[j], f.crowd[j].size || 1)) n++;
       mesh.count = n;
       if (!n) return;
       mesh.instanceMatrix.needsUpdate = true;

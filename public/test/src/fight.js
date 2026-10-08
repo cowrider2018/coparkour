@@ -551,11 +551,14 @@ export class Fight {
   }
 
   /** 活著的國王這一幀：聚到之前藏著，之後從 0 長到原本大小（越長越慢）。 */
-  _risen(dt, camera) {
+  _risen(dt, camera, player) {
     if (!this._king) return;
     const v = this._revival, u = v ? Math.min(1, (v.t - REVIVE_GROW) / REVIVE.grow) : 0;
-    this._king.draw(dt, camera, u > 0 ? 1 - (1 - u) ** 3 : 0);
+    this._king.draw(dt, camera, u > 0 ? 1 - (1 - u) ** 3 : 0, player);
   }
+
+  /** 復活的國王（king.js）；沒有要收靈魂（戰鬥模式）是 null。 */
+  get king() { return this._king; }
 
   /**
    * 換一批怪物上場：借好每一隻的外觀、藏起用不到的，每一隻站在自己的站位上。
@@ -897,7 +900,7 @@ export class Fight {
       if (shields) shields.show(dt, m.shields, m.x, m.y + mo.lift, m.z, sizeOf(m.kind));
     }
     for (const f of this._corpses) this._lie(f, dt, camera);
-    this._risen(dt, camera);
+    this._risen(dt, camera, player);
     // 召喚中：幽靈從地底升上來，倒數完的那一刻剛好整隻離開地面（monster.js 的 riseLift）。
     for (const f of this.foes) {
       if (!f.rising || !f.m.cast) continue;

@@ -19,6 +19,11 @@
                   每一個房間都走得到。
      5. 靈魂      一輪掉得出幾顆靈魂（route.js 的 SOULS，國王要收的數）＝每一場會掉靈魂的怪物
                   一隻一顆加起來。
+     6. 人民      國王復活之後每一張圖撒的人民（folk.js）：每一張 1～3 叢、每一叢 2～4 隻，
+                  都站在從出生點走得到、平的地板上（腳下就是那一層地板、身體沒有嵌在碰撞盒裡），
+                  離黑牆與感測區夠遠，叢與叢分得開、一叢裡的不擠在一起，面朝自己那一叢的中間。
+     7. 頭        頭跟著主角（gaze.js）：左右照主角在哪一邊轉、主角在上面就抬頭；左右超過 60° 不跟、
+                  回到前面；轉過去是追的，不是一幀跳過去。
 
    房間裡面走不走得通不在這裡驗——那是 verify:terrain 的事（每張圖從出生點
    真的走到中心、感測區都踩得到）。這裡只驗房間與房間之間。
@@ -32,6 +37,9 @@ import {
   STAGES, OPEN, START, SOULS, roomOf, foesOf, inStage, makeRun, doorsFor, portalsOn, restAt,
 } from '../public/test/src/route.js';
 import { KINDS } from '../public/test/src/combat.js';
+import { FOLK, walkCells, plan } from '../public/test/src/folk.js';
+import { GAZE, Gaze, aimHead } from '../public/test/src/gaze.js';
+import { portalGap } from '../public/test/src/walk.js';
 
 let fails = 0;
 const ok = (cond, msg) => {
@@ -150,6 +158,65 @@ console.log('5. 靈魂');
   const each = STAGES.map((s) => s.foes.filter((f) => KINDS[f.kind].soul).length);
   ok(SOULS === each.reduce((a, b) => a + b, 0) && SOULS === 2,
     `一輪掉得出 ${SOULS} 顆靈魂（每一場 ${each.join('、')}），國王要收的就是這麼多`);
+}
+
+console.log('6. 人民');
+{
+  const open = Object.fromEntries(Object.keys(ruins.doors).map((d) => [d, true]));
+  // 固定的亂數：每一次驗的都是同一批，壞了重跑得出來。
+  let seed = 7;
+  const rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (const a of ruins.arenas) {
+    const [sx, sy, sz] = ruins.spawns[a.id];
+    const cells = walkCells(COLS, a, { x: sx, y: sy, z: sz }, open);
+    const okAt = (x, z) => arenaGap(a, x, z) > FOLK.edge && ruins.portals.every((p) => portalGap(p, x, z)[0] > FOLK.portal);
+    const counts = [];
+    let bad = '';
+    for (let round = 0; round < 20; round++) {
+      const spots = plan(cells, rng, okAt);
+      const groups = [...new Set(spots.map((o) => o.cluster))].map((c) => spots.filter((o) => o.cluster === c));
+      counts.push(groups.length);
+      if (groups.length < FOLK.clusters[0] || groups.length > FOLK.clusters[1]) bad ||= `${groups.length} 叢`;
+      for (const g of groups) {
+        if (g.length < FOLK.members[0] || g.length > FOLK.members[1]) bad ||= `一叢 ${g.length} 隻`;
+        const cx = g.reduce((t, o) => t + o.x, 0) / g.length, cz = g.reduce((t, o) => t + o.z, 0) / g.length;
+        for (const o of g) {
+          if (Math.abs(supportInfo(COLS, o.x, o.z, o.y + 0.1).y - o.y) > 1e-6) bad ||= `浮著或埋著 (${o.x}, ${o.z})`;
+          const [px, pz] = solveXZ(COLS, o.x, o.z, o.y, open);
+          if (Math.hypot(px - o.x, pz - o.z) > 1e-4) bad ||= `嵌在碰撞盒裡 (${o.x}, ${o.z})`;
+          if (!okAt(o.x, o.z)) bad ||= `太靠近黑牆或感測區 (${o.x}, ${o.z})`;
+          if (!FOLK.looks.includes(o.look)) bad ||= `不是第 14 頁的動物 ${o.look}`;
+          if (g.some((q) => q !== o && Math.hypot(q.x - o.x, q.z - o.z) < FOLK.gap - 1e-9)) bad ||= '一叢裡擠在一起';
+          if (Math.abs(Math.atan2(cx - o.x, cz - o.z) - o.yaw) > 1e-9) bad ||= '沒有面朝自己那一叢';
+        }
+        for (const h of groups) if (h !== g && Math.hypot(h[0].x - g[0].x, h[0].z - g[0].z) < FOLK.apart - 1e-9) bad ||= '叢與叢太近';
+      }
+    }
+    const flat = cells.filter((c) => c.flat).length;
+    ok(!bad, `${BLOCKS.find((b) => b.id === a.id).name}：走得到 ${cells.length} 格（平的 ${flat}），撒 20 次都是 ${Math.min(...counts)}～${Math.max(...counts)} 叢、站得好${bad ? `——${bad}` : ''}`);
+  }
+}
+
+console.log('7. 頭');
+{
+  const left = aimHead(0, 0, 1, 0, 1, 1, 1), up = aimHead(0, 0, 1, 0, 0, 3, 2);
+  ok(left && Math.abs(left.yaw - Math.PI / 4) < 1e-9 && Math.abs(left.pitch) < 1e-9, '主角在左前方 45°：頭往左轉 45°、不抬不低');
+  ok(up && up.yaw === 0 && up.pitch < 0 && up.pitch >= -GAZE.pitch, '主角在上面：抬頭（不超過上限）');
+  ok(aimHead(0, 0, 1, 0, Math.sin(1.1), 1, Math.cos(1.1)) === null && aimHead(0, 0, 1, 0, -1, 1, 0) === null
+    && aimHead(0, 0, 1, 0, Math.sin(1.0), 1, Math.cos(1.0)) !== null, '左右超過 60° 不跟（63° 不跟、57° 跟），正後方也不跟');
+  const g = new Gaze();
+  const first = g.step(1 / 60, left);
+  ok(first.headYaw > 0 && first.headYaw < left.yaw / 2 && first.w === 1, '轉過去是追的：第一幀只轉一點');
+  for (let t = 0; t < 2; t += 1 / 60) g.step(1 / 60, left);
+  ok(Math.abs(g.yaw - left.yaw) < 1e-3, '追得上');
+  for (let t = 0; t < 2; t += 1 / 60) g.step(1 / 60, null);
+  ok(Math.abs(g.yaw) < 1e-3, '主角走到後面：頭回到前面');
+  const sit = { pitch: -0.5, headPitch: 0.3, w: 1 };
+  const s = new Gaze();
+  for (let t = 0; t < 2; t += 1 / 60) s.step(1 / 60, { yaw: 0, pitch: 0 }, sit);
+  ok(Math.abs(s.pitch - 0.5) < 1e-3, '身體仰著（坐）：頭扣掉身體仰的那一份，看出去還是平的');
+  for (let t = 0; t < 2; t += 1 / 60) s.step(1 / 60, null, sit);
+  ok(Math.abs(s.pitch - 0.3) < 1e-3, '不跟的時候回到那一個姿勢本來的頭');
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

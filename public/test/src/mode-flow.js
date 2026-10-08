@@ -27,6 +27,9 @@
                          國王復甦（fight.js 的 REVIVE）——屍體炸成一團幽靈血，血慢下來再加速聚攏，
                          活著的國王（原本的灰毛）從 0 長到原本大小；演完才慢動作，翻國王復活那一頁
                          （第 14 頁）。
+     國王復活之後        第 14 頁蓋住畫面的時候，每一張圖撒出王國的人民（folk.js：每一張 1～3 叢、
+                         每一叢 2～4 隻，第 14 頁那幾隻）。人民與國王的頭都跟著主角轉（gaze.js）。
+                         門在王座廳打完的那一刻就全開了，之後一直開著（route.js 的 doorsFor）。
      不在戰鬥中          清完一場之後、還沒走進下一場之前：很快回血到最大血量
                          （combat.js 的 regen）。
      倒下（血扣光）      不當幀重生，先演一段（death.js）：怪物失去目標、站著；人被那一下
@@ -58,6 +61,7 @@ import { Death } from './death.js';
 import { Story } from './story.js';
 import { SCRIPT, pagesOf, preloadComic } from './comic.js';
 import { Fight, DEATH_TEXT } from './fight.js';
+import { Folk } from './folk.js';
 import { Sound } from './sound.js';
 import { Music } from './music.js';
 import { resetLife, refill, regen, KINDS } from './combat.js';
@@ -95,6 +99,9 @@ const player = { ...makeHero(0, 0, 0), block: 'wallwalk' };
    外觀建好——牠是進場之後才上場的，那時候才建就是一頓。 */
 const fight = new Fight(scene, zoo, { respawn: false, renderer, sound: new Sound(), souls: SOULS });
 fight.preload(STAGES.map((_, k) => foesOf(k)));
+
+/** 國王復活之後的王國人民（folk.js）。 */
+const folk = new Folk(scene, zoo);
 
 /** 背景音樂：探索與戰鬥兩首，換的時候淡出淡入（music.js）。 */
 const music = new Music();
@@ -162,6 +169,7 @@ function startFrom(k) {
   resetLife(player);
   fight.lineup([], fieldOf('wallwalk'));
   fight.reset();                          // 地上沒撿的靈魂一起清掉
+  folk.clear();
   applyDoors();
   place(k === 0 ? { ...ruins.arrivals[START] } : restAt(k, ruins));
   const say = k === 0 ? `從頭開始：${STAGES[0].name}` : `從第 ${k + 1} 場開始：${STAGES[k].name}`;
@@ -233,6 +241,14 @@ function rest() {
   fight.lineup([], fieldOf(player.block));
   applyDoors();
   place(k === 0 ? { ...ruins.arrivals[START] } : restAt(k, ruins));
+}
+
+/** 國王復活：每一張圖撒人民（folk.js），主角與國王腳邊 FOLK_AWAY 公尺以內不撒。 */
+const FOLK_AWAY = 3;
+function populate() {
+  const king = fight.king.body();
+  folk.spawn(ruins, COLS, doors, (x, z) => Math.hypot(x - player.x, z - player.z) < FOLK_AWAY
+    || (king && Math.hypot(x - king.x, z - king.z) < FOLK_AWAY));
 }
 
 /** 感測區把人送走（沒在打的時候才會發生）。換了區塊就報名字。 */
@@ -325,7 +341,8 @@ function frame(now) {
     const gift = fight.give(dt, player, !still && controls.jumpDown());
     const { given, need } = fight.offer;
     // 交滿：最後那一顆落到國王身上之後國王復甦（fight.js 的 REVIVE），演完才慢動作、翻國王復活的那一頁。
-    if (gift.risen) story.start(pagesOf(SCRIPT.offered), { slow: true });
+    // 書頁蓋住的時候撒人民（建一堆動物要一下子，蓋著看不到）：不撒在主角與國王腳邊。
+    if (gift.risen) story.start(pagesOf(SCRIPT.offered), { slow: true, cover: populate });
     if (gift.done) hud.flash(`${need} 顆靈魂都交給國王了`);
     else if (gift.short) hud.flash(`還需要 ${need - given} 顆靈魂——回去找找沒撿到的`);
     else if (gift.gave) hud.flash(`交出一顆靈魂（${given}/${need}）`);
@@ -352,8 +369,13 @@ function frame(now) {
   }
 
   fight.draw(dt, camera, player);
+  folk.update(dt, camera, player, player.block);
   if (death.update(dt, player, viewYaw)) rest();
-  light.update({ dt, now: clock, player, block: player.block, foes: fight.foes.map((f) => f.m) });
+  const king = fight.king && fight.king.body();
+  light.update({
+    dt, now: clock, player, block: player.block, foes: fight.foes.map((f) => f.m),
+    crowd: king ? [...folk.here(player.block), king] : folk.here(player.block),
+  });
   light.render();
   pad.draw();
 
@@ -375,7 +397,7 @@ function frame(now) {
 
 fitView({
   renderer, camera, pad, hud,
-  ink: (px, h) => { zoo.setInkPx(px, h); fight.setInkPx(px, h); death.setInkPx(px, h); },
+  ink: (px, h) => { zoo.setInkPx(px, h); fight.setInkPx(px, h); death.setInkPx(px, h); folk.setInkPx(px, h); },
 });
 
 document.getElementById('boot').remove();
@@ -384,7 +406,7 @@ requestAnimationFrame(frame);
 
 // 給主控台一個把手，方便手動看東西。run 會被換掉，所以是 getter。
 window.flowArea = {
-  scene, camera, renderer, zoo, player, ruins, cam, pad, hud, fight, music, doors, death, story, startFrom,
+  scene, camera, renderer, zoo, player, ruins, cam, pad, hud, fight, folk, music, doors, death, story, startFrom,
   get run() { return run; },
   get foes() { return fight.foes; },
 };

@@ -3,12 +3,13 @@
    長出活著的國王（fight.js 的 REVIVE 管什麼時候、長到幾成）。這一支是牠的外觀與牠自己的動作。
 
    外觀是 monster.js 的 makeLivingKing（垂耳犬原本的灰毛、1.4 倍高），戴王冠（crown.js）。
-   一開始就建好、藏著：復甦的那一刻才建、才編的話就頓一下。
+   一開始就建好、藏著：復甦的那一刻才建、才編的話就頓一下。頭跟著主角轉（gaze.js），跟人民一樣。
    ------------------------------------------------------------------ */
 
 import { PHYS } from './walk.js';
 import { makeLivingKing, sizeOf } from './monster.js';
 import { Crown } from './crown.js';
+import { Gaze, aimHead, GAZE } from './gaze.js';
 
 export class LivingKing {
   /**
@@ -23,6 +24,7 @@ export class LivingKing {
     scene.add(this.critter.root);
     /** 站在哪、面朝哪（{x, y, z, yaw}）；還沒復甦是 null。 */
     this.at = null;
+    this.gaze = new Gaze();
   }
 
   setInkPx(px, h) { this.critter.setInkPx(px, h); }
@@ -32,6 +34,14 @@ export class LivingKing {
     this.at = { x, y, z, yaw };
     const c = this.critter;
     c._yaw = c._yawGoal = yaw;
+    this.gaze.reset();
+  }
+
+  /** 看得到的時候腳下那一片接觸陰影要的（light/contact.js 的 crowd）；藏著是 null。 */
+  body() {
+    if (!this.critter.root.visible) return null;
+    const { at } = this, y = this.critter._yaw;
+    return { x: at.x, y: at.y, z: at.z, aimX: Math.sin(y), aimZ: Math.cos(y), size: this.critter.root.scale.x * sizeOf('king') };
   }
 
   /** 收起來（重玩）。 */
@@ -41,9 +51,10 @@ export class LivingKing {
   }
 
   /**
-   * 這一幀：`grown` 是長到幾成（0 = 藏著、1 = 原本大小），繞著腰那一點放大。在相機擺好之後叫。
+   * 這一幀：`grown` 是長到幾成（0 = 藏著、1 = 原本大小），繞著腰那一點放大；頭跟著 `player`。
+   * 在相機擺好之後叫。
    */
-  draw(dt, camera, grown) {
+  draw(dt, camera, grown, player) {
     const { critter, crown, at } = this;
     critter.root.visible = !!at && grown > 0;
     if (!critter.root.visible) return;
@@ -51,8 +62,11 @@ export class LivingKing {
     critter.root.position.set(at.x, at.y + waist * (1 - grown), at.z);
     critter.root.scale.setScalar(grown);
     critter.setFacing(at.yaw);
+    const aim = aimHead(critter._yaw, at.x, at.y + GAZE.eye * critter.height * grown, at.z,
+      player.x, player.y + GAZE.eye * PHYS.height, player.z);
     critter.update(dt, {
-      speed: 0, grounded: true, vy: 0, viewYaw: Math.atan2(camera.position.x - at.x, camera.position.z - at.z), move: null,
+      speed: 0, grounded: true, vy: 0, viewYaw: Math.atan2(camera.position.x - at.x, camera.position.z - at.z),
+      move: this.gaze.step(dt, aim),
     });
     crown.update();
   }
