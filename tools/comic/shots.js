@@ -632,4 +632,40 @@ export const SHOTS = [
     cam: { focus: 'hero', yaw: 0.05, pitch: -0.08, dist: 2.2, fov: 40, frame: [0, 0.02] },
     light: [2, 6, 6],
   },
+
+  /* ── 第 12 頁　中庭（回來）・開場 ───────────────────────────────── */
+  {
+    // 抬頭看門樓：背影、仰角。主角咬著刀站在中庭中央，門樓高高地壓在上面，鐵閘還放著，牆頭兩隻獸像。
+    id: 'p12-1', size: [860, 720], ink: 3.5,
+    horizon: 0.86,
+    bg: [
+      { piece: 'gateway', span: 5, rise: 3.6, h: 6.4, side: 5, lift: 0, x: 0.5, y: 0.88, size: 0.8 },
+      { piece: 'gargoyle', s: 0.9, seed: 3, x: 0.12, y: 0.17, size: 0.1 },
+      { piece: 'gargoyle', s: 0.9, seed: 4, flip: true, x: 0.88, y: 0.17, size: 0.1 },
+    ],
+    cast: [{ who: 'hero', at: [0, 0], yaw: Math.PI, move: { headPitch: -0.45, tailPitch: 0.1, w: 1 }, blade: 'knife' }],
+    cam: { focus: 'hero', yaw: 0.35, pitch: -0.12, dist: 2.6, fov: 40, frame: [-0.08, 0.26] },
+  },
+  {
+    // 鐵閘緩緩升起：特寫。拱裡的鐵閘升到一半，底下透出王座廳那一頭的光，塵土從閘底落下。
+    id: 'p12-2', size: [1200, 720], ink: 3.5,
+    horizon: 0.9,
+    rays: { at: [0.5, 0.9], n: 20, from: Math.PI, to: Math.PI * 2, inner: 0.04, width: 0.45, color: '#fff1c4', alpha: 0.95 },
+    bg: [{ piece: 'gateway', span: 5, rise: 3.6, h: 6.4, side: 3, lift: 1.2, x: 0.5, y: 0.92, size: 1.25 }],
+    puffs: [
+      { x: 0.3, y: 0.86, r: 0.07, color: '#cdbb9c', alpha: 0.8, seed: 4 },
+      { x: 0.7, y: 0.88, r: 0.08, color: '#cdbb9c', alpha: 0.8, seed: 6 },
+    ],
+    cast: [],
+    cam: { pos: [0, 1, 6], look: [0, 1, 0], fov: 40 },
+  },
+  {
+    // 國王。：背影。鐵閘升到頂，主角往門洞走，門洞裡透出光。
+    id: 'p12-3', size: [1200, 720], ink: 3.5,
+    horizon: 0.82,
+    rays: { at: [0.58, 0.72], n: 22, from: Math.PI * 0.95, to: Math.PI * 2.05, inner: 0.05, width: 0.45, color: '#fff1c4', alpha: 0.95 },
+    bg: [{ piece: 'gateway', span: 5, rise: 3.6, h: 6.4, side: 5, lift: 2.3, x: 0.58, y: 0.84, size: 0.82 }],
+    cast: [{ who: 'hero', at: [0, 0], yaw: Math.PI - 0.1, speed: 1.4, frames: 44, move: { headPitch: -0.1, w: 1 }, blade: 'knife' }],
+    cam: { focus: 'hero', yaw: -0.3, pitch: 0.06, dist: 2.4, fov: 36, frame: [-0.18, 0.12] },
+  },
 ];

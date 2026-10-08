@@ -81,9 +81,9 @@ export const PAGES = [
     { note: '主角衝進中庭', src: 'comic/p11-3.png', focus: '50% 50%' },
   ] },
   { title: '崩塌中庭', panels: [
-    { note: '主角站在中庭中央，抬頭看門樓' },
-    { note: '王座廳正門的鐵閘緩緩升起' },
-    { note: '主角往門走', say: '國王。' },
+    { note: '主角站在中庭中央，抬頭看門樓', src: 'comic/p12-1.png', focus: '45% 60%' },
+    { note: '王座廳正門的鐵閘緩緩升起', src: 'comic/p12-2.png', focus: '50% 55%' },
+    { note: '主角往門走', say: '國王。', src: 'comic/p12-3.png', focus: '45% 50%' },
   ] },
   { title: '王座廳', panels: [
     { note: '兩列柱子、台座、空著的王座' },
