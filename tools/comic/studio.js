@@ -678,20 +678,18 @@ function puffs(g, w, h, list) {
 
 /** 拍好的那一張（網點之後）再畫上表情：一張 2D 畫布。 */
 const sheet = document.createElement('canvas');
-/** 拍好的角色（網點之後）：背景拍完再疊上去。 */
-const layer = document.createElement('canvas');
 const sheetG = sheet.getContext('2d');
 
-/** 拍第 id 格：回傳 PNG 的 data URL。 */
-function render(id) {
-  const shot = SHOTS.find((s) => s.id === id);
-  if (!shot) throw new Error(`沒有這一格：${id}`);
-  const [w, h] = shot.size;
+/**
+ * 拍一組角色：擺好 view.cast、照 view.cam 對好鏡頭、用 view.light 打光，拍下來過一次網點，
+ * 回傳那一張（透明的離屏畫布）與要畫上去的表情。props、souls 只有主畫面有。
+ */
+function shoot(view, w, h, ink, { props, souls } = {}) {
   renderer.setSize(w, h, false);
-  camera.fov = shot.cam.fov;
+  camera.fov = view.cam.fov;
   camera.aspect = w / h;
-  // 主光從哪裡來：這一格自己的（世界方向，指向光），沒給就是遊戲那一盞。毛皮與王冠各讀一份。
-  const key = new THREE.Vector3(...(shot.light || KEY_POS)).normalize();
+  // 主光從哪裡來：這一組自己的（世界方向，指向光），沒給就是遊戲那一盞。毛皮與王冠各讀一份。
+  const key = new THREE.Vector3(...(view.light || KEY_POS)).normalize();
   LIGHT_DIR.value.copy(key);
   U_KEYDIR.value.copy(key);
   for (const a of allActors()) {
@@ -699,17 +697,17 @@ function render(id) {
     a.shadow.visible = false;
     a.shields?.hide();
   }
-  buildProps(shot.props);
+  buildProps(props);
   const used = {};
-  const cast = shot.cast.map((spec) => [spec, borrow(spec, used)]);
+  const cast = view.cast.map((spec) => [spec, borrow(spec, used)]);
   for (const [spec, a] of cast) {
     a.wrap.visible = true;
-    a.c.setInkPx(shot.ink, h);
-    pose(a, spec, shot.cam);
+    a.c.setInkPx(ink, h);
+    pose(a, spec, view.cam);
   }
   scene.updateMatrixWorld(true);
-  aim(shot.cam, w, h, (name) => cast.find(([s]) => (s.name ?? s.who) === name)?.[1]);
-  placeSouls(shot.souls);
+  aim(view.cam, w, h, (name) => cast.find(([s]) => (s.name ?? s.who) === name)?.[1]);
+  placeSouls(souls);
   scene.updateMatrixWorld(true);
   const faces = [];
   for (const [spec, a] of cast) {
@@ -724,10 +722,20 @@ function render(id) {
   renderer.setRenderTarget(null);
   renderer.clear();
   renderer.render(screenScene, screenCam);
-  // 角色拍好了，先收起來：背景的剪影要借同一個畫布一件一件拍。
-  layer.width = w;
-  layer.height = h;
-  layer.getContext('2d').drawImage(canvas, 0, 0);
+  // 拍好了，先收起來：下一組、背景的剪影都要借同一個畫布。
+  const img = document.createElement('canvas');
+  img.width = w;
+  img.height = h;
+  img.getContext('2d').drawImage(canvas, 0, 0);
+  return { img, faces };
+}
+
+/** 拍第 id 格：回傳 PNG 的 data URL。 */
+function render(id) {
+  const shot = SHOTS.find((s) => s.id === id);
+  if (!shot) throw new Error(`沒有這一格：${id}`);
+  const [w, h] = shot.size;
+  const main = shoot(shot, w, h, shot.ink, { props: shot.props, souls: shot.souls });
   sheet.width = w;
   sheet.height = h;
   sheetG.clearRect(0, 0, w, h);
@@ -745,8 +753,8 @@ function render(id) {
     focusLines(sheetG, w, h, cx, cy, o);
   }
   if (shot.speedLines) speedLines(sheetG, w, h, shot.speedLines);
-  sheetG.drawImage(layer, 0, 0);
-  for (const [face, anchors] of faces) drawFace(sheetG, face, anchors, shot.ink);
+  sheetG.drawImage(main.img, 0, 0);
+  for (const [face, anchors] of main.faces) drawFace(sheetG, face, anchors, shot.ink);
   if (shot.puffs) puffs(sheetG, w, h, shot.puffs);
   return sheet.toDataURL('image/png');
 }
