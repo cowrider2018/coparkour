@@ -7,7 +7,8 @@
    照每一步的門走走看。
 
      1. 站位      每一隻怪物站在自己那一場的房間裡、黑牆裡面、腳下那一層地板
-                  就是站位的高度、沒有嵌在任何碰撞盒裡。
+                  就是站位的高度、沒有嵌在任何碰撞盒裡。墓室的六隻一具石棺一隻、站在棺蓋上、
+                  從棺材裡升上來；最北（末端）那兩隻是幽靈騎士，其餘四隻是幽靈。
      2. 觸發      每一條進得了那一場的路（送進那個房間的感測區），到達點都在
                   觸發範圍裡——一進門就開打；休息點（與起點）都在外面。兵營是
                   例外：起點就在兵營裡，往城門走一段才開打，怪物站在那一段裡。
@@ -43,7 +44,7 @@ import { KINDS } from '../public/test/src/combat.js';
 import { FOLK, walkCells, plan } from '../public/test/src/folk.js';
 import { GAZE, Gaze, aimHead } from '../public/test/src/gaze.js';
 import { portalGap } from '../public/test/src/walk.js';
-import { THRONE } from '../public/test/src/blocks.js';
+import { THRONE, COFFINS } from '../public/test/src/blocks.js';
 import { LivingKing, KING, thronePath, pathGap } from '../public/test/src/king.js';
 
 let fails = 0;
@@ -93,6 +94,17 @@ STAGES.forEach((s, k) => {
     `${s.name}：第 ${i + 1} 隻（${b.kind}）在房間裡、離黑牆 ${gap.toFixed(1)}、腳下 ${floor.toFixed(2)}、沒嵌進東西`);
   });
 });
+
+{
+  const k = STAGES.findIndex((s) => s.id === 'crypt'), foes = STAGES[k].foes;
+  const on = foes.map((f) => COFFINS.findIndex((c) => c.x === f.x && c.z === f.z && c.top === f.y));
+  const far = Math.max(...foes.map((f) => f.z));
+  ok(foes.length === 6 && on.every((i) => i >= 0) && new Set(on).size === 6 && foes.every((f) => f.rise),
+    '地下墓室：六隻各站在一具石棺的棺蓋上，都從棺材裡升上來');
+  ok(foes.filter((f) => f.kind === 'wraith').every((f) => f.z === far) && foes.filter((f) => f.kind === 'wraith').length === 2
+    && foes.filter((f) => f.kind === 'ghost').length === 4,
+    `地下墓室：末端（z = ${far.toFixed(1)}）那兩隻是幽靈騎士，其餘四隻是幽靈`);
+}
 
 /* ── 2. 觸發 ─────────────────────────────────────────────────── */
 console.log('2. 觸發');
@@ -161,7 +173,7 @@ STAGES.forEach((s, k) => {
 console.log('5. 靈魂');
 {
   const each = STAGES.map((s) => s.foes.filter((f) => KINDS[f.kind].soul).length);
-  ok(SOULS === each.reduce((a, b) => a + b, 0) && SOULS === 2,
+  ok(SOULS === each.reduce((a, b) => a + b, 0) && SOULS === 4,
     `一輪掉得出 ${SOULS} 顆靈魂（每一場 ${each.join('、')}），國王要收的就是這麼多`);
 }
 

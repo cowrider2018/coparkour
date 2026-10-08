@@ -94,6 +94,13 @@ const DUST_DYE = 1.4;
  */
 const SHAKE = { amp: 0.12, hz: 14, decay: 0.08, life: 0.35, ahead: 0.5 };
 
+/**
+ * 從站位底下升上來的怪物（站位帶 `rise`，墓室從石棺裡升上來的那幾隻）升幾秒：一開始整隻（連耳朵）埋在
+ * 站位底下（monster.js 的 riseLift，跟召喚同一條，先快後慢），升完的那一刻腳剛好在站位上——就是牠上場、
+ * 開始動的那一刻。升的時候不算上場：不動、打不到也打不到人。
+ */
+const EMERGE = 1.0;
+
 /** 幽靈的屍體漂幾秒就炸開、收掉：牠不會落地，沒有「落地才收」那一刻。 */
 const GHOST_GONE = 0.5;
 
@@ -169,6 +176,8 @@ export class Fight {
     this.foes = [];
     /** 打死、還沒收掉的（_fell）：跟 foes 一樣的一筆，多一份 corpse。不追人、不挨打、不算在場上。 */
     this._corpses = [];
+    /** 正在從站位底下升上來的（EMERGE）：{ slot, spawn, field, t }。升完才進 foes。 */
+    this._emerging = [];
     /** 鏡頭上一幀在哪：屍體沒有擊退的話往離它遠的那一邊倒（resolve 的時候還沒有這一幀的鏡頭）。 */
     this._eye = new THREE.Vector3();
     this._pool = new Map();
@@ -358,6 +367,7 @@ export class Fight {
   _free(kind) {
     const busy = new Set([...this.foes, ...this._corpses].map((f) => f.critter));
     for (const f of this.foes) for (const r of f.rising || []) busy.add(r.slot.critter);
+    for (const e of this._emerging) busy.add(e.slot.critter);
     const list = this._pool.get(kind) || [];
     const i = list.findIndex((s) => !busy.has(s.critter));
     return this._slot(kind, i < 0 ? list.length : i);
@@ -387,6 +397,16 @@ export class Fight {
         f.rising.push({ slot: this._free(SKILL.summon.kind), spot, yaw: Math.atan2(c.tx - spot.x, c.tz - spot.z) });
       }
     }
+  }
+
+  /** 從站位底下升上來的往上一幀：升完（EMERGE 秒）的那一隻上場，這一幀起就追人。 */
+  _emerge(dt) {
+    this._emerging = this._emerging.filter((e) => {
+      e.t += dt;
+      if (e.t < EMERGE) return true;
+      this.foes.push(Fight._enter(e.slot, e.spawn, e.field));
+      return false;
+    });
   }
 
   /** 升到一半的外觀收起來（招被打斷、召喚的那一隻離場、回到站位）。 */
@@ -559,11 +579,15 @@ export class Fight {
     this._king.draw(dt, camera, u > 0 ? 1 - (1 - u) ** 3 : 0, player);
   }
 
+  /** 還有怪物正在從站位底下升上來（還沒上場）：場上沒有怪物也還不算清完。 */
+  get emerging() { return this._emerging.length > 0; }
+
   /** 復活的國王（king.js）；沒有要收靈魂（戰鬥模式）是 null。 */
   get king() { return this._king; }
 
   /**
-   * 換一批怪物上場：借好每一隻的外觀、藏起用不到的，每一隻站在自己的站位上。
+   * 換一批怪物上場：借好每一隻的外觀、藏起用不到的，每一隻站在自己的站位上。站位帶 `rise` 的
+   * 先不上場，從站位底下升上來（EMERGE 秒，_emerge），升完才上場。
    * 留下來的屍體（keep）不動，牠們的外觀不借。連段與飛著的球一起清掉。空的清單就是清場。
    *
    * @param {object[]} spawns 站位（combat.js 的 makeMonster 吃的那一種）
@@ -583,7 +607,8 @@ export class Fight {
       taken.add(s.critter);
       return s;
     };
-    this.foes = spawns.map((s) => Fight._enter(pick(s.kind), s, field));
+    this.foes = spawns.filter((s) => !s.rise).map((s) => Fight._enter(pick(s.kind), s, field));
+    this._emerging = spawns.filter((s) => s.rise).map((spawn) => ({ slot: pick(spawn.kind), spawn, field, t: 0 }));
     this.world = makeWorld(field);
     this._calm = false;
     Object.assign(this.combo, makeCombo());
@@ -593,9 +618,11 @@ export class Fight {
     this._scars.clear();
   }
 
-  /** 怪物全部回到站位（血滿、破防歸零），召喚出來的離場，屍體（留下來的也是）收掉，連段與球清掉。 */
+  /** 怪物全部回到站位（血滿、破防歸零；還在升的直接站上去），召喚出來的離場，屍體（留下來的也是）收掉，連段與球清掉。 */
   reset() {
     this._drop((f) => f.m.by);
+    for (const e of this._emerging) this.foes.push(Fight._enter(e.slot, e.spawn, e.field));
+    this._emerging = [];
     for (const f of this._corpses) Fight._hide(f);
     this._corpses = [];
     for (const f of this.foes) {
@@ -742,6 +769,8 @@ export class Fight {
     this._rumble(dt);
     // 召喚：倒數完的上場（這一幀起就追人）；剛開始倒數的借外觀，準備從地底升上來。
     this._rise();
+    // 從站位底下升上來的：升完的上場。
+    this._emerge(dt);
     // 撞到黑牆或場上東西的球炸掉。
     for (const s of shotsStep(this.world, dt)) { this._fire.explode(s); sound.play('burst'); }
     // 國王劈砍推出去的氣流往前走，走到黑牆或撞上東西就停。
@@ -903,6 +932,17 @@ export class Fight {
     }
     for (const f of this._corpses) this._lie(f, dt, camera);
     this._risen(dt, camera, player);
+    // 從站位底下升上來（石棺裡）：升完的那一刻腳剛好在站位上（monster.js 的 riseLift）。
+    for (const { slot, spawn, t } of this._emerging) {
+      const c = slot.critter;
+      c.root.visible = true;
+      c.root.position.set(spawn.x, spawn.y + riseLift(t / EMERGE, spawn.kind), spawn.z);
+      c.setFacing(spawn.yaw);
+      c.setInkColor(null);
+      c.update(dt, { speed: 0, grounded: false, vy: 0, viewYaw: Math.atan2(camera.position.x - spawn.x, camera.position.z - spawn.z), move: null });
+      if (slot.blade) slot.blade.update();
+      if (slot.helm) slot.helm.update();
+    }
     // 召喚中：幽靈從地底升上來，倒數完的那一刻剛好整隻離開地面（monster.js 的 riseLift）。
     for (const f of this.foes) {
       if (!f.rising || !f.m.cast) continue;

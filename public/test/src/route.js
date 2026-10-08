@@ -8,8 +8,8 @@
    ── 路線 ────────────────────────────────────────────────────────
      兵營 → 中庭 → 窄巷 → 井（不打）→ 水窖 → 墓室 →（傳送）中庭 → 王座廳
 
-   照劇本（STORY.md）：兵營殭屍三隻、中庭 BOSS、窄巷騎士、水窖與墓室幽靈各六隻、
-   王座廳國王。「走過不打」不用另外處理：每一場只打一次，清完就是清完。
+   照劇本（STORY.md）：兵營殭屍三隻、中庭 BOSS、窄巷騎士、水窖幽靈六隻、墓室幽靈四隻與
+   末端（北邊、大墓前）兩隻幽靈騎士——墓室的六隻都從石棺裡升上來（`rise`）——王座廳國王。「走過不打」不用另外處理：每一場只打一次，清完就是清完。
    墓室打完不走回去：漫畫翻過回程那一頁，書頁還蓋著的時候直接送到王座廳那一場
    的休息點（`warp`）。
 
@@ -25,7 +25,7 @@
    它的入口外面就是起點本身（起點在觸發範圍外面）。
    ------------------------------------------------------------------ */
 
-import { BLOCKS, DOORS } from './blocks.js';
+import { BLOCKS, DOORS, COFFINS } from './blocks.js';
 import { KINDS } from './combat.js';
 
 /** 牆頂那一層與兵營那一層的分界：腳高過它就是在牆頂（走道面 5.2，地面 0）。 */
@@ -42,7 +42,8 @@ export const roomOf = (block, y) => (block === 'wallwalk' && y > TOP ? 'wallwalk
  *   id, name   給人看的名字；hint 是面板上那一行說明
  *   room       在哪個房間打（roomOf 的那一種）
  *   enter      房間裡還要再滿足這個（區塊的局部座標）才開打；沒有就是一進房間就打
- *   foes       怪物的種類與站位，區塊的局部座標（y 是腳下那一層地板）
+ *   foes       怪物的種類與站位，區塊的局部座標（y 是腳下那一層地板）。帶 `rise` 的不是憑空出現，
+ *              是從站位底下升上來、升到站位才上場（fight.js 的 lineup）
  *   rest       倒下之後在哪裡休息：一個到達點的名字（blocks.js 的 arrivals）
  *   entry      這一場的入口：感測區在哪個區塊、送到哪個到達點——休息的時候面朝它
  *   warp       打完不走過去：直接送到下一場的休息點（墓室 → 中庭）
@@ -53,6 +54,14 @@ const ring = (kind, n, r, cx = 0, cz = 0, a0 = 0) => Array.from({ length: n }, (
   const x = cx + r * Math.sin(a), z = cz + r * Math.cos(a);
   return { kind, x, y: 0, z, yaw: Math.atan2(cx - x, cz - z) };
 });
+
+/**
+ * 墓室的六隻：兩排石棺各取北邊三具（最南那一對離鐵閘太近，一進門就貼著人），一具一隻，站在棺蓋上、
+ * 面朝鐵閘。最北那一對（墓室末端、大墓前）是幽靈騎士，其餘是幽靈。都從棺材裡升上來（rise）。
+ */
+const tomb = () => COFFINS.filter((c) => c.i > 0).map((c) => ({
+  kind: c.i === 3 ? 'wraith' : 'ghost', x: c.x, y: c.top, z: c.z, yaw: Math.PI, rise: true,
+}));
 
 export const STAGES = [
   {
@@ -86,7 +95,7 @@ export const STAGES = [
   {
     id: 'crypt', name: '地下墓室', hint: '水窖南邊的鐵閘。',
     room: 'crypt',
-    foes: [-1, 1].flatMap((sx) => [1, 5, 9].map((z) => ({ kind: 'ghost', x: sx * 1.2, y: 0, z, yaw: Math.PI }))),
+    foes: tomb(),
     rest: 'cistern.gate', entry: { from: 'cistern', to: 'crypt.gate' },
     warp: true,
   },

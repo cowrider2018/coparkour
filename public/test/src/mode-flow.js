@@ -8,7 +8,8 @@
    ── 一場的一生 ──────────────────────────────────────────────────
      一開始（含 R）      兵營開場那一頁漫畫（comic.js 的 SCRIPT.start）。
      走進第 k 場的範圍   所有的門關上、所有的傳送不通。這一場有開場頁、這一輪還沒翻過的話，
-                         書頁直接進來（不放慢動作）；書頁走了一秒後怪物出現。
+                         書頁直接進來（不放慢動作）；書頁走了一秒後怪物出現（墓室的六隻是從石棺裡
+                         升上來，升完才上場，route.js 的 rise）。
      打死一隻            不當場消失：跟主角倒下一樣往擊退的方向倒（fight.js 的 _fell）。綠色的
                          躺平落地之後 2 秒沉進地裡 3/4、一直留著；幽靈不落地，0.5 秒炸成一團
                          幽靈血；國王躺著。清完的那一場的屍體一直留著，倒下重打的那一次的收掉。
@@ -16,7 +17,7 @@
                          演一段劇情（story.js）：慢動作，一大張書頁跑進來蓋住畫面，上面是
                          戰後那一頁漫畫；點一下（或按跳）翻頁、最後一頁書頁跑走，接著玩。
                          沒有戰後頁的那一場（王座廳）只有慢動作，慢完回到正常速度。
-     挨打                扣血（頭頂的愛心，fight.js）。BOSS、騎士的屍體落地時掉出的靈魂撿起來
+     挨打                扣血（頭頂的愛心，fight.js）。BOSS、騎士的屍體落地時（幽靈騎士是炸開時）掉出的靈魂撿起來
                          最大血量 +1，一路帶到後面的場。
      獻靈魂              國王躺下之後，在牠身邊長按跳：0.5 秒後頭頂最上面那一顆心閃 0.5 秒、
                          不見（最大血量 −1），一顆靈魂拋到國王身上；一直按著就一顆接一顆。放手
@@ -360,7 +361,7 @@ function frame(now) {
     else if (gift.gave) hud.flash(`交出一顆靈魂（${given}/${need}）`);
   }
   if (!run.active && !death.busy) regen(player, dt);     // 不在戰鬥中：很快回血
-  if (run.active && spawnIn === 0 && !fight.foes.length && !death.busy) clear();
+  if (run.active && spawnIn === 0 && !fight.foes.length && !fight.emerging && !death.busy) clear();
   if (died) fall(died);
   else if (hit) hud.flash(`${DEATH_TEXT[hit.cause]}，扣 ${hit.dmg} 點血`);
   music.want(run.active ? 'fight' : 'explore');
