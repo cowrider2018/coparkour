@@ -234,10 +234,10 @@ export const SHOTS = [
     bg: [{ piece: 'gateway', span: 5, rise: 3.6, h: 6.4, side: 6, x: 0.44, y: 1.05, size: 1.45 }],
     focusLines: { clear: 0.26, n: 90 },
     cast: [
-      { who: 'boss', at: [0, 0], yaw: 0.1, move: { ...REAR, headPitch: 0.6 }, face: 'glare', eyes: { lift: 0.4 } },
+      { who: 'boss', at: [0, 0], yaw: 0.1, move: { ...REAR, headPitch: 1.05 }, face: 'glare', eyes: { lift: 0.3, spread: 1.9 } },
       { who: 'hero', at: [1.45, 0.75], yaw: Math.PI + 0.9, move: { tailPitch: -0.5, headPitch: -0.3, w: 1 } },
     ],
-    cam: { focus: 'boss', yaw: 0.36, pitch: -0.42, dist: 3.6, fov: 54, frame: [-0.06, -0.2] },
+    cam: { focus: 'boss', yaw: 0.36, pitch: -0.55, dist: 3.4, fov: 54, frame: [-0.06, -0.24] },
     light: [2, 6, 6],
   },
 
@@ -862,7 +862,7 @@ export const SHOTS = [
       { piece: 'weaponRack', x: 0.82, y: 0.74, size: 0.2 },
     ],
     puffs: [{ x: 0.84, y: 0.3, r: 0.04, color: '#cfe3c4', alpha: 0.6, seed: 4 }, { x: 0.18, y: 0.2, r: 0.035, color: '#cfe3c4', alpha: 0.55, seed: 6 }],
-    cast: [{ who: 'folk', look: 'dog-prick/grey', at: [0, 0], yaw: 0.4, move: { ...LOOK_AROUND, headYaw: -0.3 }, face: 'dazed' }],
+    cast: [{ who: 'folk', look: 'dog-prick/grey', at: [0, 0], yaw: 0.4, move: { ...LOOK_AROUND, headYaw: -0.3, headPitch: -0.1 }, face: 'dazed', eyes: { lift: 0.5 } }],
     cam: { focus: 'folk', yaw: 0.6, pitch: 0.05, dist: 2.4, fov: 40, frame: [0, 0.08] },
     light: [-4, 7, 5],
   },

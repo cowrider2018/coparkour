@@ -6,10 +6,10 @@
    眉毛、眼淚、汗。
 
    每一隻眼睛一個錨點（studio.js 從眼睛那根骨頭投影出來）：
-     x, y    眼睛中心（畫布像素）
+     x, y    眼睛中心（畫布像素；shots.js 的 eyes 往額頭抬、往外分開已經算在裡面）
      r       眼睛的半高（像素，沒收合的原尺寸）——所有尺寸都是它的倍數，所以特寫與遠景一樣比例
-     s       這一隻縮到幾成（模型的遠眼收合，critter.js）：近的那隻是 1，四分之三側的遠眼小一號。
-             整個表情（眼、眉、淚、汗）一起縮，「單邊縮小」
+     s       這一隻縮到幾成（單邊縮小：照頭真正側過去多少，與模型的遠眼收合取小的，見 studio.js）：
+             近的那隻是 1，四分之三側的遠眼小一號。整個表情（眼、眉、淚、汗）一起縮
      up      畫面上「頭頂」的方向（弳，canvas 座標：0 = 往右，−π/2 = 往上）
      inward  +1 / −1：眼睛自己的 +x 是往鼻樑那一側（+1）還是往外（−1）
      i       第幾隻（0、1）：左右不對稱的表情（愣住時挑一邊的眉）用
@@ -197,10 +197,9 @@ export const FACE_NAMES = Object.keys(FACES);
 /**
  * 在 2D 畫布 `g` 上畫一隻的表情。`anchors` 是看得到的那幾隻眼睛（見檔頭），`ink` 是這一格
  * 的墨線粗細（像素）——線寬最細不比它細太多，遠景的小臉才不會畫成髮絲。
- * `lift`、`spread`（單位 r）：畫上去的眼睛往頭頂抬、往外側分開多少。模型的眼睛貼在吻部的
- * 上角，正面看吻部會壓在眼睛上；漫畫的眼睛比較大，抬到額頭、分開一點才不會畫在鼻子上。
+ * 往頭頂抬、往外側分開（shots.js 的 eyes）已經在錨點裡了：攝影棚是在頭上用 3D 移的。
  */
-export function drawFace(g, face, anchors, ink, { lift = 0, spread = 0 } = {}) {
+export function drawFace(g, face, anchors, ink) {
   const draw = FACES[face];
   if (!draw) throw new Error(`沒有這個表情：${face}`);
   for (const a of anchors) {
@@ -209,7 +208,6 @@ export function drawFace(g, face, anchors, ink, { lift = 0, spread = 0 } = {}) {
     g.rotate(a.up + Math.PI / 2);          // 讓 −y 對到頭頂
     const r = Math.max(a.r, ink * 2.2) * (a.s ?? 1);
     g.scale(r * a.inward, r);
-    g.translate(-spread, -lift);
     draw(g, a);
     g.restore();
   }

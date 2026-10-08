@@ -19,8 +19,9 @@
    模型的眼睛演不了戲，漫畫的表情靠眼睛與眉毛。有指定表情（face）的那一隻，拍之前把兩隻
    眼睛的骨頭縮成零（模型那兩片藏起來），從眼睛骨頭投影出每一隻眼睛在畫面上的位置、大小、
    頭頂朝哪、鼻樑在哪一側，拍完之後用 2D 照 faces.js 畫上去——在網點之後畫，線是乾淨的。
-   遠的那一隻照模型自己的遠眼收合（critter.js）縮小：模型那一片縮到幾成，畫上去的就縮到幾成，
-   四分之三側的遠眼才不會原尺寸壓在吻部上；收到幾乎沒有就不畫。
+   單邊縮小：遠的那一隻照頭真正側過去多少（3D 量，頭仰、頭低都算）與模型自己的遠眼收合
+   （critter.js）取小的縮，四分之三側的遠眼才不會原尺寸壓在吻部上；收到幾乎沒有就不畫。
+   往額頭抬、往外分開（shots.js 的 eyes）是在頭上用 3D 移的，畫上去的眼睛跟著頭仰、頭低走。
 
    ── 剪影：背景 ────────────────────────────────────────────────
    背景是遊戲地形零件（pieces.js）的剪影拼貼。剪影只取零件的形狀：一個顏色、不分階、沒有墨線，
@@ -389,45 +390,76 @@ function hatchGround(g, W, H, horizon) {
 
 const UP = new THREE.Vector3(0, 1, 0);
 const _side = new THREE.Vector3(), _axis = new THREE.Vector3();
-const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Vector3(), _f = new THREE.Vector3();
-
-/** 骨頭 b 的局部座標 (x, y, z) → 畫布像素 [x, y]。 */
-function toScreen(c, b, x, y, z, w, h, out) {
-  _m.fromArray(c.rig.matrices, b * 16);
-  out.set(x, y, z).applyMatrix4(_m).applyMatrix4(c.mesh.matrixWorld).project(camera);
-  return [(out.x + 1) / 2 * w, (1 - out.y) / 2 * h];
-}
+const _m = new THREE.Matrix4();
 
 /** 遠眼收到原本的幾成以下就不畫了（只剩一點，畫出來是一顆浮著的墨點）。 */
 const EYE_GONE = 0.15;
 
 /**
- * 藏起模型的兩隻眼睛，回傳看得到的那幾隻在畫面上的錨點（faces.js 的格式）。要在姿勢擺好、
- * 世界矩陣更新之後叫。每一隻帶著模型那一片縮到幾成（s，遠眼收合）；r 是沒縮的原尺寸，
- * 縮多少由 drawFace 照 s 乘上去（最細的線寬限制要算在原尺寸上，遠眼才縮得下去）。
+ * 單邊縮小（漫畫自己量的那一份）：頭真正側過去多少——兩眼連線與「臉 → 鏡頭」方向的內積 d
+ * （側轉角的正弦），頭仰、頭低、身體立起來都算在裡面。遠的那一隻縮到 farEye(|d|) 成：
+ *   from～knee   平緩地收，照開根號（一側過去就看得出來，三分之四側還留六成五左右）
+ *   knee～gone   快收，到 gone 收到零（接近側面，遠眼埋到吻部後面去了）
+ * 模型自己的遠眼收合（critter.js）只看身體左右轉了多少、而且到 0.62 才收，頭仰起來從下往上拍
+ * 的那種三分之四側量不到；兩份取小的那一個。
  */
-function eyeAnchors(c, w, h) {
+const FAR_EYE = { from: 0.1, knee: 0.55, gone: 0.7, gentle: 0.5 };
+function farEye(d) {
+  const { from, knee, gone, gentle } = FAR_EYE;
+  if (d <= from) return 1;
+  const atKnee = 1 - gentle * Math.sqrt((knee - from) / (gone - from));
+  if (d >= knee) return Math.max(0, atKnee * (gone - d) / (gone - knee));
+  return 1 - gentle * Math.sqrt((d - from) / (gone - from));
+}
+
+/** 骨頭 b 的局部座標 (x, y, z) → 世界座標。 */
+function toWorld(c, b, x, y, z, out) {
+  _m.fromArray(c.rig.matrices, b * 16);
+  return out.set(x, y, z).applyMatrix4(_m).applyMatrix4(c.mesh.matrixWorld);
+}
+/** 世界座標 → 畫布像素 [x, y]。 */
+const project = (v, w, h) => {
+  const p = v.clone().project(camera);
+  return [(p.x + 1) / 2 * w, (1 - p.y) / 2 * h];
+};
+
+/**
+ * 藏起模型的兩隻眼睛，回傳看得到的那幾隻在畫面上的錨點（faces.js 的格式）。要在姿勢擺好、
+ * 世界矩陣更新之後叫。每一隻帶著縮到幾成（s，單邊縮小：模型的遠眼收合與 FAR_EYE 取小的）；
+ * r 是沒縮的原尺寸，縮多少由 drawFace 照 s 乘上去（最細的線寬限制要算在原尺寸上，遠眼才縮得下去）。
+ *
+ * lift、spread（shots.js 的 eyes，單位是眼睛的半高）在頭上用 3D 移：沿著這隻眼睛的頭頂方向往額頭抬、
+ * 沿著兩眼連線往外分開，再投影到畫面上——頭仰起來、低下去，畫上去的眼睛跟著頭走。
+ */
+function eyeAnchors(c, w, h, { lift = 0, spread = 0 } = {}) {
   const eyes = [c._eyeMinusX, c._eyePlusX];
-  const s = eyes.map((b) => c.rig.scale[b * 3] / c.rig.rest.scale[b * 3]);
-  const shown = s.map((v) => v > EYE_GONE);
-  const at = eyes.map((b) => {
-    const o = toScreen(c, b, 0, 0, 0.05, w, h, _p);
-    const top = toScreen(c, b, 0, 0.21, 0.05, w, h, _q);
-    const front = toScreen(c, b, 0, 0, 1.0, w, h, _f);
-    return { o, top, front };
-  });
+  const sModel = eyes.map((b) => c.rig.scale[b * 3] / c.rig.rest.scale[b * 3]);
+  const o3 = eyes.map((b) => toWorld(c, b, 0, 0, 0.05, new THREE.Vector3()));
+  const top3 = eyes.map((b) => toWorld(c, b, 0, 0.21, 0.05, new THREE.Vector3()));
+  // 頭側過去多少：d > 0 是鏡頭在 +X 那隻眼睛那一側，遠的是 −X 那隻（eyes[0]）。
+  const across = o3[1].clone().sub(o3[0]).normalize();
+  const toCam = camera.position.clone().sub(o3[0].clone().add(o3[1]).multiplyScalar(0.5)).normalize();
+  const d = across.dot(toCam);
+  const far = d >= 0 ? 0 : 1;
+  const geo = farEye(Math.abs(d));
+  const s = sModel.map((v, i) => (i === far ? Math.min(v, geo) : v));
   for (const b of eyes) for (let k = 0; k < 3; k++) c.rig.scale[b * 3 + k] = 0;
   c.rig.update();
   const out = [];
-  at.forEach(({ o, top, front }, i) => {
-    if (!shown[i]) return;
-    const r = Math.hypot(top[0] - o[0], top[1] - o[1]) / s[i];
+  eyes.forEach((_, i) => {
+    if (s[i] <= EYE_GONE || sModel[i] <= EYE_GONE) return;
+    // 這一隻的頭頂方向（世界，長度是沒縮的眼睛半高）與往鼻樑的方向（往另一隻）。
+    const upW = top3[i].clone().sub(o3[i]).divideScalar(sModel[i]);
+    const half = upW.length();
+    const nose = o3[1 - i].clone().sub(o3[i]).normalize();
+    const c3 = o3[i].clone().addScaledVector(upW, lift).addScaledVector(nose, -spread * half);
+    const o = project(c3, w, h);
+    const top = project(c3.clone().add(upW), w, h);
+    const toNose = project(c3.clone().addScaledVector(nose, half), w, h);
+    const r = Math.hypot(top[0] - o[0], top[1] - o[1]);
     const up = Math.atan2(top[1] - o[1], top[0] - o[0]);
-    // 鼻樑在哪一側：兩隻都看得到就是往另一隻；只看得到一隻就是往眼睛的正前方（側面時那是吻部）。
-    const other = at[1 - i].o;
-    const [dx, dy] = shown[1 - i] ? [other[0] - o[0], other[1] - o[1]] : [front[0] - o[0], front[1] - o[1]];
-    // 眼睛自己的 +x 在畫面上是 up 轉 +90°（canvas 的 y 往下，所以是順時針）。
-    const side = dx * Math.cos(up + Math.PI / 2) + dy * Math.sin(up + Math.PI / 2);
+    // 眼睛自己的 +x 在畫面上是 up 轉 +90°（canvas 的 y 往下，所以是順時針）；鼻樑在那一側就是 +1。
+    const side = (toNose[0] - o[0]) * Math.cos(up + Math.PI / 2) + (toNose[1] - o[1]) * Math.sin(up + Math.PI / 2);
     out.push({ x: o[0], y: o[1], r, s: s[i], up, inward: side >= 0 ? 1 : -1, i });
   });
   return out;
@@ -683,7 +715,7 @@ function render(id) {
   scene.updateMatrixWorld(true);
   const faces = [];
   for (const [spec, a] of cast) {
-    if (spec.face) faces.push([spec.face, eyeAnchors(a.c, w, h), spec.eyes]);
+    if (spec.face) faces.push([spec.face, eyeAnchors(a.c, w, h, spec.eyes)]);
   }
   target.setSize(w, h);
   screen.material.uniforms.uCell.value = h / HALFTONE.cells;
@@ -716,7 +748,7 @@ function render(id) {
   }
   if (shot.speedLines) speedLines(sheetG, w, h, shot.speedLines);
   sheetG.drawImage(layer, 0, 0);
-  for (const [face, anchors, eyes] of faces) drawFace(sheetG, face, anchors, shot.ink, eyes);
+  for (const [face, anchors] of faces) drawFace(sheetG, face, anchors, shot.ink);
   if (shot.puffs) puffs(sheetG, w, h, shot.puffs);
   return sheet.toDataURL('image/png');
 }
