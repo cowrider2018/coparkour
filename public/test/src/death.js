@@ -61,7 +61,6 @@ const WAKE_END = Math.max(WAKE.time, ...CAPTIONS.map((c) => c.at[3]));
 
 const smooth = (u) => { const k = Math.min(1, Math.max(0, u)); return k * k * (3 - 2 * k); };
 const UP = new THREE.Vector3(0, 1, 0);
-const _side = new THREE.Vector3();
 const _axis = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 
@@ -88,8 +87,9 @@ export function captionAt(t) {
 /**
  * 身體的水平輪廓：待機姿勢下每個頂點的 (x, z)（公尺，動物自己的座標，+Z 朝前）。服裝
  * 不算——帽簷比頭寬一大截，照它算的話躺下來身體是浮著的；帽簷寧可壓進地板一點。
+ * 要在剛建好、還沒動過的時候量（骨頭還在待機姿勢）。
  */
-function footprint(c) {
+export function footprint(c) {
   const d = c.data, M = c.rig.matrices, skin = d.colors.get(c.skins[0]);
   const out = [];
   for (let v = 0; v < d.header.vertexCount; v++) {
@@ -107,6 +107,39 @@ function reach(pts, lx, lz) {
   let far = 0;
   for (let i = 0; i < pts.length; i += 2) far = Math.max(far, pts[i] * lx + pts[i + 1] * lz);
   return far;
+}
+
+/**
+ * 往哪一邊倒（水平的單位向量，寫進 `out`）：擊退的方向 (vx, vz)；沒有擊退（速度幾乎是 0）
+ * 的話是面向 yaw 的水平垂直方向、離鏡頭 (camX, camZ) 遠的那一邊。(x, z) 是身體在哪。
+ */
+export function fallSide(out, vx, vz, yaw, x, z, camX, camZ) {
+  const kh = Math.hypot(vx, vz);
+  if (kh > 1e-3) return out.set(vx / kh, 0, vz / kh);
+  out.set(Math.cos(yaw), 0, -Math.sin(yaw));
+  if (out.x * (x - camX) + out.z * (z - camZ) < 0) out.negate();
+  return out;
+}
+
+/** 支點離身體中線多遠（公尺）：輪廓 `pts` 面向 yaw 的時候往 `side` 那一邊伸多遠。 */
+export function fallHalf(pts, side, yaw) {
+  // 倒向換到動物自己的座標（root.rotation.y = yaw 的反轉）。
+  const c = Math.cos(yaw), n = Math.sin(yaw);
+  return reach(pts, side.x * c - side.z * n, side.x * n + side.z * c);
+}
+
+/**
+ * 把 `node` 擺成往 `side` 倒了 `angle`：繞水平、跟倒向垂直的軸，支點在倒向那一邊離中線
+ * `half` 公尺、腳底那一層。(x, y, z) 是不倒的時候 node 擺在哪（身體的腳）。`yaw` 是
+ * node 自己的朝向（倒之前先轉的那一下）；朝向在底下那一層的話給 null。
+ */
+export function tipNode(node, angle, side, half, x, y, z, yaw = null) {
+  _axis.crossVectors(UP, side).normalize();
+  node.quaternion.setFromAxisAngle(_axis, angle);
+  if (yaw !== null) node.quaternion.multiply(_q.setFromAxisAngle(UP, yaw));
+  // 支點 P = 身體 + s·half；root 在 P + q·(−s·half) = 身體 + half·(s(1 − cos) + up·sin)。
+  const c = Math.cos(angle), n = Math.sin(angle);
+  node.position.set(x + half * side.x * (1 - c), y + half * n, z + half * side.z * (1 - c));
 }
 
 export class Death {
@@ -162,17 +195,8 @@ export class Death {
     this.yaw = this.zoo.active._yaw;
     this.zoo.setFacing(this.yaw);          // 不再轉身：倒的軸是這一刻的前進軸
     this.ghost = this.ghosts.get(this.zoo.modelId);
-    // 倒向：擊退的方向；沒有擊退就是前進軸的水平垂直方向、離鏡頭遠的那一邊。
-    const kh = Math.hypot(player.vx, player.vz);
-    if (kh > 1e-3) _side.set(player.vx / kh, 0, player.vz / kh);
-    else {
-      _side.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
-      if (_side.x * (player.x - camX) + _side.z * (player.z - camZ) < 0) _side.negate();
-    }
-    this._side.copy(_side);
-    // 倒向換到動物自己的座標（root.rotation.y = yaw 的反轉），量那一邊伸多遠。
-    const c = Math.cos(this.yaw), n = Math.sin(this.yaw);
-    this._half = reach(this.ghost.pts, _side.x * c - _side.z * n, _side.x * n + _side.z * c);
+    fallSide(this._side, player.vx, player.vz, this.yaw, player.x, player.z, camX, camZ);
+    this._half = fallHalf(this.ghost.pts, this._side, this.yaw);
   }
 
   /** 不演了（重玩、從第幾場開始）：動物站回來、幽靈收起來、畫面清楚。 */
@@ -241,17 +265,7 @@ export class Death {
 
   /** 把 `node` 擺成倒了 `angle`。 */
   _tip(node, angle, half, player) {
-    const s = this._side;
-    _axis.crossVectors(UP, s).normalize();
-    _q.setFromAxisAngle(_axis, angle);
-    node.quaternion.copy(_q);
-    // 支點 P = 身體 + s·half；root 在 P + q·(−s·half) = 身體 + half·(s(1 − cos) + up·sin)。
-    const c = Math.cos(angle), n = Math.sin(angle);
-    node.position.set(
-      player.x + half * s.x * (1 - c),
-      player.y + half * n,
-      player.z + half * s.z * (1 - c),
-    );
+    tipNode(node, angle, this._side, half, player.x, player.y, player.z);
   }
 
   /** 動物站回來、幽靈收起來（幽靈的轉向也歸零）。Zoo 的位置每幀由模式擺，這裡只歸零轉的那一下。 */
