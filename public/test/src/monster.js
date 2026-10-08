@@ -186,6 +186,19 @@ export function makeGhostCritter(zoo, model) {
   return c;
 }
 
+/**
+ * 復活的國王（獻靈魂交滿之後，fight.js）：垂耳犬本人、原本那一件灰毛（漫畫裡活著的國王，
+ * tools/comic/studio.js 的 king），一樣 1.4 倍高，不透明、眼睛不紅——不再是怪物了。王冠由 fight.js 另外戴。
+ *
+ * @param {import('./critter.js').Zoo} zoo
+ * @returns {Critter}
+ */
+export function makeLivingKing(zoo) {
+  const c = new Critter(zoo.critters.get(LOOKS.king.model).data, LOOKS.king.model, { height: LOOKS.king.height, skin: 'grey' });
+  c.setHat(false);
+  return c;
+}
+
 /** 讓一隻 Critter 半透明：原本的網格只寫深度，另一個網格照 alpha 上色（理由見檔頭）。 */
 function seeThrough(c, alpha) {
   const depth = c.mesh;

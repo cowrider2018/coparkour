@@ -19,7 +19,9 @@
               靈魂才掉出來。之後照 REST：綠色的慢慢沉進地裡、留著，國王躺著。幽靈不會落地，倒著漂
               GHOST_GONE 秒炸成一團幽靈血、收掉。換陣容的時候屍體收掉，清完的那一場的（keep）留著。
      give     （模式叫）獻靈魂：國王躺下之後，在牠身邊長按跳把最大血量一顆一顆交給牠（offer.js），
-              交出去的那一顆拋到牠身上。
+              交出去的那一顆拋到牠身上。交滿、最後一顆落到了，國王復甦（REVIVE）：屍體炸成一團
+              幽靈血，血慢下來之後再加速聚攏回來（bleed.js 的 GATHER），聚到的那一刻活著的國王
+              從 0 長到原本大小。演完的那一幀回報 risen。
      draw     怪物、屍體、劍光（攻擊範圍）、國王劈砍的斬痕與氣流、旋風斬的熱氣流、粉塵（落地、BOSS 範圍攻擊的地震）、BOSS 的預告與球、靈魂、破防的兩圈、國王的盾、刀、
               頭頂的愛心。
               在相機擺好之後（破防的兩圈與愛心正對這一幀的鏡頭）；流體場也在這裡
@@ -35,11 +37,11 @@ import {
   knockHero, knockLand,
   inSlash, inFan, inRing, slashTip, makeCombo, comboStep, invulnerable, untouchable, cueing, attacking, taken,
 } from './combat.js';
-import { makeMonsterCritter, sizeOf, bloodOf, swordOf, helmOf, crownOf, riseLift, Motion, ATTACK_INK, CHOP_LEAD } from './monster.js';
+import { makeMonsterCritter, makeLivingKing, sizeOf, bloodOf, swordOf, helmOf, crownOf, riseLift, Motion, ATTACK_INK, CHOP_LEAD } from './monster.js';
 import { GUARD_INK } from './critter.js';
 import { Blood } from './blood.js';
 import { Fireballs } from './fireball.js';
-import { hitFrame, burstFrame, hurtFrame, spurtOf, floorUnder } from './bleed.js';
+import { hitFrame, burstFrame, hurtFrame, spurtOf, floorUnder, GATHER } from './bleed.js';
 import { Blade } from './blade.js';
 import { Helm } from './helm.js';
 import { Crown } from './crown.js';
@@ -102,6 +104,19 @@ const GHOST_GONE = 0.5;
  */
 const REST = { minion: 'sink', boss: 'sink', knight: 'sink', king: 'lie' };
 const SINK = { time: 2, depth: 0.75 };
+
+/**
+ * 國王復甦（獻靈魂交滿、拋出去的全部落到了之後）：
+ *   wait    再等幾秒，屍體炸開——往全方向噴 bursts 次幽靈血（破防攻擊那一種噴法），從躺著的
+ *           身體中間噴；每一滴帶著 gather（bleed.js 的 GATHER）：慢下來，再加速聚攏到牠站起來
+ *           的腰那一點（屍體的中間、地板上），全部同一刻到
+ *   grow    聚到的那一刻起，活著的國王（monster.js 的 makeLivingKing）從 0 長到原本大小要幾秒，
+ *           繞著腰那一點放大，面朝炸開那一刻主角在的方向
+ *   hold    長好之後再等幾秒才算演完（模式接著慢動作、翻國王復活那一頁）
+ */
+const REVIVE = { wait: 0.4, bursts: 3, grow: 0.7, hold: 0.4 };
+/** 復甦開始之後幾秒聚到、開始長。 */
+const REVIVE_GROW = REVIVE.wait + GATHER.at + GATHER.pull;
 
 /** 右上那一行小字：現在在連段的哪裡。 */
 export const PHASE_NAME = {
@@ -216,6 +231,17 @@ export class Fight {
     /** 獻靈魂交到哪裡（offer.js），與拋出去、還在飛的那幾顆。 */
     this.offer = makeOffer(this._owed);
     this._thrown = [];
+    /** 復甦（REVIVE）：還沒開始是 null。活著的國王與牠的王冠：有要收靈魂才建，先藏著——
+        復甦的那一刻才建、才編的話就頓一下。 */
+    this._revival = null;
+    this._king = null;
+    if (souls > 0) {
+      const critter = makeLivingKing(zoo), crown = new Crown();
+      crown.follow(critter);
+      critter.root.visible = false;
+      scene.add(critter.root);
+      this._king = { critter, crown };
+    }
 
     /* BOSS、騎士掉出來的靈魂（combat.js 的 dropSoul）。換陣容不清——完整流程裡打完一場就換
        下一場，沒撿的留在原地；回到站位（reset）才清。一顆一個 mesh，不夠就多做。 */
@@ -267,6 +293,7 @@ export class Fight {
   setInkPx(px, h) {
     this._inkPx = [px, h];
     for (const list of this._pool.values()) for (const s of list) s.critter.setInkPx(px, h);
+    if (this._king) this._king.critter.setInkPx(px, h);
     this._blood.setInkPx(px, h);
     this._fire.setInkPx(px, h);
   }
@@ -481,7 +508,8 @@ export class Fight {
 
   /**
    * 獻靈魂的一幀（offer.js 的 offerStep）：`held` 是跳按著沒有，在國王身邊才算。交出一顆就從
-   * 玩家頭頂往國王身上拋一顆靈魂；飛著的往前飛，落到了響一聲、收掉。回傳 offerStep 的那一份。
+   * 玩家頭頂往國王身上拋一顆靈魂；飛著的往前飛，落到了響一聲、收掉。接著走復甦（_revive）。
+   * 回傳 offerStep 的那一份，加上 risen：復甦演完的那一幀（只一次）。
    */
   give(dt, player, held) {
     const a = this.altar();
@@ -492,7 +520,59 @@ export class Fight {
       this.sound.play('soul');
       return false;
     });
-    return r;
+    return { ...r, risen: this._revive(dt, player) };
+  }
+
+  /**
+   * 復甦的一幀（REVIVE）：交滿、拋出去的全部落到了、國王躺著，才開始。wait 秒之後屍體炸開、收掉，
+   * 血往回聚攏（bleed.js 照 gather 走，這裡只噴）；活著的國王在 draw 裡照 t 長大。演完的那一幀回傳 true。
+   */
+  _revive(dt, player) {
+    let v = this._revival;
+    if (!v) {
+      if (!this._king || !this.offer.need || !offerDone(this.offer) || this._thrown.length) return false;
+      const f = this._corpses.find((x) => REST[x.m.kind] === 'lie' && x.corpse.down !== null);
+      if (!f) return false;
+      const a = this.altar(), yaw = Math.atan2(player.x - a.x, player.z - a.z);
+      v = this._revival = { t: 0, f, a, x: a.x, y: f.m.y, z: a.z, yaw, burst: false, done: false };
+      const c = this._king.critter;
+      c._yaw = c._yawGoal = yaw;
+    }
+    if (v.done) return false;
+    v.t += dt;
+    if (!v.burst && v.t >= REVIVE.wait) {
+      v.burst = true;
+      const s = sizeOf('king'), waist = (PHYS.height / 2) * s;
+      // spurtOf 從腰那麼高噴：腳往下挪半個身高，噴的地方就是躺著的身體中間。
+      const from = { x: v.a.x, y: v.a.y - waist, z: v.a.z };
+      for (let k = 0; k < REVIVE.bursts; k++) {
+        const list = spurtOf(burstFrame(), from, s, bloodOf('king'));
+        this._blood.spurt(list.map((o) => ({ ...o, gather: { x: v.x, y: v.y + waist, z: v.z } })), v.f.m.field);
+      }
+      Fight._hide(v.f);
+      this._corpses = this._corpses.filter((x) => x !== v.f);
+      this.sound.play('burst');
+    }
+    if (v.t < REVIVE_GROW + REVIVE.grow + REVIVE.hold) return false;
+    v.done = true;
+    return true;
+  }
+
+  /** 活著的國王這一幀：聚到之前藏著，之後繞著腰那一點從 0 長到原本大小（越長越慢），站著。 */
+  _risen(dt, camera) {
+    if (!this._king) return;
+    const v = this._revival, { critter, crown } = this._king;
+    const u = v ? (v.t - REVIVE_GROW) / REVIVE.grow : 0;
+    critter.root.visible = u > 0;
+    if (u <= 0) return;
+    const e = 1 - (1 - Math.min(1, u)) ** 3, waist = (PHYS.height / 2) * sizeOf('king');
+    critter.root.position.set(v.x, v.y + waist * (1 - e), v.z);
+    critter.root.scale.setScalar(e);
+    critter.setFacing(v.yaw);
+    critter.update(dt, {
+      speed: 0, grounded: true, vy: 0, viewYaw: Math.atan2(camera.position.x - v.x, camera.position.z - v.z), move: null,
+    });
+    crown.update();
   }
 
   /**
@@ -548,6 +628,8 @@ export class Fight {
     this.souls.length = 0;
     this.offer = makeOffer(this._owed);
     this._thrown = [];
+    this._revival = null;
+    if (this._king) this._king.critter.root.visible = false;
     this._dropTrails();
     this._gusts.clear();
     this._heats.clear();
@@ -833,6 +915,7 @@ export class Fight {
       if (shields) shields.show(dt, m.shields, m.x, m.y + mo.lift, m.z, sizeOf(m.kind));
     }
     for (const f of this._corpses) this._lie(f, dt, camera);
+    this._risen(dt, camera);
     // 召喚中：幽靈從地底升上來，倒數完的那一刻剛好整隻離開地面（monster.js 的 riseLift）。
     for (const f of this.foes) {
       if (!f.rising || !f.m.cast) continue;

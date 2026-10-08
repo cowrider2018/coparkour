@@ -23,7 +23,10 @@
                          就停，再按重新等 0.5 秒。一輪掉得出幾顆就要交幾顆（route.js 的 SOULS），
                          交出去的只有撿來的那幾顆（最大血量最少剩一開始的 3 顆）；還沒交滿就交
                          不出去的話提示需要更多，自己回去撿（offer.js）。在國王身邊按跳不跳。
-                         王座廳打完不翻戰後頁；交滿的那一刻起慢動作，翻國王復活那一頁（第 14 頁）。
+                         王座廳打完不翻戰後頁，只有慢動作。交滿之後不慢：等靈魂全都落進國王身上，
+                         國王復甦（fight.js 的 REVIVE）——屍體炸成一團幽靈血，血慢下來再加速聚攏，
+                         活著的國王（原本的灰毛）從 0 長到原本大小；演完才慢動作，翻國王復活那一頁
+                         （第 14 頁）。
      不在戰鬥中          清完一場之後、還沒走進下一場之前：很快回血到最大血量
                          （combat.js 的 regen）。
      倒下（血扣光）      不當幀重生，先演一段（death.js）：怪物失去目標、站著；人被那一下
@@ -321,8 +324,9 @@ function frame(now) {
   {
     const gift = fight.give(dt, player, !still && controls.jumpDown());
     const { given, need } = fight.offer;
-    // 交滿：最後那一顆在慢動作裡落到國王身上，然後翻國王復活的那一頁。
-    if (gift.done) story.start(pagesOf(SCRIPT.offered), { slow: true, then: () => hud.flash(`${need} 顆靈魂都交給國王了`) });
+    // 交滿：最後那一顆落到國王身上之後國王復甦（fight.js 的 REVIVE），演完才慢動作、翻國王復活的那一頁。
+    if (gift.risen) story.start(pagesOf(SCRIPT.offered), { slow: true });
+    if (gift.done) hud.flash(`${need} 顆靈魂都交給國王了`);
     else if (gift.short) hud.flash(`還需要 ${need - given} 顆靈魂——回去找找沒撿到的`);
     else if (gift.gave) hud.flash(`交出一顆靈魂（${given}/${need}）`);
   }

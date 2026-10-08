@@ -73,6 +73,12 @@
             最後 fade 秒縮掉（dropSize）。碰到地板就貼著地板停住，不往下穿。
    阻力照比例減速，停下來的地方是 v₀ / drag 那麼遠：初速快的停得遠，小的照樣噴得比
    大的遠。
+
+   ── 聚攏 ─────────────────────────────────────────────────────────
+   帶著 gather（一點 {x, y, z}）的那幾滴（國王復甦，fight.js）不照 life 收、不縮掉：噴出去照
+   那一種的阻力慢下來，GATHER.at 秒之後從那時候在的地方往那一點飛回去，越飛越快（位移照 u³，
+   u 是 GATHER.pull 秒走到哪），全部同一刻到；到了停在那一點，GATHER.shrink 秒縮掉。飛回去的
+   那一段不撞牆、不碰地板：走的是一條直線，起點與終點都在場裡。
    ------------------------------------------------------------------ */
 
 import { PHYS, nearXZ, roundTop, arenaGap } from './walk.js';
@@ -133,8 +139,15 @@ export const STYLE = {
   ecto: { speed: 1.8, drag: 5, fall: 0, life: 2.4, fade: 0.8, pool: false },
 };
 
-/** 一滴這一刻畫多大：半徑乘上那一種在最後 fade 秒縮掉的那一份。 */
+/** 聚攏的那幾滴：噴出去幾秒開始往回飛、飛幾秒到、到了幾秒縮掉（見檔頭「聚攏」）。 */
+export const GATHER = { at: 0.7, pull: 0.8, shrink: 0.5 };
+
+/** 一滴這一刻畫多大：半徑乘上那一種在最後 fade 秒縮掉的那一份（聚攏的是到了之後縮掉的那一份）。 */
 export function dropSize(o) {
+  if (o.gather) {
+    const u = Math.min(1, Math.max(0, ((o.t || 0) - GATHER.at - GATHER.pull) / GATHER.shrink));
+    return o.r * (1 - u * u * (3 - 2 * u));
+  }
   const S = STYLE[o.style || 'blood'];
   if (!S.fade) return o.r;
   const u = Math.min(1, Math.max(0, ((o.t || 0) - (S.life - S.fade)) / S.fade));
@@ -324,6 +337,19 @@ export function floorUnder(cols, x, z, y) {
   return f;
 }
 
+/**
+ * 聚攏的一滴往回飛的一幀：起點是開始往回飛那一刻在的地方，位移照 u³（越飛越快），速度照它的
+ * 導數給（畫的時候順著速度拉長）。到了停住。縮完了回傳 false（收掉）。
+ */
+function pull(o) {
+  const g = o.gather;
+  if (g.x0 === undefined) { g.x0 = o.x; g.y0 = o.y; g.z0 = o.z; }
+  const u = Math.min(1, (o.t - GATHER.at) / GATHER.pull), e = u * u * u, k = u < 1 ? (3 * u * u) / GATHER.pull : 0;
+  o.x = g.x0 + (g.x - g.x0) * e; o.y = g.y0 + (g.y - g.y0) * e; o.z = g.z0 + (g.z - g.z0) * e;
+  o.vx = (g.x - g.x0) * k; o.vy = (g.y - g.y0) * k; o.vz = (g.z - g.z0) * k;
+  return o.t < GATHER.at + GATHER.pull + GATHER.shrink;
+}
+
 /** 一灘在第 t 秒攤開到幾成（0 → 1 → 0）。 */
 export function splatScale(t) {
   if (t < SPLAT.grow) return 1 - (1 - t / SPLAT.grow) ** 2;
@@ -344,10 +370,14 @@ export function bleedStep(drops, splats, dt) {
   for (const o of drops) {
     const S = STYLE[o.style || 'blood'];
     o.t = (o.t || 0) + dt;
+    if (o.gather && o.t >= GATHER.at) {
+      if (pull(o)) drops[n++] = o;
+      continue;
+    }
     if (S.drag) { const k = Math.exp(-S.drag * dt); o.vx *= k; o.vy *= k; o.vz *= k; }
     if (S.fall) o.vy -= PHYS.gravity * S.fall * dt;
     o.x += o.vx * dt; o.y += o.vy * dt; o.z += o.vz * dt;
-    if (o.t > S.life || arenaGap(o.field.arena, o.x, o.z) < 0) continue;
+    if ((o.t > S.life && !o.gather) || arenaGap(o.field.arena, o.x, o.z) < 0) continue;
     const f = floorUnder(o.field.cols, o.x, o.z, o.y + Math.max(0, -o.vy * dt));
     if (Number.isNaN(f)) continue;
     if (o.y <= f && o.vy <= 0 && !S.pool) { o.y = f; o.vy = 0; }

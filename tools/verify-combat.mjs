@@ -158,7 +158,7 @@ import { Motion, bloodOf, sizeOf, mirror, riseLift, MOVES as KNIGHT_MOVES } from
 import { MOVES as HERO_MOVES } from '../public/test/src/moves.js';
 import { TRAILS, PIECE, BANDS, sweepAt, fadeAt, sideAt, qiAt, along, hullOf } from '../public/test/src/trail.js';
 import { bladeAt } from '../public/test/src/trail.js';
-import { BLEED, LUMP, SPLAT, STYLE, dropSize, dropCount, volumeOf, sizeRange, speedOf, hitFrame, burstFrame, lumpFrame, hurtFrame, spurtOf, floorUnder, splatScale, bleedStep } from '../public/test/src/bleed.js';
+import { BLEED, LUMP, SPLAT, STYLE, dropSize, dropCount, volumeOf, sizeRange, speedOf, hitFrame, burstFrame, lumpFrame, hurtFrame, spurtOf, floorUnder, splatScale, bleedStep, GATHER } from '../public/test/src/bleed.js';
 import { taken } from '../public/test/src/combat.js';
 import { OFFER, makeOffer, offerStep, offerDone, blinkOf, throwSoul, flySoul } from '../public/test/src/offer.js';
 import { readFileSync } from 'node:fs';
@@ -1788,6 +1788,21 @@ console.log('23. 噴血');
     return { r: o.r, far: one[0].z };
   }).sort((a, b) => a.r - b.r);
   ok(reachE.every((q, i) => i === 0 || q.far < reachE[i - 1].far), '靈質也是小的噴得比大的遠（停下來的地方 v₀ / drag）');
+
+  // 聚攏（國王復甦）：慢下來，GATHER.at 秒之後越飛越快地往回飛，全部同一刻到那一點，到了縮掉。
+  const home = { x: 1, y: 0.9, z: -2 };
+  const back = spurtOf(burstFrame(), { x: 0, y: 0, z: 0 }, 1.4, 'ecto', rng).map((o) => ({ ...o, field: open, gather: { ...home } }));
+  const n0 = back.length, speeds = [];
+  let held = true, arrived = false;
+  for (let t = DT; t < GATHER.at + GATHER.pull + GATHER.shrink + 0.1; t += DT) {
+    bleedStep(back, [], DT);
+    if (t > STYLE.ecto.life + 0.05 && t < GATHER.at + GATHER.pull + GATHER.shrink - 0.05 && back.length !== n0) held = false;
+    if (t > GATHER.at && t < GATHER.at + GATHER.pull - DT) speeds.push(Math.max(...back.map((o) => Math.hypot(o.vx, o.vy, o.vz))));
+    if (near(t, GATHER.at + GATHER.pull, DT / 2)) arrived = back.every((o) => Math.hypot(o.x - home.x, o.y - home.y, o.z - home.z) < 1e-6);
+  }
+  ok(speeds.every((v, i) => i === 0 || v > speeds[i - 1]), `往回飛的那 ${GATHER.pull} 秒越飛越快`);
+  ok(arrived, `噴出去 ${GATHER.at + GATHER.pull} 秒的時候全部到那一點`);
+  ok(held && back.length === 0, `不照靈質的 ${STYLE.ecto.life} 秒收；到了 ${GATHER.shrink} 秒縮掉、收掉`);
 }
 
 /* ── 24. 騎士 ────────────────────────────────────────────────── */
