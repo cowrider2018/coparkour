@@ -9,6 +9,7 @@
    格子，格子比例跟圖不同的時候對準 focus（CSS 的 object-position，例如 '70% 40%'）裁。
    memory 是回憶的那幾格：暖色、柔邊，沒有格框。
    頁上的 big 是那一頁特別大的一格（第幾格，從 1 起），書頁換一套讓它最大的版面（index.html）。
+   strips: [{ src, focus }, …] 是拆成並排細長條的那一格（每一條一張圖、一個格框）。
 
    ── 哪一刻翻哪幾頁（SCRIPT，頁碼從 1 起，跟 STORY.md 一樣）──────────
      start     重玩（R）、一開始：兵營開場，醒來的那一頁。
@@ -93,7 +94,7 @@ export const PAGES = [
     { note: '國王從地底升起：半透明、王冠、三面盾、咬著劍', src: 'comic/p13-4.png', focus: '50% 45%' },
     { note: '國王睜開眼', src: 'comic/p13-5.png', focus: '50% 50%' },
   ] },
-  { title: '王座廳', panels: [
+  { title: '王座廳', big: 5, panels: [
     { note: '國王跪倒在台座前，失控的亡魂安靜下來' },
     { note: '主角把一路收集的靈魂倒在國王身上' },
     { note: '國王從半透明變回實體，光從他身上擴散出去' },
@@ -111,7 +112,7 @@ export const SCRIPT = {
 
 /** 先把畫好的圖讀進來：分格滑進來的那一刻才讀，滑到一半圖才出現。 */
 export function preloadComic() {
-  for (const page of PAGES) for (const p of page.panels) if (p.src) new Image().src = p.src;
+  for (const page of PAGES) for (const p of page.panels) for (const src of [p.src, ...(p.strips || []).map((st) => st.src)]) if (src) new Image().src = src;
 }
 
 /** 頁碼 → 頁（帶著頁碼，書頁的頁腳要印）。 */

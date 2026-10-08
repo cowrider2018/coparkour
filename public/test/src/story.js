@@ -25,7 +25,8 @@
    上面那一張翻走之後兩張對調。
 
    ── 漫畫 ────────────────────────────────────────────────────────
-   每一頁 { title, folio, panels, big? }（comic.js 的 pagesOf）。每一格是 { src }（圖）或
+   每一頁 { title, folio, panels, big? }（comic.js 的 pagesOf）。每一格是 { src }（圖）、
+   { strips: [{ src, focus }, …] }（拆成並排的細長條）或
    { note, say }（還沒畫，放佔位：格號、這一格要畫什麼、格子裡的字）。版面照格數
    （3～5 格）與直向／橫向各一套，在 index.html 的 #story；big 是那一頁要特別大的一格。
 
@@ -225,7 +226,20 @@ export class Story {
       cell.className = 'panel-cell';
       cell.style.gridArea = 'abcdefgh'[k];
       if (p.memory) cell.classList.add('memory');
-      if (p.src) {
+      if (p.strips) {
+        // 拆成並排的細長條：每一條自己一張圖、自己的格框，整格一起滑進來。
+        cell.classList.add('strips');
+        for (const st of p.strips) {
+          const strip = document.createElement('div');
+          strip.className = 'strip';
+          const img = document.createElement('img');
+          img.src = st.src;
+          img.alt = p.note || '';
+          if (st.focus) img.style.objectPosition = st.focus;
+          strip.append(img);
+          cell.append(strip);
+        }
+      } else if (p.src) {
         const img = document.createElement('img');
         img.src = p.src;
         img.alt = p.note || '';

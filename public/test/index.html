@@ -333,7 +333,7 @@
   }
   /* 分格的版面照格數（story.js 寫在 data-n）。橫向：三格是左大右兩小、四格一寬兩窄再一寬、
      五格上兩下三；直向：三格疊三層、四格上寬中兩格下寬、五格上寬再兩層各兩格。
-     五格的頁標了 big: 4 的（第 4 格是整頁最大的一格），另有一套。 */
+     五格的頁標了 big: 4 或 5 的（那一格是整頁最大的一格），另有一套。 */
   #story .panels {
     flex: 1 1 auto; min-height: 0;
     display: grid; gap: 1.6vmin;
@@ -344,6 +344,7 @@
   #story .panels[data-n="5"] { grid-template-columns: repeat(6, 1fr); grid-template-areas: "a a a b b b" "c c d d e e"; }
   /* 五格、第 4 格最大（comic.js 的 big: 4）：上面一列三格，下面那一列高一點，第 4 格佔三分之二寬。 */
   #story .panels[data-n="5"][data-big="4"] { grid-template-rows: 1fr 1.4fr; grid-template-areas: "a a b b c c" "d d d d e e"; }
+  #story .panels[data-n="5"][data-big="5"] { grid-template-rows: 1fr 1.4fr; grid-template-areas: "a a b b c c" "d d e e e e"; }
   body.pad-port #story .panels {
     grid-template-columns: 1fr 1fr; grid-template-rows: 1.1fr 1fr 1.1fr;
     grid-template-areas: "a a" "b c" "d d";
@@ -352,6 +353,9 @@
   body.pad-port #story .panels[data-n="5"] { grid-template-rows: 1.2fr 1fr 1fr; grid-template-areas: "a a" "b c" "d e"; }
   body.pad-port #story .panels[data-n="5"][data-big="4"] {
     grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1.8fr 0.9fr; grid-template-areas: "a b c" "d d d" "e e e";
+  }
+  body.pad-port #story .panels[data-n="5"][data-big="5"] {
+    grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 0.9fr 1.8fr; grid-template-areas: "a b c" "d d d" "e e e";
   }
   #story .panel-cell {
     position: relative; min-width: 0; min-height: 0; overflow: hidden;
@@ -362,6 +366,12 @@
   /* 畫好的格子：圖鋪滿格子（特寫本來就是出格的，邊要對齊格框），裁的時候對準那一格的重點
      （comic.js 的 focus，story.js 寫進 object-position）。背景透明，底下是格子的紙色。 */
   #story .panel-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* 拆成並排細長條的那一格（comic.js 的 strips）：外面那一格不畫框，每一條自己一個框。 */
+  #story .panel-cell.strips { display: flex; gap: 1.6vmin; border: 0; background: none; }
+  #story .panel-cell .strip {
+    flex: 1 1 0; min-width: 0; overflow: hidden;
+    border: max(2px, .45vmin) solid var(--ink-page); background: #f7eedb;
+  }
   /* 疊在圖上的字：旁白在左上角的方框裡；心聲、對白在上面正中（那一格標了 capAt: 'bottom' 的在下面）。 */
   #story .panel-cell .cap {
     position: absolute; display: flex; flex-direction: column; align-items: center; gap: .3vmin;
