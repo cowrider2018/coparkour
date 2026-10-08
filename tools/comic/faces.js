@@ -160,25 +160,38 @@ const FACES = {
     stroke(g, [[-0.85, -0.85], [0.65, -1.35]], 0.22);
     bigTear(g, 0.58, 0.74);
   },
-  /** 瞪（怪物）：紅色的杏眼、整圈包邊，一道直的黑瞳；眉毛粗、往鼻樑那一側狠狠壓下來。 */
-  glare(g, brow = true) {
+  /**
+   * 瞪（怪物）：一隻普通的眼睛（直的橢圓）塗成純紅、整圈包邊，上面被一刀斜切掉——切線外側高、
+   * 內側（鼻樑那一側）低，剩下的形狀上緣是一道斜線、下緣是橢圓的弧。沒有瞳孔、沒有眉毛。
+   */
+  glare(g) {
+    const rx = 0.58, ry = 0.8, lw = 0.15;
+    // 切線：外側（−x）在 a 的高度、內側（+x）在 b 的高度，留下切線底下的那一塊。
+    const a = [-1.2, -0.62], b = [1.2, 0.02];
+    const below = () => {
+      g.beginPath();
+      g.moveTo(a[0], a[1]);
+      g.lineTo(b[0], b[1]);
+      g.lineTo(b[0], 2);
+      g.lineTo(a[0], 2);
+      g.closePath();
+    };
+    g.save();
+    below();
+    g.clip();
+    ellipse(g, 0, 0, rx, ry, GLARE, lw);
+    g.restore();
+    // 切口那一刀：只在眼睛裡面（連同外圈墨線的寬度），跟橢圓的邊接成整圈。
+    g.save();
     g.beginPath();
-    g.moveTo(-0.75, 0.05);
-    g.quadraticCurveTo(-0.05, -0.75, 0.68, -0.18);
-    g.quadraticCurveTo(0.05, 0.62, -0.75, 0.05);
-    g.closePath();
-    g.fillStyle = GLARE;
-    g.fill();
-    g.lineWidth = 0.14;
-    g.lineJoin = 'round';
-    g.strokeStyle = INK;
-    g.stroke();
-    ellipse(g, 0, -0.04, 0.09, 0.3, INK);
-    if (brow) stroke(g, [[-0.9, -0.95], [0.75, -0.35]], 0.32);
+    g.ellipse(0, 0, rx + lw / 2, ry + lw / 2, 0, 0, Math.PI * 2);
+    g.clip();
+    stroke(g, [a, b], lw * 1.3);
+    g.restore();
   },
-  /** 頭盔裡瞪人（戴頭盔的怪物）：眉毛被頭盔蓋住了，只剩面甲縫裡那一雙紅色的杏眼。 */
+  /** 頭盔裡瞪人（戴頭盔的怪物）：跟 glare 同一雙斜切的紅眼。 */
   visor(g) {
-    FACES.glare(g, false);
+    FACES.glare(g);
   },
   /** 倒下（怪物被打倒）：叉叉眼——兩道交叉的線（跟靈魂的叉叉同一個記號）。 */
   ko(g) {
