@@ -26,6 +26,7 @@
    ------------------------------------------------------------------ */
 
 import { BLOCKS, DOORS } from './blocks.js';
+import { KINDS } from './combat.js';
 
 /** 牆頂那一層與兵營那一層的分界：腳高過它就是在牆頂（走道面 5.2，地面 0）。 */
 const TOP = 3.5;
@@ -121,6 +122,12 @@ export function foesOf(k) {
   const s = STAGES[k], [ox, oz] = origin(s.room);
   return s.foes.map((f) => ({ ...f, x: f.x + ox, z: f.z + oz }));
 }
+
+/**
+ * 一輪打下來掉得出幾顆靈魂：每一場的怪物裡會掉靈魂的（KINDS 的 `soul`）一隻一顆，全部加起來。
+ * 國王要收的就是這麼多（offer.js）——加一隻會掉靈魂的怪物、改哪一場有幾隻，這裡自己跟著變。
+ */
+export const SOULS = STAGES.reduce((n, s) => n + s.foes.filter((f) => KINDS[f.kind].soul).length, 0);
 
 /** 站在 (x, y, z)、區塊 `block` 裡：是不是進了第 k 場的範圍（進了就開打）。 */
 export function inStage(k, block, x, y, z) {

@@ -9,29 +9,34 @@
                        ——一秒交 1 / beat 顆，閃的長短就是交的速度。
      放手、走開       停。閃到一半的那一顆不算、留著；再按要重新等 wait 秒。
      交滿 need 顆      完成（done），之後不再收。
-     交不出去         最大血量只剩 keep 顆就不能再交。還沒交滿的話說一次「需要更多」
-                       （short）：那是有靈魂沒撿到，玩家自己回去找。
+     交不出去         最大血量只剩一開始那麼多（LIFE.start）就不能再交——交出去的只有撿靈魂撿來
+                       的那幾顆。還沒交滿的話說一次「需要更多」（short）：有靈魂沒撿到，玩家自己回去找。
 
-   need 是通用的：交了幾顆記在這裡，不管一次交完還是分幾次。一開始 LIFE.start 顆、
-   每一顆靈魂 +1，交完 need 顆剩下的就是最後的最大血量——現在 BOSS、騎士兩顆：3 + 2 − 4 = 1。
+   need 是這一輪掉得出的靈魂總數（route.js 的 SOULS，模式給），所以全部撿到、全部交完，最大血量
+   剛好回到一開始的 LIFE.start。交了幾顆記在這裡，不管一次交完還是分幾次。
 
    規則在這裡（node 驗得動，verify-combat 的「獻靈魂」）；在哪裡、怎麼畫在 fight.js。
    ------------------------------------------------------------------ */
 
-/**
- * 要交幾顆、交到最大血量剩幾顆為止、按多久才開始、一顆閃幾秒（也就是多久交一顆）、
- * 離國王（躺著的身體中間）多近（公尺，水平）才算在牠身邊、拋出去的靈魂飛幾秒、拋多高（公尺）。
- */
-export const OFFER = { need: 4, keep: 1, wait: 0.5, beat: 0.5, near: 2.5, flight: 0.6, arc: 1.2 };
+import { LIFE } from './combat.js';
 
-/** 還沒交過的一份。`held` 這一次按了多久、`blink` 現在那一顆閃了多久、`told` 這一次按著說過「需要更多」了。 */
-export const makeOffer = () => ({ given: 0, held: 0, blink: 0, told: false });
+/**
+ * 按多久才開始、一顆閃幾秒（也就是多久交一顆）、離國王（躺著的身體中間）多近（公尺，水平）
+ * 才算在牠身邊、拋出去的靈魂飛幾秒、拋多高（公尺）。
+ */
+export const OFFER = { wait: 0.5, beat: 0.5, near: 2.5, flight: 0.6, arc: 1.2 };
+
+/**
+ * 還沒交過的一份：要收 `need` 顆。`held` 這一次按了多久、`blink` 現在那一顆閃了多久、`told` 這一次
+ * 按著說過「需要更多」了。need 是 0 的話一開始就交滿了（沒有要收的：戰鬥模式）。
+ */
+export const makeOffer = (need = 0) => ({ need, given: 0, held: 0, blink: 0, told: false });
 
 /** 交滿了嗎。 */
-export const offerDone = (o) => o.given >= OFFER.need;
+export const offerDone = (o) => o.given >= o.need;
 
-/** 現在交得出去嗎：還沒交滿、最大血量還有比 keep 多的。 */
-export const canGive = (o, p) => !offerDone(o) && p.max > OFFER.keep;
+/** 現在交得出去嗎：還沒交滿、最大血量比一開始多（有撿來的可以交）。 */
+export const canGive = (o, p) => !offerDone(o) && p.max > LIFE.start;
 
 /** 最上面那一顆心閃了幾秒（0～beat）；沒在閃是 -1。 */
 export const blinkOf = (o, p) => (o.held >= OFFER.wait && canGive(o, p) ? o.blink : -1);

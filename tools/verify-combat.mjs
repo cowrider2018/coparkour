@@ -138,9 +138,8 @@
                     動作是 galeWind → galeSpin → galeRec：主角二段跳那一下拉長到 1 秒、主角落地那一下轉一圈、
                     從轉完那一格甩頭 0.25 秒回到原本的樣子。
     34. 獻靈魂      在國王身邊長按跳：按 0.5 秒才開始，之後每 0.5 秒交一顆（最大血量 −1、血不超過它），
-                    放手就停、閃到一半的不算、再按重新等；交到最大血量剩 1 顆為止，還沒交滿就說一次
-                    需要更多；交滿 4 顆就不再收。一開始 3 顆加 BOSS、騎士兩顆靈魂，交完剩 1 顆。
-                    拋出去的那一顆照拋物線落到國王身上。
+                    放手就停、閃到一半的不算、再按重新等；交出去的只有撿來的（最大血量最少剩一開始
+                    那麼多），還沒交滿就說一次需要更多；交滿就不再收。拋出去的那一顆照拋物線落到國王身上。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
@@ -2857,38 +2856,40 @@ console.log('34. 獻靈魂');
     }
     return got;
   };
-  const souls = Object.values(KINDS).filter((k) => k.soul).length;
-  ok(OFFER.need === 4 && OFFER.keep === 1 && LIFE.start + souls - OFFER.need === 1,
-    `要交 ${OFFER.need} 顆：一開始 ${LIFE.start} 顆 + ${souls} 顆靈魂，交完剩 ${LIFE.start + souls - OFFER.need} 顆`);
+  const need = 4, full = () => ({ max: LIFE.start + need, hp: LIFE.start + need });
 
-  let o = makeOffer(), p = { max: 5, hp: 5 };
+  let o = makeOffer(need), p = full();
   let g = run(o, p, 0.45);
-  ok(g.gave === 0 && p.max === 5 && blinkOf(o, p) < 0, '按不到 0.5 秒：還沒開始，最上面那一顆不閃');
+  ok(g.gave === 0 && p.max === 7 && blinkOf(o, p) < 0, '按不到 0.5 秒：還沒開始，最上面那一顆不閃');
   g = run(o, p, 0.8);
-  ok(g.gave === 1 && p.max === 4 && p.hp === 4 && near(g.at[0], OFFER.wait + OFFER.beat, 0.02),
-    `按到 ${g.at[0]} 秒交出第一顆（等 0.5、閃 0.5）：最大血量 5 → 4，血跟著不超過它`);
+  ok(g.gave === 1 && p.max === 6 && p.hp === 6 && near(g.at[0], OFFER.wait + OFFER.beat, 0.02),
+    `按到 ${g.at[0]} 秒交出第一顆（等 0.5、閃 0.5）：最大血量 7 → 6，血跟著不超過它`);
   ok(near(blinkOf(o, p), 0.25, 0.02), `接著第二顆閃（閃到 ${blinkOf(o, p).toFixed(2)} 秒）`);
   run(o, p, DT, false);
-  ok(p.max === 4 && o.given === 1 && blinkOf(o, p) < 0, '放手：閃到一半的那一顆不算、留著');
+  ok(p.max === 6 && o.given === 1 && blinkOf(o, p) < 0, '放手：閃到一半的那一顆不算、留著');
   g = run(o, p, 0.75);
-  ok(g.gave === 0 && p.max === 4, '再按：重新等 0.5 秒，閃不到 0.5 秒還沒交');
+  ok(g.gave === 0 && p.max === 6, '再按：重新等 0.5 秒，閃不到 0.5 秒還沒交');
   g = run(o, p, 2);
-  ok(o.given === 4 && p.max === 1 && g.done === 1 && g.short === 0 && offerDone(o),
-    '一直按著：每 0.5 秒一顆，交滿 4 顆的那一顆說完成，最大血量剩 1 顆');
+  ok(o.given === need && p.max === LIFE.start && g.done === 1 && g.short === 0 && offerDone(o),
+    `一直按著：每 0.5 秒一顆，交滿 ${need} 顆的那一顆說完成，最大血量回到一開始的 ${LIFE.start} 顆`);
   g = run(o, p, 2);
-  ok(g.gave === 0 && p.max === 1 && blinkOf(o, p) < 0, '交滿了不再收');
+  ok(g.gave === 0 && p.max === LIFE.start && blinkOf(o, p) < 0, '交滿了不再收');
 
-  o = makeOffer(); p = { max: 4, hp: 2 };
+  o = makeOffer(need); p = { max: LIFE.start + need - 1, hp: 2 };
   g = run(o, p, 3);
-  ok(o.given === 3 && p.max === 1 && p.hp === 1 && g.short === 1 && g.done === 0,
-    '少撿一顆（最大血量 4）：交 3 顆交到剩 1 顆，還差 1 顆，說一次需要更多');
+  ok(o.given === need - 1 && p.max === LIFE.start && p.hp === 2 && g.short === 1 && g.done === 0,
+    '少撿一顆：撿來的交完就停在一開始的最大血量，還差 1 顆，說一次需要更多');
   run(o, p, DT, false);
   g = run(o, p, 1);
   ok(g.gave === 0 && g.short === 1, '沒得交的時候再按：等 0.5 秒之後再說一次需要更多');
   p.max++; p.hp++;
   run(o, p, DT, false);
   g = run(o, p, 1);
-  ok(g.gave === 1 && g.done === 1 && offerDone(o) && p.max === 1, '回去撿到那一顆再來：交上第 4 顆，完成');
+  ok(g.gave === 1 && g.done === 1 && offerDone(o) && p.max === LIFE.start, '回去撿到那一顆再來：交上最後一顆，完成');
+
+  o = makeOffer(); p = full();
+  g = run(o, p, 2);
+  ok(offerDone(o) && g.gave === 0 && blinkOf(o, p) < 0, '沒有要收的（戰鬥模式）：一開始就交滿，按著什麼都不發生');
 
   const s = throwSoul({ x: 0, y: 1, z: 0 }, { x: 2, y: 0.5, z: 0 });
   let top = -Infinity, landed = false, t = 0;

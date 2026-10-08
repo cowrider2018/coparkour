@@ -122,16 +122,19 @@ export class Fight {
   /**
    * @param {THREE.Scene} scene
    * @param {import('./critter.js').Zoo} zoo 玩家那一隻（刀掛在牠頭上，怪物借牠的立耳犬資料）
-   * @param {{respawn?: boolean, renderer?: THREE.WebGLRenderer, sound?: {play: (event: string) => void}}} o
+   * @param {{respawn?: boolean, renderer?: THREE.WebGLRenderer, sound?: {play: (event: string) => void}, souls?: number}} o
    *   respawn：打死的怪物在牠的重生點重生（戰鬥模式）；false 的話打死就倒下、落地之後離場（完整流程）。
    *   renderer：落地粉塵的流體場畫在它上面，沒給就沒有粉塵。sound：場上發生的事說給它聽
-   *   （sound.js 的 Sound），沒給就沒有聲音
+   *   （sound.js 的 Sound），沒給就沒有聲音。souls：國王倒下之後要收幾顆靈魂（offer.js，完整流程
+   *   給 route.js 的 SOULS），沒給就不收
    */
-  constructor(scene, zoo, { respawn = true, renderer = null, sound = MUTE } = {}) {
+  constructor(scene, zoo, { respawn = true, renderer = null, sound = MUTE, souls = 0 } = {}) {
     this.scene = scene;
     this.zoo = zoo;
     this.respawn = respawn;
     this.sound = sound;
+    /** 國王要收幾顆靈魂（offer.js）。 */
+    this._owed = souls;
     this._renderer = renderer;
     /** 還沒把著色器編好、預先畫過：一開始，與之後每次多建了一份怪物的外觀（見 _compile）。 */
     this._cold = true;
@@ -211,7 +214,7 @@ export class Fight {
     /** 玩家頭頂的愛心：還剩幾點血。 */
     this.hearts = new Hearts(scene);
     /** 獻靈魂交到哪裡（offer.js），與拋出去、還在飛的那幾顆。 */
-    this.offer = makeOffer();
+    this.offer = makeOffer(this._owed);
     this._thrown = [];
 
     /* BOSS、騎士掉出來的靈魂（combat.js 的 dropSoul）。換陣容不清——完整流程裡打完一場就換
@@ -543,7 +546,7 @@ export class Fight {
     this.world.rings.length = 0;
     this.world.spawns.length = 0;
     this.souls.length = 0;
-    this.offer = makeOffer();
+    this.offer = makeOffer(this._owed);
     this._thrown = [];
     this._dropTrails();
     this._gusts.clear();

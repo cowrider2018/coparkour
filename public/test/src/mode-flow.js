@@ -19,8 +19,9 @@
                          最大血量 +1，一路帶到後面的場。
      獻靈魂              國王躺下之後，在牠身邊長按跳：0.5 秒後頭頂最上面那一顆心閃 0.5 秒、
                          不見（最大血量 −1），一顆靈魂拋到國王身上；一直按著就一顆接一顆。放手
-                         就停，再按重新等 0.5 秒。交滿 4 顆為止；最大血量剩 1 顆還沒交滿的話
-                         提示需要更多，自己回去撿（offer.js）。在國王身邊按跳不跳。
+                         就停，再按重新等 0.5 秒。一輪掉得出幾顆就要交幾顆（route.js 的 SOULS），
+                         交出去的只有撿來的那幾顆（最大血量最少剩一開始的 3 顆）；還沒交滿就交
+                         不出去的話提示需要更多，自己回去撿（offer.js）。在國王身邊按跳不跳。
      不在戰鬥中          清完一場之後、還沒走進下一場之前：很快回血到最大血量
                          （combat.js 的 regen）。
      倒下（血扣光）      不當幀重生，先演一段（death.js）：怪物失去目標、站著；人被那一下
@@ -55,9 +56,8 @@ import { Fight, DEATH_TEXT } from './fight.js';
 import { Sound } from './sound.js';
 import { Music } from './music.js';
 import { resetLife, refill, regen, KINDS } from './combat.js';
-import { OFFER } from './offer.js';
 import { BLOCKS } from './blocks.js';
-import { STAGES, START, foesOf, inStage, makeRun, doorsFor, portalsOn, restAt } from './route.js';
+import { STAGES, START, SOULS, foesOf, inStage, makeRun, doorsFor, portalsOn, restAt } from './route.js';
 
 const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -88,7 +88,7 @@ const player = { ...makeHero(0, 0, 0), block: 'wallwalk' };
 
 /* 戰鬥：打死的怪物就沒了（不重生），場上沒有怪物就是這一場清完。每一場的怪物現在就把
    外觀建好——牠是進場之後才上場的，那時候才建就是一頓。 */
-const fight = new Fight(scene, zoo, { respawn: false, renderer, sound: new Sound() });
+const fight = new Fight(scene, zoo, { respawn: false, renderer, sound: new Sound(), souls: SOULS });
 fight.preload(STAGES.map((_, k) => foesOf(k)));
 
 /** 背景音樂：探索與戰鬥兩首，換的時候淡出淡入（music.js）。 */
@@ -319,10 +319,10 @@ function frame(now) {
   if (souls) hud.flash(`撿到靈魂，最大血量 +${souls}`);
   {
     const gift = fight.give(dt, player, !still && controls.jumpDown());
-    const left = OFFER.need - fight.offer.given;
-    if (gift.done) hud.flash(`${OFFER.need} 顆靈魂都交給國王了`);
-    else if (gift.short) hud.flash(`還需要 ${left} 顆靈魂——回去找找沒撿到的`);
-    else if (gift.gave) hud.flash(`交出一顆靈魂（${fight.offer.given}/${OFFER.need}）`);
+    const { given, need } = fight.offer;
+    if (gift.done) hud.flash(`${need} 顆靈魂都交給國王了`);
+    else if (gift.short) hud.flash(`還需要 ${need - given} 顆靈魂——回去找找沒撿到的`);
+    else if (gift.gave) hud.flash(`交出一顆靈魂（${given}/${need}）`);
   }
   if (!run.active && !death.busy) regen(player, dt);     // 不在戰鬥中：很快回血
   if (run.active && spawnIn === 0 && !fight.foes.length && !death.busy) clear();
@@ -359,6 +359,7 @@ function frame(now) {
       : `第 ${run.next + 1} 場 ${stageName(run.next)}・${run.active ? (spawnIn > 0 ? '開打' : '戰鬥中') : '還沒進去'}`;
     line = `${Math.round(fpsN / fpsAcc)} fps ・ ${where} ・ 血 ${player.hp}/${player.max} ・ 倒下 ${deaths} 次`
       + `${st.foeLine ? ` ・ ${st.foeLine}` : ''} ・ ${st.phase} ・ `
+      + `${fight.altar() ? `靈魂 ${fight.offer.given}/${fight.offer.need}${fight.offer.held > 0 ? `（按著 ${fight.offer.held.toFixed(1)} 秒）` : ''} ・ ` : ''}`
       + `x ${player.x.toFixed(1)} y ${player.y.toFixed(1)} z ${player.z.toFixed(1)}`;
     fpsAcc = 0; fpsN = 0; hudAcc = 0;
   }

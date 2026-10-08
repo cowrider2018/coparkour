@@ -17,6 +17,8 @@
                   （墓室打完是直接送到下一場的休息點，從那裡走）；
                   打的時候哪裡都去不了（門全關、傳送全不通）；全部打完之後
                   每一個房間都走得到。
+     5. 靈魂      一輪掉得出幾顆靈魂（route.js 的 SOULS，國王要收的數）＝每一場會掉靈魂的怪物
+                  一隻一顆加起來。
 
    房間裡面走不走得通不在這裡驗——那是 verify:terrain 的事（每張圖從出生點
    真的走到中心、感測區都踩得到）。這裡只驗房間與房間之間。
@@ -27,8 +29,9 @@
 import { buildRuins, BLOCKS } from '../public/test/src/blocks.js';
 import { PHYS, arenaGap, solveXZ, supportInfo } from '../public/test/src/walk.js';
 import {
-  STAGES, OPEN, START, roomOf, foesOf, inStage, makeRun, doorsFor, portalsOn, restAt,
+  STAGES, OPEN, START, SOULS, roomOf, foesOf, inStage, makeRun, doorsFor, portalsOn, restAt,
 } from '../public/test/src/route.js';
+import { KINDS } from '../public/test/src/combat.js';
 
 let fails = 0;
 const ok = (cond, msg) => {
@@ -141,6 +144,13 @@ STAGES.forEach((s, k) => {
     ok([...all].every((r) => got.has(r)), `${s.name}打完：全部的門都開，${all.size} 個房間都走得到`);
   }
 });
+
+console.log('5. 靈魂');
+{
+  const each = STAGES.map((s) => s.foes.filter((f) => KINDS[f.kind].soul).length);
+  ok(SOULS === each.reduce((a, b) => a + b, 0) && SOULS === 2,
+    `一輪掉得出 ${SOULS} 顆靈魂（每一場 ${each.join('、')}），國王要收的就是這麼多`);
+}
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');
 process.exit(fails ? 1 : 0);
