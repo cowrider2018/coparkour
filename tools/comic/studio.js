@@ -316,10 +316,11 @@ function placeSouls(list) {
 }
 
 /* ── 背景：照構圖拼貼的剪影，2D ───────────────────────────────────
-   { piece, x, y, size, view, tilt, flip, lean, ...o }：零件從正面平拍成一張剪影（正交鏡頭，view 是繞直軸
+   { piece, x, y, size, view, tilt, flip, skew, ...o }：零件從正面平拍成一張剪影（正交鏡頭，view 是繞直軸
    轉幾弳再拍——要拍側面就給 π/2；tilt 往前傾幾弳，看得到一點頂），底邊正中間放在畫面的
-   (x, y)（寬高的比例，y 往下），高 size（畫面高的比例），flip 左右翻，lean 是拍好的剪影在畫面上
-   繞底邊正中間轉幾弳（正的是頂往右倒）。超出畫面的照裁。 */
+   (x, y)（寬高的比例，y 往下），高 size（畫面高的比例），flip 左右翻。skew 把拍好的剪影上下錯開
+   成平行四邊形：直的邊還是直的，橫的邊變斜，往右每一像素往下 skew 像素（負的是往右升高），
+   底邊正中間不動。超出畫面的照裁。 */
 const cutScene = new THREE.Scene();
 const cutCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
 const cutCanvas = document.createElement('canvas');
@@ -351,7 +352,7 @@ function drawCutout(g, spec, W, H) {
   const r = Math.max(1, Math.round(H / 300));
   g.save();
   g.translate(spec.x * W, spec.y * H);
-  if (spec.lean) g.rotate(spec.lean);
+  if (spec.skew) g.transform(1, spec.skew, 0, 1, 0, 0);
   if (spec.flip) g.scale(-1, 1);
   for (let k = 0; k < 9; k++) {
     const a = (k / 8) * Math.PI * 2, d = k === 8 ? 0 : r;
