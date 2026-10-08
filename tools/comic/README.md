@@ -112,11 +112,12 @@
     blade: 'knife',        // 嘴裡橫咬哪一把（blade.js：主角的 knife、騎士的 knight、國王的 king）
     eyes: { lift, spread },// 畫上去的眼睛往額頭抬、往外分開多少（眼睛半高的倍數，在頭上用 3D 移，跟著頭仰、頭低走）
   }],
-  cam: { focus: 'hero', yaw, pitch, dist, fov, frame: [fx, fy] },  // 對準那一隻的臉（特寫用這個）
+  cam: { focus: 'hero', yaw, pitch, dist, fov, frame: [fx, fy], roll },  // 對準那一隻的臉（特寫用這個）；roll 是鏡頭繞視線歪幾弳
   // 或 cam: { pos: [x, y, z], look: [x, y, z], fov }               // 世界座標
 }
 ```
 
+- **拼貼 `collage`**：`[{ cast, cam, light, front }]`，同一格裡另外幾組角色，各用自己的鏡頭與光拍，疊進同一個畫面（`front: true` 疊在主畫面上面，否則在底下）。現實裡不可能同時成立的視角（四個角落各一隻、各自一個角度，或遠處的主角貼得比透視近）在漫畫裡可以拼在一起，製造張力。例：第 7 頁第 4 格。
 - **`cam.focus`**：鏡頭從那一隻的臉（兩眼中點），往世界方位 `yaw`（0 是 +Z 那一側）、仰角 `pitch`（負的是從下往上拍）退 `dist` 公尺看著臉。`frame` 是臉落在畫面上的哪裡，從正中間算、以寬高的比例表示，+y 往下。
   - 要拍到臉，`yaw` 約等於角色的 `yaw` 加減 0～0.8。
 - **背景 `bg`**：`piece` 是 `studio.js` 的 `PIECES` 裡的名字（`column`、`banner`、`pavilion`、`weaponRack`、`standard`、`dummy`、`archeryTarget`、`rampart`（城牆加垛口）、`throneSeat`、`deadTree`、`well`、`house`（窄巷的連棟屋）、`sarcophagus`（石棺）、`gateway`（門洞：尖拱加兩側的牆，給 `lift` 就有鐵閘）、`dais`（王座廳的台座：台階、石台、王座、兩尊騎士石像、兩盆火）、`arcade`、`pointedArch`、`chain`、`gargoyle`、`knight`（騎士石像）……），其餘的參數原樣交給那支零件（`pavilion` 的 `R`、`h`，`rampart` 的 `from`、`to`、`h`）。

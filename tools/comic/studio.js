@@ -476,10 +476,11 @@ function faceAt(c, out) {
 /**
  * 擺鏡頭。兩種寫法：
  *   { pos, look, fov }                       世界座標
- *   { focus, yaw, pitch, dist, fov, frame }  對準 focus 那一隻的臉（cast 裡 name 或 who 是它的第一隻）：
+ *   { focus, yaw, pitch, dist, fov, frame, roll }  對準 focus 那一隻的臉（cast 裡 name 或 who 是它的第一隻）：
  *                                            從臉往 yaw（世界方位，0 = +Z 那一側）、
  *                                            pitch（仰角，負的是從下往上拍）退 dist 公尺看著臉；frame [fx, fy]
- *                                            是臉落在畫面上的哪裡（從正中間算，畫面寬高的幾分之幾，+y 往下）
+ *                                            是臉落在畫面上的哪裡（從正中間算，畫面寬高的幾分之幾，+y 往下）；
+ *                                            roll 是鏡頭繞視線轉幾弳（整個畫面跟著轉，臉的位置不變）
  */
 function aim(cam, w, h, who) {
   camera.clearViewOffset();
@@ -492,6 +493,8 @@ function aim(cam, w, h, who) {
       f.x + cam.dist * cp * Math.sin(cam.yaw), f.y + cam.dist * Math.sin(cam.pitch || 0), f.z + cam.dist * cp * Math.cos(cam.yaw),
     );
     camera.lookAt(f);
+    // roll：鏡頭繞著視線轉（拼貼裡讓幽靈頭朝畫面中間、身體往角落外伸出去），轉完臉還在正中間。
+    if (cam.roll) camera.rotateZ(cam.roll);
     const [fx, fy] = cam.frame || [0, 0];
     if (fx || fy) camera.setViewOffset(w, h, -fx * w, -fy * h, w, h);
   } else {
@@ -735,6 +738,10 @@ function render(id) {
   const shot = SHOTS.find((s) => s.id === id);
   if (!shot) throw new Error(`沒有這一格：${id}`);
   const [w, h] = shot.size;
+  /* 拼貼（collage）：同一個畫面裡另外幾組角色，各用自己的鏡頭與光拍，疊進來——現實裡不可能同時
+     成立的視角（四個角落各一個俯視）在漫畫裡拼在一起，製造張力。每一組 { cast, cam, light, front }，
+     預設疊在主畫面底下，front 的疊在上面。 */
+  const collage = (shot.collage || []).map((v) => ({ ...shoot(v, w, h, shot.ink), front: !!v.front }));
   const main = shoot(shot, w, h, shot.ink, { props: shot.props, souls: shot.souls });
   sheet.width = w;
   sheet.height = h;
@@ -753,8 +760,13 @@ function render(id) {
     focusLines(sheetG, w, h, cx, cy, o);
   }
   if (shot.speedLines) speedLines(sheetG, w, h, shot.speedLines);
-  sheetG.drawImage(main.img, 0, 0);
-  for (const [face, anchors] of main.faces) drawFace(sheetG, face, anchors, shot.ink);
+  const lay = ({ img, faces }) => {
+    sheetG.drawImage(img, 0, 0);
+    for (const [face, anchors] of faces) drawFace(sheetG, face, anchors, shot.ink);
+  };
+  for (const v of collage) if (!v.front) lay(v);
+  lay(main);
+  for (const v of collage) if (v.front) lay(v);
   if (shot.puffs) puffs(sheetG, w, h, shot.puffs);
   return sheet.toDataURL('image/png');
 }
