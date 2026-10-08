@@ -510,6 +510,9 @@ export const taken = (m, dmg) => (armored(m) ? Math.floor(dmg / 2) : dmg);
  * placeMonster 把位置、速度、血、破防、被定住全部重設，所以死前的擊退或迴旋
  * 不會帶到重生之後。玩家不動。
  *
+ * `respawn` 是 false 的話不重生：牠留在死的地方、帶著這一下的擊退，血停在 0 以下——
+ * 屍體從這裡倒下去（fight.js）。
+ *
  * 破防窗口開著的時候不累積——門檻已經到了，窗口用掉或錯過之後才從 0 重算。
  *
  * 放招倒數中（armored）傷害減半、無條件捨去（血是整數）：1 → 0、2 → 1、3 → 1、
@@ -517,7 +520,7 @@ export const taken = (m, dmg) => (armored(m) ? Math.floor(dmg / 2) : dmg);
  *
  * @returns {boolean} 這一下把牠打死了
  */
-export function hurt(m, dmg) {
+export function hurt(m, dmg, respawn = true) {
   dmg = taken(m, dmg);
   if (!broken(m)) {
     m.gauge += dmg;
@@ -526,7 +529,7 @@ export function hurt(m, dmg) {
   m.hp -= dmg;
   if (m.hp > 0) return false;
   m.deaths++;
-  placeMonster(m);
+  if (respawn) placeMonster(m);
   return true;
 }
 
@@ -1135,11 +1138,12 @@ export function latch(c, p, m) {
  *
  * 繞 y 軸轉 a：(x, z) → (x cos a + z sin a, −x sin a + z cos a)，跟 three 的
  * rotation.y 同一個方向，所以怪物的朝向加 a 與玩家繞的方向是一致的。
+ * `respawn` 交給 hurt：false 的話打死了不重生，帶著推開的速度留在原地。
  *
  * @returns {{done: boolean, died: boolean, took: number}} done 這一幀轉完了；died 那一下把牠打死了；
  *   took 那一下實際扣了幾點（taken）
  */
-export function spinStep(c, p, m) {
+export function spinStep(c, p, m, respawn = true) {
   const k = Math.min(1, c.t / BREAK_ATK.spin);
   const a = Math.PI * 2 * k;
   const [ox, oy, oz] = c.off;
@@ -1158,7 +1162,7 @@ export function spinStep(c, p, m) {
   if (m.y > floorAt(m) + 1e-3 && !kindOf(m).fly) { m.air = true; m.grounded = false; }   // 在空中被定住的：放開就帶著水平速度落下
   else m.slide = true;                                       // 會飛的不落下：在原本的高度滑開
   const took = taken(m, DAMAGE.break);
-  const died = hurt(m, DAMAGE.break);
+  const died = hurt(m, DAMAGE.break, respawn);
   vault(c, p);
   return { done: true, died, took };
 }

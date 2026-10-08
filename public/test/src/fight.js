@@ -14,7 +14,11 @@
      resolve  怪物追人、放招、球往前飛（撞到東西就炸掉），然後才判打中——兩個身體都走完這一幀了，
               範圍是對著畫面上的位置判的。打死 BOSS、騎士、國王掉出靈魂，靈魂往下掉、漂，碰到
               就撿起來。回報玩家挨了哪一下、倒下沒有、打死了誰、撿了幾顆靈魂。
-     draw     怪物、劍光（攻擊範圍）、國王劈砍的斬痕與氣流、旋風斬的熱氣流、粉塵（落地、BOSS 範圍攻擊的地震）、BOSS 的預告與球、靈魂、破防的兩圈、國王的盾、刀、
+              不重生的怪物（完整流程、召喚出來的）打死了不是當場消失，而是變成屍體（_fell）：
+              跟主角倒下一樣（death.js）往擊退的方向倒、帶著那一下的擊退飛，躺平而且落地的那一刻
+              才收掉、靈魂才掉出來。幽靈不會落地，倒著漂 GHOST_GONE 秒就收掉；國王（STAYS）
+              躺平之後不收，一直躺到換陣容。
+     draw     怪物、屍體、劍光（攻擊範圍）、國王劈砍的斬痕與氣流、旋風斬的熱氣流、粉塵（落地、BOSS 範圍攻擊的地震）、BOSS 的預告與球、靈魂、破防的兩圈、國王的盾、刀、
               頭頂的愛心。
               在相機擺好之後（破防的兩圈與愛心正對這一幀的鏡頭）；流體場也在這裡
               往前推一幀，所以要在 renderer.render 之前。
@@ -44,6 +48,7 @@ import {
   coneFx, showCone, stripFx, showStrip, galeFx, showGale,
 } from './fx.js';
 import { SoulLook } from './soul.js';
+import { DEATH, tipAngle, footprint, fallSide, fallHalf, tipNode } from './death.js';
 import { SKILL, GUST, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, ringsStep, shotHits, strikeHits, gustHits, ringHits, laneLength } from './skills.js';
 import { Hearts } from './hearts.js';
 import { Fluid, Sheet } from './fluid.js';
@@ -83,6 +88,12 @@ const DUST_DYE = 1.4;
  */
 const SHAKE = { amp: 0.12, hz: 14, decay: 0.08, life: 0.35, ahead: 0.5 };
 
+/** 幽靈的屍體漂幾秒就收掉：牠不會落地，沒有「落地才收」那一刻。 */
+const GHOST_GONE = 0.5;
+
+/** 屍體躺平之後不收的那幾類：國王是最後一場的對手，打完那一刻牠就躺在那裡。 */
+const STAYS = new Set(['king']);
+
 /** 右上那一行小字：現在在連段的哪裡。 */
 export const PHASE_NAME = {
   idle: '待機', slash: '第一段', rest: '第一段收招', rise: '第二段', air: '第二段之後', leap: '第三段起跳', slam: '第三段落地',
@@ -103,7 +114,7 @@ export class Fight {
    * @param {THREE.Scene} scene
    * @param {import('./critter.js').Zoo} zoo 玩家那一隻（刀掛在牠頭上，怪物借牠的立耳犬資料）
    * @param {{respawn?: boolean, renderer?: THREE.WebGLRenderer, sound?: {play: (event: string) => void}}} o
-   *   respawn：打死的怪物在牠的重生點重生（戰鬥模式）；false 的話打死就離場（完整流程）。
+   *   respawn：打死的怪物在牠的重生點重生（戰鬥模式）；false 的話打死就倒下、落地之後離場（完整流程）。
    *   renderer：落地粉塵的流體場畫在它上面，沒給就沒有粉塵。sound：場上發生的事說給它聽
    *   （sound.js 的 Sound），沒給就沒有聲音
    */
@@ -128,6 +139,10 @@ export class Fight {
        Critter、破防的兩圈、三種預告）。外觀是每一類一個池子，換陣容的時候借用、多的
        藏起來：一隻 Critter 是一份自己的幾何，來回切陣容不該每次重建。 */
     this.foes = [];
+    /** 打死、還沒收掉的（_fell）：跟 foes 一樣的一筆，多一份 corpse。不追人、不挨打、不算在場上。 */
+    this._corpses = [];
+    /** 鏡頭上一幀在哪：屍體沒有擊退的話往離它遠的那一邊倒（resolve 的時候還沒有這一幀的鏡頭）。 */
+    this._eye = new THREE.Vector3();
     this._pool = new Map();
     this._inkPx = null;
 
@@ -222,7 +237,7 @@ export class Fight {
     for (const spawns of lineups) {
       for (const [kind, n] of Fight._need(spawns)) most.set(kind, Math.max(most.get(kind) || 0, n));
     }
-    const busy = new Set(this.foes.map((f) => f.critter));
+    const busy = new Set([...this.foes, ...this._corpses].map((f) => f.critter));
     for (const [kind, n] of most) {
       const had = this._pool.get(kind)?.length || 0;
       this._slot(kind, n - 1);
@@ -250,8 +265,10 @@ export class Fight {
     if (!this._pool.has(kind)) this._pool.set(kind, []);
     const list = this._pool.get(kind);
     while (list.length <= i) {
+      const critter = makeMonsterCritter(this.zoo, kind);
       const slot = {
-        critter: makeMonsterCritter(this.zoo, kind), breakFx: breakFx(),
+        // pts：身體的輪廓，倒下的支點照它算（death.js）。要趁還沒動過、在待機姿勢的時候量。
+        critter, pts: footprint(critter), breakFx: breakFx(),
         lane: laneFx(SKILL.orb.radius), circle: circleFx(SKILL.leap.radius), cone: coneFx(SKILL.cone.radius, SKILL.cone.half),
         whirl: stripFx(SKILL.whirl.radius, true), cleave: stripFx(SKILL.cleave.width / 2, false),
         hew: stripFx(SKILL.hew.width / 2, false), gale: galeFx(SKILL.gale.radius, SHADE_N),
@@ -273,8 +290,15 @@ export class Fight {
     return list[i];
   }
 
+  /** 外觀收起來：身體（倒過的轉回來）與身上掛的那幾樣全部。 */
   static _hide(s) {
     s.critter.root.visible = false;
+    s.critter.root.quaternion.identity();
+    Fight._bare(s);
+  }
+
+  /** 只留身體：破防的兩圈、預告、盾收起來（屍體）。 */
+  static _bare(s) {
     s.breakFx.node.visible = false;
     s.lane.node.visible = false;
     s.circle.node.visible = false;
@@ -297,7 +321,7 @@ export class Fight {
 
   /** 借一份這一類沒在用的外觀：場上的與正在升上來的都不借。 */
   _free(kind) {
-    const busy = new Set(this.foes.map((f) => f.critter));
+    const busy = new Set([...this.foes, ...this._corpses].map((f) => f.critter));
     for (const f of this.foes) for (const r of f.rising || []) busy.add(r.slot.critter);
     const list = this._pool.get(kind) || [];
     const i = list.findIndex((s) => !busy.has(s.critter));
@@ -336,6 +360,69 @@ export class Fight {
     f.rising = null;
   }
 
+  /**
+   * 讓符合條件的那幾隻倒下：下一幀起不在清單裡（不追人、不挨打、不算在場上），變成屍體
+   * （_decay 走、_lie 畫）。正在召喚、升到一半的收起來；放到一半的招、衝刺取消，身上那幾樣
+   * 預告收起來，只留身體。朝向停在這一刻畫面上的那一個，往擊退的方向倒（沒有擊退就往離
+   * 鏡頭遠的那一邊，death.js 的 fallSide）。
+   */
+  _fell(gone) {
+    for (const f of this.foes) {
+      if (!gone(f)) continue;
+      Fight._sink(f);
+      Fight._bare(f);
+      const m = f.m, yaw = f.critter._yaw;
+      m.cast = null; m.lunge = null; m.held = false; m.breakT = 0; m.stun = 0;
+      f.critter.setFacing(yaw);
+      const side = fallSide(new THREE.Vector3(), m.vx, m.vz, yaw, m.x, m.z, this._eye.x, this._eye.z);
+      f.corpse = { t: 0, side, half: fallHalf(f.pts, side, yaw), down: false };
+      this._corpses.push(f);
+    }
+    this.foes = this.foes.filter((f) => !gone(f));
+  }
+
+  /**
+   * 屍體的一幀：照被打飛的拋物線（會飛的照漂的）走完（combat.js 的 monsterStep，沒有目標）。
+   * 躺平（DEATH.tip）而且落地的那一刻（一直沒落地的話等到 DEATH.wait）靈魂掉出來，然後收掉；
+   * STAYS 的那幾類不收，一直躺著。幽靈不落地：GHOST_GONE 秒收掉。
+   */
+  _decay(dt) {
+    this._corpses = this._corpses.filter((f) => {
+      const m = f.m, c = f.corpse;
+      c.t += dt;
+      monsterStep(m, dt, null);
+      if (KINDS[m.kind].fly) {
+        if (c.t < GHOST_GONE) return true;
+        Fight._hide(f);
+        return false;
+      }
+      if (c.down || c.t < DEATH.tip || (m.air && c.t < DEATH.wait)) return true;
+      c.down = true;
+      if (KINDS[m.kind].soul) this.souls.push(dropSoul(m));
+      if (STAYS.has(m.kind)) return true;
+      Fight._hide(f);
+      return false;
+    });
+  }
+
+  /**
+   * 擺好一具屍體：倒了 tipAngle 那麼多（跟主角一樣，death.js），支點在倒向那一邊的身體外緣，
+   * 步態照常疊在上面。在 critter.update 之後擺——它每幀把朝向寫回 root。
+   */
+  _lie(f, dt, camera) {
+    const { m, critter, corpse: c, blade, helm, crown } = f;
+    critter.root.visible = true;
+    critter.setInkColor(null);
+    critter.update(dt, {
+      speed: 0, grounded: !m.air && !KINDS[m.kind].fly, vy: m.vy,
+      viewYaw: Math.atan2(camera.position.x - m.x, camera.position.z - m.z), move: null,
+    });
+    tipNode(critter.root, tipAngle(c.t), c.side, c.half, m.x, m.y, m.z, critter._yaw);
+    if (blade) blade.update();
+    if (helm) helm.update();
+    if (crown) crown.update();
+  }
+
   /** 讓符合條件的那幾隻離場：外觀（連同牠正在召喚、升到一半的）藏起來，下一幀起不在清單裡。 */
   _drop(gone) {
     for (const f of this.foes) if (gone(f)) { Fight._hide(f); Fight._sink(f); }
@@ -360,6 +447,7 @@ export class Fight {
       used.set(s.kind, i + 1);
       return Fight._enter(this._slot(s.kind, i), s, field);
     });
+    this._corpses = [];
     this.world = makeWorld(field);
     this._calm = false;
     Object.assign(this.combo, makeCombo());
@@ -372,6 +460,8 @@ export class Fight {
   /** 怪物全部回到站位（血滿、破防歸零），召喚出來的離場，連段與球清掉。 */
   reset() {
     this._drop((f) => f.m.by);
+    for (const f of this._corpses) Fight._hide(f);
+    this._corpses = [];
     for (const f of this.foes) {
       placeMonster(f.m);
       f.critter.setFacing(f.m.spawn.yaw);
@@ -520,16 +610,19 @@ export class Fight {
     for (const g of this.world.rings) if (!g.gashed) { g.gashed = true; this._scars.gash(g, SKILL.gale.wave.speed); }
     ringsStep(this.world, dt);
     for (const { m } of foes) monsterStep(m, dt, this._calm ? null : player);
+    this._decay(dt);
     // 衝刺衝出去的那一刻：咬下去的那一聲。國王一次衝好幾下，每一下是新的一份 m.lunge。
     for (const { m } of foes) if (m.lunge && m.lunge.hot && !m.lunge.heard) { m.lunge.heard = true; sound.play('lunge'); }
     separate(foes.map((f) => f.m));
-    /* 每一隻這一刻在哪：扣到 0 的那一下 hurt 就把牠搬回重生點了，靈魂要掉在死的地方。 */
+    /* 每一隻這一刻在哪：扣到 0 的那一下 hurt 就把牠搬回重生點了，靈魂要掉在死的地方。
+       重生的只有 back 的那幾隻；其餘的打死了留在原地、帶著擊退倒下去（_fell）。 */
     const spot = new Map(foes.map(({ m }) => [m, { x: m.x, y: m.y, z: m.z, field: m.field }]));
+    const back = (m) => this.respawn && !m.by;
     // 破防攻擊：突進碰到目標就定住牠、進迴旋（有盾的話被擋掉、直接跳離）；迴旋轉完就扣血、跳離。
     if (combo.phase === 'dash' && breakContact(player, combo.target) && contact(combo, player, combo.target)) sound.play('parry');
     const dead = new Set();
     if (combo.phase === 'spin') {
-      const m = combo.target, r = spinStep(combo, player, m);
+      const m = combo.target, r = spinStep(combo, player, m, back(m));
       if (r.died) dead.add(m);
       // 破防攻擊沒有劍氣：往全方向噴，從牠被定住的地方（打死的話已經搬回重生點了）。
       if (r.took > 0) { this._bleed(burstFrame(), spot.get(m) || m, m.kind); sound.play('hit'); }
@@ -543,19 +636,20 @@ export class Fight {
         sound.play('hit');
         knock(m, body.x, body.z, body.aimX, body.aimZ, KNOCK_SCALE[combo.phase]);
         if (taken(m, DAMAGE[combo.phase]) > 0) this._bleed(hitFrame(combo.phase, body, combo.tip, m, sizeOf(m.kind)), m, m.kind);
-        if (hurt(m, DAMAGE[combo.phase])) dead.add(m);
+        if (hurt(m, DAMAGE[combo.phase], back(m))) dead.add(m);
       }
     }
     if (dead.size) sound.play('kill');
     if (foes.some(({ m }) => broken(m) && !open.has(m))) sound.play('break');
     for (const m of dead) {
       if (!m.by) kills.push(m.kind);
-      if (KINDS[m.kind].soul) this.souls.push(dropSoul(spot.get(m)));
+      // 不重生的那幾隻，靈魂等屍體落地才掉（_decay）。
+      if (KINDS[m.kind].soul && back(m)) this.souls.push(dropSoul(spot.get(m)));
     }
-    /* 打死：hurt 已經讓牠在重生點重生了。不重生的話就離場——外觀藏起來，下一幀
-       起不在清單裡。召喚出來的打死一律離場（不重生、不算在 kills 裡）；召喚牠們的那一隻
-       死了，牠召喚的一起離場。 */
-    if (dead.size) this._drop(({ m }) => (dead.has(m) && (!this.respawn || m.by)) || (m.by && dead.has(m.by)));
+    /* 打死：重生的 hurt 已經讓牠在重生點重生了。不重生的倒下——變成屍體，下一幀起不在
+       清單裡。召喚出來的打死一律倒下（不重生、不算在 kills 裡）；召喚牠們的那一隻死了，
+       牠召喚的一起倒下。 */
+    if (dead.size) this._fell(({ m }) => (dead.has(m) && !back(m)) || (m.by && dead.has(m.by)));
 
     let hit = null, by = null;
     if (!untouchable(combo, player)) {
@@ -637,6 +731,7 @@ export class Fight {
     const combo = this.combo, fx = this._fx;
     if (this._cold) this._compile(camera);
     this._shake(dt, camera);
+    this._eye.copy(camera.position);
     this.blade.update();
     // 剛挨過一下（guard 還開著）：玩家一閃一閃的。頭頂是最大血量幾顆心、剩下的幾顆是滿的。
     this.zoo.root.visible = !(player.guard > 0) || Math.floor(player.guard * 12) % 2 === 0;
@@ -663,6 +758,7 @@ export class Fight {
       // 盾繞著牠的腳轉（衝的時候畫得跳起來，盾跟著）。
       if (shields) shields.show(dt, m.shields, m.x, m.y + mo.lift, m.z, sizeOf(m.kind));
     }
+    for (const f of this._corpses) this._lie(f, dt, camera);
     // 召喚中：幽靈從地底升上來，倒數完的那一刻剛好整隻離開地面（monster.js 的 riseLift）。
     for (const f of this.foes) {
       if (!f.rising || !f.m.cast) continue;
@@ -1009,14 +1105,14 @@ export class Fight {
   }
 
   /**
-   * 落地：每一個踩地的身體（玩家、不會飛的怪物）上一幀在空中、這一幀站住了，就在
+   * 落地：每一個踩地的身體（玩家、不會飛的怪物與屍體）上一幀在空中、這一幀站住了，就在
    * 腳下揚一團塵，多濃照體型與落地速度（dust.js）。BOSS 跳砸落地不算：那一下揚的是地震的塵。落地速度用上一幀的高度差算，
    * 不讀身上的 vy——BOSS 跳砸是一幀一幀直接擺位置的，vy 一直是 0；落地那一幀的
    * vy 也已經被歸零了。
    */
   _land(dt, player) {
     const bodies = [[player, 1]];
-    for (const { m } of this.foes) if (!KINDS[m.kind].fly) bodies.push([m, sizeOf(m.kind)]);
+    for (const { m } of [...this.foes, ...this._corpses]) if (!KINDS[m.kind].fly) bodies.push([m, sizeOf(m.kind)]);
     for (const [b, size] of bodies) {
       const s = this._feet.get(b);
       if (s && b.grounded && !s.grounded && !this._quiet.has(b)) {
