@@ -21,7 +21,7 @@
    頭頂朝哪、鼻樑在哪一側，拍完之後用 2D 照 faces.js 畫上去——在網點之後畫，線是乾淨的。
    單邊縮小：遠的那一隻照頭真正側過去多少（3D 量，頭仰、頭低都算）縮——45° 以內一直畫、縮的幅度
    是遊戲的一半，45° 以外一刀不畫（遊戲裡模型自己的遠眼收合是線性收到零的，漫畫不用它）；臉背對
-   鏡頭（超過 90°）兩隻都不畫。
+   鏡頭（偏過 110°，正側面之後）兩隻都不畫。
    往額頭抬、往外分開（shots.js 的 eyes）是在頭上用 3D 移的，畫上去的眼睛跟著頭仰、頭低走。
 
    ── 剪影：背景 ────────────────────────────────────────────────
@@ -399,10 +399,11 @@ const _m = new THREE.Matrix4();
  *   側轉 cut（45°）以內   一直畫，照開根號平緩地收，到 45° 還有 1 − gentle（七成五）——
  *                         縮小的幅度是遊戲裡的一半
  *   45° 以外              不畫：一刀斷掉，不是線性縮到零
+ *   臉偏過 back（110°）    背對：兩隻都不畫。正側面畫靠鏡頭那一隻是刻意的，所以界線在側面之後
  * 遊戲實體遊玩時模型自己的遠眼收合（critter.js）是線性收到零的，漫畫不用它：眼睛的位置與大小一律
  * 照沒收合的骨頭量。
  */
-const FAR_EYE = { from: 0.1, cut: Math.SQRT1_2, gentle: 0.25 };
+const FAR_EYE = { from: 0.1, cut: Math.SQRT1_2, gentle: 0.25, back: (110 * Math.PI) / 180 };
 function farEye(d) {
   const { from, cut, gentle } = FAR_EYE;
   if (d > cut) return 0;
@@ -441,13 +442,14 @@ function eyeAnchors(c, w, h, { lift = 0, spread = 0 } = {}) {
   const toCam = camera.position.clone().sub(o3[0].clone().add(o3[1]).multiplyScalar(0.5)).normalize();
   const d = across.dot(toCam);
   const far = d >= 0 ? 0 : 1;
-  // 臉朝哪：兩隻眼睛骨頭的 +z 平均。背對鏡頭（超過 90°）的臉一隻眼睛都看不到——d 只量得到側過去多少，
-  // 分不出前後，背後的斜角跟正面的斜角會量成一樣。
+  // 臉朝哪：兩隻眼睛骨頭的 +z 平均。背對鏡頭（超過 FAR_EYE.back）的臉一隻眼睛都看不到——d 只量得到側過去
+  // 多少，分不出前後，背後的斜角跟正面的斜角會量成一樣。界線放在側面之後：正側面（頭再低一點、偏一點，
+  // 量起來常是 90° 多）畫靠鏡頭那一隻是刻意的畫法，不算背對。
   const ahead = eyes.map((b, i) => toWorld(c, b, 0, 0, 1.05, new THREE.Vector3()).sub(o3[i]))
     .reduce((m, v) => m.add(v), new THREE.Vector3());
   for (const b of eyes) for (let k = 0; k < 3; k++) c.rig.scale[b * 3 + k] = 0;
   c.rig.update();
-  if (ahead.dot(toCam) < 0) return [];
+  if (ahead.normalize().dot(toCam) < Math.cos(FAR_EYE.back)) return [];
   const s = [0, 1].map((i) => (i === far ? farEye(Math.abs(d)) : 1));
   const out = [];
   eyes.forEach((_, i) => {
