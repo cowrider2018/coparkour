@@ -77,6 +77,8 @@ const REAR = {
 const KNEEL = { pitch: 0.35, headPitch: 0.55, drop: 0.3, front: 1.2, knee: -1.6, hind: 0, legs: 1, tailPitch: -0.5, w: 1 };
 /** 捧著：上半身立起來，兩隻前腳收在胸前（捧出自己的靈魂）。 */
 const OFFER = { pitch: -0.8, headPitch: 0.6, drop: -0.1, front: -1.2, knee: 1.2, hind: -0.2, legs: 1, tailPitch: 0.3, w: 1 };
+/** 立誓：前腳收在身下跪著、頭垂下去，後半身還撐著（主角在國王面前跪下）。 */
+const VOW = { pitch: 0.2, headPitch: 0.5, drop: 0.18, front: 1.1, knee: -1.5, hind: 0, legs: 1, tailPitch: -0.4, w: 1 };
 /** 喘氣：身體往前沉、頭垂一點，尾巴放低。 */
 const PANT = { pitch: 0.12, headPitch: 0.12, drop: 0.05, tailPitch: -0.35, w: 1 };
 
@@ -667,5 +669,103 @@ export const SHOTS = [
     bg: [{ piece: 'gateway', span: 5, rise: 3.6, h: 6.4, side: 5, lift: 2.3, x: 0.58, y: 0.84, size: 0.82 }],
     cast: [{ who: 'hero', at: [0, 0], yaw: Math.PI - 0.1, speed: 1.4, frames: 44, move: { headPitch: -0.1, w: 1 }, blade: 'knife' }],
     cam: { focus: 'hero', yaw: -0.3, pitch: 0.06, dist: 2.4, fov: 36, frame: [-0.18, 0.12] },
+  },
+
+  /* ── 第 13 頁　王座廳・開場 ──────────────────────────────────── */
+  {
+    // 兩列柱子、台座、空著的王座：主角的視角往廳底看。兩列柱子從左右兩邊夾進來（近的大、裁出畫面），
+    // 越往中間越小，柱與柱之間垂著旗；廳底的台座上一張空王座、兩尊騎士石像（後面的殘牆不畫，畫了會跟
+    // 王座黏成一片）。
+    // 主角的帽頂在畫面最下面。
+    id: 'p13-1', size: [1200, 720], ink: 3.5,
+    horizon: 0.6,
+    bg: [
+      { piece: 'dais', x: 0.5, y: 0.63, size: 0.24 },
+      ...[[0.37, 0.61, 0.3], [0.3, 0.63, 0.4], [0.2, 0.67, 0.58], [0.04, 0.76, 0.95]].flatMap(([x, y, size], i) => [
+        { piece: 'column', r: 0.5, h: 6.4, seed: 10 + i, x, y, size },
+        { piece: 'column', r: 0.5, h: 6.4, seed: 20 + i, x: 1 - x, y, size },
+      ]),
+      ...[[0.335, 0.3, 0.1], [0.25, 0.28, 0.15]].flatMap(([x, y, size]) => [
+        { piece: 'banner', s: 0.9, x, y, size },
+        { piece: 'banner', s: 0.9, x: 1 - x, y, size },
+      ]),
+    ],
+    cast: [{ who: 'hero', at: [0, 0], yaw: Math.PI, move: { headPitch: -0.1, w: 1 }, blade: 'knife' }],
+    cam: { focus: 'hero', yaw: 0, pitch: 0.12, dist: 2.1, fov: 34, frame: [0, 0.62] },
+  },
+  {
+    // 回憶：我發誓，用這條命守護王。跟第 1 頁第 1 格同一個構圖——國王坐在左後方的王座上，主角在右前方，
+    // 柱子與垂旗在後面——只是這一次主角背對我們、朝著國王跪下、低著頭，刀放在面前的地上。
+    id: 'p13-2', size: [1200, 720], ink: 3.5,
+    props: [
+      { piece: 'throneSeat', at: THRONE_AT, yaw: Math.PI + 0.48 },
+      { blade: 'knife', at: [-0.55, -0.55], yaw: 1.0, size: 1 },
+    ],
+    horizon: 0.8,
+    bg: [
+      { piece: 'column', r: 0.5, h: 6.4, x: 0.03, y: 0.9, size: 1.05 },
+      { piece: 'column', r: 0.5, h: 6.4, x: 0.97, y: 0.9, size: 1.05 },
+      { piece: 'column', r: 0.5, h: 6.4, x: 0.22, y: 0.84, size: 0.78 },
+      { piece: 'column', r: 0.5, h: 6.4, x: 0.62, y: 0.84, size: 0.78 },
+      { piece: 'banner', s: 0.9, x: 0.12, y: 0.5, size: 0.42 },
+      { piece: 'banner', s: 0.9, x: 0.85, y: 0.5, size: 0.42 },
+    ],
+    cast: [
+      { who: 'king', at: [THRONE_AT[0] + 0.05, THRONE_AT[1] + 0.1], y: 0.5, yaw: 0.48, move: SIT, face: 'calm', shadow: false, eyes: { lift: 0.25, spread: 0.2 } },
+      { who: 'hero', at: [0, 0], yaw: -2.6, move: VOW },
+    ],
+    cam: { pos: [2.7, 0.7, 1.7], look: [-0.9, 0.95, -1.9], fov: 38 },
+    light: [5, 7, 3],
+  },
+  {
+    // 回到現在：王座前的地面裂開，光從縫裡透上來。貼著地面拍，台座與王座在後面，一道裂縫橫過前景，
+    // 冷光（地底是墓室）從整條縫一起往上冒：一組光芒的中心放在畫面底下外面，光從縫那一條弧開始，
+    // 一道一道幾乎平行地往上，碎石跳起來。
+    id: 'p13-3', size: [1200, 720], ink: 3.5,
+    horizon: 0.78,
+    rays: { at: [0.5, 1.9], n: 22, from: Math.PI * 1.3, to: Math.PI * 1.7, inner: 1.05, width: 0.5, color: '#d7ecf8', alpha: 0.95, front: true },
+    bg: [
+      { piece: 'dais', x: 0.5, y: 0.8, size: 0.5 },
+      { piece: 'rubble', r: 0.4, n: 5, seed: 8, x: 0.24, y: 0.66, size: 0.07 },
+      { piece: 'rubble', r: 0.5, n: 6, seed: 3, x: 0.76, y: 0.56, size: 0.06 },
+      { piece: 'rubble', r: 0.4, n: 4, seed: 12, x: 0.56, y: 0.42, size: 0.05 },
+    ],
+    puffs: [
+      { x: 0.06, y: 0.92, r: 0.1, color: '#cdbb9c', alpha: 0.8, seed: 4 },
+      { x: 0.95, y: 0.9, r: 0.11, color: '#cdbb9c', alpha: 0.8, seed: 6 },
+    ],
+    cast: [],
+    cam: { pos: [0, 1, 6], look: [0, 1, 0], fov: 40 },
+  },
+  {
+    // 國王從地底升起：整頁最大的一格，仰角。國王的亡魂（半透明、王冠、咬著劍）從裂縫裡升上來，三面盾繞著他轉，
+    // 眼睛還閉著；腳還埋在往兩邊推開的塵土裡，冷光從他身後往外放，碎石飛起來。
+    id: 'p13-4', size: [1700, 720], ink: 3.5,
+    rays: { at: [0.5, 0.5], n: 30, inner: 0.12, width: 0.45, color: '#d7ecf8', alpha: 0.95 },
+    bg: [
+      { piece: 'rubble', r: 0.4, n: 5, seed: 8, x: 0.12, y: 0.3, size: 0.08 },
+      { piece: 'rubble', r: 0.5, n: 6, seed: 3, x: 0.88, y: 0.2, size: 0.07 },
+      { piece: 'rubble', r: 0.4, n: 4, seed: 12, x: 0.25, y: 0.66, size: 0.06 },
+      { piece: 'rubble', r: 0.4, n: 4, seed: 21, x: 0.76, y: 0.62, size: 0.06 },
+    ],
+    puffs: [
+      { x: 0.06, y: 0.92, r: 0.15, color: '#cdbb9c', alpha: 0.9, seed: 4 },
+      { x: 0.24, y: 0.98, r: 0.12, color: '#cdbb9c', alpha: 0.9, seed: 7 },
+      { x: 0.44, y: 0.9, r: 0.13, color: '#cdbb9c', alpha: 0.95, seed: 11 },
+      { x: 0.57, y: 0.92, r: 0.13, color: '#cdbb9c', alpha: 0.95, seed: 13 },
+      { x: 0.76, y: 0.98, r: 0.12, color: '#cdbb9c', alpha: 0.9, seed: 9 },
+      { x: 0.94, y: 0.92, r: 0.16, color: '#cdbb9c', alpha: 0.9, seed: 6 },
+    ],
+    cast: [{ who: 'ghostKing', at: [0, 0], y: 0.4, yaw: 0.2, air: 2, shields: 3, spin: 1.3, blade: 'king', move: { headPitch: 0.1, tailPitch: -0.4, w: 1 }, face: 'rest', eyes: { lift: 0.9, spread: 0.35 }, shadow: false }],
+    cam: { focus: 'ghostKing', yaw: 0.25, pitch: -0.3, dist: 3.3, fov: 44, frame: [0, -0.1] },
+    light: [2, 6, 6],
+  },
+  {
+    // 國王睜開眼：眼睛的大特寫，紅眼瞪著鏡頭；集中線。
+    id: 'p13-5', size: [860, 720], ink: 4.5,
+    focusLines: { clear: 0.42 },
+    cast: [{ who: 'ghostKing', at: [0, 0], y: 0.4, yaw: 0.25, air: 0, blade: 'king', move: { headPitch: 0.1, w: 1 }, face: 'glare', eyes: { lift: 0.4, spread: 0.15 }, shadow: false }],
+    cam: { focus: 'ghostKing', yaw: 0.3, pitch: 0.0, dist: 1.25, fov: 34, frame: [0, 0.08] },
+    light: [2, 6, 6],
   },
 ];

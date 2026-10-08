@@ -87,11 +87,11 @@ export const PAGES = [
     { note: '主角往門走', say: '國王。', src: 'comic/p12-3.png', focus: '45% 50%' },
   ] },
   { title: '王座廳', big: 4, panels: [
-    { note: '兩列柱子、台座、空著的王座' },
-    { note: '回憶：跟第 1 頁第 1 格同一個構圖，主角跪著立誓', say: '我發誓，用這條命守護王。' },
-    { note: '王座前的地面裂開，光從縫裡透上來' },
-    { note: '國王從地底升起：半透明、王冠、三面盾、咬著劍' },
-    { note: '國王睜開眼' },
+    { note: '兩列柱子、台座、空著的王座', src: 'comic/p13-1.png', focus: '50% 50%' },
+    { note: '回憶：跟第 1 頁第 1 格同一個構圖，主角跪著立誓', say: '我發誓，用這條命守護王。', src: 'comic/p13-2.png', memory: true, capAt: 'bottom', focus: '42% 50%' },
+    { note: '王座前的地面裂開，光從縫裡透上來', src: 'comic/p13-3.png', focus: '50% 60%' },
+    { note: '國王從地底升起：半透明、王冠、三面盾、咬著劍', src: 'comic/p13-4.png', focus: '50% 45%' },
+    { note: '國王睜開眼', src: 'comic/p13-5.png', focus: '50% 50%' },
   ] },
   { title: '王座廳', panels: [
     { note: '國王跪倒在台座前，失控的亡魂安靜下來' },
