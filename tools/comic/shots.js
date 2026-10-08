@@ -88,21 +88,24 @@ const PANT = { pitch: 0.12, headPitch: 0.12, drop: 0.05, tailPitch: -0.35, w: 1 
 /* p1-1 王座廳：王座（遊戲王座廳那一張）是國王坐的，是 3D 的道具。 */
 /**
  * 第 14 頁第 5 格的廳：柱與旗沿著兩條往王座收的線排——消失點 V 在王座上，畫面邊上的柱腳在 EDGE
- * 那麼高。離王座越近（t 越小）越小、柱腳越高，頂往外微微倒（LEAN·t 弳），縱深是從王座延伸出來的。
- * 柱腳都在群眾的腳後面（比他們高），看起來是站在柱子前面，不是踩在柱子上。左右對稱。
+ * 那麼高。離王座越近（t 越小）越小、柱腳越高。每一件錯開成平行四邊形（skew）：直的邊照樣直，
+ * 橫的邊順著那條線往王座升高，縱深是從王座延伸出來的。柱腳都在群眾的腳後面（比他們高），看起來是
+ * 站在柱子前面，不是踩在柱子上。左右對稱。
  */
-function hall() {
-  const V = [0.5, 0.48], EDGE = 0.68, LEAN = 0.12, COL = 1.1, out = [];
+function hall(W, H) {
+  const V = [0.5, 0.48], EDGE = 0.68, COL = 1.1, out = [];
+  // 那條線的斜率（像素對像素）：左邊往右升高（負的），右邊鏡像。
+  const SKEW = ((EDGE - V[1]) * H) / (V[0] * W);
   const at = (x) => { const t = (V[0] - x) / V[0]; return { t, y: V[1] + (EDGE - V[1]) * t }; };
-  const both = (spec, t) => out.push({ ...spec, lean: -LEAN * t }, { ...spec, x: 1 - spec.x, lean: LEAN * t });
+  const both = (spec) => out.push({ ...spec, skew: -SKEW }, { ...spec, x: 1 - spec.x, skew: SKEW });
   for (const x of [0.03, 0.18, 0.33]) {
     const { t, y } = at(x);
-    both({ piece: 'column', r: 0.5, h: 6.4, x, y, size: COL * t }, t);
+    both({ piece: 'column', r: 0.5, h: 6.4, x, y, size: COL * t });
   }
   // 旗掛在兩根柱子中間，旗尖在那裡柱高一半再往上一點。
   for (const x of [0.105, 0.255]) {
     const { t, y } = at(x);
-    both({ piece: 'banner', s: 0.9, x, y: y - 0.45 * COL * t, size: 0.3 * t }, t);
+    both({ piece: 'banner', s: 0.9, x, y: y - 0.45 * COL * t, size: 0.3 * t });
   }
   return out;
 }
@@ -904,7 +907,7 @@ export const SHOTS = [
     id: 'p14-5', size: [1700, 720], ink: 3,
     props: [{ piece: 'throneSeat', at: [0, -4.2], yaw: Math.PI }],
     horizon: 0.6,
-    bg: hall(),
+    bg: hall(1700, 720),
     cast: [
       { who: 'king', at: [0.05, -4.1], y: 0.5, yaw: 0, move: SIT, face: 'calm', shadow: false, eyes: { lift: 0.25, spread: 0.2 } },
       { who: 'hero', at: [1.5, -3.2], yaw: -0.25, move: HEROIC, face: 'proud', blade: 'knife', eyes: { lift: 0.6, spread: 0.3 } },
