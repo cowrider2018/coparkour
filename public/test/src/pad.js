@@ -130,6 +130,7 @@ export class Pad {
     this.jKx = 0; this.jKy = 0;          // 旋鈕視覺位置
     this.jKvx = 0; this.jKvy = 0;        // …與它的彈簧速度
     this.jLiq = 0;                       // 0 = 儀器環，1 = 液化
+    this.jSp = 0;                        // 衝刺的視覺量：0 = 走，1 = 衝（見 _drawJoy）
     this.jPh = [0, 0, 0];
 
     // 跳躍鍵
@@ -328,6 +329,8 @@ export class Pad {
     const liqK = 1 - Math.pow(0.0006, dt);
     this.jLiq += ((this.jOn ? 1 : 0) - this.jLiq) * liqK;
     this.bLiq += ((this.bOn ? 1 : 0) - this.bLiq) * liqK;
+    // 比液化快得多：出圈那一下要像換檔，不是慢慢變色
+    this.jSp += ((this.jOn && this.sprint ? 1 : 0) - this.jSp) * (1 - Math.pow(1e-4, dt));
 
     this.bPressv += (((this.bOn ? 1 : 0) - this.bPress) * 420 - this.bPressv * 26) * dt;
     this.bPress += this.bPressv * dt;
@@ -367,15 +370,20 @@ export class Pad {
     let ax = this.jKx, ay = this.jKy;
     const am = Math.hypot(ax, ay);
     if (am > 1) { ax /= am; ay /= am; }
-    const tn = Math.min(1, am);
+    /* 張力分兩段，不是一條從中心到邊緣的斜坡：圈內走路只給到 0.4（幾乎
+       還是白的、晃得很輕），出圈衝刺的那一下直接跳到 1——變綠、鼓起、
+       波紋與光暈一起加大。旋鈕在圈內就已經頂住，所以光看位置分不出走與
+       衝，得靠這一道斷層。 */
+    const walk = Math.min(1, am), sp = this.jSp;
+    const tn = 0.4 * walk + 0.6 * sp;
 
-    // 軌道
+    // 軌道：衝刺時外框也一起亮起來
     const track = new Path2D();
     track.arc(cx, cy, R, 0, TAU);
     ctx.fillStyle = 'rgba(24,18,11,0.46)';
     ctx.fill(track);
-    ctx.lineWidth = 1.2;
-    ctx.strokeStyle = `rgba(155,217,78,${(0.14 + 0.16 * liq).toFixed(3)})`;
+    ctx.lineWidth = 1.2 + 1.2 * sp;
+    ctx.strokeStyle = `rgba(155,217,78,${(0.14 + 0.16 * liq + 0.5 * sp).toFixed(3)})`;
     ctx.stroke(track);
 
     // 十字刻度：只在靜止時看得到，一推就讓位給水
@@ -418,7 +426,7 @@ export class Pad {
       ctx.clip(track);
       const g = ctx.createLinearGradient(cx, cy, kx, ky);
       g.addColorStop(0, tint(tn, 0.04));
-      g.addColorStop(1, tint(tn, 0.30));
+      g.addColorStop(1, tint(tn, 0.30 + 0.2 * sp));
       ctx.fillStyle = g;
       const w = kr * 1.5;
       const px = -ay / Math.max(am, 1e-6), py = ax / Math.max(am, 1e-6);
@@ -455,8 +463,9 @@ export class Pad {
       ctx.globalAlpha *= liq;
       // 被推的時候朝行進方向鼓起，像被水流帶著跑
       const tilt = Math.atan2(ay, ax);
-      const p = blobPath(kx, ky, kr, tilt, tn * 0.85 * liq, this.t, this.jPh, 0.03 + 0.06 * tn);
-      fillLiquid(ctx, p, kx, ky, kr, tn, 8 + 14 * tn);
+      const p = blobPath(kx, ky, kr, tilt, (tn * 0.85 + 0.3 * sp) * liq, this.t, this.jPh,
+        0.03 + 0.03 * walk + 0.10 * sp);
+      fillLiquid(ctx, p, kx, ky, kr, tn, 8 + 6 * walk + 18 * sp);
       ctx.restore();
     }
   }
