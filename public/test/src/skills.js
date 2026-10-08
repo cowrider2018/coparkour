@@ -1,5 +1,5 @@
 /* ── test/src/skills.js ───────────────────────────────────────
-   怪物的技能（BOSS、騎士、國王）：規則。
+   怪物的技能（BOSS、騎士、幽靈騎士、國王）：規則。
 
    跟 combat.js 一樣只算數字——哪一招、打在哪裡、碰到沒有。畫出預告與球是
    fx.js 與 mode-combat.js 的事，而這一支 node 驗得動（tools/verify-combat.mjs）。
@@ -45,6 +45,14 @@
             的 fanFrame，下緣指著長條的遠端，往左右各厚半條長條寬），起跳後 SWING 秒內
             碰到就算——這一下跳起來躲不掉。上挑落地才僵直。
 
+   幽靈騎士的招：
+
+     reap   連斬（離玩家 8 公尺以內才放）。前兩下就是騎士的跳砍：玩家腳下的紅色長條、
+            倒數、跳過去劈到地上那一條，落地 gap 秒後轉向玩家、上挑。差別在牠不受重力：
+            上挑升到頂點（主角一跳那麼高）就停在空中，不落下，緊接著在那裡原地轉一圈——
+            主角第三擊落地那一下（SKILL.reap.spin 秒轉完，前 swing 秒打得到），一片在牠腰那麼高
+            的水平圓盤（半徑是騎士劍迴旋那一圈）。三下之間沒有僵直，轉完才僵直，停在半空中。
+
    國王的招：
 
      hew    直線劈砍（不限距離）。牠腳下出現一條往鎖定方向一直延伸到黑牆的紅色長條
@@ -80,11 +88,13 @@
      cleave、hew 貼地的長條，打的是地面上一個狗高以內：玩家的腳比那還高——跳起來了——就躲得過。
      hew 的氣流  移動的一塊（gustHits）：劍光那四分之一圈加厚成的體積，每一幀打的是它這一幀走過的
                  地方。有兩公尺高，跳不過，只能往旁邊閃。
+     reap 的轉   跟 gale 轉的那一下同一種，只是在空中、跟著牠的腰那麼高：站在地上的打不到，
+                 跳上去追牠的才挨。
      gale        轉的那一下跟騎士的 whirl 同一種（移動的圓盤，只是不移動）。熱氣流是一圈薄薄的環帶
                  （ringHits），在牠腰那麼高：跳得過，也躲得到東西後面。
      跳砍之後的上挑例外：那一片是立起來的。
 
-   碰到扣血：BOSS 的招 5、騎士的 whirl 2、cleave 3、上挑 3、國王的 hew 5、氣流 2、gale 5、熱氣流 2（每一招的 `damage`；衝刺咬到的見 combat.js 的 KINDS）。
+   碰到扣血：BOSS 的招 5、騎士的 whirl 2、cleave 3、上挑 3、幽靈騎士的 reap 劈 3、挑 3、轉 2、國王的 hew 5、氣流 2、gale 5、熱氣流 2（每一招的 `damage`；衝刺咬到的見 combat.js 的 KINDS）。
    打中人的球就炸掉消失。玩家無敵的時候（第三段、破防攻擊）碰到不算，球穿過去。
    ------------------------------------------------------------------ */
 
@@ -114,6 +124,10 @@ export const SKILL = {
     windup: 0.5, air: 0.4, hop: 1.2, len: 2.2 * DOG_H, width: 0.8 * DOG_H, range: 8, damage: 3,
     up: { gap: 0.25, swing: SWING, thick: 0.4 * DOG_H, damage: 3 },
   },
+  /* 幽靈騎士的連斬：劈與上挑照 SKILL.cleave（倒數、弧線、長條、上挑都一樣），range 也是。上挑升到
+     頂點之後原地轉一圈：spin 秒轉完（主角第三擊那一圈），前 swing 秒每一幀打一片在牠腰（waist：
+     畫成 1.2 倍高，跟騎士一樣）那麼高、半徑 radius（騎士劍迴旋那一圈）的水平圓盤。 */
+  reap: { range: 8, spin: TRAILS.slam.t1, swing: SWING, radius: 1.75 * DOG_H, waist: 0.6 * DOG_H, damage: 2 },
   /* 國王的直線劈砍：倒數 windup，劈一條從牠腳下往鎖定方向、長 len、寬 width 的長條（劍長，
      跟騎士跳砍劈的那一條一樣長）。不限距離：劍尖推出一道同樣寬的氣流（gust），每秒 speed
      公尺往前走到黑牆或撞上東西。出招後的僵直是自己的 recover（比別招短）。 */
@@ -174,6 +188,9 @@ export const WHIRL_LEN = whirlDist(SKILL.whirl.time);
 /** 上挑那一跳在空中多久：初速 PHYS.jump 起跳、落回同一層。 */
 export const UP_AIR = (2 * PHYS.jump) / PHYS.gravity;
 
+/** 幽靈騎士的上挑升多久就到頂點、停在那裡：主角那一跳的上升那一半（初速 PHYS.jump、照重力減速到 0）。 */
+export const UP_RISE = PHYS.jump / PHYS.gravity;
+
 /** 範圍攻擊打得到的高度：腳在打下去的那一塊地板往上這麼高以內才算（一個狗高）。 */
 const REACH_UP = PHYS.height;
 
@@ -214,7 +231,7 @@ function begin(m, skill, target, rng) {
   m.cast = { skill, t: 0, dirX, dirZ, tx: target.x, tz: target.z, ty, x0: m.x, y0: m.y, z0: m.z };
   m.aimX = dirX; m.aimZ = dirZ;
   m.vx = 0; m.vz = 0;
-  if (skill === 'cleave') aimCleave(m, d);
+  if (skill === 'cleave' || skill === 'reap') aimCleave(m, d);
   if (skill === 'summon') m.cast.spots = summonSpots(m, rng);
   if (skill === 'gale') m.cast.env = galeShade(m);
 }
@@ -315,6 +332,11 @@ const CAST = {
     return { shape: 'strip', x: c.lx, y: c.ly, z: c.lz, dirX: c.dirX, dirZ: c.dirZ, len: S.len, w: S.width, dmg: S.damage };
   },
 
+  /* 倒數、飛過去、劈下去、轉向玩家都是騎士的跳砍（cleave）；落地之後換成不落下的上挑與空中的那一圈（rend）。 */
+  reap(m, world, target) {
+    return m.cast.up ? rend(m) : CAST.cleave(m, world, target);
+  },
+
   /* 倒數完沿鎖定的方向衝，走多遠是那一段時間的積分（跟幀長無關，一次永遠 3.2 公尺，
      被牆擋住就沿著牆滑）。每一幀打的是這一幀走過的那一段（膠囊）；衝完那一幀收招。 */
   whirl(m) {
@@ -407,6 +429,28 @@ function upper(m) {
   return null;
 }
 
+/**
+ * 幽靈騎士連斬的後兩下：落地之後站 gap 秒（跟騎士一樣），然後照主角那一跳往上升，升 UP_RISE 秒到頂點
+ * 就停在那裡（不受重力，不落下）。起跳後 swing 秒內每一幀打上挑那一片扇形（跟騎士的上挑同一片）；
+ * 到頂點的那一刻接著原地轉一圈，前 swing 秒每一幀打腰那麼高的那一片圓盤。轉完收招，停在空中。
+ */
+function rend(m) {
+  const c = m.cast, S = SKILL.cleave, U = S.up, R = SKILL.reap, up = c.up;
+  const u = c.t - S.windup - S.air - U.gap;
+  if (u < 0) return null;
+  const k = Math.min(u, UP_RISE);
+  m.y = up.y + PHYS.jump * k - (PHYS.gravity * k * k) / 2;
+  m.grounded = false;
+  if (u < UP_RISE) {
+    if (u > U.swing) return null;
+    return { shape: 'fan', x: m.x, y: m.y, z: m.z, aimX: up.dirX, aimZ: up.dirZ, tip: up.tip, thick: U.thick, dmg: U.damage };
+  }
+  const s = u - UP_RISE;
+  if (s >= R.spin) { m.cast = null; return null; }
+  if (s > R.swing) return null;
+  return { shape: 'capsule', x: m.x, y: m.y, z: m.z, x1: m.x, z1: m.z, r: R.radius, waist: m.y + R.waist, dmg: R.damage };
+}
+
 /** 點 (px, pz) 到線段 (ax, az)–(bx, bz) 的水平距離。 */
 function segGap(px, pz, ax, az, bx, bz) {
   const ux = bx - ax, uz = bz - az, L2 = ux * ux + uz * uz;
@@ -467,7 +511,7 @@ function waveHits(st, p) {
 }
 
 /**
- * 有技能的那一類（BOSS、騎士、國王）的一幀：倒數、挑招、推進放到一半的招。沒有技能的那一類
+ * 有技能的那一類（BOSS、騎士、幽靈騎士、國王）的一幀：倒數、挑招、推進放到一半的招。沒有技能的那一類
  * 什麼都不做。要在 monsterStep 之前叫——放招中的怪物 monsterStep 讓牠站著不動（要走的招
  * 自己在 CAST 裡走）。
  *

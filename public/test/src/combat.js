@@ -19,6 +19,7 @@
      2 殭屍 + 1 BOSS BOSS 在中線上，殭屍在左右各 4 公尺（預設）。
      3 幽靈          跟 3 殭屍同樣的站位。
      1 騎士          中線上。
+     1 幽靈騎士      中線上。
      1 國王          中線上。
 
    ── 怪物 ────────────────────────────────────────────────────────
@@ -122,6 +123,7 @@ export const MODES = [
   { id: 'mixed', name: '2 殭屍 + 1 BOSS', hint: '大隻的 BOSS 在中間，兩隻殭屍在左右。', monsters: [post('boss', 0), post('minion', -4), post('minion', 4)] },
   { id: 'ghosts', name: '3 幽靈', hint: '三隻半透明、會飛的幽靈。', monsters: [post('ghost', -4), post('ghost', 0), post('ghost', 4)] },
   { id: 'knight', name: '1 騎士', hint: '一隻咬著雙刃劍、1.2 倍高的騎士。', monsters: [post('knight', 0)] },
+  { id: 'wraith', name: '1 幽靈騎士', hint: '一隻半透明、會飛的騎士：下劈、上挑、在空中轉一圈。', monsters: [post('wraith', 0)] },
   { id: 'king', name: '1 國王', hint: '一隻戴王冠、半透明、1.4 倍高的國王，身邊三面盾。', monsters: [post('king', 0)] },
 ];
 
@@ -172,7 +174,10 @@ export const FIELD = { arena: ARENA, cols: COLS, doors: {} };
  *   knight  騎士（殭屍畫成 1.2 倍高，嘴裡咬著一把雙刃劍）。血 10、腳程 3.6。
  *           衝刺跟小怪一樣一打就取消（不是 `steady`）。每 `every` 秒從 `skills`
  *           裡挑一招（skills.js），夠得到才放。
- *   king    國王（垂耳狗，幽靈那一件毛、半透明，畫成 1.4 倍高）。血 40、腳程 3.8，走路、
+ *   wraith  幽靈騎士（騎士那一身，穿幽靈那一件、半透明）。數值跟騎士一樣，也掉靈魂；差別是
+ *           `fly`（跟幽靈一樣不受重力），招只有一套連斬（skills.js 的 reap：下劈、上挑、
+ *           在空中原地轉一圈，三下連著）。衝刺咬人照常。
+ *   king  國王（垂耳狗，幽靈那一件毛、半透明，畫成 1.4 倍高）。血 40、腳程 3.8，走路、
  *           受重力。`lunges`：一次衝刺衝兩下才僵直（見 LUNGE）。`shields`：身邊幾面盾，
  *           每 `shieldEvery` 秒沒挨打補一面（見 parry）。衝刺跟小怪一樣一打就取消。每 `every`
  *           秒從 `skills` 裡挑一招（skills.js）。
@@ -190,6 +195,7 @@ export const KINDS = {
   boss: { name: 'BOSS', hp: 20, speed: 4, breakAt: BREAK_AT, bite: 3, soul: true, steady: true, skills: ['orb', 'leap', 'cone'], every: 3 },
   ghost: { name: '幽靈', hp: 4, speed: 3.4, breakAt: BREAK_AT, bite: 1, fly: true },
   knight: { name: '騎士', hp: 10, speed: 3.6, breakAt: BREAK_AT, bite: 2, soul: true, skills: ['whirl', 'cleave'], every: 2.5 },
+  wraith: { name: '幽靈騎士', hp: 10, speed: 3.6, breakAt: BREAK_AT, bite: 2, soul: true, fly: true, skills: ['reap'], every: 2.5 },
   king: { name: '國王', hp: 40, speed: 3.8, breakAt: BREAK_AT, bite: 2, lunges: 2, shields: 3, shieldEvery: 8, skills: ['hew', 'summon', 'gale'], every: 3 },
 };
 

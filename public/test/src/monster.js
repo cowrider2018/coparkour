@@ -6,6 +6,7 @@
      ghost   幽靈：淡藍白，半透明，一般大小。
      knight  騎士：同一件綠毛，1.2 倍高，嘴裡橫咬一把雙刃劍（blade.js 的 knight），
              戴頭盔（helm.js）。
+     wraith  幽靈騎士：騎士那一身（1.2 倍高、咬雙刃劍、戴頭盔），穿幽靈那一件淡藍白、一樣半透明。
      king    國王：垂耳狗（其他幾類是立耳犬），幽靈那一件淡藍白、一樣半透明，1.4 倍高，
              戴王冠（crown.js），嘴裡橫咬騎士那一把劍、劍萼與劍柄是金色的（blade.js 的 king）。
 
@@ -70,6 +71,12 @@
             跳躍動作組（在空中、垂直速度照那一跳），頭從低往上仰；收尾拉長到
             上挑落地之後的僵直結束。
 
+   ── 幽靈騎士放招的動作 ──────────────────────────────────────────
+     reap   連斬：倒數、跳過去、劈到底翻頭都是騎士跳砍那一套（cleaveWind、cleaveAir、cleaveLand）。
+            上挑（reapUp）是騎士的上挑去掉落地的收尾：升到頂點停在那一格；轉（reapSpin）是
+            主角落地那一下（一圈），劍水平伸在外面；僵直（reapRec）跟國王旋風斬的一樣是從轉完的
+            那一格一邊甩頭一邊回來——都在空中。
+
    ── 國王放招的動作 ──────────────────────────────────────────────
      hew    直線劈砍：騎士跳砍那一套，只是不跳（這一招是原地劈、倒數完就出手）。倒數的
             0.5 秒就是騎士的 cleaveWind（蹲低蓄力、頭側過去、劍舉到頭頂後面），最後
@@ -100,7 +107,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { Critter } from './critter.js';
 import { LUNGE, kindOf } from './combat.js';
-import { SKILL, UP_AIR, recoverOf } from './skills.js';
+import { SKILL, UP_AIR, UP_RISE, recoverOf } from './skills.js';
 import { PHYS } from './walk.js';
 import { Mover, MOVES as HERO } from './moves.js';
 
@@ -120,6 +127,7 @@ const LOOKS = {
   boss: { coat: ZOMBIE, height: 2.0, alpha: 1, blood: 'blood', helm: true },
   ghost: { coat: GHOST, height: 1.0, alpha: GHOST_ALPHA, blood: 'ecto' },
   knight: { coat: ZOMBIE, height: 1.2, alpha: 1, blood: 'blood', sword: 'knight', helm: true },
+  wraith: { coat: GHOST, height: 1.2, alpha: GHOST_ALPHA, blood: 'ecto', sword: 'knight', helm: true },
   king: { coat: GHOST, height: 1.4, alpha: GHOST_ALPHA, blood: 'ecto', sword: 'king', crown: true, model: 'dog-drop' },
 };
 /** 這一類畫多高，跟狗（1）比。落地的粉塵照它算（dust.js）。 */
@@ -411,6 +419,11 @@ export const MOVES = {
     blend: 0.03,
     keys: [...HERO.rise.keys.slice(0, -1).map(([t, pose, ease]) => [t, mirror(pose), ease]), [UP_AIR + SKILL.recover, {}, 'inOut']],
   },
+  /* 幽靈騎士的連斬：上挑是騎士那一套，只是不落地——沒有回到原本樣子的那一格，升到頂點就接著轉；
+     轉是主角落地那一下（一圈），僵直從轉完的那一格一邊甩一邊回來。 */
+  reapUp: { blend: 0.03, keys: HERO.rise.keys.slice(0, -1).map(([t, pose, ease]) => [t, mirror(pose), ease]) },
+  reapSpin: HERO.slam,
+  reapRec: { blend: 0.02, keys: shakeKeys(recoverOf('reap'), SPIN_END, [[0, SPIN_END]]) },
   /* 國王的直線劈砍：騎士跳砍的蓄力（cleaveWind 那幾格），不跳，最後 CHOP_LEAD 秒直接甩下去；
      收尾是騎士落地劈到底那一格（CHOP，頭朝地面），整段僵直停在那裡不動。 */
   hewWind: {
@@ -477,6 +490,7 @@ export class Motion {
     if (stage === 'leapAir') this._fly(o, m, t);
     if (stage === 'cleaveAir') this._hopTo(o, m, t);
     if (stage === 'cleaveUp' && t < UP_AIR) { o.air = true; o.vy = PHYS.jump - PHYS.gravity * t; }
+    if (stage === 'reapUp') { o.air = true; o.vy = PHYS.jump - PHYS.gravity * t; }
     const move = this.mover.step(dt, stage, t);
     o.move = this._lookAt(dt, stage, m, player, this._float(dt, stage, m, move));
     return o;
@@ -539,6 +553,12 @@ export class Motion {
         const S = SKILL.cleave, u = c.t - S.windup - S.air - S.up.gap;
         return u < 0 ? ['cleaveLand', u + S.up.gap] : ['cleaveUp', u];
       }
+      if (c.skill === 'reap' && c.up) {
+        const S = SKILL.cleave, u = c.t - S.windup - S.air - S.up.gap;
+        return u < 0 ? ['cleaveLand', u + S.up.gap] : u < UP_RISE ? ['reapUp', u] : ['reapSpin', u - UP_RISE];
+      }
+      // 連斬的前一半就是跳砍：倒數與飛過去播騎士那兩段。
+      if (c.skill === 'reap') return c.t >= SKILL.cleave.windup ? ['cleaveAir', c.t - SKILL.cleave.windup] : ['cleaveWind', c.t];
       if (c.skill === 'cleave' && c.t >= SKILL.cleave.windup) return ['cleaveAir', c.t - SKILL.cleave.windup];
       return MOVES[`${c.skill}Wind`] ? [`${c.skill}Wind`, c.t] : [null, 0];
     }

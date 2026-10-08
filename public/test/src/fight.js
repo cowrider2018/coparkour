@@ -55,7 +55,7 @@ import {
 import { SoulLook } from './soul.js';
 import { OFFER, makeOffer, offerStep, offerDone, blinkOf, throwSoul, flySoul } from './offer.js';
 import { DEATH, tipAngle, footprint, fallSide, fallHalf, tipNode } from './death.js';
-import { SKILL, GUST, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, ringsStep, shotHits, strikeHits, gustHits, ringHits, laneLength } from './skills.js';
+import { SKILL, GUST, WHIRL_LEN, UP_RISE, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, ringsStep, shotHits, strikeHits, gustHits, ringHits, laneLength } from './skills.js';
 import { Hearts } from './hearts.js';
 import { Fluid, Sheet } from './fluid.js';
 import { TRAILS } from './trail.js';
@@ -434,6 +434,8 @@ export class Fight {
       if (KINDS[m.kind].fly) {
         if (c.t < GHOST_GONE) return true;
         this._bleed(burstFrame(), m, m.kind);
+        // 會掉靈魂的（幽靈騎士）：炸開的那一刻從那一團裡掉出來。
+        if (KINDS[m.kind].soul) this.souls.push(dropSoul(m));
         Fight._hide(f);
         return false;
       }
@@ -943,7 +945,7 @@ export class Fight {
       /* 跳砍：從落點往前的那一條（正中間是主角被鎖定的地方），貼在落點那一層地板上；飛的時候
          亮著滿的。落地之後換成上挑那一條（從牠腳下往主角、長 REACH），等的那 gap 秒從牠腳下長滿，
          打得到的那 swing 秒亮著滿的，之後收掉。 */
-      const cl = !!c && c.skill === 'cleave', CL = SKILL.cleave;
+      const cl = !!c && (c.skill === 'cleave' || c.skill === 'reap'), CL = SKILL.cleave;
       if (cl && c.up) {
         const u = c.t - CL.windup - CL.air;
         showStrip(cleave, u <= CL.up.gap + CL.up.swing, Math.min(1, u / CL.up.gap), c.up.x, c.up.z,
@@ -1060,7 +1062,7 @@ export class Fight {
   _whirls() {
     for (const { m } of this.foes) {
       const c = m.cast;
-      if (c && c.skill === 'cleave') { this._cleave(m, c); continue; }
+      if (c && (c.skill === 'cleave' || c.skill === 'reap')) { this._cleave(m, c); continue; }
       if (c && c.skill === 'hew') { this._hewQi(m, c); continue; }
       // 國王的旋風斬：主角第三擊那一道（一圈），照劍長縮放。
       const spin = !!c && c.skill === 'gale', S = spin ? SKILL.gale : SKILL.whirl;
@@ -1083,9 +1085,15 @@ export class Fight {
    *       那一條的遠端，照那一條的長度縮放——劍光的終點就是劈的那一條。
    *   上挑 起跳那一幀起一道主角第二段的劍光（rise），末端點是那一片扇形的
    *       （skills.js 的 aimUp）——跟判定同一片。
+   *   轉  幽靈騎士的連斬（reap）：上挑升到頂點那一幀起一道主角第三擊的劍光（slam，一圈），
+   *       照轉的半徑縮放、高度照牠的體型抬，跟國王的旋風斬那一道一樣。
    */
   _cleave(m, c) {
     const S = SKILL.cleave;
+    if (c.skill === 'reap' && c.up && !c.spinQi && c.t >= S.windup + S.air + S.up.gap + UP_RISE) {
+      this._foeQi(m, c, 'slam', null, SKILL.reap.radius / REACH, c.up.dirX, c.up.dirZ, (PHYS.height / 2) * (sizeOf(m.kind) - 1));
+      c.spinQi = true;
+    }
     if (!c.chopQi && c.t >= S.windup + S.air - CHOP_LEAD) {
       const tip = { x: c.lx + c.dirX * S.len, y: c.ly, z: c.lz + c.dirZ * S.len };
       this._foeQi(m, c, 'cleave', tip, S.len / REACH, c.dirX, c.dirZ);
@@ -1109,13 +1117,13 @@ export class Fight {
     c.chopQi = true;
   }
 
-  /** 怪物身上起一道劍光：跟著牠的腳，朝 (aimX, aimZ)，招被打斷就收（見 _qi）。 */
-  _foeQi(m, c, kind, tip, scale, aimX, aimZ) {
+  /** 怪物身上起一道劍光：跟著牠的腳（往上抬 lift），朝 (aimX, aimZ)，招被打斷就收（見 _qi）。 */
+  _foeQi(m, c, kind, tip, scale, aimX, aimZ, lift = 0) {
     const q = this._spare.pop() || new Qi();
     if (!q.node.parent) this.scene.add(q.node);
     q.start(kind, tip, scale);
     const body = { x: 0, y: 0, z: 0, aimX, aimZ };
-    q.owner = () => Object.assign(body, { x: m.x, y: m.y, z: m.z });
+    q.owner = () => Object.assign(body, { x: m.x, y: m.y + lift, z: m.z });
     q.cast = c;
     q.foe = m;
     this._qis.push(q);
