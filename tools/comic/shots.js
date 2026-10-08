@@ -894,11 +894,12 @@ export const SHOTS = [
     cast: [
       { who: 'king', at: [0.05, -4.1], y: 0.5, yaw: 0, move: SIT, face: 'calm', shadow: false, eyes: { lift: 0.25, spread: 0.2 } },
       { who: 'hero', at: [1.5, -3.2], yaw: -0.25, move: HEROIC, face: 'proud', blade: 'knife', eyes: { lift: 0.6, spread: 0.3 } },
+      // 群眾每一隻都正對國王（王座上那一點），不是朝四面八方。
       ...[
-        ['cat/orangin', -3.4, -1.0, 0.5], ['dog-drop/cow', -2.0, 0.2, 0.3], ['cat/tabby', -0.8, 1.2, 0.1],
-        ['dog-prick/grey', 0.7, 1.4, -0.1], ['cat/calico', 2.1, 0.6, -0.3], ['dog-drop/yellow', 3.4, -0.6, -0.5],
-        ['dog-prick/cow', -4.4, 0.9, 0.6], ['cat/orangin', 4.3, 1.0, -0.6],
-      ].map(([look, x, z, yaw]) => ({ who: 'folk', look, at: [x, z], yaw: yaw + Math.PI, move: { headPitch: -0.25, tailPitch: 0.5, w: 1 } })),
+        ['cat/orangin', -3.4, -1.0], ['dog-drop/cow', -2.0, 0.2], ['cat/tabby', -0.8, 1.2],
+        ['dog-prick/grey', 0.7, 1.4], ['cat/calico', 2.1, 0.6], ['dog-drop/yellow', 3.4, -0.6],
+        ['dog-prick/cow', -4.4, 0.9], ['cat/orangin', 4.3, 1.0],
+      ].map(([look, x, z]) => ({ who: 'folk', look, at: [x, z], yaw: Math.atan2(0.05 - x, -4.1 - z), move: { headPitch: -0.25, tailPitch: 0.5, w: 1 } })),
     ],
     cam: { pos: [0, 2.8, 7.5], look: [0, 0.9, -2.6], fov: 36 },
     light: [-3, 7, 6],
