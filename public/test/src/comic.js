@@ -8,6 +8,7 @@
    只有主體、背景透明，say 疊在圖上（心聲、對白預設在上面，capAt: 'bottom' 放下面）。圖鋪滿
    格子，格子比例跟圖不同的時候對準 focus（CSS 的 object-position，例如 '70% 40%'）裁。
    memory 是回憶的那幾格：暖色、柔邊，沒有格框。
+   頁上的 big 是那一頁特別大的一格（第幾格，從 1 起），書頁換一套讓它最大的版面（index.html）。
 
    ── 哪一刻翻哪幾頁（SCRIPT，頁碼從 1 起，跟 STORY.md 一樣）──────────
      start     重玩（R）、一開始：兵營開場，醒來的那一頁。
@@ -85,7 +86,7 @@ export const PAGES = [
     { note: '王座廳正門的鐵閘緩緩升起', src: 'comic/p12-2.png', focus: '50% 55%' },
     { note: '主角往門走', say: '國王。', src: 'comic/p12-3.png', focus: '45% 50%' },
   ] },
-  { title: '王座廳', panels: [
+  { title: '王座廳', big: 4, panels: [
     { note: '兩列柱子、台座、空著的王座' },
     { note: '回憶：跟第 1 頁第 1 格同一個構圖，主角跪著立誓', say: '我發誓，用這條命守護王。' },
     { note: '王座前的地面裂開，光從縫裡透上來' },

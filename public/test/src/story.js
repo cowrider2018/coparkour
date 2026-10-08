@@ -25,9 +25,9 @@
    上面那一張翻走之後兩張對調。
 
    ── 漫畫 ────────────────────────────────────────────────────────
-   每一頁 { title, folio, panels }（comic.js 的 pagesOf）。每一格是 { src }（圖）或
+   每一頁 { title, folio, panels, big? }（comic.js 的 pagesOf）。每一格是 { src }（圖）或
    { note, say }（還沒畫，放佔位：格號、這一格要畫什麼、格子裡的字）。版面照格數
-   （3～5 格）與直向／橫向各一套，在 index.html 的 #story。
+   （3～5 格）與直向／橫向各一套，在 index.html 的 #story；big 是那一頁要特別大的一格。
 
    `el` 給 null 也跑得動（node 裡驗時間軸用）。
    ------------------------------------------------------------------ */
@@ -216,6 +216,9 @@ export class Story {
     page.querySelector('.next').textContent = i + 1 < this.pages.length ? '點一下或按跳翻頁' : '點一下或按跳繼續';
     const box = page.querySelector('.panels');
     box.dataset.n = comic.panels.length;
+    // 那一頁特別大的一格（comic.js 的 big：第幾格），版面換成讓它最大的那一套。
+    if (comic.big) box.dataset.big = comic.big;
+    else delete box.dataset.big;
     box.textContent = '';
     comic.panels.forEach((p, k) => {
       const cell = document.createElement('div');
