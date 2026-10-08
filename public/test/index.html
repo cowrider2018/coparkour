@@ -95,7 +95,7 @@
   canvas { position: fixed; inset: 0; display: block; width: 100%; height: 100%; }
   /* GL 在最底，操作層疊在它上面但不吃事件（指標由 main.js 路由，
      因為同一次拖曳要嘛是搖桿要嘛是鏡頭），面板在最上面。 */
-  #view { z-index: 0; touch-action: none; }
+  #view { z-index: 0; touch-action: none; -webkit-touch-callout: none; }
   #pad { z-index: 2; pointer-events: none; }
   /* 穿過感測區時那一層黑（transit.js）：蓋遊戲那一片，不蓋操作列、面板與 toast
      ——同一層 z-index，排在操作列前面，所以在它們底下。 */

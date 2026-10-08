@@ -90,6 +90,9 @@ export class Controls {
     };
     canvas.addEventListener('pointerup', release);
     canvas.addEventListener('pointercancel', release);
+    /* 長按（獻靈魂要按著跳）：手機上按著不動大約半秒就算長按，瀏覽器要叫出選單，順手把那一根
+       手指取消掉（pointercancel）——跳就被當成放開了。不讓它叫。 */
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
       zoom(cam.dist + Math.sign(e.deltaY) * 0.6);
