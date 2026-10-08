@@ -16,7 +16,7 @@
               就撿起來。回報玩家挨了哪一下、倒下沒有、打死了誰、撿了幾顆靈魂。
               不重生的怪物（完整流程、召喚出來的）打死了不是當場消失，而是變成屍體（_fell）：
               跟主角倒下一樣（death.js）往擊退的方向倒、帶著那一下的擊退飛，躺平而且落地的那一刻
-              才收掉、靈魂才掉出來。幽靈不會落地，倒著漂 GHOST_GONE 秒就收掉；國王（STAYS）
+              才收掉、靈魂才掉出來。幽靈不會落地，倒著漂 GHOST_GONE 秒炸成一團幽靈血、收掉；國王（STAYS）
               躺平之後不收，一直躺到換陣容。
      draw     怪物、屍體、劍光（攻擊範圍）、國王劈砍的斬痕與氣流、旋風斬的熱氣流、粉塵（落地、BOSS 範圍攻擊的地震）、BOSS 的預告與球、靈魂、破防的兩圈、國王的盾、刀、
               頭頂的愛心。
@@ -88,7 +88,7 @@ const DUST_DYE = 1.4;
  */
 const SHAKE = { amp: 0.12, hz: 14, decay: 0.08, life: 0.35, ahead: 0.5 };
 
-/** 幽靈的屍體漂幾秒就收掉：牠不會落地，沒有「落地才收」那一刻。 */
+/** 幽靈的屍體漂幾秒就炸開、收掉：牠不會落地，沒有「落地才收」那一刻。 */
 const GHOST_GONE = 0.5;
 
 /** 屍體躺平之後不收的那幾類：國王是最後一場的對手，打完那一刻牠就躺在那裡。 */
@@ -384,7 +384,8 @@ export class Fight {
   /**
    * 屍體的一幀：照被打飛的拋物線（會飛的照漂的）走完（combat.js 的 monsterStep，沒有目標）。
    * 躺平（DEATH.tip）而且落地的那一刻（一直沒落地的話等到 DEATH.wait）靈魂掉出來，然後收掉；
-   * STAYS 的那幾類不收，一直躺著。幽靈不落地：GHOST_GONE 秒收掉。
+   * STAYS 的那幾類不收，一直躺著。幽靈不落地：GHOST_GONE 秒往全方向炸成一團幽靈血
+   * （跟破防攻擊的那一下同一種噴法，bleed.js 的 burstFrame），收掉。
    */
   _decay(dt) {
     this._corpses = this._corpses.filter((f) => {
@@ -393,6 +394,7 @@ export class Fight {
       monsterStep(m, dt, null);
       if (KINDS[m.kind].fly) {
         if (c.t < GHOST_GONE) return true;
+        this._bleed(burstFrame(), m, m.kind);
         Fight._hide(f);
         return false;
       }
