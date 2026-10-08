@@ -93,7 +93,7 @@
   rays: { at: [fx, fy], n, from, to, inner, width, color, alpha },   // 光芒（可以是陣列）
   speedLines: { angle, rows, band, len, width, seed },              // 速度線
   puffs: [{ x, y, r, color, alpha, n, seed }],                      // 霧與塵
-  souls: [{ at: [x, y, z], yaw, scale, seed }],                     // 靈魂（發光的狗頭），3D
+  souls: [{ at: [x, y, z], yaw, scale, seed, trail }],              // 靈魂（發光的狗頭），3D；trail 是小球冒幾幀（預設 90）
   cast: [{
     who: 'hero',           // 見下面「角色」
     look: 'cat/tabby',     // who 是 'folk' 的時候：哪一隻、哪一件毛

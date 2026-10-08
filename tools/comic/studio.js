@@ -287,8 +287,9 @@ function buildProps(props) {
 }
 
 /* ── 靈魂：發光的狗頭（soul.js），3D ───────────────────────────────
-   { at: [x, y, z], yaw, scale, seed }：頭、光暈、周圍冒的小球。小球是 soul.js 用 Math.random 撒的，
-   這裡借固定種子的亂數撒一段，重拍才一樣。 */
+   { at: [x, y, z], yaw, scale, seed, trail }：頭、光暈、周圍冒的小球。小球是 soul.js 用 Math.random 撒的，
+   這裡借固定種子的亂數撒一段（trail 幀，預設 90：冒到滿），重拍才一樣。同一格好幾顆的時候 trail 給少一點，
+   小球才不會疊成密密的一片。 */
 let soulLook = null;
 const souls = [];
 function placeSouls(list) {
@@ -304,7 +305,7 @@ function placeSouls(list) {
     try {
       v.bubbles.clear();
       v.node.scale.setScalar(sl.scale || 1);
-      for (let k = 0; k < 90; k++) v.bubbles.step(1 / 60, x, y, z);
+      for (let k = 0, n = sl.trail ?? 90; k < n; k++) v.bubbles.step(1 / 60, x, y, z);
       v.show({ x, y, z, yaw: sl.yaw || 0 }, 0, camera);
     } finally {
       Math.random = keep;

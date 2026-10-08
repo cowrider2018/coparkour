@@ -28,7 +28,8 @@
      horizon  地平線在畫面高的幾成（0 = 頂、1 = 底），從這裡往下畫滿地面的排線；沒給就沒有地面
      props  角色碰得到的道具（國王坐的王座）：{ piece, at: [x, z], y, yaw, scale, ...零件的參數 }，擺在 3D 場景裡
             跟角色一起拍，顏色跟背景的剪影一樣；{ blade, at, y, yaw, size } 是一把掉在地上的刀劍（原本的顏色）
-     souls  靈魂（發光的狗頭）：[{ at: [x, y, z], yaw, scale, seed }]
+     souls  靈魂（發光的狗頭）：[{ at: [x, y, z], yaw, scale, seed, trail }]——trail 是周圍的小球冒幾幀（預設 90），
+            同一格好幾顆的時候給少一點
      rays   光芒：{ at: [fx, fy], n, from, to, inner, width, color, alpha, front }（或好幾道的陣列），畫在角色底下、
             剪影後面；front 的畫在剪影前面
      speedLines  速度線：{ angle, rows, band, len, width, seed }，畫在角色底下
