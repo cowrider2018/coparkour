@@ -888,8 +888,8 @@ export const SHOTS = [
       { piece: 'column', r: 0.5, h: 6.4, x: 0.97, y: 0.88, size: 1.05 },
       { piece: 'column', r: 0.5, h: 6.4, x: 0.27, y: 0.8, size: 0.78 },
       { piece: 'column', r: 0.5, h: 6.4, x: 0.73, y: 0.8, size: 0.78 },
-      { piece: 'banner', s: 0.9, x: 0.15, y: 0.5, size: 0.42 },
-      { piece: 'banner', s: 0.9, x: 0.85, y: 0.5, size: 0.42 },
+      // 四面小一點、掛高一點的旗：底下留給群眾（旗尖不壓在頭上），一排排過去還看得出廳有多深。
+      ...[0.15, 0.37, 0.63, 0.85].map((x) => ({ piece: 'banner', s: 0.9, x, y: 0.34, size: 0.26 })),
     ],
     cast: [
       { who: 'king', at: [0.05, -4.1], y: 0.5, yaw: 0, move: SIT, face: 'calm', shadow: false, eyes: { lift: 0.25, spread: 0.2 } },
