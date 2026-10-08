@@ -234,7 +234,7 @@ export const SHOTS = [
     bg: [{ piece: 'gateway', span: 5, rise: 3.6, h: 6.4, side: 6, x: 0.44, y: 1.05, size: 1.45 }],
     focusLines: { clear: 0.26, n: 90 },
     cast: [
-      { who: 'boss', at: [0, 0], yaw: 0.1, move: { ...REAR, headPitch: 1.05 }, face: 'glare', eyes: { lift: 0.3, spread: 1.9 } },
+      { who: 'boss', at: [0, 0], yaw: 0.1, move: { ...REAR, headPitch: 1.05 }, face: 'glare', eyes: { lift: 1.8, spread: 0.15 } },
       { who: 'hero', at: [1.45, 0.75], yaw: Math.PI + 0.9, move: { tailPitch: -0.5, headPitch: -0.3, w: 1 } },
     ],
     cam: { focus: 'boss', yaw: 0.36, pitch: -0.55, dist: 3.4, fov: 54, frame: [-0.06, -0.24] },
