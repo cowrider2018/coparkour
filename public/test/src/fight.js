@@ -16,8 +16,8 @@
               就撿起來。回報玩家挨了哪一下、倒下沒有、打死了誰、撿了幾顆靈魂。
               不重生的怪物（完整流程、召喚出來的）打死了不是當場消失，而是變成屍體（_fell）：
               跟主角倒下一樣（death.js）往擊退的方向倒、帶著那一下的擊退飛，躺平而且落地的那一刻
-              才收掉、靈魂才掉出來。幽靈不會落地，倒著漂 GHOST_GONE 秒炸成一團幽靈血、收掉；國王（STAYS）
-              躺平之後不收，一直躺到換陣容。
+              靈魂才掉出來。之後照 REST：綠色的慢慢沉進地裡、留著，國王躺著。幽靈不會落地，倒著漂
+              GHOST_GONE 秒炸成一團幽靈血、收掉。換陣容的時候屍體收掉，清完的那一場的（keep）留著。
      draw     怪物、屍體、劍光（攻擊範圍）、國王劈砍的斬痕與氣流、旋風斬的熱氣流、粉塵（落地、BOSS 範圍攻擊的地震）、BOSS 的預告與球、靈魂、破防的兩圈、國王的盾、刀、
               頭頂的愛心。
               在相機擺好之後（破防的兩圈與愛心正對這一幀的鏡頭）；流體場也在這裡
@@ -91,8 +91,14 @@ const SHAKE = { amp: 0.12, hz: 14, decay: 0.08, life: 0.35, ahead: 0.5 };
 /** 幽靈的屍體漂幾秒就炸開、收掉：牠不會落地，沒有「落地才收」那一刻。 */
 const GHOST_GONE = 0.5;
 
-/** 屍體躺平之後不收的那幾類：國王是最後一場的對手，打完那一刻牠就躺在那裡。 */
-const STAYS = new Set(['king']);
+/**
+ * 屍體躺平落地之後怎樣（幽靈不在表上：牠不落地，見 GHOST_GONE）：
+ *   sink  綠色的那幾類：SINK.time 秒沉進地裡，沉到躺著的那一身厚度的 SINK.depth，之後一直
+ *         露著剩下的那一截。不收。
+ *   lie   國王：躺著不動，不收。
+ */
+const REST = { minion: 'sink', boss: 'sink', knight: 'sink', king: 'lie' };
+const SINK = { time: 2, depth: 0.75 };
 
 /** 右上那一行小字：現在在連段的哪裡。 */
 export const PHASE_NAME = {
@@ -375,7 +381,11 @@ export class Fight {
       m.cast = null; m.lunge = null; m.held = false; m.breakT = 0; m.stun = 0;
       f.critter.setFacing(yaw);
       const side = fallSide(new THREE.Vector3(), m.vx, m.vz, yaw, m.x, m.z, this._eye.x, this._eye.z);
-      f.corpse = { t: 0, side, half: fallHalf(f.pts, side, yaw), down: false };
+      /* half：支點離中線多遠（倒向那一邊伸多遠）；thick：躺下來之後多厚——倒向那一邊加上
+         另一邊伸多遠。down：躺平落地的那一刻（corpse.t），還沒是 null。 */
+      const half = fallHalf(f.pts, side, yaw);
+      const thick = half + fallHalf(f.pts, side.clone().negate(), yaw);
+      f.corpse = { t: 0, side, half, thick, down: null, kept: false };
       this._corpses.push(f);
     }
     this.foes = this.foes.filter((f) => !gone(f));
@@ -383,8 +393,8 @@ export class Fight {
 
   /**
    * 屍體的一幀：照被打飛的拋物線（會飛的照漂的）走完（combat.js 的 monsterStep，沒有目標）。
-   * 躺平（DEATH.tip）而且落地的那一刻（一直沒落地的話等到 DEATH.wait）靈魂掉出來，然後收掉；
-   * STAYS 的那幾類不收，一直躺著。幽靈不落地：GHOST_GONE 秒往全方向炸成一團幽靈血
+   * 躺平（DEATH.tip）而且落地的那一刻（一直沒落地的話等到 DEATH.wait）靈魂掉出來，之後照
+   * REST（沉下去、躺著，畫在 _lie）。幽靈不落地：GHOST_GONE 秒往全方向炸成一團幽靈血
    * （跟破防攻擊的那一下同一種噴法，bleed.js 的 burstFrame），收掉。
    */
   _decay(dt) {
@@ -398,10 +408,10 @@ export class Fight {
         Fight._hide(f);
         return false;
       }
-      if (c.down || c.t < DEATH.tip || (m.air && c.t < DEATH.wait)) return true;
-      c.down = true;
+      if (c.down !== null || c.t < DEATH.tip || (m.air && c.t < DEATH.wait)) return true;
+      c.down = c.t;
       if (KINDS[m.kind].soul) this.souls.push(dropSoul(m));
-      if (STAYS.has(m.kind)) return true;
+      if (REST[m.kind]) return true;
       Fight._hide(f);
       return false;
     });
@@ -409,7 +419,8 @@ export class Fight {
 
   /**
    * 擺好一具屍體：倒了 tipAngle 那麼多（跟主角一樣，death.js），支點在倒向那一邊的身體外緣，
-   * 步態照常疊在上面。在 critter.update 之後擺——它每幀把朝向寫回 root。
+   * 步態照常疊在上面。在 critter.update 之後擺——它每幀把朝向寫回 root。會沉的（REST 的 sink）
+   * 落地之後往下沉，先慢後快再慢（smoothstep），SINK.time 秒沉到底。
    */
   _lie(f, dt, camera) {
     const { m, critter, corpse: c, blade, helm, crown } = f;
@@ -419,7 +430,12 @@ export class Fight {
       speed: 0, grounded: !m.air && !KINDS[m.kind].fly, vy: m.vy,
       viewYaw: Math.atan2(camera.position.x - m.x, camera.position.z - m.z), move: null,
     });
-    tipNode(critter.root, tipAngle(c.t), c.side, c.half, m.x, m.y, m.z, critter._yaw);
+    let sink = 0;
+    if (c.down !== null && REST[m.kind] === 'sink') {
+      const u = Math.min(1, (c.t - c.down) / SINK.time);
+      sink = SINK.depth * c.thick * u * u * (3 - 2 * u);
+    }
+    tipNode(critter.root, tipAngle(c.t), c.side, c.half, m.x, m.y - sink, m.z, critter._yaw);
     if (blade) blade.update();
     if (helm) helm.update();
     if (crown) crown.update();
@@ -432,8 +448,14 @@ export class Fight {
   }
 
   /**
+   * 這一場清完：場上的屍體留下來——之後換陣容不收，走回來還躺在那裡（或露著沉剩的那一截）。
+   * 沒清完就換陣容（倒下、重打）的話，那一次打死的收掉：怪物會重新站出來。
+   */
+  keep() { for (const f of this._corpses) f.corpse.kept = true; }
+
+  /**
    * 換一批怪物上場：借好每一隻的外觀、藏起用不到的，每一隻站在自己的站位上。
-   * 連段與飛著的球一起清掉。空的清單就是清場。
+   * 留下來的屍體（keep）不動，牠們的外觀不借。連段與飛著的球一起清掉。空的清單就是清場。
    *
    * @param {object[]} spawns 站位（combat.js 的 makeMonster 吃的那一種）
    * @param {object} field 牠們站在什麼樣的場地（combat.js 的 FIELD 那一種）
@@ -442,14 +464,17 @@ export class Fight {
     /* 召喚得出來的那幾隻也要有外觀：召喚的那一刻才建就是一頓。preload 過的話都已經有了；
        沒有的在這裡補（下面一起藏起來）。 */
     for (const [kind, n] of Fight._need(spawns)) this._slot(kind, n - 1);
-    for (const list of this._pool.values()) for (const s of list) Fight._hide(s);
-    const used = new Map();
-    this.foes = spawns.map((s) => {
-      const i = used.get(s.kind) || 0;
-      used.set(s.kind, i + 1);
-      return Fight._enter(this._slot(s.kind, i), s, field);
-    });
-    this._corpses = [];
+    this._corpses = this._corpses.filter((f) => f.corpse.kept);
+    const taken = new Set(this._corpses.map((f) => f.critter));
+    for (const list of this._pool.values()) for (const s of list) if (!taken.has(s.critter)) Fight._hide(s);
+    // 每一隻借這一類第一份沒被拿走的；都被拿走了（留下來的屍體佔著）就多做一份。
+    const pick = (kind) => {
+      const list = this._pool.get(kind) || [];
+      const s = list.find((x) => !taken.has(x.critter)) || this._slot(kind, list.length);
+      taken.add(s.critter);
+      return s;
+    };
+    this.foes = spawns.map((s) => Fight._enter(pick(s.kind), s, field));
     this.world = makeWorld(field);
     this._calm = false;
     Object.assign(this.combo, makeCombo());
@@ -459,7 +484,7 @@ export class Fight {
     this._scars.clear();
   }
 
-  /** 怪物全部回到站位（血滿、破防歸零），召喚出來的離場，連段與球清掉。 */
+  /** 怪物全部回到站位（血滿、破防歸零），召喚出來的離場，屍體（留下來的也是）收掉，連段與球清掉。 */
   reset() {
     this._drop((f) => f.m.by);
     for (const f of this._corpses) Fight._hide(f);
