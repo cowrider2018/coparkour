@@ -103,7 +103,7 @@
     air: -6,               // 在空中，值是垂直速度（負的往下掉）
     scale: 1.2,            // 整隻放大（騎士幽靈）
     alpha: 0.25,           // 半透明的那幾隻（幽靈）散到剩幾成
-    shields: 3,            // 國王的亡魂繞著幾面盾
+    shields: 3, spin: 1.3, // 國王的亡魂繞著幾面盾、盾環轉到哪個角度（盾擋到臉就轉開）
     y: 0.7,                // 墊高（坐在王座上）
     shadow: false,         // 不畫腳下的影子
     move: { ... },         // 姿勢，見下面
@@ -119,7 +119,7 @@
 
 - **`cam.focus`**：鏡頭從那一隻的臉（兩眼中點），往世界方位 `yaw`（0 是 +Z 那一側）、仰角 `pitch`（負的是從下往上拍）退 `dist` 公尺看著臉。`frame` 是臉落在畫面上的哪裡，從正中間算、以寬高的比例表示，+y 往下。
   - 要拍到臉，`yaw` 約等於角色的 `yaw` 加減 0～0.8。
-- **背景 `bg`**：`piece` 是 `studio.js` 的 `PIECES` 裡的名字（`column`、`banner`、`pavilion`、`weaponRack`、`standard`、`dummy`、`archeryTarget`、`rampart`（城牆加垛口）、`throneSeat`、`deadTree`、`well`、`house`（窄巷的連棟屋）、`sarcophagus`（石棺）、`gateway`（門洞：尖拱加兩側的牆，給 `lift` 就有鐵閘）、`arcade`、`pointedArch`、`chain`、`gargoyle`、`knight`（騎士石像）……），其餘的參數原樣交給那支零件（`pavilion` 的 `R`、`h`，`rampart` 的 `from`、`to`、`h`）。
+- **背景 `bg`**：`piece` 是 `studio.js` 的 `PIECES` 裡的名字（`column`、`banner`、`pavilion`、`weaponRack`、`standard`、`dummy`、`archeryTarget`、`rampart`（城牆加垛口）、`throneSeat`、`deadTree`、`well`、`house`（窄巷的連棟屋）、`sarcophagus`（石棺）、`gateway`（門洞：尖拱加兩側的牆，給 `lift` 就有鐵閘）、`dais`（王座廳的台座：台階、石台、王座、兩尊騎士石像、兩盆火）、`arcade`、`pointedArch`、`chain`、`gargoyle`、`knight`（騎士石像）……），其餘的參數原樣交給那支零件（`pavilion` 的 `R`、`h`，`rampart` 的 `from`、`to`、`h`）。
   - 剪影的底邊正中間放在畫面的 `(x, y)`（寬高的比例，y 往下），高 `size`（畫面高的比例），寬照零件的比例。超出畫面的照裁，大柱子裁出畫面就是框。
   - `view` 是零件繞直軸轉幾弳再拍（要側面就 π/2），`tilt` 往前傾、看得到一點頂，`flip` 左右翻。
   - 後面的先畫，寫在陣列後面的蓋在前面。
@@ -131,7 +131,7 @@
   - `folk` 王國的人民：`look` 給 `'cat/orangin'`、`'cat/tabby'`、`'cat/calico'`、`'dog-prick/grey'`、`'dog-drop/cow'`……
 - **道具 `props`**：`{ piece, at: [x, z], y, yaw, scale }`，擺在 3D 場景裡跟角色一起拍。`throneSeat` 的座面頂在 0.5 公尺、面朝 −Z。`{ blade: 'knight', at, y, yaw, size }` 是一把掉在地上的刀劍（原本的顏色，`size` 是拿它的那一隻多高）。
 - **效果**：都是效果線或大團，不是紋理（規則 10）。
-  - `rays` 光芒：從 `at`（畫面的比例）往外放、等角度等寬的光，`from`／`to` 是角度範圍。光從縫裡透上來、從誰身上擴散出去、門後的冷光。畫在角色底下、背景剪影後面（門後的光被門擋住）；`front: true` 畫在剪影前面。
+  - `rays` 光芒：從 `at`（畫面的比例）往外放、等角度等寬的光，`from`／`to` 是角度範圍。中心放在畫面外很遠、`inner` 給大，光就從一條弧開始、幾乎平行（地上一整條裂縫透上來的光）。光從縫裡透上來、從誰身上擴散出去、門後的冷光。畫在角色底下、背景剪影後面（門後的光被門擋住）；`front: true` 畫在剪影前面。
   - `speedLines` 速度線：沿 `angle` 一列一列等間隔的長線，跑過去、掉下去。畫在角色底下。
   - `puffs` 霧與塵：幾團大圓聯成的形狀，沒有墨線、半透明。幽靈散掉的霧、砸起來的塵。畫在最上層。
 - **姿勢 `move`**（`critter.js` 的 `moveOverlay`）：

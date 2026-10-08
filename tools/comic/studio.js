@@ -53,7 +53,7 @@ import { makeMonsterCritter, sizeOf, GHOST_ALPHA } from '/test/src/monster.js';
 import { Blade } from '/test/src/blade.js';
 import * as Pieces from '/test/src/pieces.js';
 import { Build } from '/test/src/geom.js';
-import { INK, KEY_POS, U_KEYDIR } from '/test/src/palette.js';
+import { C, INK, KEY_POS, U_KEYDIR } from '/test/src/palette.js';
 import * as shadowLight from '/test/src/light/shadow.js';
 import { Driver, Sway } from '/src/cat/pose.js';
 import { SHOTS } from './shots.js';
@@ -216,6 +216,16 @@ const PIECES = {
   rampart: (B, o) => Pieces.merlons(B, { ...o, on: Pieces.wall(B, o), y: (o.y || 0) + o.h }),
   /** 窄巷的連棟屋：W 寬、D 深、簷口 e 高，立面朝 −z。 */
   house: (B, o) => Pieces.house(B, o.seed, { W: 5, D: 4, e: 5.2, alt: false, ...o, vx: false, us: 1, at: (u, v) => [u, v] }),
+  /** 王座廳北端的台座：三級台階接上石台，台上是王座、兩側兩尊騎士石像，階前兩盆火（blocks.js 的砌法）。 */
+  dais: (B, o) => {
+    Pieces.stair(B, { x: 0, z: -2.7, y: 0, yaw: Math.PI, steps: 3, rise: 0.3, run: 0.7, w: 8, seed: 100 });
+    B.add(B.kit.brick(9, 0.9, 5.4, 0.09), { p: [0, 0.45, 0], color: C.granite });
+    if (o.throne !== false) Pieces.throneSeat(B, { x: 0, z: 1.1, y: 0.9 });
+    for (const side of [-1, 1]) {
+      Pieces.knight(B, { x: side * 3.6, z: -0.7, y: 0.9, s: 1.15, yaw: Math.PI, damage: side < 0 ? 0 : 0.55, seed: 120 + side });
+      Pieces.brazier(B, { x: side * 2.6, z: -3.1, y: 0, s: 1.05, seed: 130 + side }, []);
+    }
+  },
   /** 門洞：一道尖拱加兩側一段牆（中庭門樓、水窖與墓室的門），lift 給了就是拱裡升到那裡的鐵閘。 */
   gateway: (B, o) => {
     const { span = 5, rise = 3.6, y: _y, h = 6.4, side = 4, thick = 1.2, lift } = o;
