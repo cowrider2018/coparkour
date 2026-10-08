@@ -411,24 +411,24 @@ export const SHOTS = [
     light: [0, -3, 4],
   },
   {
-    // 摔在水窖地上，幽靈浮出來：大遠景。一圈拱廊與斷柱、垂下來的鎖鏈；主角小小一隻趴在正中間發愣，
-    // 拱廊後面幾隻幽靈浮出來，紅眼睛。
-    id: 'p7-4', size: [1800, 720], ink: 3,
-    horizon: 0.62,
-    bg: [
-      ...[0.06, 0.3, 0.7, 0.94].map((x, i) => ({ piece: 'arcade', bays: 1, span: 3.0, pier: 0.9, legH: 2.8, depth: 1.0, ruin: 0.3 + i * 0.1, seed: 11 + i, x, y: 0.63, size: 0.42 })),
-      ...[0.18, 0.42, 0.58, 0.82].map((x, i) => ({ piece: 'column', r: 0.42, h: 4.4, broken: [0, 0.5, 0, 0.35][i], seed: 21 + i, x, y: 0.64, size: [0.36, 0.18, 0.36, 0.24][i] })),
-      { piece: 'chain', from: [0, 3.2, 0], to: [1.4, 0, 0], n: 12, sag: 0.9, x: 0.26, y: 0.36, size: 0.36 },
-      { piece: 'chain', from: [0, 3.2, 0], to: [-1.4, 0, 0], n: 12, sag: 0.9, x: 0.76, y: 0.34, size: 0.34 },
-    ],
-    cast: [
-      { who: 'hero', at: [0, 0], yaw: 0.2, move: { ...FLOP, headPitch: -0.1, headTilt: 0.2 }, face: 'dazed' },
-      { who: 'ghost', at: [-6.5, -9], yaw: 0.6, y: 0.5, air: 0, face: 'glare', shadow: false },
-      { who: 'ghost', at: [-2.8, -10], yaw: 0.3, y: 0.9, air: 0, face: 'glare', shadow: false },
-      { who: 'ghost', at: [3.0, -9.5], yaw: -0.3, y: 0.6, air: 0, face: 'glare', shadow: false },
-      { who: 'ghost', at: [6.8, -8.5], yaw: -0.6, y: 1.0, air: 0, face: 'glare', shadow: false },
-    ],
-    cam: { pos: [0, 2.2, 8.5], look: [0, 1.0, -2], fov: 42 },
+    // 摔在水窖地上，幽靈浮出來：四隻幽靈貼在鏡頭邊、佔住四個角落（側背對我們、偏側一點，頭往遠方的
+    // 主角轉過去），一起盯著畫面中間遠處的主角。主角趴在地上嚇呆了——拼貼：照透視牠應該很小，這裡貼得近、
+    // 大一號；四隻幽靈也各用自己的鏡頭拍，現實裡不可能同時成立。集中線收向主角。
+    id: 'p7-4', size: [1800, 720], ink: 3.5,
+    focusLines: { clear: 0.3, n: 140 },
+    cast: [{ who: 'hero', at: [0, 0], yaw: 0, move: { ...FLOP, headPitch: -0.25, headTilt: 0.15 }, face: 'shock', eyes: { lift: 0.6, spread: 0.3 } }],
+    cam: { focus: 'hero', yaw: 0.15, pitch: 0.3, dist: 2.3, fov: 38, frame: [0, 0.08] },
+    light: [2, 7, 5],
+    // 四隻幽靈：[s 左右（−1 左、+1 右）, v 上下（−1 上、+1 下）, back 鏡頭從正後方偏多少, dist]。幽靈面朝 +Z，
+    // 鏡頭在牠側後方（yaw = π − s × back），頭往遠方的主角那一側轉過去（我們只看到後腦）；頭落在角落、
+    // 身體往畫框外伸出去，
+    // 鏡頭稍微歪（roll）讓四隻都往中間斜。
+    collage: [[-1, -1, 1.35, 2.2], [1, -1, 1.3, 2.3], [-1, 1, 1.25, 1.8], [1, 1, 1.35, 1.75]].map(([s, v, back, dist], k) => ({
+      front: true,
+      cast: [{ who: 'ghost', at: [0, 0], y: 0.4, yaw: 0, air: 0, alpha: 0.85, move: { headYaw: -s * 0.3, headPitch: -v * 0.25, headTilt: -s * 0.1, pitch: 0.1, w: 1 }, face: 'glare', eyes: { lift: 0.3 }, shadow: false }],
+      cam: { focus: 'ghost', yaw: Math.PI - s * back, pitch: v * -0.15, dist, fov: 40, frame: [s * (v < 0 ? 0.36 : 0.3), v < 0 ? -0.3 : 0.36], roll: s * v * 0.12 },
+      light: [0, 7, -4],
+    })),
   },
 
   /* ── 第 8 頁　水窖・戰後 ─────────────────────────────────────── */
