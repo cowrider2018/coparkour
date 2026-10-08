@@ -144,10 +144,12 @@ ok(PAGES.every((p) => p.panels.length >= 3 && p.panels.length <= 5), '每一頁 
 ok(SCRIPT.open.length === STAGES.length && SCRIPT.after.length === STAGES.length,
   `開場頁與戰後頁照場次排（${STAGES.length} 場）`);
 {
-  const used = [SCRIPT.start, ...SCRIPT.open, ...SCRIPT.after].filter(Boolean).flat().sort((a, b) => a - b);
+  const used = [SCRIPT.start, ...SCRIPT.open, ...SCRIPT.after, SCRIPT.offered].filter(Boolean).flat().sort((a, b) => a - b);
   ok(used.length === PAGES.length && used.every((n, i) => n === i + 1), '每一頁剛好被翻一次，頁碼 1～14 都在');
 }
-ok(SCRIPT.after.every((a, k) => a.length === 1 || STAGES[k].warp), '一次翻好幾頁的只有打完要傳送的那一場（墓室）');
+ok(SCRIPT.after.every((a, k) => !a || a.length === 1 || STAGES[k].warp), '一次翻好幾頁的只有打完要傳送的那一場（墓室）');
+ok(!SCRIPT.after[STAGES.length - 1] && SCRIPT.offered.join() === String(PAGES.length),
+  '王座廳打完不翻；最後一頁等靈魂交完才翻');
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');
 process.exit(fails ? 1 : 0);
