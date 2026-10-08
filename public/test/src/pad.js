@@ -41,6 +41,8 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 /** 死區與滿速門檻，跟遊戲的手把一樣。 */
 const DEADZONE = 0.12;
 const THROW = 0.86;
+/** 衝刺開了之後，手指要退回這麼多倍外半徑以內才關（見 _aim）。 */
+const SPRINT_OFF = 0.8;
 
 function angDiff(a, b) {
   let d = a - b;
@@ -267,10 +269,15 @@ export class Pad {
 
      衝刺：手指離圓心超過軌道的外半徑，也就是整個出了那個圈。圈內推到底
      只是走得最快，旋鈕在圈內就已經頂住了，所以「出圈」是一個看得到的
-     邊界，不是推深一點點的差別。 */
+     邊界，不是推深一點點的差別。
+
+     進出用兩條線（遲滯）：出了外圈才開，要退回到 SPRINT_OFF 倍半徑以內
+     才關。只用一條線的話，拇指停在圈邊的那幾個像素抖動會讓衝刺每幀開關，
+     速度在走與衝之間來回跳、旋鈕的顏色也跟著閃。 */
   _aim(x, y) {
     const dx = x - this.slotJoy.x, dy = y - this.slotJoy.y;
-    this.sprint = Math.hypot(dx, dy) > this.joy.r;
+    const d = Math.hypot(dx, dy);
+    this.sprint = d > this.joy.r * (this.sprint ? SPRINT_OFF : 1);
     const travel = Math.max((this.joy.r - this.joy.kr) * THROW, 1);
     let ax = dx / travel;
     let ay = dy / travel;
