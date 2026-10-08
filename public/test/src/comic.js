@@ -95,11 +95,15 @@ export const PAGES = [
     { note: '國王睜開眼', src: 'comic/p13-5.png', focus: '50% 50%' },
   ] },
   { title: '王座廳', big: 5, panels: [
-    { note: '國王跪倒在台座前，失控的亡魂安靜下來' },
-    { note: '主角把一路收集的靈魂倒在國王身上' },
-    { note: '國王從半透明變回實體，光從他身上擴散出去' },
-    { note: '光掃過中庭、窄巷、兵營，殭屍和幽靈變回原來的人' },
-    { note: '國王回到王座上，廳裡站滿了人，主角站在旁邊', say: '旁白：完' },
+    { note: '國王跪倒在台座前，失控的亡魂安靜下來', src: 'comic/p14-1.png', focus: '45% 50%' },
+    { note: '主角把一路收集的靈魂倒在國王身上', src: 'comic/p14-2.png', focus: '50% 50%' },
+    { note: '國王從半透明變回實體，光從他身上擴散出去', src: 'comic/p14-3.png', focus: '50% 45%' },
+    { note: '光掃過中庭、窄巷、兵營，殭屍和幽靈變回原來的人', strips: [
+      { src: 'comic/p14-4a.png', focus: '50% 50%' },
+      { src: 'comic/p14-4b.png', focus: '50% 50%' },
+      { src: 'comic/p14-4c.png', focus: '50% 50%' },
+    ] },
+    { note: '國王回到王座上，廳裡站滿了人，主角站在旁邊', say: '旁白：完', src: 'comic/p14-5.png', focus: '52% 50%' },
   ] },
 ];
 

@@ -769,4 +769,127 @@ export const SHOTS = [
     cam: { focus: 'ghostKing', yaw: 0.3, pitch: 0.0, dist: 1.25, fov: 34, frame: [0, 0.08] },
     light: [2, 6, 6],
   },
+
+  /* ── 第 14 頁　王座廳・結局 ──────────────────────────────────── */
+  {
+    // 國王跪倒在台座前，身體快散掉了：中景。國王的亡魂伏在台座的階前、閉著眼，淡得快看不見、一團一團的霧
+    // 散開，盾不見了、劍掉在地上；主角在右前方背對我們看著他。
+    id: 'p14-1', size: [1200, 720], ink: 3.5,
+    horizon: 0.62,
+    bg: [{ piece: 'dais', x: 0.4, y: 0.64, size: 0.42 }],
+    props: [{ blade: 'king', at: [-0.9, 1.0], yaw: 0.4, size: 1.4 }],
+    puffs: [
+      { x: 0.3, y: 0.32, r: 0.06, alpha: 0.6, seed: 3 },
+      { x: 0.55, y: 0.24, r: 0.05, alpha: 0.55, seed: 5 },
+      { x: 0.24, y: 0.55, r: 0.05, alpha: 0.5, seed: 9 },
+    ],
+    cast: [
+      { who: 'ghostKing', at: [0, 0], yaw: 0.6, alpha: 0.3, move: { ...KNEEL, headPitch: 0.05 }, face: 'rest', eyes: { lift: 0.3 }, shadow: false },
+      { who: 'hero', at: [2.3, 1.4], yaw: -Math.PI / 2 - 0.5, move: { headPitch: 0.15, tailPitch: -0.3, w: 1 }, blade: 'knife' },
+    ],
+    cam: { pos: [1.3, 0.75, 4.4], look: [0.6, 0.55, 0], fov: 40 },
+    light: [4, 7, 6],
+  },
+  {
+    // 主角把一路收集的靈魂倒在國王身上：近景、側面。主角低頭看著跪著的國王，BOSS、騎士、騎士幽靈的
+    // 三顆靈魂（發光的狗頭）從主角身前一顆接一顆落到國王身上。
+    id: 'p14-2', size: [1200, 720], ink: 4,
+    cast: [
+      { who: 'ghostKing', at: [-0.9, 0], yaw: Math.PI / 2, alpha: 0.2, move: { ...KNEEL, headPitch: 0.4 }, face: 'rest', shadow: false },
+      { who: 'hero', at: [0.75, 0], yaw: -Math.PI / 2 + 0.35, move: { headPitch: 0.35, tailPitch: -0.2, w: 1 }, face: 'hope', blade: 'knife' },
+    ],
+    souls: [
+      { at: [0.25, 1.35, 0.1], yaw: -1.2, scale: 0.55, seed: 3, trail: 25 },
+      { at: [-0.25, 1.15, 0], yaw: -1.4, scale: 0.55, seed: 5, trail: 25 },
+      { at: [-0.7, 0.95, 0.05], yaw: -1.6, scale: 0.55, seed: 7, trail: 25 },
+    ],
+    cam: { pos: [0.1, 1.0, 3.6], look: [-0.05, 0.85, 0], fov: 38 },
+    light: [2, 7, 6],
+  },
+  {
+    // 國王從半透明變回實體，光從他身上擴散出去：中景、逆光。國王（垂耳犬、灰、王冠，原本的毛色）在台座前
+    // 立起上半身，背後的光往四周放出去，光從他的左後方打過來，臉的一半落在暗部裡。
+    id: 'p14-3', size: [1200, 720], ink: 3.5,
+    horizon: 0.82,
+    rays: { at: [0.5, 0.4], n: 28, inner: 0.1, width: 0.5, color: '#fff1c4', alpha: 0.95, front: true },
+    bg: [{ piece: 'dais', x: 0.5, y: 0.84, size: 0.55 }],
+    puffs: [
+      { x: 0.2, y: 0.3, r: 0.05, alpha: 0.5, seed: 3 },
+      { x: 0.82, y: 0.22, r: 0.045, alpha: 0.45, seed: 5 },
+    ],
+    cast: [{ who: 'king', at: [0, 0], yaw: 0.15, move: { pitch: -0.25, headPitch: -0.05, tailPitch: 0.3, w: 1 }, face: 'calm', eyes: { lift: 0.3 } }],
+    cam: { focus: 'king', yaw: 0.2, pitch: -0.12, dist: 3.2, fov: 40, frame: [0, -0.05] },
+    light: [-5, 6, 2],
+  },
+  // 光掃過中庭、窄巷、兵營，殭屍和幽靈變回原來的人：三條細長分格並排，每一條一個地方、一隻變回來的人民，
+  // 從左上角斜斜掃下來的光，身上殘留的霧散掉。
+  {
+    // 中庭：斷柱與拱廊，一隻貓愣愣地四處看。
+    id: 'p14-4a', size: [600, 1100], ink: 3.5,
+    horizon: 0.72,
+    rays: { at: [-0.3, -0.1], n: 10, from: 0.1, to: Math.PI / 2 - 0.1, inner: 0.2, width: 0.5, color: '#fff1c4', alpha: 0.95 },
+    bg: [
+      { piece: 'arcade', bays: 1, span: 3.1, pier: 0.95, legH: 2.6, depth: 1.0, ruin: 0.3, seed: 9, x: 0.2, y: 0.73, size: 0.4 },
+      { piece: 'column', r: 0.46, h: 5.2, broken: 0.5, seed: 4, x: 0.85, y: 0.73, size: 0.22 },
+    ],
+    puffs: [{ x: 0.16, y: 0.3, r: 0.04, color: '#cfe3c4', alpha: 0.6, seed: 3 }, { x: 0.84, y: 0.22, r: 0.035, color: '#cfe3c4', alpha: 0.55, seed: 5 }],
+    cast: [{ who: 'folk', look: 'cat/orangin', at: [0, 0], yaw: 0.3, move: LOOK_AROUND, face: 'dazed' }],
+    cam: { focus: 'folk', yaw: 0.5, pitch: 0.05, dist: 2.4, fov: 40, frame: [0, 0.08] },
+    light: [-4, 7, 5],
+  },
+  {
+    // 窄巷：兩排房子與井，一隻花斑垂耳犬抬起頭來。
+    id: 'p14-4b', size: [600, 1100], ink: 3.5,
+    horizon: 0.72,
+    rays: { at: [-0.3, -0.1], n: 10, from: 0.1, to: Math.PI / 2 - 0.1, inner: 0.2, width: 0.5, color: '#fff1c4', alpha: 0.95 },
+    bg: [
+      { piece: 'house', W: 4.6, D: 4, e: 5.4, seed: 3, x: 0.1, y: 0.73, size: 0.45 },
+      { piece: 'house', W: 4.6, D: 4, e: 5.0, seed: 4, x: 0.92, y: 0.73, size: 0.42 },
+      { piece: 'well', r: 1.1, seed: 2, x: 0.55, y: 0.74, size: 0.1 },
+    ],
+    puffs: [{ x: 0.16, y: 0.26, r: 0.04, alpha: 0.6, seed: 7 }, { x: 0.82, y: 0.18, r: 0.035, alpha: 0.55, seed: 9 }],
+    cast: [{ who: 'folk', look: 'dog-drop/cow', at: [0, 0], yaw: -0.3, move: { headPitch: -0.3, tailPitch: 0.4, w: 1 }, face: 'hope' }],
+    cam: { focus: 'folk', yaw: -0.5, pitch: 0.05, dist: 2.4, fov: 40, frame: [0, 0.08] },
+    light: [-4, 7, 5],
+  },
+  {
+    // 兵營：營帳與兵器架，一隻灰色立耳犬站起來四處看。
+    id: 'p14-4c', size: [600, 1100], ink: 3.5,
+    horizon: 0.72,
+    rays: { at: [-0.3, -0.1], n: 10, from: 0.1, to: Math.PI / 2 - 0.1, inner: 0.2, width: 0.5, color: '#fff1c4', alpha: 0.95 },
+    bg: [
+      { piece: 'pavilion', R: 1.9, h: 1.45, roof: 1.25, x: 0.15, y: 0.74, size: 0.22 },
+      { piece: 'weaponRack', x: 0.82, y: 0.74, size: 0.2 },
+    ],
+    puffs: [{ x: 0.84, y: 0.3, r: 0.04, color: '#cfe3c4', alpha: 0.6, seed: 4 }, { x: 0.18, y: 0.2, r: 0.035, color: '#cfe3c4', alpha: 0.55, seed: 6 }],
+    cast: [{ who: 'folk', look: 'dog-prick/grey', at: [0, 0], yaw: 0.4, move: { ...LOOK_AROUND, headYaw: -0.3 }, face: 'dazed' }],
+    cam: { focus: 'folk', yaw: 0.6, pitch: 0.05, dist: 2.4, fov: 40, frame: [0, 0.08] },
+    light: [-4, 7, 5],
+  },
+  {
+    // 完：國王回到王座上，廳裡站滿了人，主角咬著刀站在旁邊——跟第 1 頁第 1 格呼應（同樣的柱子、垂旗、
+    // 左後方的王座），只是這一次廳裡不是空的。
+    id: 'p14-5', size: [1700, 720], ink: 3,
+    props: [{ piece: 'throneSeat', at: [0, -4.2], yaw: Math.PI }],
+    horizon: 0.78,
+    bg: [
+      { piece: 'column', r: 0.5, h: 6.4, x: 0.03, y: 0.88, size: 1.05 },
+      { piece: 'column', r: 0.5, h: 6.4, x: 0.97, y: 0.88, size: 1.05 },
+      { piece: 'column', r: 0.5, h: 6.4, x: 0.27, y: 0.8, size: 0.78 },
+      { piece: 'column', r: 0.5, h: 6.4, x: 0.73, y: 0.8, size: 0.78 },
+      { piece: 'banner', s: 0.9, x: 0.15, y: 0.5, size: 0.42 },
+      { piece: 'banner', s: 0.9, x: 0.85, y: 0.5, size: 0.42 },
+    ],
+    cast: [
+      { who: 'king', at: [0.05, -4.1], y: 0.5, yaw: 0, move: SIT, face: 'calm', shadow: false, eyes: { lift: 0.25, spread: 0.2 } },
+      { who: 'hero', at: [1.5, -3.2], yaw: -0.25, move: HEROIC, face: 'proud', blade: 'knife', eyes: { lift: 0.6, spread: 0.3 } },
+      ...[
+        ['cat/orangin', -3.4, -1.0, 0.5], ['dog-drop/cow', -2.0, 0.2, 0.3], ['cat/tabby', -0.8, 1.2, 0.1],
+        ['dog-prick/grey', 0.7, 1.4, -0.1], ['cat/calico', 2.1, 0.6, -0.3], ['dog-drop/yellow', 3.4, -0.6, -0.5],
+        ['dog-prick/cow', -4.4, 0.9, 0.6], ['cat/orangin', 4.3, 1.0, -0.6],
+      ].map(([look, x, z, yaw]) => ({ who: 'folk', look, at: [x, z], yaw: yaw + Math.PI, move: { headPitch: -0.25, tailPitch: 0.5, w: 1 } })),
+    ],
+    cam: { pos: [0, 2.8, 7.5], look: [0, 0.9, -2.6], fov: 36 },
+    light: [-3, 7, 6],
+  },
 ];
