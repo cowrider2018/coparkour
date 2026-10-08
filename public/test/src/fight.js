@@ -37,7 +37,7 @@ import {
   knockHero, knockLand,
   inSlash, inFan, inRing, slashTip, makeCombo, comboStep, invulnerable, untouchable, cueing, attacking, taken,
 } from './combat.js';
-import { makeMonsterCritter, makeLivingKing, sizeOf, bloodOf, swordOf, helmOf, crownOf, riseLift, Motion, ATTACK_INK, CHOP_LEAD } from './monster.js';
+import { makeMonsterCritter, sizeOf, bloodOf, swordOf, helmOf, crownOf, riseLift, Motion, ATTACK_INK, CHOP_LEAD } from './monster.js';
 import { GUARD_INK } from './critter.js';
 import { Blood } from './blood.js';
 import { Fireballs } from './fireball.js';
@@ -45,6 +45,7 @@ import { hitFrame, burstFrame, hurtFrame, spurtOf, floorUnder, GATHER } from './
 import { Blade } from './blade.js';
 import { Helm } from './helm.js';
 import { Crown } from './crown.js';
+import { LivingKing } from './king.js';
 import { ShieldRing } from './shield.js';
 import { Mover } from './moves.js';
 import {
@@ -110,7 +111,7 @@ const SINK = { time: 2, depth: 0.75 };
  *   bursts  屍體當場炸開——往全方向噴這麼多次幽靈血（破防攻擊那一種噴法），從躺著的
  *           身體中間噴；每一滴帶著 gather（bleed.js 的 GATHER）：慢下來，再加速聚攏到牠站起來
  *           的腰那一點（屍體的中間、地板上），全部同一刻到
- *   grow    聚到的那一刻起，活著的國王（monster.js 的 makeLivingKing）從 0 長到原本大小要幾秒，
+ *   grow    聚到的那一刻起，活著的國王（king.js）從 0 長到原本大小要幾秒，
  *           繞著腰那一點放大，面朝炸開那一刻主角在的方向
  *   hold    長好之後再等幾秒才算演完（模式接著慢動作、翻國王復活那一頁）
  */
@@ -231,17 +232,9 @@ export class Fight {
     /** 獻靈魂交到哪裡（offer.js），與拋出去、還在飛的那幾顆。 */
     this.offer = makeOffer(this._owed);
     this._thrown = [];
-    /** 復甦（REVIVE）：還沒開始是 null。活著的國王與牠的王冠：有要收靈魂才建，先藏著——
-        復甦的那一刻才建、才編的話就頓一下。 */
+    /** 復甦（REVIVE）：還沒開始是 null。活著的國王（king.js）：有要收靈魂才建，先藏著。 */
     this._revival = null;
-    this._king = null;
-    if (souls > 0) {
-      const critter = makeLivingKing(zoo), crown = new Crown();
-      crown.follow(critter);
-      critter.root.visible = false;
-      scene.add(critter.root);
-      this._king = { critter, crown };
-    }
+    this._king = souls > 0 ? new LivingKing(scene, zoo) : null;
 
     /* BOSS、騎士掉出來的靈魂（combat.js 的 dropSoul）。換陣容不清——完整流程裡打完一場就換
        下一場，沒撿的留在原地；回到站位（reset）才清。一顆一個 mesh，不夠就多做。 */
@@ -293,7 +286,7 @@ export class Fight {
   setInkPx(px, h) {
     this._inkPx = [px, h];
     for (const list of this._pool.values()) for (const s of list) s.critter.setInkPx(px, h);
-    if (this._king) this._king.critter.setInkPx(px, h);
+    if (this._king) this._king.setInkPx(px, h);
     this._blood.setInkPx(px, h);
     this._fire.setInkPx(px, h);
   }
@@ -534,9 +527,8 @@ export class Fight {
       const f = this._corpses.find((x) => REST[x.m.kind] === 'lie' && x.corpse.down !== null);
       if (!f) return false;
       const a = this.altar(), yaw = Math.atan2(player.x - a.x, player.z - a.z);
-      v = this._revival = { t: 0, f, a, x: a.x, y: f.m.y, z: a.z, yaw, burst: false, done: false };
-      const c = this._king.critter;
-      c._yaw = c._yawGoal = yaw;
+      v = this._revival = { t: 0, f, a, x: a.x, y: f.m.y, z: a.z, burst: false, done: false };
+      this._king.place(a.x, f.m.y, a.z, yaw);
     }
     if (v.done) return false;
     v.t += dt;
@@ -558,21 +550,11 @@ export class Fight {
     return true;
   }
 
-  /** 活著的國王這一幀：聚到之前藏著，之後繞著腰那一點從 0 長到原本大小（越長越慢），站著。 */
+  /** 活著的國王這一幀：聚到之前藏著，之後從 0 長到原本大小（越長越慢）。 */
   _risen(dt, camera) {
     if (!this._king) return;
-    const v = this._revival, { critter, crown } = this._king;
-    const u = v ? (v.t - REVIVE_GROW) / REVIVE.grow : 0;
-    critter.root.visible = u > 0;
-    if (u <= 0) return;
-    const e = 1 - (1 - Math.min(1, u)) ** 3, waist = (PHYS.height / 2) * sizeOf('king');
-    critter.root.position.set(v.x, v.y + waist * (1 - e), v.z);
-    critter.root.scale.setScalar(e);
-    critter.setFacing(v.yaw);
-    critter.update(dt, {
-      speed: 0, grounded: true, vy: 0, viewYaw: Math.atan2(camera.position.x - v.x, camera.position.z - v.z), move: null,
-    });
-    crown.update();
+    const v = this._revival, u = v ? Math.min(1, (v.t - REVIVE_GROW) / REVIVE.grow) : 0;
+    this._king.draw(dt, camera, u > 0 ? 1 - (1 - u) ** 3 : 0);
   }
 
   /**
@@ -629,7 +611,7 @@ export class Fight {
     this.offer = makeOffer(this._owed);
     this._thrown = [];
     this._revival = null;
-    if (this._king) this._king.critter.root.visible = false;
+    if (this._king) this._king.hide();
     this._dropTrails();
     this._gusts.clear();
     this._heats.clear();

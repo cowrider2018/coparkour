@@ -187,8 +187,8 @@ export function makeGhostCritter(zoo, model) {
 }
 
 /**
- * 復活的國王（獻靈魂交滿之後，fight.js）：垂耳犬本人、原本那一件灰毛（漫畫裡活著的國王，
- * tools/comic/studio.js 的 king），一樣 1.4 倍高，不透明、眼睛不紅——不再是怪物了。王冠由 fight.js 另外戴。
+ * 復活的國王（獻靈魂交滿之後，king.js）：垂耳犬本人、原本那一件灰毛（漫畫裡活著的國王，
+ * tools/comic/studio.js 的 king），一樣 1.4 倍高，不透明、眼睛不紅——不再是怪物了。王冠由 king.js 另外戴。
  *
  * @param {import('./critter.js').Zoo} zoo
  * @returns {Critter}
