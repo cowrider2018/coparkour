@@ -1716,6 +1716,9 @@ export function house(B, seed, o) {
   }
 }
 
+/** 石棺碰撞平台的頂面：棺蓋的頂（棺身 0.8 加蓋子 0.22）。 */
+export const SARCOPHAGUS_TOP = 1.02;
+
 /**
  * 石棺（地下墓室）：棺身、棺蓋，碰撞是一公尺高的平台（跳得上去、在棺蓋上跑）。(x, z) 是棺身底面的
  * 中心、長邊沿 z。`dark` 棺身用深一階的石色；`slide` 棺蓋往 +z 滑開多少（滑開的話露出黑的內膛）、
@@ -1727,6 +1730,6 @@ export function sarcophagus(B, o) {
   if (dz) B.add(B.kit.brick(1.0, 0.04, 2.1, 0.01), { p: [x, 0.8, z], color: 0x161310, ink: false });
   B.add(B.kit.brick(1.34, 0.22, 2.44, 0.05), { p: [x, 0.91, z + dz], r: [0, o.yaw || 0, 0], color: C.stoneLit });
   // 碰撞蓋住棺身加滑開的那一截蓋子。
-  B.block(x, 0.51, z + dz / 2, 1.4, 1.02, 2.5 + dz, { kind: 'floor', base: 0 });
+  B.block(x, SARCOPHAGUS_TOP / 2, z + dz / 2, 1.4, SARCOPHAGUS_TOP, 2.5 + dz, { kind: 'floor', base: 0 });
   if (o.candle) B.add(B.kit.drum(0.06, 0.07, 0.22, 7), { p: [o.candle[0], 1.13, o.candle[1]], color: C.bone });
 }

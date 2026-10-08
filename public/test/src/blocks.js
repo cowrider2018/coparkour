@@ -50,7 +50,7 @@ import {
   knight, gargoyle, rubble, rubbleHeap, brazier, banner, chain, portcullis, deadTree, well,
   mossTuft, crate, barrel,
   pavilion, weaponRack, dummy, archeryTarget, campfire, sackStack, woodpile, logSeat, standard, throneSeat,
-  house, sarcophagus,
+  house, sarcophagus, SARCOPHAGUS_TOP,
 } from './pieces.js';
 
 /** 區塊在世界裡的間距。中間那片空地是走廊，四個區塊互相看得到。 */
@@ -61,6 +61,12 @@ export const PITCH = 62;
  * 階梯的底在 stair，台座從 z = 12.3 開始。復活的國王照這個走上去坐（king.js）。
  */
 export const THRONE = { x: 0, z: 16.2, y: 0.9, stair: 10.3 };
+
+/**
+ * 地下墓室的石棺（區塊的局部座標）：兩排，每排四具，照砌的順序（先西排、由南往北）。x、z 是
+ * 棺身底面的中心，top 是棺蓋的頂（碰撞平台的頂面）。route.js 照它把墓室的怪物擺進棺材裡。
+ */
+export const COFFINS = [-1, 1].flatMap((side) => [0, 1, 2, 3].map((i) => ({ side, i, x: side * 4.2, z: -6.4 + i * 4.2, top: SARCOPHAGUS_TOP })));
 
 /* ── 空地的守門員 ────────────────────────────────────────────────
    「中心留空」這條規則要有一個東西去執行它，不然它只是一句話。撒碎石
@@ -1152,17 +1158,14 @@ function crypt(B, flames, seed, A) {
   }
 
   // ── 石棺：兩排，每排四具。蓋子有的滑開了一截，露出黑的內膛 ──
-  for (const side of [-1, 1]) {
-    for (let i = 0; i < 4; i++) {
-      const x = side * 4.2, z = -6.4 + i * 4.2;
-      // 亂數照原本的順序抽：開不開、蓋子歪多少、蠟燭在哪一頭。
-      const open = r() < 0.35;
-      const dz = open ? 0.45 : 0, yaw = open ? r.range(-0.12, 0.12) : 0;
-      // 蠟燭：棺蓋的一角一根，火苗交給 stage.js 做（跟火盆同一份火焰，縮小）。
-      const cz = z + dz + (r() < 0.5 ? -0.85 : 0.85), cx = x - side * 0.42;
-      sarcophagus(B, { x, z, dark: i % 2 === 0, slide: dz, yaw, candle: [cx, cz] });
-      flames.push({ x: cx, y: 1.29, z: cz, s: 0.22 });
-    }
+  for (const { side, i, x, z } of COFFINS) {
+    // 亂數照原本的順序抽：開不開、蓋子歪多少、蠟燭在哪一頭。
+    const open = r() < 0.35;
+    const dz = open ? 0.45 : 0, yaw = open ? r.range(-0.12, 0.12) : 0;
+    // 蠟燭：棺蓋的一角一根，火苗交給 stage.js 做（跟火盆同一份火焰，縮小）。
+    const cz = z + dz + (r() < 0.5 ? -0.85 : 0.85), cx = x - side * 0.42;
+    sarcophagus(B, { x, z, dark: i % 2 === 0, slide: dz, yaw, candle: [cx, cz] });
+    flames.push({ x: cx, y: 1.29, z: cz, s: 0.22 });
   }
 
   // ── 北端：兩級台階、台座、大墓、兩盆火 ──
