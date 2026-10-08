@@ -28,7 +28,8 @@
                          活著的國王（原本的灰毛）從 0 長到原本大小；演完才慢動作，翻國王復活那一頁
                          （第 14 頁）。
      國王復活之後        第 14 頁蓋住畫面的時候，每一張圖撒出王國的人民（folk.js：每一張 1～3 叢、
-                         每一叢 2～4 隻，第 14 頁那幾隻）。人民與國王的頭都跟著主角轉（gaze.js）。
+                         每一叢 2～4 隻，第 14 頁那幾隻）。書頁走了，國王走回王座坐下（king.js 的
+                         enthrone；人民不撒在牠要走的路上）。人民與國王的頭都跟著主角轉（gaze.js）。
                          門在王座廳打完的那一刻就全開了，之後一直開著（route.js 的 doorsFor）。
      不在戰鬥中          清完一場之後、還沒走進下一場之前：很快回血到最大血量
                          （combat.js 的 regen）。
@@ -65,7 +66,8 @@ import { Folk } from './folk.js';
 import { Sound } from './sound.js';
 import { Music } from './music.js';
 import { resetLife, refill, regen, KINDS } from './combat.js';
-import { BLOCKS } from './blocks.js';
+import { BLOCKS, THRONE } from './blocks.js';
+import { thronePath, pathGap } from './king.js';
 import { STAGES, START, SOULS, foesOf, inStage, makeRun, doorsFor, portalsOn, restAt } from './route.js';
 
 const canvas = document.getElementById('view');
@@ -243,12 +245,21 @@ function rest() {
   place(k === 0 ? { ...ruins.arrivals[START] } : restAt(k, ruins));
 }
 
-/** 國王復活：每一張圖撒人民（folk.js），主角與國王腳邊 FOLK_AWAY 公尺以內不撒。 */
+/** 王座（世界座標）：blocks.js 的 THRONE 加上王座廳的位置。 */
+const SEAT = (() => {
+  const [ox, oz] = BLOCKS.find((b) => b.id === 'throne').origin;
+  return { x: THRONE.x + ox, y: THRONE.y, z: THRONE.z + oz, stair: THRONE.stair + oz };
+})();
+
+/**
+ * 國王復活：每一張圖撒人民（folk.js）。主角與國王腳邊 FOLK_AWAY 公尺以內不撒，國王走回王座的那一條路
+ * （king.js 的 thronePath）兩邊 FOLK_AWAY 以內也不撒。
+ */
 const FOLK_AWAY = 3;
 function populate() {
-  const king = fight.king.body();
+  const at = fight.king.at, path = at ? thronePath(at, SEAT) : [];
   folk.spawn(ruins, COLS, doors, (x, z) => Math.hypot(x - player.x, z - player.z) < FOLK_AWAY
-    || (king && Math.hypot(x - king.x, z - king.z) < FOLK_AWAY));
+    || (at && pathGap(at, path, x, z) < FOLK_AWAY));
 }
 
 /** 感測區把人送走（沒在打的時候才會發生）。換了區塊就報名字。 */
@@ -342,7 +353,8 @@ function frame(now) {
     const { given, need } = fight.offer;
     // 交滿：最後那一顆落到國王身上之後國王復甦（fight.js 的 REVIVE），演完才慢動作、翻國王復活的那一頁。
     // 書頁蓋住的時候撒人民（建一堆動物要一下子，蓋著看不到）：不撒在主角與國王腳邊。
-    if (gift.risen) story.start(pagesOf(SCRIPT.offered), { slow: true, cover: populate });
+    // 書頁走了國王走回王座。
+    if (gift.risen) story.start(pagesOf(SCRIPT.offered), { slow: true, cover: populate, then: () => fight.king.enthrone(COLS, SEAT) });
     if (gift.done) hud.flash(`${need} 顆靈魂都交給國王了`);
     else if (gift.short) hud.flash(`還需要 ${need - given} 顆靈魂——回去找找沒撿到的`);
     else if (gift.gave) hud.flash(`交出一顆靈魂（${given}/${need}）`);

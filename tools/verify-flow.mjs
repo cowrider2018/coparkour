@@ -24,6 +24,9 @@
                   離黑牆與感測區夠遠，叢與叢分得開、一叢裡的不擠在一起，面朝自己那一叢的中間。
      7. 頭        頭跟著主角（gaze.js）：左右照主角在哪一邊轉、主角在上面就抬頭；左右超過 60° 不跟、
                   回到前面；轉過去是追的，不是一幀跳過去。
+     8. 王座      復活的國王走回王座（king.js 的 enthrone）：從王座廳裡幾個地方出發，走的那一條路
+                  不穿過柱子與牆，一級一級爬上台座（階梯是反著砌的，見 king.js），轉身背對王座，
+                  最後坐在座面中心、座面那麼高、面朝廳裡，而且是坐姿。
 
    房間裡面走不走得通不在這裡驗——那是 verify:terrain 的事（每張圖從出生點
    真的走到中心、感測區都踩得到）。這裡只驗房間與房間之間。
@@ -40,6 +43,8 @@ import { KINDS } from '../public/test/src/combat.js';
 import { FOLK, walkCells, plan } from '../public/test/src/folk.js';
 import { GAZE, Gaze, aimHead } from '../public/test/src/gaze.js';
 import { portalGap } from '../public/test/src/walk.js';
+import { THRONE } from '../public/test/src/blocks.js';
+import { LivingKing, KING, thronePath, pathGap } from '../public/test/src/king.js';
 
 let fails = 0;
 const ok = (cond, msg) => {
@@ -217,6 +222,48 @@ console.log('7. 頭');
   ok(Math.abs(s.pitch - 0.5) < 1e-3, '身體仰著（坐）：頭扣掉身體仰的那一份，看出去還是平的');
   for (let t = 0; t < 2; t += 1 / 60) s.step(1 / 60, null, sit);
   ok(Math.abs(s.pitch - 0.3) < 1e-3, '不跟的時候回到那一個姿勢本來的頭');
+}
+
+console.log('8. 王座');
+{
+  const [ox, oz] = BLOCKS.find((b) => b.id === 'throne').origin;
+  const seat = { x: THRONE.x + ox, y: THRONE.y, z: THRONE.z + oz, stair: THRONE.stair + oz };
+  const open = Object.fromEntries(Object.keys(ruins.doors).map((d) => [d, true]));
+  const top = supportInfo(COLS, seat.x, seat.z, seat.y + 1).y;
+  // 擋路的：柱子、牆、火盆（地板與階梯是爬上去的，不算）。
+  const WALLS = COLS.filter((b) => b.kind !== 'floor' && b.kind !== 'step');
+  ok(Math.abs(top - (THRONE.y + 0.5)) < 1e-6, `座面在 ${top.toFixed(2)} 公尺（台座 ${THRONE.y} 再高 0.5）`);
+  // 王座廳裡幾個國王可能倒下的地方（區塊的局部座標）：正中、左右靠柱子、南端、靠近階梯。
+  for (const [lx, lz] of [[0, 6], [-4.5, -2], [4.5, 1], [-3, -11], [2.5, 9.5]]) {
+    const k = { at: { x: lx + ox, y: 0, z: lz + oz, yaw: 0 }, trip: null };
+    LivingKing.prototype.enthrone.call(k, COLS, seat);
+    const path = [{ ...k.at }, ...k.trip.path];
+    let clear = true;
+    for (let i = 1; i < path.length; i++) {
+      for (let u = 0; u <= 1; u += 0.02) {
+        const x = path[i - 1].x + (path[i].x - path[i - 1].x) * u, z = path[i - 1].z + (path[i].z - path[i - 1].z) * u;
+        const [px, pz] = solveXZ(WALLS, x, z, 0, open);
+        if (Math.hypot(px - x, pz - z) > 1e-4) clear = false;
+      }
+    }
+    let t = 0, climbs = 0, last = 0, pose = null, jump = 0;
+    while (k.trip.phase !== 'seated' && t < 30) {
+      const r = LivingKing.prototype._walk.call(k, 1 / 60);
+      pose = r.pose;
+      jump = Math.max(jump, Math.abs(k.at.y - last));
+      if (k.at.y > last + 1e-3) climbs++;
+      last = k.at.y;
+      t += 1 / 60;
+    }
+    LivingKing.prototype._walk.call(k, 1 / 60);
+    const sat = k.trip.phase === 'seated' && Math.hypot(k.at.x - seat.x, k.at.z - seat.z) < 1e-6 && Math.abs(k.at.y - top) < 1e-6;
+    const facing = Math.abs(Math.cos(k.at.yaw) + 1) < 1e-6;
+    ok(clear && sat && facing && pose && pose.hind > 1 && jump < 0.1,
+      `從 (${lx}, ${lz}) 出發：路不穿過柱子與牆、${t.toFixed(1)} 秒坐上王座、面朝廳裡、坐姿，高度一路是追上去的（一幀最多 ${jump.toFixed(3)} 公尺）`);
+  }
+  const from = { x: ox + 4, z: oz }, path = thronePath(from, seat);
+  ok(pathGap(from, path, seat.x, seat.z - KING.front) < 1e-9 && pathGap(from, path, ox + 4, oz) < 1e-9 && pathGap(from, path, ox - 3, oz) > 2.9,
+    'pathGap：路上的點是 0，路外面的照到路的距離');
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

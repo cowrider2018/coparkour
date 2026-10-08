@@ -56,6 +56,12 @@ import {
 /** 區塊在世界裡的間距。中間那片空地是走廊，四個區塊互相看得到。 */
 export const PITCH = 62;
 
+/**
+ * 王座廳的王座在哪（區塊的局部座標）：x、z 是座面的中心，y 是台座的頂面（座面再高 0.5）。
+ * 階梯的底在 stair，台座從 z = 12.3 開始。復活的國王照這個走上去坐（king.js）。
+ */
+export const THRONE = { x: 0, z: 16.2, y: 0.9, stair: 10.3 };
+
 /* ── 空地的守門員 ────────────────────────────────────────────────
    「中心留空」這條規則要有一個東西去執行它，不然它只是一句話。撒碎石
    的時候每一顆都會問一次這個判斷式，`false` 的就不撒。
@@ -280,7 +286,7 @@ function throne(B, flames, seed, A) {
      B.block），而石頭以前從 13.4 才開始——中間那 1.1 公尺是一片看不見
      的地板，站得上去、什麼都沒有。 */
   B.add(B.kit.brick(9, 0.9, 5.4, 0.09), { p: [0, 0.45, 15.1], color: C.granite, solid: 'floor' });
-  throneSeat(B, { x: 0, z: 16.2, y: 0.9 });
+  throneSeat(B, THRONE);
   wall(B, { from: [-7.6, 18.4], to: [7.6, 18.4], h: 7.2, thick: 1.1, ruin: 0.4, seed: seed + 110 });
   pointedArch(B, { x: 0, z: 18.4, y: 4.4, span: 4.6, rise: 3.4, yaw: 0, thick: 0.5, depth: 1.2, ruin: 0.22, seed: seed + 111 });
   for (const side of [-1, 1]) {
