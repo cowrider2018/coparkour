@@ -7,6 +7,9 @@
      慢動作   只有戰後頁有（`slow`）：STORY.slow 秒（真實時間），世界的時間乘上
               STORY.scale——最後那一下的擊退、血、靈魂掉出來都慢慢地走。開場頁沒有
               這一段，書頁直接進來。操作收起來（身體照慣性停下）。
+              沒有書頁（`pages` 是空的）的話只演這一段：之後 STORY.thaw 秒世界的時間
+              從 STORY.scale 慢慢回到 1，回到 1 的那一刻 `then`（國王倒下：王座廳沒有
+              戰後頁，見 mode-flow.js）。
      書頁進來 STORY.enter 秒，書頁從右邊斜著滑進來，越來越慢，停下來的時候是正的、
               四邊都超出畫面。世界照常走（戰後頁還是慢動作）。
      蓋住     世界停住（scale 0、模式整幀不算也不畫——反正看不到）。分格一格一格
@@ -37,7 +40,7 @@
  * 慢動作幾秒、慢成幾倍、書頁進來幾秒、蓋住之後第一頁／後面幾頁幾秒才收按鍵、翻一頁幾秒、
  * 書頁離開幾秒（全部是真實時間）。
  */
-export const STORY = { slow: 1.1, scale: 0.15, enter: 0.7, ready: 0.9, readyNext: 0.35, turn: 0.55, leave: 0.6 };
+export const STORY = { slow: 1.1, scale: 0.15, thaw: 0.4, enter: 0.7, ready: 0.9, readyNext: 0.35, turn: 0.55, leave: 0.6 };
 
 /** 分格滑進來：每一格比前一格晚幾秒、一格滑幾秒（真實時間）。 */
 export const PANEL = { step: 0.28, dur: 0.5 };
@@ -109,12 +112,12 @@ export class Story {
   /** 書頁從開始到整個蓋住要幾秒（戰後頁多一段慢動作）。 */
   get _lead() { return (this.slow ? STORY.slow : 0) + STORY.enter; }
 
-  /** 書頁整個蓋住畫面（世界停住，不用算也不用畫）。 */
-  get covered() { return this.t >= this._lead && this.out < 0; }
+  /** 書頁整個蓋住畫面（世界停住，不用算也不用畫）。只有慢動作（沒有書頁）的那一種永遠不蓋。 */
+  get covered() { return this.pages.length > 0 && this.t >= this._lead && this.out < 0; }
 
   /**
    * 開始翻 `pages`（comic.js 的 pagesOf）。
-   *   slow   先慢動作再進來（戰後頁）；否則書頁直接進來（開場頁）。
+   *   slow   先慢動作再進來（戰後頁）；否則書頁直接進來（開場頁）。`pages` 是空的就只有慢動作。
    *   then   書頁走完的時候叫（模式拿來浮字、讓怪物出來——書頁還在的時候都看不到）。
    *   cover  書頁剛好整個蓋住的那一幀叫一次（模式拿來把人送走——那一跳落在書頁底下）。
    */
@@ -129,7 +132,7 @@ export class Story {
     this.then = then;
     this.cover = cover;
     this._tapped = false;
-    if (this.el) {
+    if (this.el && pages.length) {
       this._fill(this.sheets[0], 0);
       this.sheets[1].style.visibility = 'hidden';
     }
@@ -156,6 +159,7 @@ export class Story {
     const tapped = this._tapped;
     this._tapped = false;
     if (this.t < 0) return 1;
+    if (!this.pages.length) return this._thaw(real);
     if (this.out >= 0) {
       this.out += real;
       if (this.out >= STORY.leave) {
@@ -189,6 +193,22 @@ export class Story {
     if (this.out >= 0) return 1;
     if (this.covered) return 0;
     return this.slow ? STORY.scale : 1;
+  }
+
+  /**
+   * 只有慢動作（沒有書頁）的一幀：STORY.slow 秒 STORY.scale 倍，接著 STORY.thaw 秒慢慢回到 1
+   * （smoothstep），回到 1 的那一幀收掉、叫 `then`。
+   */
+  _thaw(real) {
+    this.t += real;
+    const u = clamp01((this.t - STORY.slow) / STORY.thaw);
+    if (u >= 1) {
+      const then = this.then;
+      this.cancel();
+      if (then) then();
+      return 1;
+    }
+    return STORY.scale + (1 - STORY.scale) * u * u * (3 - 2 * u);
   }
 
   /** 這一頁的分格全部拼好了。 */
@@ -265,7 +285,7 @@ export class Story {
 
   _paint() {
     if (!this.el) return;
-    const on = this.t >= 0;
+    const on = this.t >= 0 && this.pages.length > 0;
     this.el.classList.toggle('on', on);
     const [top, under] = this.sheets;
     top.classList.toggle('ready', on && this.out < 0 && this.turn < 0 && this.covered && this._built

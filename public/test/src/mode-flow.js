@@ -15,6 +15,7 @@
      打死全部            這一場清完：只開通往下一場的門（route.js 的 OPEN）。斬殺的那一刻起
                          演一段劇情（story.js）：慢動作，一大張書頁跑進來蓋住畫面，上面是
                          戰後那一頁漫畫；點一下（或按跳）翻頁、最後一頁書頁跑走，接著玩。
+                         沒有戰後頁的那一場（王座廳）只有慢動作，慢完回到正常速度。
      挨打                扣血（頭頂的愛心，fight.js）。BOSS、騎士的屍體落地時掉出的靈魂撿起來
                          最大血量 +1，一路帶到後面的場。
      獻靈魂              國王躺下之後，在牠身邊長按跳：0.5 秒後頭頂最上面那一顆心閃 0.5 秒、
@@ -196,9 +197,8 @@ function clear() {
   // 墓室打完不走回去：書頁蓋住的時候直接送到下一場的休息點（route.js 的 warp）。
   const warpTo = STAGES[k].warp && !done ? () => place(restAt(run.next, ruins)) : null;
   const say = () => hud.flash(done ? '六場全部打完——門全開了' : `這一場清完了。下一場：${stageName(run.next)}`);
-  // 沒有戰後頁的那一場（王座廳：要先交靈魂，comic.js 的 SCRIPT.offered）直接浮字。
-  if (SCRIPT.after[k]) story.start(pagesOf(SCRIPT.after[k]), { slow: true, cover: warpTo, then: say });
-  else say();
+  // 沒有戰後頁的那一場（王座廳：要先交靈魂，comic.js 的 SCRIPT.offered）只有慢動作，慢完才浮字。
+  story.start(SCRIPT.after[k] ? pagesOf(SCRIPT.after[k]) : [], { slow: true, cover: warpTo, then: say });
   if (!done) hud.paint({ block: STAGES[run.next].id });
 }
 

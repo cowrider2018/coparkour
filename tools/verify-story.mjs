@@ -15,6 +15,8 @@
      6. 取消     演到一半取消（重玩、倒下）：直接收掉，`then`、`cover` 都不叫。
      7. 頁表     十四頁、每頁 3～5 格（index.html 有那幾種版面）、SCRIPT 指到的頁都在、
                  每一頁剛好被翻一次。
+     8. 只有慢動作 沒有書頁（王座廳打完）：STORY.slow 秒 STORY.scale 倍、操作收起來，接著
+                 STORY.thaw 秒一路變快回到 1，回到 1 的那一幀 `then` 一次；從頭到尾不蓋住。
 
    跑法：node tools/verify-story.mjs
    ------------------------------------------------------------------ */
@@ -150,6 +152,19 @@ ok(SCRIPT.open.length === STAGES.length && SCRIPT.after.length === STAGES.length
 ok(SCRIPT.after.every((a, k) => !a || a.length === 1 || STAGES[k].warp), '一次翻好幾頁的只有打完要傳送的那一場（墓室）');
 ok(!SCRIPT.after[STAGES.length - 1] && SCRIPT.offered.join() === String(PAGES.length),
   '王座廳打完不翻；最後一頁等靈魂交完才翻');
+
+console.log('8. 只有慢動作');
+{
+  const s = new Story(null);
+  let called = 0;
+  s.start([], { slow: true, then: () => called++ });
+  const slow = run(s, STORY.slow - DT, true);
+  ok(slow.every((k) => k === STORY.scale) && s.busy && !s.covered, `先 ${STORY.slow} 秒一直是 ${STORY.scale} 倍、操作收起來、不蓋住`);
+  const thaw = run(s, STORY.thaw + 2 * DT);
+  ok(thaw.every((k, i) => k >= STORY.scale && k <= 1 && (i === 0 || k >= thaw[i - 1])), '接著一路變快，不超過 1');
+  ok(thaw[thaw.length - 1] === 1 && !s.on && !s.busy && called === 1, '回到 1：收掉、操作還回來、then 叫一次');
+  ok(thaw.every((k) => k > 0), '從頭到尾世界沒停過（沒有書頁蓋住）');
+}
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');
 process.exit(fails ? 1 : 0);
