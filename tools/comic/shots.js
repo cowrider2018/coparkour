@@ -643,8 +643,8 @@ export const SHOTS = [
     horizon: 0.86,
     bg: [
       { piece: 'gateway', span: 5, rise: 3.6, h: 6.4, side: 5, lift: 0, x: 0.5, y: 0.88, size: 0.8 },
-      { piece: 'gargoyle', s: 0.9, seed: 3, x: 0.12, y: 0.17, size: 0.1 },
-      { piece: 'gargoyle', s: 0.9, seed: 4, flip: true, x: 0.88, y: 0.17, size: 0.1 },
+      { piece: 'gargoyle', s: 0.9, seed: 3, x: 0.12, y: 0.215, size: 0.1 },
+      { piece: 'gargoyle', s: 0.9, seed: 4, flip: true, x: 0.88, y: 0.215, size: 0.1 },
     ],
     cast: [{ who: 'hero', at: [0, 0], yaw: Math.PI, move: { headPitch: -0.45, tailPitch: 0.1, w: 1 }, blade: 'knife' }],
     cam: { focus: 'hero', yaw: 0.35, pitch: -0.12, dist: 2.6, fov: 40, frame: [-0.08, 0.26] },
