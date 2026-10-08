@@ -119,6 +119,8 @@ export class Pad {
     /** 給外面讀的：圓形的二維軸，長度 ≤ 1。 */
     this.axis = { x: 0, y: 0 };
     this.mag = 0;
+    /** 手指整個出了搖桿圈：衝刺（見 _aim）。 */
+    this.sprint = false;
 
     // 搖桿
     this.jOn = false; this.jPid = null;
@@ -244,7 +246,7 @@ export class Pad {
   up(pid) {
     if (this.jOn && pid === this.jPid) {
       this.jOn = false; this.jPid = null;
-      this.axis.x = 0; this.axis.y = 0; this.mag = 0;
+      this.axis.x = 0; this.axis.y = 0; this.mag = 0; this.sprint = false;
       this.jTx = 0; this.jTy = 0;
     }
     if (this.bOn && pid === this.bPid) { this.bOn = false; this.bPid = null; }
@@ -261,11 +263,17 @@ export class Pad {
 
   /* 旋鈕固定不浮動：軸值是「手指相對搖桿中心」，不是相對按下的那一點。
      所以按在觸控區哪裡就已經在推了，不必先滑到旋鈕上——看得到位置、
-     又抓得寬鬆。夾圓不夾方，斜推才不會比直推快。 */
+     又抓得寬鬆。夾圓不夾方，斜推才不會比直推快。
+
+     衝刺：手指離圓心超過軌道的外半徑，也就是整個出了那個圈。圈內推到底
+     只是走得最快，旋鈕在圈內就已經頂住了，所以「出圈」是一個看得到的
+     邊界，不是推深一點點的差別。 */
   _aim(x, y) {
+    const dx = x - this.slotJoy.x, dy = y - this.slotJoy.y;
+    this.sprint = Math.hypot(dx, dy) > this.joy.r;
     const travel = Math.max((this.joy.r - this.joy.kr) * THROW, 1);
-    let ax = (x - this.slotJoy.x) / travel;
-    let ay = (y - this.slotJoy.y) / travel;
+    let ax = dx / travel;
+    let ay = dy / travel;
     const m = Math.hypot(ax, ay);
     if (m > 1) { ax /= m; ay /= m; }
     this.jTx = ax; this.jTy = ay;

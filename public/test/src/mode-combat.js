@@ -147,7 +147,7 @@ function frame(now) {
   if (!fight.breaking && !player.knocked) {
     const aim = controls.aim(input);
     if (aim) [player.aimX, player.aimZ] = aim;
-    [player.vx, player.vz] = steer(player.vx, player.vz, player.aimX, player.aimZ, speedFor(input.mag), dt);
+    [player.vx, player.vz] = steer(player.vx, player.vz, player.aimX, player.aimZ, speedFor(input), dt);
   }
 
   if (!fight.spinning) {

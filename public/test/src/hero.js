@@ -34,7 +34,7 @@ export function makeHero(x, y, z) {
  *
  * @param {object} p makeHero 那一種
  * @param {import('./controls.js').Controls} controls
- * @param {{ix: number, iz: number, mag: number}} input controls.axis() 這一幀的軸
+ * @param {{ix: number, iz: number, mag: number, sprint?: boolean}} input controls.axis() 這一幀的軸
  */
 export function steerHero(p, dt, controls, input) {
   /* 站在不可踩的圓頂上（樹梢那種）：操作整個失效，只剩重力。判斷用
@@ -54,7 +54,7 @@ export function steerHero(p, dt, controls, input) {
     p.vx += ax * dt;
     p.vz += az * dt;
   } else {
-    [p.vx, p.vz] = steer(p.vx, p.vz, p.aimX, p.aimZ, speedFor(input.mag), dt);
+    [p.vx, p.vz] = steer(p.vx, p.vz, p.aimX, p.aimZ, speedFor(input), dt);
   }
   return locked;
 }
@@ -76,7 +76,7 @@ export function moveHero(p, dt, cols, portals, doors) {
   const [pushX, pushZ] = portalDrift(portals, p.x, p.y, p.z, doors);
 
   /* 水平。撞到東西不必把速度清掉：速度永遠只沿著操控的方向，所以「沿著
-     牆一直加速」不會發生（速率被 speedFor 封在 8 以內），而正面撞牆之後
+     牆一直加速」不會發生（速率被 speedFor 封在 6 以內），而正面撞牆之後
      轉開，新方向上的投影本來就是 0——以前那兩行逐軸清零做的事，現在是
      steer 的投影在做。 */
   const mvx = p.vx + driftX + pushX, mvz = p.vz + driftZ + pushZ;

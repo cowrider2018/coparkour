@@ -21,16 +21,16 @@ import { CAM } from './camera.js';
 import { lookInfo } from '../../src/cat/looks.js';
 
 /**
- * 軸的長度 → 想要的速度。
+ * 這一幀的軸 → 想要的速度。
  *
- * 類比的，而且兩種輸入共用一條式子：搖桿推多少就走多快；鍵盤送進來的
- * 長度是「按著＝0.72、加上 ⇧＝1」，於是鍵盤的預設速度剛好落在
- * PHYS.walk 上，而推到底的搖桿與 ⇧ 一樣是 PHYS.run。
+ * 走與衝是兩件事，不是同一條斜坡的兩段：軸的長度只管走（搖桿推多少就
+ * 走多快，到底是 PHYS.walk），衝刺是另外一個開關——鍵盤是 ⇧，搖桿是
+ * 手指整個出了搖桿圈（見 pad.js 的 `_aim`）。開著的時候不管推多深都是
+ * PHYS.run，所以圈內推得再滿也不會衝。
  */
-export function speedFor(mag) {
+export function speedFor({ mag, sprint }) {
   if (mag <= 0) return 0;
-  if (mag <= 0.72) return PHYS.walk * (mag / 0.72);
-  return PHYS.walk + (PHYS.run - PHYS.walk) * ((mag - 0.72) / 0.28);
+  return sprint ? PHYS.run : PHYS.walk * mag;
 }
 
 /** 搶走瀏覽器預設動作的鍵（捲頁）。 */
@@ -112,7 +112,8 @@ export class Controls {
   /**
    * 這一幀的軸：鍵盤先湊成一個向量再正規化（斜著按兩個鍵不會比直著按快
    * 41%），再加上搖桿。搖桿往畫面下方推＝往後走，所以 z 取負。
-   * @returns {{ix: number, iz: number, mag: number}}
+   * `sprint`：按著 ⇧，或手指在搖桿圈外（見 speedFor）。
+   * @returns {{ix: number, iz: number, mag: number, sprint: boolean}}
    */
   axis() {
     let ix = 0, iz = 0;
@@ -121,15 +122,12 @@ export class Controls {
     if (this.held('a', 'arrowleft')) ix -= 1;
     if (this.held('d', 'arrowright')) ix += 1;
     const km = Math.hypot(ix, iz);
-    if (km > 0) {
-      const want = this.held('shift') ? 1 : 0.72;
-      ix = (ix / km) * want; iz = (iz / km) * want;
-    }
+    if (km > 0) { ix /= km; iz /= km; }
     const pad = this.pad;
     if (pad.mag > 0) { ix += pad.axis.x; iz -= pad.axis.y; }
     let mag = Math.hypot(ix, iz);
     if (mag > 1) { ix /= mag; iz /= mag; mag = 1; }
-    return { ix, iz, mag };
+    return { ix, iz, mag, sprint: this.held('shift') || pad.sprint };
   }
 
   /**
