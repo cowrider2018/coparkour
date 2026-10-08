@@ -137,6 +137,10 @@
                     擋下的那一面留一道橫的斬痕（貼著那一面、熱氣流的高度，走到哪裡哪裡才裂）。
                     動作是 galeWind → galeSpin → galeRec：主角二段跳那一下拉長到 1 秒、主角落地那一下轉一圈、
                     從轉完那一格甩頭 0.25 秒回到原本的樣子。
+    34. 獻靈魂      在國王身邊長按跳：按 0.5 秒才開始，之後每 0.5 秒交一顆（最大血量 −1、血不超過它），
+                    放手就停、閃到一半的不算、再按重新等；交到最大血量剩 1 顆為止，還沒交滿就說一次
+                    需要更多；交滿 4 顆就不再收。一開始 3 顆加 BOSS、騎士兩顆靈魂，交完剩 1 顆。
+                    拋出去的那一顆照拋物線落到國王身上。
    ------------------------------------------------------------------ */
 
 import { PHYS } from '../public/test/src/walk.js';
@@ -157,6 +161,7 @@ import { TRAILS, PIECE, BANDS, sweepAt, fadeAt, sideAt, qiAt, along, hullOf } fr
 import { bladeAt } from '../public/test/src/trail.js';
 import { BLEED, LUMP, SPLAT, STYLE, dropSize, dropCount, volumeOf, sizeRange, speedOf, hitFrame, burstFrame, lumpFrame, hurtFrame, spurtOf, floorUnder, splatScale, bleedStep } from '../public/test/src/bleed.js';
 import { taken } from '../public/test/src/combat.js';
+import { OFFER, makeOffer, offerStep, offerDone, blinkOf, throwSoul, flySoul } from '../public/test/src/offer.js';
 import { readFileSync } from 'node:fs';
 import * as THREE from '../public/test/vendor/three.module.js';
 import { loadZoo } from '../public/test/src/critter.js';
@@ -2836,6 +2841,60 @@ console.log('33. 旋風斬');
       `僵直 ${S.recover} 秒整段在甩頭（左右換邊 ${shook} 次），最後回到原本的樣子`);
   }
   KINDS.king.skills = keep;
+}
+
+console.log('34. 獻靈魂');
+{
+  const DT = 1 / 60;
+  // 按著（holding）跑 sec 秒，收集每一幀的結果。
+  const run = (o, p, sec, holding = true) => {
+    const got = { gave: 0, done: 0, short: 0, at: [] };
+    for (let t = 0; t < sec - 1e-9; t += DT) {
+      const r = offerStep(o, DT, holding, p);
+      if (r.gave) { got.gave++; got.at.push(+(o.held).toFixed(3)); }
+      if (r.done) got.done++;
+      if (r.short) got.short++;
+    }
+    return got;
+  };
+  const souls = Object.values(KINDS).filter((k) => k.soul).length;
+  ok(OFFER.need === 4 && OFFER.keep === 1 && LIFE.start + souls - OFFER.need === 1,
+    `要交 ${OFFER.need} 顆：一開始 ${LIFE.start} 顆 + ${souls} 顆靈魂，交完剩 ${LIFE.start + souls - OFFER.need} 顆`);
+
+  let o = makeOffer(), p = { max: 5, hp: 5 };
+  let g = run(o, p, 0.45);
+  ok(g.gave === 0 && p.max === 5 && blinkOf(o, p) < 0, '按不到 0.5 秒：還沒開始，最上面那一顆不閃');
+  g = run(o, p, 0.8);
+  ok(g.gave === 1 && p.max === 4 && p.hp === 4 && near(g.at[0], OFFER.wait + OFFER.beat, 0.02),
+    `按到 ${g.at[0]} 秒交出第一顆（等 0.5、閃 0.5）：最大血量 5 → 4，血跟著不超過它`);
+  ok(near(blinkOf(o, p), 0.25, 0.02), `接著第二顆閃（閃到 ${blinkOf(o, p).toFixed(2)} 秒）`);
+  run(o, p, DT, false);
+  ok(p.max === 4 && o.given === 1 && blinkOf(o, p) < 0, '放手：閃到一半的那一顆不算、留著');
+  g = run(o, p, 0.75);
+  ok(g.gave === 0 && p.max === 4, '再按：重新等 0.5 秒，閃不到 0.5 秒還沒交');
+  g = run(o, p, 2);
+  ok(o.given === 4 && p.max === 1 && g.done === 1 && g.short === 0 && offerDone(o),
+    '一直按著：每 0.5 秒一顆，交滿 4 顆的那一顆說完成，最大血量剩 1 顆');
+  g = run(o, p, 2);
+  ok(g.gave === 0 && p.max === 1 && blinkOf(o, p) < 0, '交滿了不再收');
+
+  o = makeOffer(); p = { max: 4, hp: 2 };
+  g = run(o, p, 3);
+  ok(o.given === 3 && p.max === 1 && p.hp === 1 && g.short === 1 && g.done === 0,
+    '少撿一顆（最大血量 4）：交 3 顆交到剩 1 顆，還差 1 顆，說一次需要更多');
+  run(o, p, DT, false);
+  g = run(o, p, 1);
+  ok(g.gave === 0 && g.short === 1, '沒得交的時候再按：等 0.5 秒之後再說一次需要更多');
+  p.max++; p.hp++;
+  run(o, p, DT, false);
+  g = run(o, p, 1);
+  ok(g.gave === 1 && g.done === 1 && offerDone(o) && p.max === 1, '回去撿到那一顆再來：交上第 4 顆，完成');
+
+  const s = throwSoul({ x: 0, y: 1, z: 0 }, { x: 2, y: 0.5, z: 0 });
+  let top = -Infinity, landed = false, t = 0;
+  while (!landed && t < 2) { landed = flySoul(s, DT); t += DT; top = Math.max(top, s.y); }
+  ok(near(t, OFFER.flight, DT + 1e-9) && near(s.x, 2, 1e-9) && near(s.y, 0.5, 1e-9) && top > 1 + OFFER.arc * 0.75,
+    `拋出去的靈魂 ${t.toFixed(2)} 秒落到國王身上，中間拱到 ${top.toFixed(2)} 公尺`);
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

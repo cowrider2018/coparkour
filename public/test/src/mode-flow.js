@@ -17,6 +17,10 @@
                          戰後那一頁漫畫；點一下（或按跳）翻頁、最後一頁書頁跑走，接著玩。
      挨打                扣血（頭頂的愛心，fight.js）。BOSS、騎士的屍體落地時掉出的靈魂撿起來
                          最大血量 +1，一路帶到後面的場。
+     獻靈魂              國王躺下之後，在牠身邊長按跳：0.5 秒後頭頂最上面那一顆心閃 0.5 秒、
+                         不見（最大血量 −1），一顆靈魂拋到國王身上；一直按著就一顆接一顆。放手
+                         就停，再按重新等 0.5 秒。交滿 4 顆為止；最大血量剩 1 顆還沒交滿的話
+                         提示需要更多，自己回去撿（offer.js）。在國王身邊按跳不跳。
      不在戰鬥中          清完一場之後、還沒走進下一場之前：很快回血到最大血量
                          （combat.js 的 regen）。
      倒下（血扣光）      不當幀重生，先演一段（death.js）：怪物失去目標、站著；人被那一下
@@ -51,6 +55,7 @@ import { Fight, DEATH_TEXT } from './fight.js';
 import { Sound } from './sound.js';
 import { Music } from './music.js';
 import { resetLife, refill, regen, KINDS } from './combat.js';
+import { OFFER } from './offer.js';
 import { BLOCKS } from './blocks.js';
 import { STAGES, START, foesOf, inStage, makeRun, doorsFor, portalsOn, restAt } from './route.js';
 
@@ -113,6 +118,8 @@ let spawnIn = 0;
 let opened = new Set();
 /** 倒下幾次（這一輪）。 */
 let deaths = 0;
+/** 上一幀在不在國王身邊（獻靈魂）：走過去的那一刻提示一次怎麼交。 */
+let byAltar = false;
 /** 怪物出現前的那一下：門關上、人站穩，再讓牠出來。 */
 const SPAWN_DELAY = 1.0;
 
@@ -278,7 +285,11 @@ function frame(now) {
   const input = still ? STILL : controls.axis();
   const pressed = tapped && !still;
   const sliding = player.grounded && player.slip === 'fall';
-  if (!death.busy) fight.lead(dt, player, pressed && !sliding);
+  // 在國王身邊（還收得了靈魂）：跳留給獻靈魂，不跳、不出招。
+  const altar = fight.nearAltar(player);
+  if (altar && !byAltar) hud.flash('長按跳，把靈魂交給國王');
+  byAltar = altar;
+  if (!death.busy) fight.lead(dt, player, pressed && !sliding && !altar);
   // 被擊退的那一段（combat.js 的 knockHero）也不操控：照那一下的速度飛，落地才還回來。
   if (!fight.breaking && !player.knocked) steerHero(player, dt, controls, input);
   const portals = portalsOn(run) ? ruins.portals : NO_PORTALS;
@@ -306,6 +317,13 @@ function frame(now) {
   }
   const { hit, died, souls } = fight.resolve(dt, player);
   if (souls) hud.flash(`撿到靈魂，最大血量 +${souls}`);
+  {
+    const gift = fight.give(dt, player, !still && controls.jumpDown());
+    const left = OFFER.need - fight.offer.given;
+    if (gift.done) hud.flash(`${OFFER.need} 顆靈魂都交給國王了`);
+    else if (gift.short) hud.flash(`還需要 ${left} 顆靈魂——回去找找沒撿到的`);
+    else if (gift.gave) hud.flash(`交出一顆靈魂（${fight.offer.given}/${OFFER.need}）`);
+  }
   if (!run.active && !death.busy) regen(player, dt);     // 不在戰鬥中：很快回血
   if (run.active && spawnIn === 0 && !fight.foes.length && !death.busy) clear();
   if (died) fall(died);

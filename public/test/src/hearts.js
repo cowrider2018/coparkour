@@ -84,8 +84,11 @@ export class Hearts {
     this._list = [];
   }
 
-  /** 擺 max 顆心（前 hp 顆是滿的）在 (x, y, z)（腳下）的頭頂上，正對鏡頭（quat 是鏡頭的朝向）。 */
-  show(hp, max, x, y, z, quat) {
+  /**
+   * 擺 max 顆心（前 hp 顆是滿的）在 (x, y, z)（腳下）的頭頂上，正對鏡頭（quat 是鏡頭的朝向）。
+   * `dim`：最上面那一顆這一幀不畫（獻靈魂，要交出去的那一顆在閃）。
+   */
+  show(hp, max, x, y, z, quat, dim = false) {
     while (this._list.length < max) {
       const s = new THREE.Sprite(this._full);
       s.scale.setScalar(SIZE);
@@ -96,7 +99,7 @@ export class Hearts {
     this.node.position.set(x, y + LIFT, z);
     this.node.quaternion.copy(quat);
     this._list.forEach((s, i) => {
-      s.visible = i < max;
+      s.visible = i < max && !(dim && i === max - 1);
       if (i >= max) return;
       s.material = i < hp ? this._full : this._empty;
       const row = Math.floor(i / ROW), inRow = Math.min(ROW, max - row * ROW);

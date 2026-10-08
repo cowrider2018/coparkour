@@ -150,6 +150,9 @@ export class Controls {
     return pad || this.held(' ');
   }
 
+  /** 跳現在按著沒有（長按：獻靈魂）。不讀掉按過的那一下——jumpPressed 照樣拿得到。 */
+  jumpDown() { return this.pad.bOn || this.held(' '); }
+
   /** 跳，按一下只算一下（連段的按鍵）。 */
   jumpPressed() {
     const pad = this.pad.takeJump();

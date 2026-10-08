@@ -18,6 +18,8 @@
               跟主角倒下一樣（death.js）往擊退的方向倒、帶著那一下的擊退飛，躺平而且落地的那一刻
               靈魂才掉出來。之後照 REST：綠色的慢慢沉進地裡、留著，國王躺著。幽靈不會落地，倒著漂
               GHOST_GONE 秒炸成一團幽靈血、收掉。換陣容的時候屍體收掉，清完的那一場的（keep）留著。
+     give     （模式叫）獻靈魂：國王躺下之後，在牠身邊長按跳把最大血量一顆一顆交給牠（offer.js），
+              交出去的那一顆拋到牠身上。
      draw     怪物、屍體、劍光（攻擊範圍）、國王劈砍的斬痕與氣流、旋風斬的熱氣流、粉塵（落地、BOSS 範圍攻擊的地震）、BOSS 的預告與球、靈魂、破防的兩圈、國王的盾、刀、
               頭頂的愛心。
               在相機擺好之後（破防的兩圈與愛心正對這一幀的鏡頭）；流體場也在這裡
@@ -48,6 +50,7 @@ import {
   coneFx, showCone, stripFx, showStrip, galeFx, showGale,
 } from './fx.js';
 import { SoulLook } from './soul.js';
+import { OFFER, makeOffer, offerStep, offerDone, blinkOf, throwSoul, flySoul } from './offer.js';
 import { DEATH, tipAngle, footprint, fallSide, fallHalf, tipNode } from './death.js';
 import { SKILL, GUST, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, ringsStep, shotHits, strikeHits, gustHits, ringHits, laneLength } from './skills.js';
 import { Hearts } from './hearts.js';
@@ -207,6 +210,9 @@ export class Fight {
 
     /** 玩家頭頂的愛心：還剩幾點血。 */
     this.hearts = new Hearts(scene);
+    /** 獻靈魂交到哪裡（offer.js），與拋出去、還在飛的那幾顆。 */
+    this.offer = makeOffer();
+    this._thrown = [];
 
     /* BOSS、騎士掉出來的靈魂（combat.js 的 dropSoul）。換陣容不清——完整流程裡打完一場就換
        下一場，沒撿的留在原地；回到站位（reset）才清。一顆一個 mesh，不夠就多做。 */
@@ -454,6 +460,39 @@ export class Fight {
   keep() { for (const f of this._corpses) f.corpse.kept = true; }
 
   /**
+   * 獻靈魂的地方：躺平落地的國王（REST 的 lie）身體的中間——倒向那一邊、離腳半個身高，
+   * 高度是躺著那一身的一半。還沒躺下（或沒有國王）是 null。
+   */
+  altar() {
+    const f = this._corpses.find((x) => REST[x.m.kind] === 'lie' && x.corpse.down !== null);
+    if (!f) return null;
+    const { m, corpse: c } = f, h = (PHYS.height * sizeOf(m.kind)) / 2;
+    return { x: m.x + c.side.x * (c.half + h), y: m.y + c.half, z: m.z + c.side.z * (c.half + h) };
+  }
+
+  /** 玩家在國王身邊、還收得了靈魂：這時候按跳是獻靈魂，不是跳（模式不交給 lead）。 */
+  nearAltar(p) {
+    const a = this.altar();
+    return !!a && !offerDone(this.offer) && Math.hypot(p.x - a.x, p.z - a.z) < OFFER.near;
+  }
+
+  /**
+   * 獻靈魂的一幀（offer.js 的 offerStep）：`held` 是跳按著沒有，在國王身邊才算。交出一顆就從
+   * 玩家頭頂往國王身上拋一顆靈魂；飛著的往前飛，落到了響一聲、收掉。回傳 offerStep 的那一份。
+   */
+  give(dt, player, held) {
+    const a = this.altar();
+    const r = offerStep(this.offer, dt, held && this.nearAltar(player), player);
+    if (r.gave) this._thrown.push(throwSoul({ x: player.x, y: player.y + PHYS.height, z: player.z }, a));
+    this._thrown = this._thrown.filter((s) => {
+      if (!flySoul(s, dt)) return true;
+      this.sound.play('soul');
+      return false;
+    });
+    return r;
+  }
+
+  /**
    * 換一批怪物上場：借好每一隻的外觀、藏起用不到的，每一隻站在自己的站位上。
    * 留下來的屍體（keep）不動，牠們的外觀不借。連段與飛著的球一起清掉。空的清單就是清場。
    *
@@ -504,6 +543,8 @@ export class Fight {
     this.world.rings.length = 0;
     this.world.spawns.length = 0;
     this.souls.length = 0;
+    this.offer = makeOffer();
+    this._thrown = [];
     this._dropTrails();
     this._gusts.clear();
     this._heats.clear();
@@ -764,7 +805,10 @@ export class Fight {
     this.zoo.root.visible = !(player.guard > 0) || Math.floor(player.guard * 12) % 2 === 0;
     // 無敵的時候墨線金色：跟碰到算不算（untouchable）同一個判斷。
     this.zoo.setInkColor(untouchable(combo, player) ? GUARD_INK : null);
-    this.hearts.show(player.hp, player.max, player.x, player.y, player.z, camera.quaternion);
+    // 獻靈魂：要交出去的那一顆（最上面那一顆）閃。
+    const blink = blinkOf(this.offer, player);
+    this.hearts.show(player.hp, player.max, player.x, player.y, player.z, camera.quaternion,
+      blink >= 0 && Math.floor(blink * 12) % 2 === 1);
     for (const { m, critter, motion, blade, helm, crown, shields } of this.foes) {
       /* 衝刺與放招的動作（monster.js 的 Motion）：疊一套動作，跳的那幾段畫成在空中、
          垂直速度照那一跳。 */
@@ -847,12 +891,13 @@ export class Fight {
     this._fire.draw(dt, this.world.shots, camera);
 
     // 靈魂：頭、光暈、冒出來的小球（soul.js）。
-    while (this._soulViews.length < this.souls.length) {
+    const souls = this._thrown.length ? [...this.souls, ...this._thrown] : this.souls;
+    while (this._soulViews.length < souls.length) {
       const o = this._soulLook.make();
       this.scene.add(o.root);
       this._soulViews.push(o);
     }
-    this._soulViews.forEach((o, i) => o.show(this.souls[i] || null, dt, camera));
+    this._soulViews.forEach((o, i) => o.show(souls[i] || null, dt, camera));
 
     // 破防的兩圈：套在怪物身體的中間，正對這一幀的鏡頭。
     for (const { m, breakFx: bf } of this.foes) {
