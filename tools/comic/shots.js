@@ -416,6 +416,15 @@ export const SHOTS = [
     // 大一號；四隻幽靈也各用自己的鏡頭拍，現實裡不可能同時成立。集中線收向主角。
     id: 'p7-4', size: [1800, 720], ink: 3.5,
     focusLines: { clear: 0.3, n: 140 },
+    // 背景：水窖的拱廊框在主角背後，兩側斷柱，頭頂垂下鎖鏈（四個角落被幽靈佔住，背景留在中間那一段）。
+    horizon: 0.66,
+    bg: [
+      { piece: 'arcade', bays: 1, span: 3.0, pier: 0.9, legH: 2.8, depth: 1.0, ruin: 0.3, seed: 12, x: 0.5, y: 0.67, size: 0.62 },
+      { piece: 'column', r: 0.42, h: 4.4, broken: 0.5, seed: 22, x: 0.3, y: 0.68, size: 0.3 },
+      { piece: 'column', r: 0.42, h: 4.4, seed: 23, x: 0.71, y: 0.68, size: 0.56 },
+      { piece: 'chain', from: [0, 3.2, 0], to: [1.4, 0, 0], n: 12, sag: 0.9, x: 0.36, y: 0.4, size: 0.42 },
+      { piece: 'chain', from: [0, 3.2, 0], to: [-1.4, 0, 0], n: 12, sag: 0.9, x: 0.64, y: 0.36, size: 0.38 },
+    ],
     cast: [{ who: 'hero', at: [0, 0], yaw: 0, move: { ...FLOP, headPitch: -0.25, headTilt: 0.15 }, face: 'shock', eyes: { lift: 0.6, spread: 0.3 } }],
     cam: { focus: 'hero', yaw: 0.15, pitch: 0.3, dist: 2.3, fov: 38, frame: [0, 0.08] },
     light: [2, 7, 5],
