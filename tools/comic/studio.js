@@ -316,11 +316,12 @@ function placeSouls(list) {
 }
 
 /* ── 背景：照構圖拼貼的剪影，2D ───────────────────────────────────
-   { piece, x, y, size, view, tilt, flip, skew, ...o }：零件從正面平拍成一張剪影（正交鏡頭，view 是繞直軸
+   { piece, x, y, size, view, tilt, flip, vanish, ...o }：零件從正面平拍成一張剪影（正交鏡頭，view 是繞直軸
    轉幾弳再拍——要拍側面就給 π/2；tilt 往前傾幾弳，看得到一點頂），底邊正中間放在畫面的
-   (x, y)（寬高的比例，y 往下），高 size（畫面高的比例），flip 左右翻。skew 把拍好的剪影上下錯開
-   成平行四邊形：直的邊還是直的，橫的邊變斜，往右每一像素往下 skew 像素（負的是往右升高），
-   底邊正中間不動。超出畫面的照裁。 */
+   (x, y)（寬高的比例，y 往下），高 size（畫面高的比例），flip 左右翻。vanish: [vx, vy] 是消失點
+   （畫面的比例）：剪影變成梯形——直的邊還是直的，每一條直線照它離消失點多遠縮放、對著 vy 那條
+   水平線收，所以底邊與頂邊都往消失點收（離它越近越矮）。底邊正中間那一條不變。超出畫面的照裁。 */
+const cutFat = document.createElement('canvas');
 const cutScene = new THREE.Scene();
 const cutCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
 const cutCanvas = document.createElement('canvas');
@@ -350,15 +351,35 @@ function drawCutout(g, spec, W, H) {
   // 零件是一塊一塊砌的，磚縫、鼓與鼓之間的縫拍出來會透光；剪影要是實心的，所以往外補 r 像素
   // （同一個顏色錯開疊幾次），縫就合起來了。
   const r = Math.max(1, Math.round(H / 300));
-  g.save();
-  g.translate(spec.x * W, spec.y * H);
-  if (spec.skew) g.transform(1, spec.skew, 0, 1, 0, 0);
-  if (spec.flip) g.scale(-1, 1);
-  for (let k = 0; k < 9; k++) {
-    const a = (k / 8) * Math.PI * 2, d = k === 8 ? 0 : r;
-    g.drawImage(cutCanvas, -pw / 2 + Math.cos(a) * d, -ph + Math.sin(a) * d);
+  const fat = (c, ox, oy) => {
+    for (let k = 0; k < 9; k++) {
+      const a = (k / 8) * Math.PI * 2, d = k === 8 ? 0 : r;
+      c.drawImage(cutCanvas, ox + Math.cos(a) * d, oy + Math.sin(a) * d);
+    }
+  };
+  if (!spec.vanish) {
+    g.save();
+    g.translate(spec.x * W, spec.y * H);
+    if (spec.flip) g.scale(-1, 1);
+    fat(g, -pw / 2, -ph);
+    g.restore();
+    return;
   }
-  g.restore();
+  // 梯形：先補好、翻好畫在 cutFat（左上角在 (x0, y0)），再一條一條直線畫，第 i 條照它離消失點
+  // 多遠（跟底邊正中間比）縮，對著 vy 那條線。
+  const fw = pw + 2 * r, fh = ph + 2 * r;
+  cutFat.width = fw;
+  cutFat.height = fh;
+  const fg = cutFat.getContext('2d');
+  if (spec.flip) { fg.translate(fw, 0); fg.scale(-1, 1); }
+  fat(fg, r, r);
+  const x0 = spec.x * W - fw / 2, y0 = spec.y * H - ph - r;
+  const vx = spec.vanish[0] * W, vy = spec.vanish[1] * H, cx = spec.x * W;
+  for (let i = 0; i < fw; i++) {
+    const f = (x0 + i + 0.5 - vx) / (cx - vx);
+    if (f <= 0) continue;
+    g.drawImage(cutFat, i, 0, 1, fh, x0 + i, vy + (y0 - vy) * f, 1.5, fh * f);
+  }
 }
 
 /* ── 地面：不規則的長橫線 ──────────────────────────────────────────
