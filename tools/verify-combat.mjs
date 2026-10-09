@@ -154,7 +154,7 @@ import {
   FLY, BREAK_ATK, breaking, breakTarget, startBreak, breakContact, latch, contact, parry, spinStep, separate, armored, attacking,
   makeMonster, monsterStep, touching, bites, knock, inSlash, inFan, inRing, slashTip, fanFrame,
   makeCombo, comboStep, invulnerable, cueing, FIELD, LIFE, resetLife, lifeStep, harm, refill, gainHeart, regen,
-  SOUL, dropSoul, soulStep, grabs,
+  SOUL, dropSoul, soulStep, grabs, bankSouls,
 } from '../public/test/src/combat.js';
 import { SKILL, UP_AIR, UP_RISE, REAP, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, gustHits, gustRise, GUST, shotHits, shotBlocked, strikeHits, laneLength, recoverOf, summonCount, pickSkill } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
@@ -1362,6 +1362,12 @@ console.log('20. 靈魂');
 {
   ok(KINDS.boss.soul && KINDS.knight.soul && !KINDS.king.soul && !KINDS.minion.soul && !KINDS.ghost.soul,
     'BOSS、騎士會掉靈魂；殭屍、幽靈、國王不掉（國王是收靈魂的那一個）');
+  {
+    const p = { hp: 2, max: 3 }, left = [dropSoul({ x: 0, y: 0, z: 0, field: FIELD }), dropSoul({ x: 1, y: 0, z: 0, field: FIELD })];
+    const n = bankSouls(p, left), none = bankSouls(p, left);
+    ok(n === 2 && none === 0 && left.length === 0 && p.max === 5 && p.hp === 4,
+      '換房間時地上沒撿的全部算撿到：兩顆最大血量 +2（血也 +2），地上清空；再收一次沒有東西');
+  }
 
   // 在平地上被打死：從身體中間掉下來，落在地板上 0.5 公尺停住。
   const s = dropSoul({ x: 1, y: 0, z: 2, field: FIELD });

@@ -32,7 +32,7 @@ import * as THREE from '../vendor/three.module.js';
 import { PHYS, supportInfo } from './walk.js';
 import {
   FIELD, REACH, KNOCK_SCALE, DAMAGE, KINDS, BREAK_WINDOW, hurt, makeMonster, harm, lifeStep, gainHeart,
-  dropSoul, soulStep, grabs,
+  dropSoul, soulStep, grabs, bankSouls,
   breaking, broken, breakTarget, startBreak, breakContact, contact, parry, spinStep, separate, placeMonster, monsterStep, bites, knock,
   knockHero, knockLand,
   inSlash, inFan, inRing, slashTip, makeCombo, comboStep, invulnerable, untouchable, cueing, attacking, taken,
@@ -246,7 +246,8 @@ export class Fight {
     this._king = souls > 0 ? new LivingKing(scene, zoo) : null;
 
     /* BOSS、騎士掉出來的靈魂（combat.js 的 dropSoul）。換陣容不清——完整流程裡打完一場就換
-       下一場，沒撿的留在原地；回到站位（reset）才清。一顆一個 mesh，不夠就多做。 */
+       下一場，沒撿的留在原地，到主角換房間的那一刻才全部算撿到（bank）；回到站位（reset）也清。
+       一顆一個 mesh，不夠就多做。 */
     this.souls = [];
     /** 靈魂的外觀（soul.js 的狗頭）：現在就建、先做好一顆藏著——第一顆掉出來的那一刻
         才建、才編的話就頓一下。 */
@@ -513,6 +514,16 @@ export class Fight {
     if (!f) return null;
     const { m, corpse: c } = f, h = (PHYS.height * sizeOf(m.kind)) / 2;
     return { x: m.x + c.side.x * (c.half + h), y: m.y + c.half, z: m.z + c.side.z * (c.half + h) };
+  }
+
+  /**
+   * 地上沒撿的靈魂全部算撿到（combat.js 的 bankSouls）：最大血量照顆數加上去，地上的收掉。
+   * 完整流程在主角換房間的時候叫。回傳收了幾顆。
+   */
+  bank(player) {
+    const n = bankSouls(player, this.souls);
+    if (n) this.sound.play('soul');
+    return n;
   }
 
   /** 玩家在國王身邊、還收得了靈魂：這時候按跳是獻靈魂，不是跳（模式不交給 lead）。 */
