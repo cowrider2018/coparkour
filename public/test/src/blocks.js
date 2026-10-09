@@ -68,6 +68,12 @@ export const THRONE = { x: 0, z: 16.2, y: 0.9, stair: 10.3 };
  */
 export const COFFINS = [-1, 1].flatMap((side) => [0, 1, 2, 3].map((i) => ({ side, i, x: side * 4.2, z: -6.4 + i * 4.2, top: SARCOPHAGUS_TOP })));
 
+/**
+ * 地下墓室北端台座上的大墓（區塊的局部座標）：x、z 是墓身底面的中心，base 是台座的頂（墓身從這裡砌起），
+ * top 是石蓋的頂（碰撞平台的頂面）。
+ */
+export const GRAVE = { x: 0, z: 12.3, base: 0.6, top: 1.94 };
+
 /* ── 空地的守門員 ────────────────────────────────────────────────
    「中心留空」這條規則要有一個東西去執行它，不然它只是一句話。撒碎石
    的時候每一顆都會問一次這個判斷式，`false` 的就不撒。
@@ -1171,9 +1177,10 @@ function crypt(B, flames, seed, A) {
   // ── 北端：兩級台階、台座、大墓、兩盆火 ──
   stair(B, { x: 0, z: 9.6, y: 0, yaw: 0, steps: 2, rise: 0.3, run: 0.6, w: 5.0, seed: seed + 40 });
   B.add(B.kit.brick(5.4, 0.6, IZ - 10.8, 0.06), { p: [0, 0.3, (10.8 + IZ) / 2], color: C.granite, solid: 'floor' });
-  B.add(B.kit.brick(1.7, 1.1, 2.8, 0.06), { p: [0, 0.6 + 0.55, 12.3], color: C.stoneDark });
-  B.add(B.kit.brick(1.9, 0.24, 3.0, 0.06), { p: [0, 1.82, 12.3], color: C.stoneLit });
-  B.block(0, 1.27, 12.3, 1.9, 1.34, 3.0, { kind: 'floor', base: 0.6 });   // 0.6～1.94，到石蓋的頂
+  const G = GRAVE, lid = 0.24;
+  B.add(B.kit.brick(1.7, G.top - lid - G.base, 2.8, 0.06), { p: [G.x, (G.base + G.top - lid) / 2, G.z], color: C.stoneDark });
+  B.add(B.kit.brick(1.9, lid, 3.0, 0.06), { p: [G.x, G.top - lid / 2, G.z], color: C.stoneLit });
+  B.block(G.x, (G.base + G.top) / 2, G.z, 1.9, G.top - G.base, 3.0, { kind: 'floor', base: G.base });   // 台座頂到石蓋的頂
   for (const side of [-1, 1]) brazier(B, { x: side * 2.0, z: 13.1, y: 0.6, s: 0.8, seed: seed + 50 + side }, flames);
 
   // ── 南端：來時的路。一道樓梯上到一塊平台，平台後面是穿過南牆、通回水窖的門洞 ──
