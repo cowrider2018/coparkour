@@ -50,10 +50,13 @@
    幽靈騎士的招：
 
      reap   連斬（離玩家 8 公尺以內才放）。前兩下就是騎士的跳砍：玩家腳下的紅色長條、
-            倒數、跳過去劈到地上那一條，落地 gap 秒後轉向玩家、上挑。差別在牠不受重力：
-            上挑升到頂點（主角一跳那麼高）就停在空中，不落下，緊接著在那裡原地轉一圈——
+            倒數、跳過去劈到地上那一條，落地的那一刻轉向玩家（上挑那一條預告從這時起長）。差別在
+            牠不受重力：上挑升到頂點（主角一跳那麼高）就停在空中，不落下。另一下是原地轉一圈——
             主角第三擊落地那一下（SKILL.reap.spin 秒轉完，前 swing 秒打得到），一片在牠腰那麼高
-            的水平圓盤（半徑是騎士劍迴旋那一圈）。三下之間沒有僵直，轉完才僵直 0.75 秒（甩頭），停在半空中。
+            的水平圓盤（半徑是騎士劍迴旋那一圈）。後兩下的順序看站位的 `reap`（REAP）：
+              air     對空（沒寫就是這一種）：落地 gap 秒後上挑，升到頂點緊接著在空中轉。
+              ground  對地：落地 gap 秒後在地上轉，轉完緊接著上挑、升到頂點。
+            三下之間沒有僵直，最後一下打完才僵直 0.75 秒（甩頭），停在半空中。
 
    國王的招：
 
@@ -90,8 +93,8 @@
      cleave、hew 貼地的長條，打的是地面上一個狗高以內：玩家的腳比那還高——跳起來了——就躲得過。
      hew 的氣流  移動的一塊（gustHits）：劍光那四分之一圈加厚成的體積，每一幀打的是它這一幀走過的
                  地方。有兩公尺高，跳不過，只能往旁邊閃。
-     reap 的轉   跟 gale 轉的那一下同一種，只是在空中、跟著牠的腰那麼高：站在地上的打不到，
-                 跳上去追牠的才挨。
+     reap 的轉   跟 gale 轉的那一下同一種，跟著牠的腰那麼高。對空的在空中轉：站在地上的打不到，
+                 跳上去追牠的才挨；對地的在地上轉：跟 gale 一樣跳得過。
      gale        轉的那一下跟騎士的 whirl 同一種（移動的圓盤，只是不移動）。熱氣流是一圈薄薄的環帶
                  （ringHits），在牠腰那麼高：跳得過，也躲得到東西後面。
      跳砍之後的上挑例外：那一片是立起來的。
@@ -126,10 +129,10 @@ export const SKILL = {
     windup: 0.5, air: 0.4, hop: 1.2, len: 2.2 * DOG_H, width: 0.8 * DOG_H, range: 8, damage: 3,
     up: { gap: 0.25, swing: SWING, thick: 0.4 * DOG_H, damage: 3 },
   },
-  /* 幽靈騎士的連斬：劈與上挑照 SKILL.cleave（倒數、弧線、長條、上挑都一樣），range 也是。上挑升到
-     頂點之後原地轉一圈：spin 秒轉完（主角第三擊那一圈），前 swing 秒每一幀打一片在牠腰（waist：
+  /* 幽靈騎士的連斬：劈與上挑照 SKILL.cleave（倒數、弧線、長條、上挑都一樣），range 也是。另一下是
+     原地轉一圈（跟上挑誰先見 REAP）：spin 秒轉完（主角第三擊那一圈），前 swing 秒每一幀打一片在牠腰（waist：
      畫成 1.2 倍高，跟騎士一樣）那麼高、半徑 radius（騎士劍迴旋那一圈）的水平圓盤。
-     轉完的僵直是甩頭：先 STILL.before 秒不動，甩 0.5 秒，再 STILL.after 秒沒有動作。 */
+     最後一下打完的僵直是甩頭：先 STILL.before 秒不動，甩 0.5 秒，再 STILL.after 秒沒有動作。 */
   reap: { range: 8, spin: TRAILS.slam.t1, swing: SWING, radius: 1.75 * DOG_H, waist: 0.6 * DOG_H, damage: 2, recover: STILL.before + 0.5 + STILL.after },
   /* 國王的直線劈砍：倒數 windup，劈一條從牠腳下往鎖定方向、長 len、寬 width 的長條（劍長，
      跟騎士跳砍劈的那一條一樣長）。不限距離：劍尖推出一道同樣寬的氣流（gust），每秒 speed
@@ -195,6 +198,17 @@ export const UP_AIR = (2 * PHYS.jump) / PHYS.gravity;
 /** 幽靈騎士的上挑升多久就到頂點、停在那裡：主角那一跳的上升那一半（初速 PHYS.jump、照重力減速到 0）。 */
 export const UP_RISE = PHYS.jump / PHYS.gravity;
 
+/**
+ * 幽靈騎士連斬落地 gap 秒之後那兩下的順序，鍵是站位的 `reap`（沒寫就是 air）：上挑（up）與原地轉
+ * 一圈（spin）各從那一刻之後幾秒開始，end 是幾秒收招（兩種一樣長）。
+ *   air     對空：先上挑升到頂點，在空中轉——跳起來追牠的挨轉的那一圈。
+ *   ground  對地：先在地上轉（腰那麼高，站在地上的挨），轉完才上挑升到頂點。
+ */
+export const REAP = {
+  air: { up: 0, spin: UP_RISE, end: UP_RISE + SKILL.reap.spin },
+  ground: { spin: 0, up: SKILL.reap.spin, end: SKILL.reap.spin + UP_RISE },
+};
+
 /** 範圍攻擊打得到的高度：腳在打下去的那一塊地板往上這麼高以內才算（一個狗高）。 */
 const REACH_UP = PHYS.height;
 
@@ -236,6 +250,7 @@ function begin(m, skill, target, rng) {
   m.aimX = dirX; m.aimZ = dirZ;
   m.vx = 0; m.vz = 0;
   if (skill === 'cleave' || skill === 'reap') aimCleave(m, d);
+  if (skill === 'reap') m.cast.reap = m.spawn.reap ?? 'air';
   if (skill === 'summon') m.cast.spots = summonSpots(m, rng);
   if (skill === 'gale') m.cast.env = galeShade(m);
 }
@@ -336,7 +351,7 @@ const CAST = {
     return { shape: 'strip', x: c.lx, y: c.ly, z: c.lz, dirX: c.dirX, dirZ: c.dirZ, len: S.len, w: S.width, dmg: S.damage };
   },
 
-  /* 倒數、飛過去、劈下去、轉向玩家都是騎士的跳砍（cleave）；落地之後換成不落下的上挑與空中的那一圈（rend）。 */
+  /* 倒數、飛過去、劈下去、轉向玩家都是騎士的跳砍（cleave）；落地之後換成不落下的上挑與原地的那一圈（rend）。 */
   reap(m, world, target) {
     return m.cast.up ? rend(m) : CAST.cleave(m, world, target);
   },
@@ -434,24 +449,26 @@ function upper(m) {
 }
 
 /**
- * 幽靈騎士連斬的後兩下：落地之後站 gap 秒（跟騎士一樣），然後照主角那一跳往上升，升 UP_RISE 秒到頂點
- * 就停在那裡（不受重力，不落下）。起跳後 swing 秒內每一幀打上挑那一片扇形（跟騎士的上挑同一片）；
- * 到頂點的那一刻接著原地轉一圈，前 swing 秒每一幀打腰那麼高的那一片圓盤。轉完收招，停在空中。
+ * 幽靈騎士連斬的後兩下：落地之後站 gap 秒（跟騎士一樣），之後照 REAP[c.reap] 的順序：
+ *   上挑  照主角那一跳往上升，升 UP_RISE 秒到頂點就停在那裡（不受重力，不落下）。起跳後 swing 秒內
+ *         每一幀打上挑那一片扇形（跟騎士的上挑同一片）。
+ *   轉    原地轉一圈（在哪個高度就在那裡轉），前 swing 秒每一幀打腰那麼高的那一片圓盤。
+ * 兩下都打完收招，停在空中。
  */
 function rend(m) {
-  const c = m.cast, S = SKILL.cleave, U = S.up, R = SKILL.reap, up = c.up;
+  const c = m.cast, S = SKILL.cleave, U = S.up, R = SKILL.reap, up = c.up, P = REAP[c.reap];
   const u = c.t - S.windup - S.air - U.gap;
   if (u < 0) return null;
-  const k = Math.min(u, UP_RISE);
+  const k = Math.min(Math.max(0, u - P.up), UP_RISE);
   m.y = up.y + PHYS.jump * k - (PHYS.gravity * k * k) / 2;
   m.grounded = false;
-  if (u < UP_RISE) {
-    if (u > U.swing) return null;
+  if (u >= P.end) { m.cast = null; return null; }
+  const a = u - P.up, s = u - P.spin;
+  if (a >= 0 && a < UP_RISE) {
+    if (a > U.swing) return null;
     return { shape: 'fan', x: m.x, y: m.y, z: m.z, aimX: up.dirX, aimZ: up.dirZ, tip: up.tip, thick: U.thick, dmg: U.damage };
   }
-  const s = u - UP_RISE;
-  if (s >= R.spin) { m.cast = null; return null; }
-  if (s > R.swing) return null;
+  if (s < 0 || s > R.swing) return null;
   return { shape: 'capsule', x: m.x, y: m.y, z: m.z, x1: m.x, z1: m.z, r: R.radius, waist: m.y + R.waist, dmg: R.damage };
 }
 

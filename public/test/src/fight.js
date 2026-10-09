@@ -55,7 +55,7 @@ import {
 import { SoulLook } from './soul.js';
 import { OFFER, makeOffer, offerStep, offerDone, blinkOf, throwSoul, flySoul } from './offer.js';
 import { DEATH, tipAngle, footprint, fallSide, fallHalf, tipNode } from './death.js';
-import { SKILL, GUST, WHIRL_LEN, UP_RISE, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, ringsStep, shotHits, strikeHits, gustHits, ringHits, laneLength } from './skills.js';
+import { SKILL, GUST, WHIRL_LEN, REAP, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, ringsStep, shotHits, strikeHits, gustHits, ringHits, laneLength } from './skills.js';
 import { Hearts } from './hearts.js';
 import { Fluid, Sheet } from './fluid.js';
 import { TRAILS } from './trail.js';
@@ -987,8 +987,9 @@ export class Fight {
          打得到的那 swing 秒亮著滿的，之後收掉。 */
       const cl = !!c && (c.skill === 'cleave' || c.skill === 'reap'), CL = SKILL.cleave;
       if (cl && c.up) {
-        const u = c.t - CL.windup - CL.air;
-        showStrip(cleave, u <= CL.up.gap + CL.up.swing, Math.min(1, u / CL.up.gap), c.up.x, c.up.z,
+        // 對地的連斬先轉再上挑：那一條等到上挑起跳才長滿。
+        const u = c.t - CL.windup - CL.air, wait = CL.up.gap + (c.reap ? REAP[c.reap].up : 0);
+        showStrip(cleave, u <= wait + CL.up.swing, Math.min(1, u / wait), c.up.x, c.up.z,
           Math.atan2(c.up.dirX, c.up.dirZ), REACH, c.up.y);
       } else {
         showStrip(cleave, cl, cl ? Math.min(1, c.t / CL.windup) : 0, cl ? c.lx : 0, cl ? c.lz : 0,
@@ -1125,12 +1126,13 @@ export class Fight {
    *       那一條的遠端，照那一條的長度縮放——劍光的終點就是劈的那一條。
    *   上挑 起跳那一幀起一道主角第二段的劍光（rise），末端點是那一片扇形的
    *       （skills.js 的 aimUp）——跟判定同一片。
-   *   轉  幽靈騎士的連斬（reap）：上挑升到頂點那一幀起一道主角第三擊的劍光（slam，一圈），
-   *       照轉的半徑縮放、高度照牠的體型抬，跟國王的旋風斬那一道一樣。
+   *   轉  幽靈騎士的連斬（reap）：開始轉的那一幀（對空的是上挑升到頂點、對地的是落地 gap 秒後，
+   *       見 REAP）起一道主角第三擊的劍光（slam，一圈），照轉的半徑縮放、高度照牠的體型抬，
+   *       跟國王的旋風斬那一道一樣。連斬的上挑照 REAP 晚多少起跳，那一道就晚多少起。
    */
   _cleave(m, c) {
-    const S = SKILL.cleave;
-    if (c.skill === 'reap' && c.up && !c.spinQi && c.t >= S.windup + S.air + S.up.gap + UP_RISE) {
+    const S = SKILL.cleave, P = c.reap ? REAP[c.reap] : { up: 0 };
+    if (c.skill === 'reap' && c.up && !c.spinQi && c.t >= S.windup + S.air + S.up.gap + P.spin) {
       this._foeQi(m, c, 'slam', null, SKILL.reap.radius / REACH, c.up.dirX, c.up.dirZ, (PHYS.height / 2) * (sizeOf(m.kind) - 1));
       c.spinQi = true;
     }
@@ -1139,7 +1141,7 @@ export class Fight {
       this._foeQi(m, c, 'cleave', tip, S.len / REACH, c.dirX, c.dirZ);
       c.chopQi = true;
     }
-    if (c.up && !c.qi && c.t >= S.windup + S.air + S.up.gap) {
+    if (c.up && !c.qi && c.t >= S.windup + S.air + S.up.gap + P.up) {
       this._foeQi(m, c, 'rise', c.up.tip, 1, c.up.dirX, c.up.dirZ);
       c.qi = true;
     }
