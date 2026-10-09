@@ -16,7 +16,8 @@
    的是破防攻擊：被定住的那一刻放到一半的招直接取消，不打。倒數照走，下一招
    還是從上一招開始算起的 `every` 秒後。
 
-   出招之後（球射出去、跳砸落地、扇形打下去、跳砍的上挑落地）僵直 SKILL.recover 秒：站著不動、
+   出招之後（球射出去、跳砸落地、扇形打下去、跳砍的上挑落地）僵直 SKILL.recover 秒（有自己的
+   `recover` 的招照它的：hew 短一點，甩頭的 reap、gale 多出甩之前不動的 STILL 秒）：站著不動、
    也不追人，而且跟平常一樣打得退、傷害照算——這是反擊的空檔。被破防攻擊打斷
    的不算出招，沒有僵直。
 
@@ -51,7 +52,7 @@
             倒數、跳過去劈到地上那一條，落地 gap 秒後轉向玩家、上挑。差別在牠不受重力：
             上挑升到頂點（主角一跳那麼高）就停在空中，不落下，緊接著在那裡原地轉一圈——
             主角第三擊落地那一下（SKILL.reap.spin 秒轉完，前 swing 秒打得到），一片在牠腰那麼高
-            的水平圓盤（半徑是騎士劍迴旋那一圈）。三下之間沒有僵直，轉完才僵直，停在半空中。
+            的水平圓盤（半徑是騎士劍迴旋那一圈）。三下之間沒有僵直，轉完才僵直 0.75 秒（甩頭），停在半空中。
 
    國王的招：
 
@@ -75,7 +76,7 @@
             每秒 20 公尺往外擴散，扣 2。碰到場上的東西（跟氣流一樣，開著的門不擋；比它低、比它高的
             不擋）的那一段停在那裡，其他的照走，一直到黑牆。哪一段會被什麼擋下，挑這一招的那一刻就
             算好了（occlude.js 的 shadeOf，精確的）：預告的淡紅照它挖掉擋住的地方，留下斬痕也照它。
-            一招只打得到一次：被轉的那一下打到的，熱氣流就不再算。出招後僵直 0.25 秒（甩頭）。
+            一招只打得到一次：被轉的那一下打到的，熱氣流就不再算。出招後僵直 0.5 秒（甩頭）。
 
    範圍攻擊照畫面上看得到的東西判，不是一次打完貼地的一片：
 
@@ -99,7 +100,7 @@
    ------------------------------------------------------------------ */
 
 import { PHYS, arenaGap, supportInfo, solveXZ, overlapXZ, roundTop, clampArena } from './walk.js';
-import { FIELD, DOG_H, REACH, SWING, kindOf, busy, settle, inFan } from './combat.js';
+import { FIELD, DOG_H, REACH, SWING, STILL, kindOf, busy, settle, inFan } from './combat.js';
 import { QUAKE, quakeTop } from './dust.js';
 import { hullOf, TRAILS } from './trail.js';
 import { shadeOf, reachAt, farthestOf } from './occlude.js';
@@ -126,8 +127,9 @@ export const SKILL = {
   },
   /* 幽靈騎士的連斬：劈與上挑照 SKILL.cleave（倒數、弧線、長條、上挑都一樣），range 也是。上挑升到
      頂點之後原地轉一圈：spin 秒轉完（主角第三擊那一圈），前 swing 秒每一幀打一片在牠腰（waist：
-     畫成 1.2 倍高，跟騎士一樣）那麼高、半徑 radius（騎士劍迴旋那一圈）的水平圓盤。 */
-  reap: { range: 8, spin: TRAILS.slam.t1, swing: SWING, radius: 1.75 * DOG_H, waist: 0.6 * DOG_H, damage: 2 },
+     畫成 1.2 倍高，跟騎士一樣）那麼高、半徑 radius（騎士劍迴旋那一圈）的水平圓盤。
+     轉完的僵直是甩頭：先 STILL 秒不動，再甩 0.5 秒。 */
+  reap: { range: 8, spin: TRAILS.slam.t1, swing: SWING, radius: 1.75 * DOG_H, waist: 0.6 * DOG_H, damage: 2, recover: STILL + 0.5 },
   /* 國王的直線劈砍：倒數 windup，劈一條從牠腳下往鎖定方向、長 len、寬 width 的長條（劍長，
      跟騎士跳砍劈的那一條一樣長）。不限距離：劍尖推出一道同樣寬的氣流（gust），每秒 speed
      公尺往前走到黑牆或撞上東西。出招後的僵直是自己的 recover（比別招短）。 */
@@ -138,9 +140,9 @@ export const SKILL = {
   /* 國王的旋風斬：倒數 windup，然後原地轉一圈（主角第三擊落地那一下：spin 秒轉完，前 swing 秒
      打得到），一片在腰（waist：國王畫成 1.4 倍高，腰是 1.4 × DOG_H / 2）那麼高、半徑 radius（劍長，
      跟 hew 一樣）的水平圓盤。轉完的那一刻劍光推出去成一圈熱氣流（wave）：每秒 speed 公尺往外，
-     在腰的高度上下各厚 half（跟 hew 那一道氣流一樣寬，只是躺平了）。 */
+     在腰的高度上下各厚 half（跟 hew 那一道氣流一樣寬，只是躺平了）。僵直是甩頭：先 STILL 秒不動，再甩 0.25 秒。 */
   gale: {
-    windup: 1, radius: 2.2 * DOG_H, waist: 0.7 * DOG_H, spin: TRAILS.slam.t1, swing: SWING, damage: 5, recover: 0.25,
+    windup: 1, radius: 2.2 * DOG_H, waist: 0.7 * DOG_H, spin: TRAILS.slam.t1, swing: SWING, damage: 5, recover: STILL + 0.25,
     wave: { speed: 20, damage: 2, half: 0.1 * DOG_H },
   },
   /** 出招後僵直幾秒（那一招沒有自己的 `recover` 的話）。 */

@@ -149,7 +149,7 @@
 
 import { PHYS } from '../public/test/src/walk.js';
 import {
-  MODES, DEFAULT_MODE, LUNGE, lunging, ARENA, SPAWN, DOG_H, REACH, SWING, REST, KNOCK, KNOCK_SCALE, FAN, WINDOW, KINDS, DAMAGE, hurt, placeMonster,
+  MODES, DEFAULT_MODE, LUNGE, STILL, lunging, ARENA, SPAWN, DOG_H, REACH, SWING, REST, KNOCK, KNOCK_SCALE, FAN, WINDOW, KINDS, DAMAGE, hurt, placeMonster,
   BREAK_AT, BREAK_WINDOW, broken,
   FLY, BREAK_ATK, breaking, breakTarget, startBreak, breakContact, latch, contact, parry, spinStep, separate, armored, attacking,
   makeMonster, monsterStep, touching, bites, knock, inSlash, inFan, inRing, slashTip, fanFrame,
@@ -999,8 +999,8 @@ console.log('15. BOSS 放招');
 /* ── 16. 衝刺 ──────────────────────────────────────────────── */
 console.log('16. 衝刺');
 {
-  ok(LUNGE.range === 1.8 && LUNGE.windup === 0.25 && LUNGE.speed === 16 && LUNGE.time === 0.25 && LUNGE.recover === 0.5,
-    '追到 1.8 公尺以內、蓄力 0.25 秒、衝刺初速 16、0.25 秒減到 0、衝完僵直 0.5 秒');
+  ok(LUNGE.range === 1.8 && LUNGE.windup === 0.25 && LUNGE.speed === 16 && LUNGE.time === 0.25 && LUNGE.recover === 0.75,
+    '追到 1.8 公尺以內、蓄力 0.25 秒、衝刺初速 16、0.25 秒減到 0、衝完僵直 0.75 秒');
   /** 一隻怪物從 z 追向站在原點的人，記下衝刺的每一件事。 */
   const run = (kind, z0, dt, during) => {
     const m = makeMonster({ kind, x: 0, z: z0, yaw: 0 });
@@ -2745,8 +2745,8 @@ console.log('33. 旋風斬');
   const S = SKILL.gale, W = S.wave;
   ok(KINDS.king.skills.includes('gale') && S.range === undefined, '國王會旋風斬，不限距離');
   ok(S.windup === 1 && S.damage === SKILL.hew.damage && W.damage === SKILL.hew.gust.damage && W.speed === SKILL.hew.gust.speed
-    && S.recover === 0.25 && recoverOf('gale') === 0.25,
-    '倒數 1 秒；轉的那一下扣 5、熱氣流扣 2、每秒 20 公尺（都照直線劈砍）；僵直 0.25 秒');
+    && S.recover === 0.5 && recoverOf('gale') === 0.5,
+    '倒數 1 秒；轉的那一下扣 5、熱氣流扣 2、每秒 20 公尺（都照直線劈砍）；僵直 0.5 秒');
   ok(near(S.radius, SKILL.hew.len) && near(S.waist, (DOG_H * sizeOf('king')) / 2) && near(S.spin, TRAILS.slam.t1) && S.swing === SWING,
     `轉的半徑是劍長（${S.radius.toFixed(2)}）、在國王的腰（${S.waist.toFixed(2)}）；跟主角第三擊一樣 ${S.spin} 秒轉完、前 ${SWING} 秒打得到`);
   ok(near(RING.depth, GUST.top - GUST.inner) && near(RING.half * 2, SKILL.hew.width),
@@ -2857,9 +2857,9 @@ console.log('33. 旋風斬');
     ok(near(end[0], S.spin) && near(yaw(gr[0][1]), end[1].yaw - 2 * Math.PI) && gr[0][1].pitch === end[1].pitch,
       '僵直從轉完的那一格接下去（轉過的一整圈拿掉，不會倒轉回去）');
     let shook = 0;
-    for (let i = 2; i < gr.length - 1; i++) if (Math.sign(gr[i][1].headYaw) !== Math.sign(gr[i - 1][1].headYaw)) shook++;
+    for (let i = 3; i < gr.length - 1; i++) if (Math.sign(gr[i][1].headYaw) !== Math.sign(gr[i - 1][1].headYaw)) shook++;
     ok(near(gr[gr.length - 1][0], S.recover) && Object.keys(gr[gr.length - 1][1]).length === 0 && shook >= 2,
-      `僵直 ${S.recover} 秒整段在甩頭（左右換邊 ${shook} 次），最後回到原本的樣子`);
+      `僵直 ${S.recover} 秒：不動 ${STILL} 秒之後甩頭（左右換邊 ${shook} 次），最後回到原本的樣子`);
   }
   KINDS.king.skills = keep;
 }
@@ -2959,11 +2959,11 @@ console.log('35. 幽靈騎士');
     && discs.every((d) => near(d.y, apex, 1e-6) && near(d.waist, apex + R.waist, 1e-6) && d.r === R.radius && d.dmg === R.damage),
     `升到頂點（${apex.toFixed(2)} 公尺）不落下，${discs[0].at.toFixed(2)} 秒接著在那裡轉：腰 ${(apex + R.waist).toFixed(2)} 公尺高、半徑 ${R.radius.toFixed(2)}、扣 ${R.damage}`);
   ok(stun.every((x) => x === 0), '三下之間沒有僵直');
-  ok(end && near(end.at, upAt + UP_RISE + R.spin, 1.5 * DT) && near(end.y, apex, 1e-6) && end.stun === SKILL.recover && end.rec === 'reapRec',
-    `轉完（${end.at.toFixed(2)} 秒）才僵直 ${SKILL.recover} 秒，停在 ${end.y.toFixed(2)} 公尺的空中`);
+  ok(end && near(end.at, upAt + UP_RISE + R.spin, 1.5 * DT) && near(end.y, apex, 1e-6) && end.stun === recoverOf('reap') && end.rec === 'reapRec',
+    `轉完（${end.at.toFixed(2)} 秒）才僵直 ${recoverOf('reap')} 秒，停在 ${end.y.toFixed(2)} 公尺的空中`);
   ok(stages.join() === 'cleaveWind,cleaveAir,cleaveLand,reapUp,reapSpin', `動作：${stages.join(' → ')} → ${end.rec}`);
   let still = true;
-  for (let i = 0; i < Math.round(SKILL.recover / DT) - 1; i++) { monsterStep(m, DT, q); if (!near(m.y, apex, 1e-6)) still = false; }
+  for (let i = 0; i < Math.round(recoverOf('reap') / DT) - 1; i++) { monsterStep(m, DT, q); if (!near(m.y, apex, 1e-6)) still = false; }
   ok(still, '僵直的時候停在空中，不往下掉');
 
   const d = discs[0], foot = d.waist;
@@ -2971,6 +2971,20 @@ console.log('35. 幽靈騎士');
   ok(strikeHits(d, body(0, land + 1, foot - 0.5)) && !strikeHits(d, body(0, land + R.radius + PHYS.radius + 0.05, foot - 0.5)),
     '跳上去追牠（身體切到牠腰的那一片）：半徑以內挨、以外不挨');
   ok(strikeHits(fans[0], body(0, 5)), '上挑跟騎士同一片：站在劈的那一點上被挑到');
+}
+
+/* ── 36. 甩頭前不動 ──────────────────────────────────────────── */
+console.log('36. 甩頭前不動');
+{
+  ok(STILL === 0.25 && recoverOf('reap') === STILL + SKILL.recover, `連斬轉完的僵直 ${recoverOf('reap')} 秒：多出甩之前不動的 ${STILL} 秒`);
+  const KM = KNIGHT_MOVES;
+  for (const [name, T] of [['recover', LUNGE.recover], ['reapRec', recoverOf('reap')], ['galeRec', recoverOf('gale')]]) {
+    // 停著的那一段是同一個姿勢的兩格；之後每一格都在甩（姿勢都不一樣）。
+    const keys = KM[name].keys, i = keys.findIndex((k, j) => j && k[1] === keys[j - 1][1]);
+    const [a, b] = [keys[i - 1], keys[i]];
+    ok(i > 0 && near(b[0] - a[0], STILL) && keys.slice(i + 1).every(([, p], j) => p !== keys[i + j][1]) && near(keys[keys.length - 1][0], T),
+      `${name}：停在 ${a[0].toFixed(2)} 秒那一格完全不動 ${STILL} 秒，${b[0].toFixed(2)} 秒才開始甩，${T} 秒甩完`);
+  }
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

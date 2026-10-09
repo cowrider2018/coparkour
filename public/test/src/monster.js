@@ -36,7 +36,7 @@
               速度從往上換成往下，所以是跳起來前腿前伸、過頂點換成找地板、
               落地那一沉（critter.js 的 airPose）。身體畫得跳起一點點（DASH_HOP）
               讓那個姿勢站得住——只是畫面，碰撞還是地上那一個圓柱。
-     recover  僵直：先低頭 BOW_TIME 秒（頭垂下去、尾巴放低），之後才甩——
+     recover  僵直：先低頭（BOW_TIME 秒頭垂下去、尾巴放低），低到底完全不動 STILL 秒，之後才甩——
               甩頭（頭左右甩、跟著側過去）、甩尾巴（跟頭反向）、身體左右
               搖晃（慢一拍、幅度小），一邊甩一邊把頭抬回來，一開始最用力、
               到僵直結束收乾淨。
@@ -74,8 +74,8 @@
    ── 幽靈騎士放招的動作 ──────────────────────────────────────────
      reap   連斬：倒數、跳過去、劈到底翻頭都是騎士跳砍那一套（cleaveWind、cleaveAir、cleaveLand）。
             上挑（reapUp）是騎士的上挑去掉落地的收尾：升到頂點停在那一格；轉（reapSpin）是
-            主角落地那一下（一圈），劍水平伸在外面；僵直（reapRec）跟國王旋風斬的一樣是從轉完的
-            那一格一邊甩頭一邊回來——都在空中。
+            主角落地那一下（一圈），劍水平伸在外面；僵直（reapRec）跟國王旋風斬的一樣是停在轉完的
+            那一格 STILL 秒，然後一邊甩頭一邊回來——都在空中。
 
    ── 國王放招的動作 ──────────────────────────────────────────────
      hew    直線劈砍：騎士跳砍那一套，只是不跳（這一招是原地劈、倒數完就出手）。倒數的
@@ -91,8 +91,8 @@
             埋在地板底下的那一截被地板的深度擋掉，不必另外裁。
      gale   旋風斬：騎士劍迴旋那一套（主角第三擊），只是不衝、只轉一圈。倒數的 1 秒是主角二段跳
             起來那一下縮成一團、往右擰到底（照 1 秒拉長）；轉的時候是主角落地那一下整隻往左轉一圈，
-            劍水平伸在外面掃過去（galeSpin，0.4 秒轉完）；0.25 秒的僵直是甩頭（衝刺僵直那一套甩，
-            不先低頭）：從轉完的那個姿勢一邊甩一邊回到原本的樣子。劍光是主角第三擊那一道（fight.js）。
+            劍水平伸在外面掃過去（galeSpin，0.4 秒轉完）；0.5 秒的僵直是甩頭（衝刺僵直那一套甩，
+            不先低頭）：停在轉完的那個姿勢 STILL 秒，然後一邊甩一邊回到原本的樣子。劍光是主角第三擊那一道（fight.js）。
 
    ── 會飛的漂 ──────────────────────────────────────────────────────
    會飛的（幽靈）一直是空中姿勢、不走路，所以移動的時候另外常駐一套漂（DRIFT）：
@@ -106,7 +106,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { Critter } from './critter.js';
-import { LUNGE, kindOf } from './combat.js';
+import { LUNGE, STILL, kindOf } from './combat.js';
 import { SKILL, UP_AIR, UP_RISE, recoverOf } from './skills.js';
 import { PHYS } from './walk.js';
 import { Mover, MOVES as HERO } from './moves.js';
@@ -254,9 +254,9 @@ const CROUCH = {
   front: -0.35, hind: -0.50, knee: -0.60, legs: 0.8, w: 1,
 };
 
-/** 僵直的前 BOW_TIME 秒：低頭。0.12 秒垂到底，之後停著。 */
+/** 僵直的前 BOW_TIME 秒：低頭垂到底（之後停在這裡 STILL 秒才甩）。 */
 const BOW = { pitch: 0.15, headPitch: 0.55, tailPitch: -0.25, w: 1 };
-const BOW_TIME = 0.2;
+const BOW_TIME = 0.12;
 
 /** 僵直的甩：每一個欄位 [幅度, 每秒幾下, 相位]。尾巴跟頭反向、身體慢一拍。 */
 const SHAKE = {
@@ -268,12 +268,12 @@ const SHAKE = {
 const shakeEnv = (u) => Math.min(1, u / 0.1) * (1 - u * u);
 
 /**
- * 甩頭的關鍵影格：lead 那幾格先播（最後一格的姿勢是 base），之後到 T 秒照 SHAKE 每 20 毫秒
- * 取一格，base 跟著淡掉（一邊甩一邊回來），最後一格回到原本的樣子。
+ * 甩頭的關鍵影格：lead 那幾格先播（最後一格的姿勢是 base），停在 base 完全不動 STILL 秒，
+ * 之後到 T 秒照 SHAKE 每 20 毫秒取一格，base 跟著淡掉（一邊甩一邊回來），最後一格回到原本的樣子。
  */
 function shakeKeys(T, base, lead) {
-  const t0 = lead[lead.length - 1][0], span = T - t0, step = 0.02;
-  const keys = [...lead];
+  const t0 = lead[lead.length - 1][0] + STILL, span = T - t0, step = 0.02;
+  const keys = [...lead, [t0, base, 'lin']];
   for (let s = step; s < span - 1e-6; s += step) {
     const u = s / span, e = shakeEnv(u), b = 1 - u * u * (3 - 2 * u);
     const pose = { w: 1 };
@@ -377,7 +377,7 @@ const LOOK = { stages: { coneWind: 1, leapWind: 1 }, tau: 0.12, max: 1.0 };
 export const MOVES = {
   windup: { blend: 0.05, keys: [[0, {}], [0.16, CROUCH, 'out'], [LUNGE.windup, { ...CROUCH, headPitch: 0.86, drop: 0.10 }, 'inOut']] },
   dash: { blend: 0.05, keys: [[0, {}]] },
-  recover: { blend: 0.04, keys: shakeKeys(LUNGE.recover, BOW, [[0, {}], [0.12, BOW, 'out'], [BOW_TIME, BOW, 'lin']]) },
+  recover: { blend: 0.04, keys: shakeKeys(LUNGE.recover, BOW, [[0, {}], [BOW_TIME, BOW, 'out']]) },
   orbWind: {
     blend: 0.08,
     keys: [[0, {}], [0.55, STRETCH, 'out'], [SKILL.orb.windup - 0.06, STRETCH_MAX, 'inOut'], [SKILL.orb.windup, SPIT_MID, 'in']],
@@ -420,7 +420,7 @@ export const MOVES = {
     keys: [...HERO.rise.keys.slice(0, -1).map(([t, pose, ease]) => [t, mirror(pose), ease]), [UP_AIR + SKILL.recover, {}, 'inOut']],
   },
   /* 幽靈騎士的連斬：上挑是騎士那一套，只是不落地——沒有回到原本樣子的那一格，升到頂點就接著轉；
-     轉是主角落地那一下（一圈），僵直從轉完的那一格一邊甩一邊回來。 */
+     轉是主角落地那一下（一圈），僵直停在轉完的那一格不動，再一邊甩一邊回來。 */
   reapUp: { blend: 0.03, keys: HERO.rise.keys.slice(0, -1).map(([t, pose, ease]) => [t, mirror(pose), ease]) },
   reapSpin: HERO.slam,
   reapRec: { blend: 0.02, keys: shakeKeys(recoverOf('reap'), SPIN_END, [[0, SPIN_END]]) },
@@ -434,7 +434,7 @@ export const MOVES = {
   summonWind: { blend: 0.08, keys: [[0, {}], [0.3, STRETCH, 'out'], [SKILL.summon.windup, STRETCH_MAX, 'inOut']] },
   summonRec: { blend: 0.02, keys: [[0, STRETCH_MAX], [0.12, STRETCH_MAX, 'lin'], [recoverOf('summon'), {}, 'inOut']] },
   /* 國王的旋風斬：蓄力是騎士劍迴旋的那一套（主角二段跳那一下，照 1 秒拉長），轉是主角落地那一下
-     （一圈），僵直是甩頭——從轉完的那一格一邊甩一邊回來。 */
+     （一圈），僵直是甩頭——停在轉完的那一格不動，再一邊甩一邊回來。 */
   galeWind: retime(HERO.leap, SKILL.gale.windup),
   galeSpin: HERO.slam,
   galeRec: { blend: 0.02, keys: shakeKeys(recoverOf('gale'), SPIN_END, [[0, SPIN_END]]) },
