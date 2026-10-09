@@ -18,8 +18,9 @@
                          戰後那一頁漫畫；點一下（或按跳）翻頁、最後一頁書頁跑走，接著玩。
                          沒有戰後頁的那一場（王座廳）只有慢動作，慢完回到正常速度。
      挨打                扣血（頭頂的愛心，fight.js）。BOSS、騎士的屍體落地時（幽靈騎士是炸開時）掉出的靈魂撿起來
-                         最大血量 +1，一路帶到後面的場。沒撿的不必回去找：主角一換房間（route.js 的
-                         roomOf；走過去、被送過去、倒下回到休息點都算），地上剩下的全部算撿到。
+                         最大血量 +1，一路帶到後面的場。沒撿的不必回去找：離開有靈魂的房間（route.js 的
+                         roomOf；走過去、被送過去——墓室打完翻漫畫的時候——、倒下回到休息點都算）就算撿到，
+                         還沒從屍體掉出來的也算（Fight.bank）。
      獻靈魂              國王躺下之後，在牠身邊長按跳：0.5 秒後頭頂最上面那一顆心閃 0.5 秒、
                          不見（最大血量 −1），一顆靈魂拋到國王身上；一直按著就一顆接一顆。放手
                          就停，再按重新等 0.5 秒。一輪掉得出幾顆就要交幾顆（route.js 的 SOULS），
@@ -136,8 +137,6 @@ let opened = new Set();
 let deaths = 0;
 /** 上一幀在不在國王身邊（獻靈魂）：走過去的那一刻提示一次怎麼交。 */
 let byAltar = false;
-/** 上一幀在哪個房間（route.js 的 roomOf）：一換房間，地上沒撿的靈魂全部算撿到（Fight.bank）。 */
-let room = null;
 /** 怪物出現前的那一下：門關上、人站穩，再讓牠出來。 */
 const SPAWN_DELAY = 1.0;
 
@@ -339,10 +338,11 @@ function frame(now) {
     if (gate) transit.go(gate.dest);
   }
   player.block = arenaAt(player.x, player.z).id;
-  // 換了房間（走過去、被送過去、倒下回到休息點都算）：留在後面沒撿的靈魂直接收下。
-  if (roomOf(player.block, player.y) !== room) {
-    room = roomOf(player.block, player.y);
-    const n = fight.bank(player);
+  /* 離開有靈魂的房間就是撿了（走過去、被送過去、倒下回到休息點都算）：不在主角這個房間的靈魂——
+     還沒從屍體掉出來的也算——直接收下。每一幀問，所以主角走了才掉出來的那一顆也是一掉就收。 */
+  {
+    const here = roomOf(player.block, player.y);
+    const n = fight.bank(player, (o) => roomOf(arenaAt(o.x, o.z).id, o.y) !== here);
     if (n) hud.flash(`沒撿的 ${n} 顆靈魂收下了，最大血量 +${n}`);
   }
 

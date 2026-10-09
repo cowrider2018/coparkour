@@ -175,6 +175,20 @@ console.log('5. 靈魂');
   const each = STAGES.map((s) => s.foes.filter((f) => KINDS[f.kind].soul).length);
   ok(SOULS === each.reduce((a, b) => a + b, 0) && SOULS === 3,
     `一輪掉得出 ${SOULS} 顆靈魂（每一場 ${each.join('、')}），國王要收的就是這麼多`);
+  /* 離開有靈魂的房間就算撿到（mode-flow.js 每一幀照位置問房間，跟 stage.js 的 arenaAt 同一個取法）：
+     會掉靈魂的怪物站在哪，照位置問出來就是那一場的房間；被送走的那一場，送到的地方是別的房間。 */
+  const at = (x, y, z) => {
+    let best = null, bg = -Infinity;
+    for (const a of ruins.arenas) { const g = arenaGap(a, x, z); if (g > bg) { bg = g; best = a; } }
+    return roomOf(best.id, y);
+  };
+  STAGES.forEach((s, k) => {
+    const owe = foesOf(k).filter((f) => KINDS[f.kind].soul);
+    if (!owe.length) return;
+    const to = s.warp && k + 1 < STAGES.length ? restAt(k + 1, ruins) : null;
+    ok(owe.every((f) => at(f.x, f.y, f.z) === s.room) && (!to || at(to.x, to.y, to.z) !== s.room),
+      `${s.name}：掉靈魂的怪物照位置問得到這一場的房間${to ? `；打完送到的 ${STAGES[k + 1].rest} 是別的房間——一送走就收下` : ''}`);
+  });
 }
 
 console.log('6. 人民');

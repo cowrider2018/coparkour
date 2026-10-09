@@ -272,17 +272,26 @@ export function harm(p, dmg) {
  *   `hover` 公尺停住；之後以那個高度為中心、振幅 `bob`、週期 `period` 秒上下
  *   漂浮（簡諧）。碰到玩家的身體（grabs）就被撿起來，最大血量 +1（gainHeart），沒有上限。
  *   從掉出來的那一刻起一直繞 Y 軸轉，每 `spin` 秒一圈（`yaw`，往下掉的時候也轉）。
- *   沒撿的不會一直留著：完整流程裡主角一換房間，地上剩下的全部算撿到（bankSouls）。
+ *   沒撿的不會一直留著：完整流程裡主角不在的那幾個房間裡的，直接算撿到（bankSouls）——
+ *   離開有靈魂的房間就是撿了。
  *
  *   r  撿不撿得到用這個半徑量（一顆球）。
  */
 export const SOUL = { r: 0.3, hover: 0.5, bob: 0.2, period: 2, spin: 4 };
 
-/** 地上沒撿的靈魂全部算撿到：每一顆最大血量 +1（gainHeart），清單清空。回傳收了幾顆。 */
-export function bankSouls(p, souls) {
-  const n = souls.length;
-  for (let i = 0; i < n; i++) gainHeart(p);
-  souls.length = 0;
+/**
+ * 地上 away 說「不在主角這裡」的那幾顆靈魂算撿到：每一顆最大血量 +1（gainHeart），從清單拿掉
+ * （清單就地改，其他的留著）。回傳收了幾顆。
+ * @param {(s: {x: number, y: number, z: number}) => boolean} away
+ */
+export function bankSouls(p, souls, away) {
+  let kept = 0;
+  for (const s of souls) {
+    if (away(s)) gainHeart(p);
+    else souls[kept++] = s;
+  }
+  const n = souls.length - kept;
+  souls.length = kept;
   return n;
 }
 

@@ -456,13 +456,13 @@ export class Fight {
         if (c.t < GHOST_GONE) return true;
         this._bleed(burstFrame(), m, m.kind);
         // 會掉靈魂的（幽靈騎士）：炸開的那一刻從那一團裡掉出來。
-        if (KINDS[m.kind].soul) this.souls.push(dropSoul(m));
+        if (KINDS[m.kind].soul && !f.banked) this.souls.push(dropSoul(m));
         Fight._hide(f);
         return false;
       }
       if (c.down !== null || c.t < DEATH.tip || (m.air && c.t < DEATH.wait)) return true;
       c.down = c.t;
-      if (KINDS[m.kind].soul) this.souls.push(dropSoul(m));
+      if (KINDS[m.kind].soul && !f.banked) this.souls.push(dropSoul(m));
       if (REST[m.kind]) return true;
       Fight._hide(f);
       return false;
@@ -517,13 +517,26 @@ export class Fight {
   }
 
   /**
-   * 地上沒撿的靈魂全部算撿到（combat.js 的 bankSouls）：最大血量照顆數加上去，地上的收掉。
-   * 完整流程在主角換房間的時候叫。回傳收了幾顆。
+   * 不在主角這裡（away 說的）的靈魂算撿到（combat.js 的 bankSouls）：最大血量照顆數加上去，地上的收掉。
+   * 還沒掉出來的也算——屍體在那裡、靈魂還欠著的（幽靈騎士要等炸開，書頁蓋住的時候世界是停的，
+   * 被送走的時候常常還沒炸），那一顆現在就算撿到，之後不再掉。完整流程每一幀叫。回傳收了幾顆。
+   * @param {(o: {x: number, y: number, z: number}) => boolean} away
    */
-  bank(player) {
-    const n = bankSouls(player, this.souls);
+  bank(player, away) {
+    let n = bankSouls(player, this.souls, away);
+    for (const f of this._corpses) {
+      if (!KINDS[f.m.kind].soul || f.banked || !Fight._owes(f) || !away(f.m)) continue;
+      f.banked = true;
+      gainHeart(player);
+      n++;
+    }
     if (n) this.sound.play('soul');
     return n;
+  }
+
+  /** 這具屍體的靈魂還沒掉出來：會飛的炸開才掉（炸開就不在屍體清單裡了），其他的落地才掉。 */
+  static _owes(f) {
+    return KINDS[f.m.kind].fly || f.corpse.down === null;
   }
 
   /** 玩家在國王身邊、還收得了靈魂：這時候按跳是獻靈魂，不是跳（模式不交給 lead）。 */

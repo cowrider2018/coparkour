@@ -1363,10 +1363,11 @@ console.log('20. 靈魂');
   ok(KINDS.boss.soul && KINDS.knight.soul && !KINDS.king.soul && !KINDS.minion.soul && !KINDS.ghost.soul,
     'BOSS、騎士會掉靈魂；殭屍、幽靈、國王不掉（國王是收靈魂的那一個）');
   {
-    const p = { hp: 2, max: 3 }, left = [dropSoul({ x: 0, y: 0, z: 0, field: FIELD }), dropSoul({ x: 1, y: 0, z: 0, field: FIELD })];
-    const n = bankSouls(p, left), none = bankSouls(p, left);
-    ok(n === 2 && none === 0 && left.length === 0 && p.max === 5 && p.hp === 4,
-      '換房間時地上沒撿的全部算撿到：兩顆最大血量 +2（血也 +2），地上清空；再收一次沒有東西');
+    const p = { hp: 2, max: 3 }, at = (x) => dropSoul({ x, y: 0, z: 0, field: FIELD });
+    const souls = [at(0), at(50), at(1), at(60)], away = (s) => s.x > 10, near0 = souls[2];
+    const n = bankSouls(p, souls, away), none = bankSouls(p, souls, away);
+    ok(n === 2 && none === 0 && souls.length === 2 && souls[1] === near0 && p.max === 5 && p.hp === 4,
+      '不在主角這個房間的靈魂算撿到：兩顆最大血量 +2（血也 +2），從地上拿掉；同一間的兩顆照順序留著；再收一次沒有東西');
   }
 
   // 在平地上被打死：從身體中間掉下來，落在地板上 0.5 公尺停住。
