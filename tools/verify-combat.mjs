@@ -1816,7 +1816,7 @@ console.log('23. 噴血');
 console.log('24. 騎士');
 {
   const S = SKILL.whirl;
-  ok(KINDS.knight.skills.includes('whirl') && KINDS.knight.every === 2.5, '騎士每 2.5 秒放一招，會劍迴旋衝刺');
+  ok(KINDS.knight.skills.includes('whirl') && KINDS.knight.every === 3, '騎士每 3 秒放一招，會劍迴旋衝刺');
   ok(S.windup === 0.5 && S.damage === 2 && near(WHIRL_LEN, (S.speed * S.time) / 2) && near(WHIRL_LEN, 3.2) && near(S.time, TRAILS.whirl.t1),
     `劍迴旋衝刺：倒數 0.5 秒、扣 2、衝 ${WHIRL_LEN.toFixed(2)} 公尺、0.4 秒衝完（劍光同樣 0.4 秒掃完）`);
   const W = TRAILS.whirl, L = TRAILS.slam;
@@ -2924,8 +2924,8 @@ console.log('34. 獻靈魂');
 console.log('35. 幽靈騎士');
 {
   const W = KINDS.wraith, K = KINDS.knight;
-  ok(['hp', 'speed', 'breakAt', 'bite', 'every', 'soul'].every((k) => W[k] === K[k]) && W.fly && W.skills.join() === 'reap',
-    `數值跟騎士一樣（血 ${W.hp}、腳程 ${W.speed}、咬 ${W.bite}、每 ${W.every} 秒一招、掉靈魂），會飛，招只有連斬`);
+  ok(['hp', 'speed', 'breakAt', 'bite', 'soul'].every((k) => W[k] === K[k]) && W.every === 4 && W.fly && W.skills.join() === 'reap',
+    `數值跟騎士一樣（血 ${W.hp}、腳程 ${W.speed}、咬 ${W.bite}、掉靈魂），每 ${W.every} 秒一招，會飛，招只有連斬`);
   ok(sizeOf('wraith') === sizeOf('knight') && bloodOf('wraith') === 'ecto' && swordOf('wraith') === 'knight' && helmOf('wraith'),
     '畫成跟騎士一樣高、咬騎士的劍、戴頭盔，噴的是幽靈的靈質');
   ok(SKILL.reap.range === SKILL.cleave.range && SKILL.reap.spin === TRAILS.slam.t1 && SKILL.reap.swing === SWING,
