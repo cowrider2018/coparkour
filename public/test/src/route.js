@@ -25,7 +25,7 @@
    它的入口外面就是起點本身（起點在觸發範圍外面）。
    ------------------------------------------------------------------ */
 
-import { BLOCKS, DOORS, COFFINS } from './blocks.js';
+import { BLOCKS, DOORS, COFFINS, GRAVE } from './blocks.js';
 import { KINDS } from './combat.js';
 
 /** 牆頂那一層與兵營那一層的分界：腳高過它就是在牆頂（走道面 5.2，地面 0）。 */
@@ -56,12 +56,13 @@ const ring = (kind, n, r, cx = 0, cz = 0, a0 = 0) => Array.from({ length: n }, (
 });
 
 /**
- * 墓室的六隻：兩排石棺各取北邊三具（最南那一對離鐵閘太近，一進門就貼著人），一具一隻，站在棺蓋上、
- * 面朝鐵閘。最北那一對（墓室末端、大墓前）是幽靈騎士，其餘是幽靈。都從棺材裡升上來（rise）。
+ * 墓室的七隻，都面朝鐵閘、從底下升上來（rise）：兩排石棺各取北邊三具（最南那一對離鐵閘太近，一進門
+ * 就貼著人），一具一隻幽靈，站在棺蓋上；幽靈騎士從北端那座大墓（GRAVE）升上來，站在石蓋上。
  */
-const tomb = () => COFFINS.filter((c) => c.i > 0).map((c) => ({
-  kind: c.i === 3 ? 'wraith' : 'ghost', x: c.x, y: c.top, z: c.z, yaw: Math.PI, rise: true,
-}));
+const tomb = () => [
+  ...COFFINS.filter((c) => c.i > 0).map((c) => ({ kind: 'ghost', x: c.x, y: c.top, z: c.z, yaw: Math.PI, rise: true })),
+  { kind: 'wraith', x: GRAVE.x, y: GRAVE.top, z: GRAVE.z, yaw: Math.PI, rise: true },
+];
 
 export const STAGES = [
   {

@@ -44,7 +44,7 @@ import { KINDS } from '../public/test/src/combat.js';
 import { FOLK, walkCells, plan } from '../public/test/src/folk.js';
 import { GAZE, Gaze, aimHead } from '../public/test/src/gaze.js';
 import { portalGap } from '../public/test/src/walk.js';
-import { THRONE, COFFINS } from '../public/test/src/blocks.js';
+import { THRONE, COFFINS, GRAVE } from '../public/test/src/blocks.js';
 import { LivingKing, KING, thronePath, pathGap } from '../public/test/src/king.js';
 
 let fails = 0;
@@ -97,13 +97,13 @@ STAGES.forEach((s, k) => {
 
 {
   const k = STAGES.findIndex((s) => s.id === 'crypt'), foes = STAGES[k].foes;
-  const on = foes.map((f) => COFFINS.findIndex((c) => c.x === f.x && c.z === f.z && c.top === f.y));
-  const far = Math.max(...foes.map((f) => f.z));
-  ok(foes.length === 6 && on.every((i) => i >= 0) && new Set(on).size === 6 && foes.every((f) => f.rise),
-    '地下墓室：六隻各站在一具石棺的棺蓋上，都從棺材裡升上來');
-  ok(foes.filter((f) => f.kind === 'wraith').every((f) => f.z === far) && foes.filter((f) => f.kind === 'wraith').length === 2
-    && foes.filter((f) => f.kind === 'ghost').length === 4,
-    `地下墓室：末端（z = ${far.toFixed(1)}）那兩隻是幽靈騎士，其餘四隻是幽靈`);
+  const ghosts = foes.filter((f) => f.kind === 'ghost'), wraiths = foes.filter((f) => f.kind === 'wraith');
+  const on = ghosts.map((f) => COFFINS.findIndex((c) => c.x === f.x && c.z === f.z && c.top === f.y));
+  ok(foes.length === 7 && foes.every((f) => f.rise && f.yaw === Math.PI), '地下墓室：七隻，都面朝鐵閘、從底下升上來');
+  ok(ghosts.length === 6 && on.every((i) => i >= 0 && COFFINS[i].i > 0) && new Set(on).size === 6,
+    '地下墓室：六隻幽靈各站在一具石棺的棺蓋上（離鐵閘最近那一對不用）');
+  ok(wraiths.length === 1 && wraiths[0].x === GRAVE.x && wraiths[0].z === GRAVE.z && wraiths[0].y === GRAVE.top,
+    `地下墓室：一隻幽靈騎士從北端的大墓升上來，站在石蓋上（${GRAVE.top} 公尺）`);
 }
 
 /* ── 2. 觸發 ─────────────────────────────────────────────────── */
@@ -173,7 +173,7 @@ STAGES.forEach((s, k) => {
 console.log('5. 靈魂');
 {
   const each = STAGES.map((s) => s.foes.filter((f) => KINDS[f.kind].soul).length);
-  ok(SOULS === each.reduce((a, b) => a + b, 0) && SOULS === 4,
+  ok(SOULS === each.reduce((a, b) => a + b, 0) && SOULS === 3,
     `一輪掉得出 ${SOULS} 顆靈魂（每一場 ${each.join('、')}），國王要收的就是這麼多`);
 }
 
