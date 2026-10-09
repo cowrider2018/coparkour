@@ -156,7 +156,7 @@ import {
   makeCombo, comboStep, invulnerable, cueing, FIELD, LIFE, resetLife, lifeStep, harm, refill, gainHeart, regen,
   SOUL, dropSoul, soulStep, grabs,
 } from '../public/test/src/combat.js';
-import { SKILL, UP_AIR, UP_RISE, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, gustHits, gustRise, GUST, shotHits, shotBlocked, strikeHits, laneLength, recoverOf, summonCount } from '../public/test/src/skills.js';
+import { SKILL, UP_AIR, UP_RISE, WHIRL_LEN, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, gustHits, gustRise, GUST, shotHits, shotBlocked, strikeHits, laneLength, recoverOf, summonCount, pickSkill } from '../public/test/src/skills.js';
 import { steer } from '../public/test/src/walk.js';
 import { DUST, dustOf, dustFade, QUAKE, quakeBands, quakeFade, quakeTop, PLOW, plowPieces, plowClump } from '../public/test/src/dust.js';
 import { Motion, bloodOf, sizeOf, mirror, riseLift, MOVES as KNIGHT_MOVES } from '../public/test/src/monster.js';
@@ -2476,6 +2476,18 @@ console.log('30. 召喚');
   ok(KINDS.king.skills.includes('summon') && S.windup === 0.5 && S.radius === 3 && S.cap === 4 && S.kind === 'ghost' && recoverOf('summon') === SKILL.recover,
     '國王會召喚：倒數 0.5 秒、半徑 3 公尺、最多 4 隻幽靈、僵直 0.5 秒');
   ok([0, 1, 2, 3, 4].map((n) => summonCount({ brood: n })).join() === '2,2,2,1,0', '場上 0、1、2、3、4 隻時各召 2、2、2、1、0 隻');
+  {
+    const tally = (can) => {
+      const n = {};
+      for (let i = 0; i < 1000; i++) { const s = pickSkill(can, (i + 0.5) / 1000); n[s] = (n[s] || 0) + 1; }
+      return n;
+    };
+    const all = tally(KINDS.king.skills), full = tally(KINDS.king.skills.filter((s) => s !== 'summon'));
+    ok(S.chance === 0.25 && all.summon === 250 && all.hew === 375 && all.gale === 375,
+      `三招都挑得到：召喚 ${all.summon / 10}%、劈砍 ${all.hew / 10}%、旋風斬 ${all.gale / 10}%`);
+    ok(full.hew === 500 && full.gale === 500, '場上滿了挑不到召喚：另外兩招各一半');
+    ok(tally(['summon']).summon === 1000 && tally(['whirl', 'cleave']).whirl === 500, '只剩召喚就一定是它；沒帶 chance 的照舊平分');
+  }
   const keep = KINDS.king.skills;
   KINDS.king.skills = ['summon'];
   let seed = 7;

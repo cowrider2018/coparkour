@@ -5,7 +5,8 @@
    fx.js 與 mode-combat.js 的事，而這一支 node 驗得動（tools/verify-combat.mjs）。
 
    ── 循環 ────────────────────────────────────────────────────────
-   有技能的那一類（KINDS 的 `skills`）每 `every` 秒從自己的技能裡隨機挑一招。
+   有技能的那一類（KINDS 的 `skills`）每 `every` 秒從自己的技能裡隨機挑一招：帶 `chance` 的招
+   照它的機率（國王的召喚 25%），其他的平分剩下的。
    挑中的那一刻鎖定玩家的水平位置，之後玩家怎麼跑都不改——預告就是給人躲的。
    放招的這段時間牠不追人（站著，或照那一招自己的路線走）；放完才回去追。
 
@@ -135,8 +136,9 @@ export const SKILL = {
      公尺往前走到黑牆或撞上東西。出招後的僵直是自己的 recover（比別招短）。 */
   hew: { windup: 0.5, len: 2.2 * DOG_H, width: 0.2 * DOG_H, damage: 5, recover: 0.25, gust: { speed: 20, damage: 2 } },
   /* 國王的召喚：倒數 windup，在身邊 radius 公尺內（離牠至少 near，不疊在牠身上）的點上各冒出
-     一隻 kind（倒數的時候從地底升上來）。場上牠召喚的最多 cap 隻，一次最多召 each 隻（補到 cap 為止）。 */
-  summon: { windup: 0.5, radius: 3, near: 2 * PHYS.radius, cap: 4, each: 2, kind: 'ghost' },
+     一隻 kind（倒數的時候從地底升上來）。場上牠召喚的最多 cap 隻，一次最多召 each 隻（補到 cap 為止）。
+     挑得到的時候被挑中的機率是 chance（pickSkill）。 */
+  summon: { chance: 0.25, windup: 0.5, radius: 3, near: 2 * PHYS.radius, cap: 4, each: 2, kind: 'ghost' },
   /* 國王的旋風斬：倒數 windup，然後原地轉一圈（主角第三擊落地那一下：spin 秒轉完，前 swing 秒
      打得到），一片在腰（waist：國王畫成 1.4 倍高，腰是 1.4 × DOG_H / 2）那麼高、半徑 radius（劍長，
      跟 hew 一樣）的水平圓盤。轉完的那一刻劍光推出去成一圈熱氣流（wave）：每秒 speed 公尺往外，
@@ -461,6 +463,19 @@ function segGap(px, pz, ax, az, bx, bz) {
 }
 
 /**
+ * 從挑得到的招裡挑一招（r 是 0～1 的亂數）：帶 `chance` 的招照它的機率，沒帶的平分剩下的。
+ * 全部都帶 `chance`（或只剩帶的那幾招）的話照比例放大到加起來是 1。
+ */
+export function pickSkill(can, r) {
+  const odds = can.map((s) => SKILL[s].chance);
+  const fixed = odds.reduce((a, p) => a + (p ?? 0), 0), free = odds.filter((p) => p === undefined).length;
+  const each = free ? Math.max(0, 1 - fixed) / free : 0;
+  let x = r * (fixed + each * free);
+  for (let i = 0; i < can.length; i++) if ((x -= odds[i] ?? each) < 0) return can[i];
+  return can[can.length - 1];
+}
+
+/**
  * 範圍攻擊打到玩家了嗎。範圍是平面上的形狀，高度各有各的（見每一種）：
  * 形狀碰到身體（身體半徑算進去）、身體的圓柱又跟那個高度重疊，才算。
  *
@@ -533,7 +548,7 @@ export function bossStep(m, dt, target, world, rng = Math.random) {
     const can = k.skills.filter((s) => !(gap > SKILL[s].range) && (!READY[s] || READY[s](m)));
     if (can.length) {
       m.castT = k.every;
-      begin(m, can[Math.min(can.length - 1, Math.floor(rng() * can.length))], target, rng);
+      begin(m, pickSkill(can, rng()), target, rng);
     }
   }
   if (!m.cast) return null;
