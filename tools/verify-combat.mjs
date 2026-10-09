@@ -716,10 +716,20 @@ console.log('13. 怪物不疊');
 console.log('14. 陣容');
 {
   const tally = (md) => md.monsters.reduce((o, s) => ({ ...o, [s.kind]: (o[s.kind] || 0) + 1 }), {});
-  const want = { minions: { minion: 3 }, boss: { boss: 1 }, wraith: { wraith: 1 }, ghosts: { ghost: 3 }, knight: { knight: 1 }, king: { king: 1 } };
-  ok(MODES.map((md) => md.id).join() === 'minions,boss,wraith,ghosts,knight,king', '六種陣容，面板上依序是 3 殭屍、1 BOSS、1 幽靈騎士、3 幽靈、1 騎士、1 國王');
+  const want = {
+    minions: { minion: 3 }, boss: { boss: 1 }, wraithAir: { wraith: 1 }, wraithGround: { wraith: 1 }, wraiths: { wraith: 2 },
+    ghosts: { ghost: 3 }, knight: { knight: 1 }, king: { king: 1 },
+  };
+  ok(MODES.map((md) => md.id).join() === 'minions,boss,wraithAir,wraithGround,wraiths,ghosts,knight,king',
+    '八種陣容，面板上依序是 3 殭屍、1 BOSS、1 幽靈騎士（對空）、1 幽靈騎士（對地）、2 幽靈騎士、3 幽靈、1 騎士、1 國王');
   for (const md of MODES) ok(JSON.stringify(tally(md)) === JSON.stringify(want[md.id]), `${md.name}：${JSON.stringify(tally(md))}`);
-  ok(DEFAULT_MODE === 'wraith' && MODES[2].id === DEFAULT_MODE, '預設是 1 幽靈騎士（第三種）');
+  ok(DEFAULT_MODE === 'wraithAir' && MODES[2].id === DEFAULT_MODE, '預設是 1 幽靈騎士（對空，第三種）');
+  {
+    const reaps = (id) => MODES.find((md) => md.id === id).monsters.map((s) => `${s.reap}@${s.x - (ARENA.x0 + ARENA.x1) / 2}`).join();
+    // 玩家面朝 −z：左手邊是 −x。
+    ok(near(SPAWN.player.yaw, Math.PI) && reaps('wraithAir') === 'air@0' && reaps('wraithGround') === 'ground@0' && reaps('wraiths') === 'air@-4,ground@4',
+      '幽靈騎士三關：對空一隻、對地一隻、兩隻（玩家看過去左邊對空、右邊對地）');
+  }
   ok(SPAWN.monsters.map((s) => s.kind).join() === 'boss,minion,minion' && MODES.every((md) => md.monsters !== SPAWN.monsters),
     '標準陣容（離線驗證用）還是 BOSS 加兩隻殭屍，但面板上沒有這一種');
   const cx = (ARENA.x0 + ARENA.x1) / 2, cz = (ARENA.z0 + ARENA.z1) / 2;
