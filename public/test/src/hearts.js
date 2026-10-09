@@ -13,7 +13,7 @@ import { INK } from './palette.js';
 /** 一顆心多大（公尺）、隔多遠、一排幾顆、離腳多高。 */
 const SIZE = 0.3;
 const GAP = 0.32;
-const ROW = 5;
+const ROW = 8;
 const LIFT = 1.55;
 
 const INK_CSS = `#${INK.toString(16).padStart(6, '0')}`;
