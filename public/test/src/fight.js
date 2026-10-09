@@ -985,10 +985,10 @@ export class Fight {
       /* 跳砍：從落點往前的那一條（正中間是主角被鎖定的地方），貼在落點那一層地板上；飛的時候
          亮著滿的。落地之後換成上挑那一條（從牠腳下往主角、長 REACH），等的那 gap 秒從牠腳下長滿，
          打得到的那 swing 秒亮著滿的，之後收掉。 */
-      const cl = !!c && (c.skill === 'cleave' || c.skill === 'reap'), CL = SKILL.cleave;
+      const cl = !!c && (c.skill === 'cleave' || !!REAP[c.skill]), CL = SKILL.cleave;
       if (cl && c.up) {
         // 對地的連斬先轉再上挑：那一條等到上挑起跳才長滿。
-        const u = c.t - CL.windup - CL.air, wait = CL.up.gap + (c.reap ? REAP[c.reap].up : 0);
+        const u = c.t - CL.windup - CL.air, wait = CL.up.gap + (REAP[c.skill]?.up ?? 0);
         showStrip(cleave, u <= wait + CL.up.swing, Math.min(1, u / wait), c.up.x, c.up.z,
           Math.atan2(c.up.dirX, c.up.dirZ), REACH, c.up.y);
       } else {
@@ -1103,7 +1103,7 @@ export class Fight {
   _whirls() {
     for (const { m } of this.foes) {
       const c = m.cast;
-      if (c && (c.skill === 'cleave' || c.skill === 'reap')) { this._cleave(m, c); continue; }
+      if (c && (c.skill === 'cleave' || REAP[c.skill])) { this._cleave(m, c); continue; }
       if (c && c.skill === 'hew') { this._hewQi(m, c); continue; }
       // 國王的旋風斬：主角第三擊那一道（一圈），照劍長縮放。
       const spin = !!c && c.skill === 'gale', S = spin ? SKILL.gale : SKILL.whirl;
@@ -1126,14 +1126,14 @@ export class Fight {
    *       那一條的遠端，照那一條的長度縮放——劍光的終點就是劈的那一條。
    *   上挑 起跳那一幀起一道主角第二段的劍光（rise），末端點是那一片扇形的
    *       （skills.js 的 aimUp）——跟判定同一片。
-   *   轉  幽靈騎士的連斬（reap）：開始轉的那一幀（對空的是上挑升到頂點、對地的是落地 gap 秒後，
+   *   轉  幽靈騎士的連斬（REAP）：開始轉的那一幀（對空的是上挑升到頂點、對地的是落地 gap 秒後，
    *       見 REAP）起一道主角第三擊的劍光（slam，一圈），照轉的半徑縮放、高度照牠的體型抬，
    *       跟國王的旋風斬那一道一樣。連斬的上挑照 REAP 晚多少起跳，那一道就晚多少起。
    */
   _cleave(m, c) {
-    const S = SKILL.cleave, P = c.reap ? REAP[c.reap] : { up: 0 };
-    if (c.skill === 'reap' && c.up && !c.spinQi && c.t >= S.windup + S.air + S.up.gap + P.spin) {
-      this._foeQi(m, c, 'slam', null, SKILL.reap.radius / REACH, c.up.dirX, c.up.dirZ, (PHYS.height / 2) * (sizeOf(m.kind) - 1));
+    const S = SKILL.cleave, P = REAP[c.skill] || { up: 0 };
+    if (REAP[c.skill] && c.up && !c.spinQi && c.t >= S.windup + S.air + S.up.gap + P.spin) {
+      this._foeQi(m, c, 'slam', null, SKILL[c.skill].radius / REACH, c.up.dirX, c.up.dirZ, (PHYS.height / 2) * (sizeOf(m.kind) - 1));
       c.spinQi = true;
     }
     if (!c.chopQi && c.t >= S.windup + S.air - CHOP_LEAD) {

@@ -16,9 +16,7 @@
 
      3 殭屍          中線上一隻、左右各 4 公尺一隻。
      1 BOSS          中線上。
-     1 幽靈騎士（對空）  中線上（預設）。
-     1 幽靈騎士（對地）  中線上。
-     2 幽靈騎士      左右各 4 公尺：左邊（玩家看過去，−x）對空、右邊對地。
+     1 幽靈騎士      中線上（預設）。
      3 幽靈          跟 3 殭屍同樣的站位。
      1 騎士          中線上。
      1 國王          中線上。
@@ -116,24 +114,15 @@ const post = (kind, dx) => {
 
 /**
  * 陣容：右邊那塊面板上選的。每一種是一張怪物站位的清單，一隻一筆，帶著牠是
- * 哪一類（KINDS 的鍵）。順序就是面板上的順序（數字鍵 1～8）。幽靈騎士的站位帶連斬的
- * 順序（`reap`，skills.js 的 REAP）；兩隻的那一關從玩家站的地方看過去（面朝 −z，左手邊是 −x）
- * 左邊對空、右邊對地。
+ * 哪一類（KINDS 的鍵）。順序就是面板上的順序（數字鍵 1～6）。
  */
 export const MODES = [
   { id: 'minions', name: '3 殭屍', hint: '三隻殭屍。', monsters: [post('minion', -4), post('minion', 0), post('minion', 4)] },
   { id: 'boss', name: '1 BOSS', hint: '一隻兩倍大的 BOSS。', monsters: [post('boss', 0)] },
   {
-    id: 'wraithAir', name: '1 幽靈騎士（對空）', hint: '一隻半透明、會飛的騎士：下劈、上挑、在空中轉一圈。',
-    monsters: [{ ...post('wraith', 0), reap: 'air' }],
-  },
-  {
-    id: 'wraithGround', name: '1 幽靈騎士（對地）', hint: '一隻半透明、會飛的騎士：下劈、在地上轉一圈、上挑。',
-    monsters: [{ ...post('wraith', 0), reap: 'ground' }],
-  },
-  {
-    id: 'wraiths', name: '2 幽靈騎士', hint: '兩隻幽靈騎士：左邊對空、右邊對地。',
-    monsters: [{ ...post('wraith', -4), reap: 'air' }, { ...post('wraith', 4), reap: 'ground' }],
+    id: 'wraith', name: '1 幽靈騎士',
+    hint: '一隻半透明、會飛的騎士，兩套連斬：下劈、上挑、在空中轉一圈（對空），或下劈、在地上轉一圈、上挑（對地）。',
+    monsters: [post('wraith', 0)],
   },
   { id: 'ghosts', name: '3 幽靈', hint: '三隻半透明、會飛的幽靈。', monsters: [post('ghost', -4), post('ghost', 0), post('ghost', 4)] },
   { id: 'knight', name: '1 騎士', hint: '一隻咬著雙刃劍、1.2 倍高的騎士。', monsters: [post('knight', 0)] },
@@ -141,7 +130,7 @@ export const MODES = [
 ];
 
 /** 一開始是哪一個陣容。 */
-export const DEFAULT_MODE = 'wraithAir';
+export const DEFAULT_MODE = 'wraith';
 
 /**
  * 站位：玩家在中線 2/3；`monsters` 是標準陣容——大隻的 BOSS 在中線上、兩隻殭屍在左右各 4 公尺
@@ -189,8 +178,9 @@ export const FIELD = { arena: ARENA, cols: COLS, doors: {} };
  *           衝刺跟小怪一樣一打就取消（不是 `steady`）。每 `every` 秒從 `skills`
  *           裡挑一招（skills.js），夠得到才放。
  *   wraith  幽靈騎士（騎士那一身，穿幽靈那一件、半透明）。數值跟騎士一樣，也掉靈魂；差別是招比較慢（`every`），
- *           `fly`（跟幽靈一樣不受重力），招只有一套連斬（skills.js 的 reap：下劈、上挑、
- *           在空中原地轉一圈，三下連著）。衝刺咬人照常。
+ *           `fly`（跟幽靈一樣不受重力），招只有兩套連斬（skills.js 的 reapAir：下劈、上挑、
+ *           在空中原地轉一圈；reapGround：下劈、在地上原地轉一圈、上挑。三下連著），每次各一半。
+ *           衝刺咬人照常。
  *   king  國王（垂耳狗，幽靈那一件毛、半透明，畫成 1.4 倍高）。血 40、腳程 3.8，走路、
  *           受重力。`lunges`：一次衝刺衝兩下才僵直（見 LUNGE）。`shields`：身邊幾面盾，
  *           每 `shieldEvery` 秒沒挨打補一面（見 parry）。衝刺跟小怪一樣一打就取消。每 `every`
@@ -209,7 +199,7 @@ export const KINDS = {
   boss: { name: 'BOSS', hp: 20, speed: 4, breakAt: BREAK_AT, bite: 3, soul: true, steady: true, skills: ['orb', 'leap', 'cone'], every: 3 },
   ghost: { name: '幽靈', hp: 4, speed: 3.4, breakAt: BREAK_AT, bite: 1, fly: true },
   knight: { name: '騎士', hp: 10, speed: 3.6, breakAt: BREAK_AT, bite: 2, soul: true, skills: ['whirl', 'cleave'], every: 3 },
-  wraith: { name: '幽靈騎士', hp: 10, speed: 3.6, breakAt: BREAK_AT, bite: 2, soul: true, fly: true, skills: ['reap'], every: 4 },
+  wraith: { name: '幽靈騎士', hp: 10, speed: 3.6, breakAt: BREAK_AT, bite: 2, soul: true, fly: true, skills: ['reapAir', 'reapGround'], every: 4 },
   king: { name: '國王', hp: 40, speed: 3.8, breakAt: BREAK_AT, bite: 2, lunges: 2, shields: 3, shieldEvery: 8, skills: ['hew', 'summon', 'gale'], every: 3 },
 };
 

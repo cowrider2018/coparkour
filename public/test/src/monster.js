@@ -72,11 +72,11 @@
             上挑落地之後的僵直結束。
 
    ── 幽靈騎士放招的動作 ──────────────────────────────────────────
-     reap   連斬：倒數、跳過去、劈到底翻頭都是騎士跳砍那一套（cleaveWind、cleaveAir、cleaveLand）。
+     reapAir、reapGround   兩套連斬：倒數、跳過去、劈到底翻頭都是騎士跳砍那一套（cleaveWind、cleaveAir、cleaveLand）。
             上挑（reapUp）是騎士的上挑去掉落地的收尾：升到頂點停在那一格；轉（reapSpin）是
             主角落地那一下（一圈），劍水平伸在外面。對空的先上挑再在空中轉，對地的先在地上轉再上挑
             （skills.js 的 REAP）。僵直跟國王旋風斬的一樣是停在最後一下打完的那一格（對空的是轉完，
-            reapRec；對地的是上挑到頂，reapUpRec）STILL.before 秒，然後一邊甩頭一邊回來，回來之後
+            reapAirRec；對地的是上挑到頂，reapGroundRec）STILL.before 秒，然後一邊甩頭一邊回來，回來之後
             STILL.after 秒沒有動作——都在空中。
 
    ── 國王放招的動作 ──────────────────────────────────────────────
@@ -427,11 +427,11 @@ export const MOVES = {
   },
   /* 幽靈騎士的連斬：上挑是騎士那一套，只是不落地——沒有回到原本樣子的那一格，停在升到頂點那一格；
      轉是主角落地那一下（一圈）。兩下誰先看 REAP，前一下打完就接下一下。僵直停在最後一下打完的
-     那一格不動，再一邊甩一邊回來：對空的最後是轉（reapRec），對地的最後是上挑（reapUpRec）。 */
+     那一格不動，再一邊甩一邊回來：對空的最後是轉（reapAirRec），對地的最後是上挑（reapGroundRec）。 */
   reapUp: { blend: 0.03, keys: HERO.rise.keys.slice(0, -1).map(([t, pose, ease]) => [t, mirror(pose), ease]) },
   reapSpin: HERO.slam,
-  reapRec: { blend: 0.02, keys: shakeKeys(recoverOf('reap'), SPIN_END, [[0, SPIN_END]]) },
-  reapUpRec: { blend: 0.02, keys: shakeKeys(recoverOf('reap'), UP_END, [[0, UP_END]]) },
+  reapAirRec: { blend: 0.02, keys: shakeKeys(recoverOf('reapAir'), SPIN_END, [[0, SPIN_END]]) },
+  reapGroundRec: { blend: 0.02, keys: shakeKeys(recoverOf('reapGround'), UP_END, [[0, UP_END]]) },
   /* 國王的直線劈砍：騎士跳砍的蓄力（cleaveWind 那幾格），不跳，最後 CHOP_LEAD 秒直接甩下去；
      收尾是騎士落地劈到底那一格（CHOP，頭朝地面），整段僵直停在那裡不動。 */
   hewWind: {
@@ -470,9 +470,8 @@ const DASH_HOP = 0.25;
 export class Motion {
   constructor() {
     this.mover = new Mover(MOVES, (phase, t) => [phase, t]);
-    /** 上一次在放哪一招，與出招之後的僵直播哪一段收尾（MOVES 的鍵；連斬看最後一下是哪一下）。 */
+    /** 上一次在放哪一招：出招之後的僵直播它的收尾。 */
     this._skill = null;
-    this._rec = null;
     /** 頭跟著主角轉的那一份現在有多少（0～1，追 LOOK.stages 給的目標）。 */
     this._look = 0;
     /** 漂的力道（0～1，追速度）與擺到哪（弳）。 */
@@ -555,7 +554,6 @@ export class Motion {
     const c = m.cast;
     if (c) {
       this._skill = c.skill;
-      this._rec = `${c.skill}Rec`;
       if (c.skill === 'leap' && c.t >= LEAP_WIND) return ['leapAir', c.t - LEAP_WIND];
       if (c.skill === 'whirl' && c.t >= SKILL.whirl.windup) return ['whirlDash', c.t - SKILL.whirl.windup];
       if (c.skill === 'gale' && c.t >= SKILL.gale.windup) return ['galeSpin', c.t - SKILL.gale.windup];
@@ -563,21 +561,20 @@ export class Motion {
         const S = SKILL.cleave, u = c.t - S.windup - S.air - S.up.gap;
         return u < 0 ? ['cleaveLand', u + S.up.gap] : ['cleaveUp', u];
       }
-      if (c.skill === 'reap' && c.up) {
-        const S = SKILL.cleave, P = REAP[c.reap], u = c.t - S.windup - S.air - S.up.gap;
-        this._rec = P.up > P.spin ? 'reapUpRec' : 'reapRec';
+      if (REAP[c.skill] && c.up) {
+        const S = SKILL.cleave, P = REAP[c.skill], u = c.t - S.windup - S.air - S.up.gap;
         if (u < 0) return ['cleaveLand', u + S.up.gap];
         if (P.up < P.spin) return u < P.spin ? ['reapUp', u] : ['reapSpin', u - P.spin];
         return u < P.up ? ['reapSpin', u] : ['reapUp', u - P.up];
       }
       // 連斬的前一半就是跳砍：倒數與飛過去播騎士那兩段。
-      if (c.skill === 'reap') return c.t >= SKILL.cleave.windup ? ['cleaveAir', c.t - SKILL.cleave.windup] : ['cleaveWind', c.t];
+      if (REAP[c.skill]) return c.t >= SKILL.cleave.windup ? ['cleaveAir', c.t - SKILL.cleave.windup] : ['cleaveWind', c.t];
       if (c.skill === 'cleave' && c.t >= SKILL.cleave.windup) return ['cleaveAir', c.t - SKILL.cleave.windup];
       return MOVES[`${c.skill}Wind`] ? [`${c.skill}Wind`, c.t] : [null, 0];
     }
     // 跳砍的僵直接著播上挑那一套的收尾。
     if (m.stun > 0 && this._skill === 'cleave') return ['cleaveUp', UP_AIR + SKILL.recover - m.stun];
-    if (m.stun > 0 && MOVES[this._rec]) return [this._rec, recoverOf(this._skill) - m.stun];
+    if (m.stun > 0 && MOVES[`${this._skill}Rec`]) return [`${this._skill}Rec`, recoverOf(this._skill) - m.stun];
     const L = m.lunge;
     if (!L) return [null, 0];
     if (L.t < LUNGE.windup) return ['windup', L.t];

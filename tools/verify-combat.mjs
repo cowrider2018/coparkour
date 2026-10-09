@@ -716,20 +716,10 @@ console.log('13. 怪物不疊');
 console.log('14. 陣容');
 {
   const tally = (md) => md.monsters.reduce((o, s) => ({ ...o, [s.kind]: (o[s.kind] || 0) + 1 }), {});
-  const want = {
-    minions: { minion: 3 }, boss: { boss: 1 }, wraithAir: { wraith: 1 }, wraithGround: { wraith: 1 }, wraiths: { wraith: 2 },
-    ghosts: { ghost: 3 }, knight: { knight: 1 }, king: { king: 1 },
-  };
-  ok(MODES.map((md) => md.id).join() === 'minions,boss,wraithAir,wraithGround,wraiths,ghosts,knight,king',
-    '八種陣容，面板上依序是 3 殭屍、1 BOSS、1 幽靈騎士（對空）、1 幽靈騎士（對地）、2 幽靈騎士、3 幽靈、1 騎士、1 國王');
+  const want = { minions: { minion: 3 }, boss: { boss: 1 }, wraith: { wraith: 1 }, ghosts: { ghost: 3 }, knight: { knight: 1 }, king: { king: 1 } };
+  ok(MODES.map((md) => md.id).join() === 'minions,boss,wraith,ghosts,knight,king', '六種陣容，面板上依序是 3 殭屍、1 BOSS、1 幽靈騎士、3 幽靈、1 騎士、1 國王');
   for (const md of MODES) ok(JSON.stringify(tally(md)) === JSON.stringify(want[md.id]), `${md.name}：${JSON.stringify(tally(md))}`);
-  ok(DEFAULT_MODE === 'wraithAir' && MODES[2].id === DEFAULT_MODE, '預設是 1 幽靈騎士（對空，第三種）');
-  {
-    const reaps = (id) => MODES.find((md) => md.id === id).monsters.map((s) => `${s.reap}@${s.x - (ARENA.x0 + ARENA.x1) / 2}`).join();
-    // 玩家面朝 −z：左手邊是 −x。
-    ok(near(SPAWN.player.yaw, Math.PI) && reaps('wraithAir') === 'air@0' && reaps('wraithGround') === 'ground@0' && reaps('wraiths') === 'air@-4,ground@4',
-      '幽靈騎士三關：對空一隻、對地一隻、兩隻（玩家看過去左邊對空、右邊對地）');
-  }
+  ok(DEFAULT_MODE === 'wraith' && MODES[2].id === DEFAULT_MODE, '預設是 1 幽靈騎士（第三種）');
   ok(SPAWN.monsters.map((s) => s.kind).join() === 'boss,minion,minion' && MODES.every((md) => md.monsters !== SPAWN.monsters),
     '標準陣容（離線驗證用）還是 BOSS 加兩隻殭屍，但面板上沒有這一種');
   const cx = (ARENA.x0 + ARENA.x1) / 2, cz = (ARENA.z0 + ARENA.z1) / 2;
@@ -2946,27 +2936,34 @@ console.log('34. 獻靈魂');
 console.log('35. 幽靈騎士');
 {
   const W = KINDS.wraith, K = KINDS.knight;
-  ok(['hp', 'speed', 'breakAt', 'bite', 'soul'].every((k) => W[k] === K[k]) && W.every === 4 && W.fly && W.skills.join() === 'reap',
-    `數值跟騎士一樣（血 ${W.hp}、腳程 ${W.speed}、咬 ${W.bite}、掉靈魂），每 ${W.every} 秒一招，會飛，招只有連斬`);
+  ok(['hp', 'speed', 'breakAt', 'bite', 'soul'].every((k) => W[k] === K[k]) && W.every === 4 && W.fly && W.skills.join() === 'reapAir,reapGround',
+    `數值跟騎士一樣（血 ${W.hp}、腳程 ${W.speed}、咬 ${W.bite}、掉靈魂），每 ${W.every} 秒一招，會飛，招只有兩套連斬`);
   ok(sizeOf('wraith') === sizeOf('knight') && bloodOf('wraith') === 'ecto' && swordOf('wraith') === 'knight' && helmOf('wraith'),
     '畫成跟騎士一樣高、咬騎士的劍、戴頭盔，噴的是幽靈的靈質');
-  ok(SKILL.reap.range === SKILL.cleave.range && SKILL.reap.spin === TRAILS.slam.t1 && SKILL.reap.swing === SWING,
-    `連斬跟跳砍一樣 ${SKILL.reap.range} 公尺以內才放；轉一圈 ${SKILL.reap.spin} 秒（主角第三擊那一圈），前 ${SWING} 秒打得到`);
+  const R = SKILL.reapAir;
+  ok(SKILL.reapGround === R && R.range === SKILL.cleave.range && R.spin === TRAILS.slam.t1 && R.swing === SWING,
+    `兩套連斬數值一樣：跟跳砍一樣 ${R.range} 公尺以內才放；轉一圈 ${R.spin} 秒（主角第三擊那一圈），前 ${SWING} 秒打得到`);
+  {
+    const n = { reapAir: 0, reapGround: 0 };
+    for (let i = 0; i < 1000; i++) n[pickSkill(W.skills, (i + 0.5) / 1000)]++;
+    ok(n.reapAir === 500 && n.reapGround === 500, `每次放招兩套各一半：對空 ${n.reapAir / 10}%、對地 ${n.reapGround / 10}%`);
+  }
 
-  const S = SKILL.cleave, U = S.up, R = SKILL.reap, y0 = 1.5;
-  ok(REAP.air.up === 0 && REAP.air.spin === UP_RISE && REAP.ground.spin === 0 && REAP.ground.up === R.spin
-    && REAP.air.end === REAP.ground.end && near(REAP.air.end, UP_RISE + R.spin),
-    `後兩下兩種順序：對空先上挑再轉、對地先轉再上挑，一樣 ${REAP.air.end.toFixed(2)} 秒打完`);
-  /** 一隻站位 `reap` 是 order 的幽靈騎士從空中放一次連斬（玩家在前面 5 公尺），記下每一下與動作的每一段。 */
-  const run = (order) => {
-    const m = makeMonster({ kind: 'wraith', x: 0, y: y0, z: 0, yaw: 0, ...(order && { reap: order }) });
+  const S = SKILL.cleave, U = S.up, y0 = 1.5, A = REAP.reapAir, G = REAP.reapGround;
+  ok(Object.keys(REAP).join() === W.skills.join() && A.up === 0 && A.spin === UP_RISE && G.spin === 0 && G.up === R.spin
+    && A.end === G.end && near(A.end, UP_RISE + R.spin),
+    `後兩下兩種順序：對空先上挑再轉、對地先轉再上挑，一樣 ${A.end.toFixed(2)} 秒打完`);
+  /** 一隻幽靈騎士從空中放一次連斬（挑招的亂數給 r：0 挑到對空、0.99 挑到對地；玩家在前面 5 公尺），記下每一下與動作的每一段。 */
+  const run = (r) => {
+    const m = makeMonster({ kind: 'wraith', x: 0, y: y0, z: 0, yaw: 0 });
     const w = makeWorld(), q = body(0, 5), mo = new Motion();
     m.castT = 0;
     const strikes = [], stages = [], stun = [];
-    let t = 0, end = null, wind = true;
+    let t = 0, end = null, wind = true, skill = null;
     while (t < 4 && !end) {
       const had = !!m.cast;
-      const st = bossStep(m, DT, q, w, () => 0);
+      const st = bossStep(m, DT, q, w, () => r);
+      skill ??= m.cast?.skill;
       t += DT;
       if (st) strikes.push({ ...st, at: t });
       if (m.cast && m.cast.t < S.windup && (m.x !== 0 || m.z !== 0 || m.y !== y0)) wind = false;
@@ -2975,16 +2972,17 @@ console.log('35. 幽靈騎士');
       monsterStep(m, DT, q);
     }
     let still = true;
-    for (let i = 0; i < Math.round(recoverOf('reap') / DT) - 1; i++) { monsterStep(m, DT, q); if (!near(m.y, end.y, 1e-6)) still = false; }
+    for (let i = 0; i < Math.round(recoverOf(skill) / DT) - 1; i++) { monsterStep(m, DT, q); if (!near(m.y, end.y, 1e-6)) still = false; }
     const of = (shape) => strikes.filter((x) => x.shape === shape);
-    return { strips: of('strip'), fans: of('fan'), discs: of('capsule'), stages, stun, end, wind, still };
+    return { skill, strips: of('strip'), fans: of('fan'), discs: of('capsule'), stages, stun, end, wind, still };
   };
   const land = 5 - S.len / 2, upAt = S.windup + S.air + U.gap, apex = PHYS.jump ** 2 / (2 * PHYS.gravity);
 
-  console.log('  對空（沒寫 reap 的站位）');
+  console.log('  對空（reapAir）');
   {
-    const { strips, fans, discs, stages, stun, end, wind, still } = run();
-    ok(wind, `倒數的 ${S.windup} 秒在空中（${y0} 公尺）站著不動`);
+    const { skill, strips, fans, discs, stages, stun, end, wind, still } = run(0);
+    ok(skill === 'reapAir', `挑到的是 ${skill}`);
+    ok(wind,`倒數的 ${S.windup} 秒在空中（${y0} 公尺）站著不動`);
     ok(strips.length === 1 && strips[0].y === 0 && near(strips[0].z, land) && strips[0].dmg === S.damage && near(strips[0].at, S.windup + S.air, 1.5 * DT),
       `從空中沿跳砍那一道弧線落到地上，${strips[0].at.toFixed(2)} 秒劈那一條（跟騎士同一條、扣 ${S.damage}）`);
     ok(fans.length && near(fans[0].at, upAt, 1.5 * DT) && near(fans.at(-1).at, upAt + U.swing, 1.5 * DT) && fans.every((f) => f.dmg === U.damage),
@@ -2993,8 +2991,8 @@ console.log('35. 幽靈騎士');
       && discs.every((d) => near(d.y, apex, 1e-6) && near(d.waist, apex + R.waist, 1e-6) && d.r === R.radius && d.dmg === R.damage),
       `升到頂點（${apex.toFixed(2)} 公尺）不落下，${discs[0].at.toFixed(2)} 秒接著在那裡轉：腰 ${(apex + R.waist).toFixed(2)} 公尺高、半徑 ${R.radius.toFixed(2)}、扣 ${R.damage}`);
     ok(stun.every((x) => x === 0), '三下之間沒有僵直');
-    ok(end && near(end.at, upAt + REAP.air.end, 1.5 * DT) && near(end.y, apex, 1e-6) && end.stun === recoverOf('reap') && end.rec === 'reapRec',
-      `轉完（${end.at.toFixed(2)} 秒）才僵直 ${recoverOf('reap')} 秒，停在 ${end.y.toFixed(2)} 公尺的空中，從轉完那一格甩頭`);
+    ok(end && near(end.at, upAt + A.end, 1.5 * DT) && near(end.y, apex, 1e-6) && end.stun === recoverOf('reapAir') && end.rec === 'reapAirRec',
+      `轉完（${end.at.toFixed(2)} 秒）才僵直 ${recoverOf('reapAir')} 秒，停在 ${end.y.toFixed(2)} 公尺的空中，從轉完那一格甩頭`);
     ok(stages.join() === 'cleaveWind,cleaveAir,cleaveLand,reapUp,reapSpin', `動作：${stages.join(' → ')} → ${end.rec}`);
     ok(still, '僵直的時候停在空中，不往下掉');
 
@@ -3005,9 +3003,10 @@ console.log('35. 幽靈騎士');
     ok(strikeHits(fans[0], body(0, 5)), '上挑跟騎士同一片：站在劈的那一點上被挑到');
   }
 
-  console.log('  對地');
+  console.log('  對地（reapGround）');
   {
-    const { strips, fans, discs, stages, stun, end, still } = run('ground');
+    const { skill, strips, fans, discs, stages, stun, end, still } = run(0.99);
+    ok(skill === 'reapGround', `挑到的是 ${skill}`);
     ok(strips.length === 1 && near(strips[0].z, land) && near(strips[0].at, S.windup + S.air, 1.5 * DT), '下劈跟對空的一樣');
     ok(discs.length && near(discs[0].at, upAt, 1.5 * DT) && near(discs.at(-1).at, upAt + R.swing, 1.5 * DT)
       && discs.every((d) => d.y === 0 && near(d.waist, R.waist, 1e-6) && d.r === R.radius && d.dmg === R.damage),
@@ -3016,8 +3015,8 @@ console.log('35. 幽靈騎士');
       && fans.every((f) => f.dmg === U.damage),
       `轉完緊接著上挑：${fans[0].at.toFixed(2)}～${fans.at(-1).at.toFixed(2)} 秒打`);
     ok(stun.every((x) => x === 0), '三下之間沒有僵直');
-    ok(end && near(end.at, upAt + REAP.ground.end, 1.5 * DT) && near(end.y, apex, 1e-6) && end.stun === recoverOf('reap') && end.rec === 'reapUpRec',
-      `上挑升到頂點（${end.at.toFixed(2)} 秒）才僵直 ${recoverOf('reap')} 秒，停在 ${end.y.toFixed(2)} 公尺的空中，從上挑到頂那一格甩頭`);
+    ok(end && near(end.at, upAt + G.end, 1.5 * DT) && near(end.y, apex, 1e-6) && end.stun === recoverOf('reapGround') && end.rec === 'reapGroundRec',
+      `上挑升到頂點（${end.at.toFixed(2)} 秒）才僵直 ${recoverOf('reapGround')} 秒，停在 ${end.y.toFixed(2)} 公尺的空中，從上挑到頂那一格甩頭`);
     ok(stages.join() === 'cleaveWind,cleaveAir,cleaveLand,reapSpin,reapUp', `動作：${stages.join(' → ')} → ${end.rec}`);
     ok(still, '僵直的時候停在空中，不往下掉');
 
@@ -3032,10 +3031,10 @@ console.log('35. 幽靈騎士');
 /* ── 36. 甩頭前後不動 ────────────────────────────────────────── */
 console.log('36. 甩頭前後不動');
 {
-  ok(STILL.before === 0.15 && STILL.after === 0.1 && near(recoverOf('reap'), STILL.before + SKILL.recover + STILL.after),
-    `連斬轉完的僵直 ${recoverOf('reap')} 秒：多出甩之前不動的 ${STILL.before} 秒與甩完沒有動作的 ${STILL.after} 秒`);
+  ok(STILL.before === 0.15 && STILL.after === 0.1 && near(recoverOf('reapAir'), STILL.before + SKILL.recover + STILL.after),
+    `連斬打完的僵直 ${recoverOf('reapAir')} 秒：多出甩之前不動的 ${STILL.before} 秒與甩完沒有動作的 ${STILL.after} 秒`);
   const KM = KNIGHT_MOVES;
-  for (const [name, T] of [['recover', LUNGE.recover], ['reapRec', recoverOf('reap')], ['reapUpRec', recoverOf('reap')], ['galeRec', recoverOf('gale')]]) {
+  for (const [name, T] of [['recover', LUNGE.recover], ['reapAirRec', recoverOf('reapAir')], ['reapGroundRec', recoverOf('reapGround')], ['galeRec', recoverOf('gale')]]) {
     // 停著的那一段是同一個姿勢的兩格；之後每一格都在甩（姿勢都不一樣）。
     const keys = KM[name].keys, i = keys.findIndex((k, j) => j && k[1] === keys[j - 1][1]);
     const [a, b] = [keys[i - 1], keys[i]];

@@ -58,11 +58,9 @@ const ring = (kind, n, r, cx = 0, cz = 0, a0 = 0) => Array.from({ length: n }, (
 /**
  * 墓室的六隻：兩排石棺各取北邊三具（最南那一對離鐵閘太近，一進門就貼著人），一具一隻，站在棺蓋上、
  * 面朝鐵閘。最北那一對（墓室末端、大墓前）是幽靈騎士，其餘是幽靈。都從棺材裡升上來（rise）。
- * 兩隻幽靈騎士從鐵閘走進來看（面朝 +z，左手邊是 +x）：左邊那隻對空、右邊那隻對地（skills.js 的 REAP）。
  */
 const tomb = () => COFFINS.filter((c) => c.i > 0).map((c) => ({
   kind: c.i === 3 ? 'wraith' : 'ghost', x: c.x, y: c.top, z: c.z, yaw: Math.PI, rise: true,
-  ...(c.i === 3 && { reap: c.x > 0 ? 'air' : 'ground' }),
 }));
 
 export const STAGES = [

@@ -104,10 +104,6 @@ STAGES.forEach((s, k) => {
   ok(foes.filter((f) => f.kind === 'wraith').every((f) => f.z === far) && foes.filter((f) => f.kind === 'wraith').length === 2
     && foes.filter((f) => f.kind === 'ghost').length === 4,
     `地下墓室：末端（z = ${far.toFixed(1)}）那兩隻是幽靈騎士，其餘四隻是幽靈`);
-  // 從鐵閘走進來面朝 +z：左手邊是 +x。
-  const [left, right] = foes.filter((f) => f.kind === 'wraith').sort((a, b) => b.x - a.x);
-  ok(left.x > 0 && right.x < 0 && left.reap === 'air' && right.reap === 'ground',
-    '地下墓室：從鐵閘看過去，左邊的幽靈騎士對空、右邊的對地');
 }
 
 /* ── 2. 觸發 ─────────────────────────────────────────────────── */
