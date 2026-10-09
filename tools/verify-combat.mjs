@@ -36,7 +36,7 @@
                     瞬間牠被往突進的方向推開（只有水平）；整招無敵；在空中也
                     按得出來——被第二段打破防的那一刻玩家就在空中，接得上。
     13. 怪物不疊    三隻追同一個站著不動的人，身體一直不重疊、不出牆。
-    14. 陣容        六種陣容：3 殭屍、1 BOSS、2 殭屍 + 1 BOSS、3 幽靈、1 騎士、1 國王，預設是第三種；
+    14. 陣容        六種陣容：3 殭屍、1 BOSS、1 幽靈騎士、3 幽靈、1 騎士、1 國王，預設是第三種；
                     每一隻都在中線 1/3 那條橫線上、面向中心，不疊在一起。
     15. BOSS 放招   腳程 4；每 3 秒挑一招，挑的那一刻鎖定玩家的位置，放招中站著
                     不動；被擊退、定住、推開就打斷。球：倒數 0.75 秒、半徑 0.75
@@ -716,10 +716,12 @@ console.log('13. 怪物不疊');
 console.log('14. 陣容');
 {
   const tally = (md) => md.monsters.reduce((o, s) => ({ ...o, [s.kind]: (o[s.kind] || 0) + 1 }), {});
-  const want = { minions: { minion: 3 }, boss: { boss: 1 }, mixed: { boss: 1, minion: 2 }, ghosts: { ghost: 3 }, knight: { knight: 1 }, wraith: { wraith: 1 }, king: { king: 1 } };
-  ok(MODES.map((md) => md.id).join() === 'minions,boss,mixed,ghosts,knight,wraith,king', '七種陣容，面板上依序是 3 殭屍、1 BOSS、2 殭屍 + 1 BOSS、3 幽靈、1 騎士、1 幽靈騎士、1 國王');
+  const want = { minions: { minion: 3 }, boss: { boss: 1 }, wraith: { wraith: 1 }, ghosts: { ghost: 3 }, knight: { knight: 1 }, king: { king: 1 } };
+  ok(MODES.map((md) => md.id).join() === 'minions,boss,wraith,ghosts,knight,king', '六種陣容，面板上依序是 3 殭屍、1 BOSS、1 幽靈騎士、3 幽靈、1 騎士、1 國王');
   for (const md of MODES) ok(JSON.stringify(tally(md)) === JSON.stringify(want[md.id]), `${md.name}：${JSON.stringify(tally(md))}`);
-  ok(DEFAULT_MODE === 'mixed' && SPAWN.monsters === MODES[2].monsters, '預設是 2 殭屍 + 1 BOSS');
+  ok(DEFAULT_MODE === 'wraith' && MODES[2].id === DEFAULT_MODE, '預設是 1 幽靈騎士（第三種）');
+  ok(SPAWN.monsters.map((s) => s.kind).join() === 'boss,minion,minion' && MODES.every((md) => md.monsters !== SPAWN.monsters),
+    '標準陣容（離線驗證用）還是 BOSS 加兩隻殭屍，但面板上沒有這一種');
   const cx = (ARENA.x0 + ARENA.x1) / 2, cz = (ARENA.z0 + ARENA.z1) / 2;
   const row = ARENA.z0 + (ARENA.z1 - ARENA.z0) / 3;
   const good = MODES.every((md) => md.monsters.every((s, i) => near(s.z, row)

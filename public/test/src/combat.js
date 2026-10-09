@@ -16,10 +16,9 @@
 
      3 殭屍          中線上一隻、左右各 4 公尺一隻。
      1 BOSS          中線上。
-     2 殭屍 + 1 BOSS BOSS 在中線上，殭屍在左右各 4 公尺（預設）。
+     1 幽靈騎士      中線上（預設）。
      3 幽靈          跟 3 殭屍同樣的站位。
      1 騎士          中線上。
-     1 幽靈騎士      中線上。
      1 國王          中線上。
 
    ── 怪物 ────────────────────────────────────────────────────────
@@ -115,28 +114,28 @@ const post = (kind, dx) => {
 
 /**
  * 陣容：右邊那塊面板上選的。每一種是一張怪物站位的清單，一隻一筆，帶著牠是
- * 哪一類（KINDS 的鍵）。順序就是面板上的順序（數字鍵 1～3）。
+ * 哪一類（KINDS 的鍵）。順序就是面板上的順序（數字鍵 1～6）。
  */
 export const MODES = [
   { id: 'minions', name: '3 殭屍', hint: '三隻殭屍。', monsters: [post('minion', -4), post('minion', 0), post('minion', 4)] },
   { id: 'boss', name: '1 BOSS', hint: '一隻兩倍大的 BOSS。', monsters: [post('boss', 0)] },
-  { id: 'mixed', name: '2 殭屍 + 1 BOSS', hint: '大隻的 BOSS 在中間，兩隻殭屍在左右。', monsters: [post('boss', 0), post('minion', -4), post('minion', 4)] },
+  { id: 'wraith', name: '1 幽靈騎士', hint: '一隻半透明、會飛的騎士：下劈、上挑、在空中轉一圈。', monsters: [post('wraith', 0)] },
   { id: 'ghosts', name: '3 幽靈', hint: '三隻半透明、會飛的幽靈。', monsters: [post('ghost', -4), post('ghost', 0), post('ghost', 4)] },
   { id: 'knight', name: '1 騎士', hint: '一隻咬著雙刃劍、1.2 倍高的騎士。', monsters: [post('knight', 0)] },
-  { id: 'wraith', name: '1 幽靈騎士', hint: '一隻半透明、會飛的騎士：下劈、上挑、在空中轉一圈。', monsters: [post('wraith', 0)] },
   { id: 'king', name: '1 國王', hint: '一隻戴王冠、半透明、1.4 倍高的國王，身邊三面盾。', monsters: [post('king', 0)] },
 ];
 
 /** 一開始是哪一個陣容。 */
-export const DEFAULT_MODE = 'mixed';
+export const DEFAULT_MODE = 'wraith';
 
 /**
- * 站位：玩家在中線 2/3；`monsters` 是預設陣容的那一張（離線驗證拿它當標準
- * 陣容用）。yaw 是 atan2(x, z) 那一種。
+ * 站位：玩家在中線 2/3；`monsters` 是標準陣容——大隻的 BOSS 在中線上、兩隻殭屍在左右各 4 公尺
+ * （離線驗證拿它當標準陣容用，makeMonster 不給站位就是那隻 BOSS）。面板上已經沒有這一種了。
+ * yaw 是 atan2(x, z) 那一種。
  */
 export const SPAWN = {
   player: { x: MID_X, z: onMidline(2 / 3), yaw: Math.PI },
-  monsters: MODES.find((md) => md.id === DEFAULT_MODE).monsters,
+  monsters: [post('boss', 0), post('minion', -4), post('minion', 4)],
 };
 
 /**
