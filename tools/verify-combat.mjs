@@ -2859,7 +2859,7 @@ console.log('33. 旋風斬');
     let shook = 0;
     for (let i = 3; i < gr.length - 1; i++) if (Math.sign(gr[i][1].headYaw) !== Math.sign(gr[i - 1][1].headYaw)) shook++;
     ok(near(gr[gr.length - 1][0], S.recover) && Object.keys(gr[gr.length - 1][1]).length === 0 && shook >= 2,
-      `僵直 ${S.recover} 秒：不動 ${STILL} 秒之後甩頭（左右換邊 ${shook} 次），最後回到原本的樣子`);
+      `僵直 ${S.recover} 秒：不動 ${STILL.before} 秒之後甩頭（左右換邊 ${shook} 次），最後回到原本的樣子`);
   }
   KINDS.king.skills = keep;
 }
@@ -2973,17 +2973,21 @@ console.log('35. 幽靈騎士');
   ok(strikeHits(fans[0], body(0, 5)), '上挑跟騎士同一片：站在劈的那一點上被挑到');
 }
 
-/* ── 36. 甩頭前不動 ──────────────────────────────────────────── */
-console.log('36. 甩頭前不動');
+/* ── 36. 甩頭前後不動 ────────────────────────────────────────── */
+console.log('36. 甩頭前後不動');
 {
-  ok(STILL === 0.25 && recoverOf('reap') === STILL + SKILL.recover, `連斬轉完的僵直 ${recoverOf('reap')} 秒：多出甩之前不動的 ${STILL} 秒`);
+  ok(STILL.before === 0.15 && STILL.after === 0.1 && near(recoverOf('reap'), STILL.before + SKILL.recover + STILL.after),
+    `連斬轉完的僵直 ${recoverOf('reap')} 秒：多出甩之前不動的 ${STILL.before} 秒與甩完沒有動作的 ${STILL.after} 秒`);
   const KM = KNIGHT_MOVES;
   for (const [name, T] of [['recover', LUNGE.recover], ['reapRec', recoverOf('reap')], ['galeRec', recoverOf('gale')]]) {
     // 停著的那一段是同一個姿勢的兩格；之後每一格都在甩（姿勢都不一樣）。
     const keys = KM[name].keys, i = keys.findIndex((k, j) => j && k[1] === keys[j - 1][1]);
     const [a, b] = [keys[i - 1], keys[i]];
-    ok(i > 0 && near(b[0] - a[0], STILL) && keys.slice(i + 1).every(([, p], j) => p !== keys[i + j][1]) && near(keys[keys.length - 1][0], T),
-      `${name}：停在 ${a[0].toFixed(2)} 秒那一格完全不動 ${STILL} 秒，${b[0].toFixed(2)} 秒才開始甩，${T} 秒甩完`);
+    const [y, z] = keys.slice(-2), none = (p) => Object.keys(p).length === 0;
+    ok(i > 0 && near(b[0] - a[0], STILL.before) && keys.slice(i + 1, -1).every(([, p], j) => p !== keys[i + j][1]),
+      `${name}：停在 ${a[0].toFixed(2)} 秒那一格完全不動 ${STILL.before} 秒，${b[0].toFixed(2)} 秒才開始甩`);
+    ok(none(y[1]) && none(z[1]) && near(z[0] - y[0], STILL.after) && near(z[0], T),
+      `${name}：${y[0].toFixed(2)} 秒甩完回到原本的樣子，之後 ${STILL.after} 秒沒有動作，${T} 秒僵直結束`);
   }
 }
 

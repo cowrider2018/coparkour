@@ -353,8 +353,11 @@ export const BREAK_ATK = {
 /** 一隻怪物的那一類數值。 */
 export const kindOf = (m) => KINDS[m.kind];
 
-/** 甩頭的僵直（衝刺的、幽靈騎士連斬的、國王旋風斬的）甩之前先完全不動幾秒：打完頓一下才回神。 */
-export const STILL = 0.25;
+/**
+ * 甩頭的僵直（衝刺的、幽靈騎士連斬的、國王旋風斬的）裡沒在甩的時間（秒）：甩之前先完全不動
+ * before 秒（打完頓一下才回神），甩完回到原本的樣子之後再 after 秒沒有任何動作，僵直才結束。
+ */
+export const STILL = { before: 0.15, after: 0.1 };
 
 /**
  * 怪物的衝刺（每一類都一樣）：
@@ -362,12 +365,13 @@ export const STILL = 0.25;
  *   range    追到身體中心相距這麼近就停下來蓄力。
  *   windup   蓄力（發呆）多久（秒）。
  *   speed    衝出去的初速，time 秒內線性減到 0——衝 speed·time/2 = 2.0 公尺。
- *   recover  衝完之後僵直多久，才回去追人：低頭、STILL 秒完全不動，然後甩頭（monster.js）。
+ *   recover  衝完之後僵直多久，才回去追人：低頭、STILL.before 秒完全不動、甩頭，再 STILL.after 秒
+ *            沒有動作（monster.js）。
  *
  * 衝得到的 2.0 比 range 1.8 還長：站著不動的人一定被衝到（牠會衝過頭），
  * 蓄力的時候往旁邊閃開才躲得掉。
  */
-export const LUNGE = { range: 1.8, windup: 0.25, speed: 16, time: 0.25, recover: STILL + 0.5 };
+export const LUNGE = { range: 1.8, windup: 0.25, speed: 16, time: 0.25, recover: STILL.before + 0.5 + STILL.after };
 
 /** 攻擊的長度：2.5 個狗高。每一段都一樣，差的只有角度。 */
 export const REACH = 2.5 * DOG_H;
