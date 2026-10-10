@@ -1,11 +1,11 @@
 /* ── test/src/signpost.js ───────────────────────────────────────────
-   動態路標：主角身邊一圈（主角身高的一半那麼高），這個房間裡每一扇開著的門（route.js 的
+   動態路標：主角身邊一圈（主角身高的 1/4 那麼高），這個房間裡每一扇開著的門（route.js 的
    signposts：門、霧口、井、殘階）一支箭頭指著它，箭頭外面一行小字是通到哪裡
    （還沒去過的寫去那裡的目的）。
    主角走到哪，那一圈跟到哪；換了房間就換一套。
 
-   箭頭照門的高度上下偏：指的那一點是感測區高度的 1/3（門是門檻上半個狗高），從主角身高的
-   一半指過去——站在門前的那一層就是水平的；水窖往窄巷的殘階在上面，箭頭往上翹，窄巷的井
+   箭頭照門的高度上下偏：指的那一點是感測區高度的 1/6（門是門檻上 1/4 個狗高），從主角身高的
+   1/4 指過去——站在門前的那一層就是水平的；水窖往窄巷的殘階在上面，箭頭往上翹，窄巷的井
    在底下，箭頭往下壓。圈本身還是水平的（箭頭排在 xz 平面的一圈上），只有箭頭轉向。
 
    什麼時候有：不在打（模式給 `calm`）、門開著（沒有門的井與殘階一直開著）、主角
@@ -23,8 +23,9 @@ import { PHYS } from './walk.js';
 
 /**
  * 箭頭在離主角中心多遠的那一圈上（公尺，水平量，指的是箭頭的中心）、箭頭多長多寬、字在多遠、
- * 站得多近就不指，淡進淡出幾秒。圈的高度是主角身高的一半（PHYS.height / 2）。
+ * 站得多近就不指，淡進淡出幾秒，以及圈比腳高多少（主角身高的 1/4）。
  */
+const HEIGHT = PHYS.height / 4;
 const RING = 1.0;
 const ARROW = { len: 0.46, half: 0.19, notch: 0.12 };
 const LABEL = 1.6;
@@ -104,7 +105,7 @@ export class Signpost {
     g.font = '600 13px system-ui, "Noto Sans TC", sans-serif';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    const { x, z } = player, y = player.y + PHYS.height / 2;
+    const { x, z } = player, y = player.y + HEIGHT;
     for (const o of this._posts.values()) {
       const dx = o.x - x, dy = o.y - y, dz = o.z - z, h = Math.hypot(dx, dz) || 1, d = Math.hypot(h, dy);
       const hx = dx / h, hz = dz / h;                              // 水平往門：箭頭排在圈上的哪裡
