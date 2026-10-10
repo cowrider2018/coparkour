@@ -225,7 +225,7 @@ function courtyard(B, flames, seed, A) {
      其餘四個拱洞照舊走到黑牆為止。
 
      這兩扇沒有門扇，開著關著拱洞都一樣；看得出能不能走的是主角腳邊的動態路標
-     （signpost.js：開著是金色的箭頭）。感測區是同一扇門（`courtyard-wallwalk`、
+     （signpost.js：開著才有箭頭指著它）。感測區是同一扇門（`courtyard-wallwalk`、
      `courtyard-alley`，跟對面那條路沒入黑霧的那一截共用，按 O）。感測區從拱廊內皮往裡 0.5 起、到黑牆：墩柱之間的拱洞
      淨寬 3.1，狗整隻走進拱洞才被送走。到達點在拱洞前 1.5 公尺、面朝中庭。 */
   const FACE = 12.5;                                   // 拱廊的內皮（x = ±13、深 1.0）

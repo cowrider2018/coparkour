@@ -88,7 +88,7 @@ const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 420);
    地形模式那一片（stage.js）。門不再用 O 開關，由路線決定（`applyDoors`）。 */
 const stage = buildStage(scene, renderer);
 const { ruins, doors, setDoor, arenaAt } = stage;
-/** 主角腳邊指著這個房間每一扇門的箭頭與字（signpost.js）。 */
+/** 主角腳邊指著這個房間每一扇開著的門的箭頭與字（signpost.js）。 */
 const signpost = new Signpost(document.getElementById('signpost'), canvas);
 const COLS = stage.cols;
 /** 光影（light.js）：陰影、火光、霧、後製。 */
@@ -393,7 +393,8 @@ function frame(now) {
     camera.position.set(rig.pos[0], rig.pos[1], rig.pos[2]);
     camera.lookAt(rig.look[0], rig.look[1], rig.look[2]);
   }
-  signpost.show(signposts(ruins.portals, roomOf(player.block, player.y)), doors, player, camera);
+  // 路標只在不打的時候出現（開打的那一刻淡出去）。
+  signpost.show(signposts(ruins.portals, roomOf(player.block, player.y)), doors, player, camera, real, !run.active);
 
   fight.draw(dt, camera, player);
   folk.update(dt, camera, player, player.block);
