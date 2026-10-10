@@ -90,7 +90,7 @@
              高度在身高中間。
    ------------------------------------------------------------------ */
 
-import { PHYS, solveXZ, steer, clampArena, supportInfo, colsNear } from './walk.js';
+import { PHYS, solveXZ, steer, supportInfo, colsNear } from './walk.js';
 import { ROAM } from './roam.js';
 
 /** 狗有多高。攻擊的長度都用它量，所以跟物理的身體是同一個數字。 */
@@ -346,14 +346,70 @@ const flyY = (m, y) => Math.min(m.field.arena.lid - PHYS.height, Math.max(floorA
 
 /**
  * 走路的怪物在地上走完一步：腳跟著地板走——踏上一級就站上去，走出邊緣就掉下去
- * （跟被擊退一樣是 air，落地才回去追人）。會走的招（skills.js 的 whirl）也用它。
+ * （跟被擊退一樣是 air，落地才回去追人）。walkTo 走完叫它。
  */
 export function settle(m) {
-  const f = floorAt(m);
+  const f = supportInfo(nearCols(m), m.x, m.z, m.y).y;
   if (f >= m.y - 0.05) { m.y = f; return; }
   m.air = true;
   m.grounded = false;
   m.vy = 0;
+}
+
+/** 怪物身邊的碰撞體：colsNear 篩過、存在牠身上，走離篩的地方 NEAR.move 公尺才重篩。
+    一步最多走一公尺左右（20 幀的衝刺 0.8），所以 NEAR.r 減掉 NEAR.move 還有兩公尺的餘裕。 */
+const NEAR = { r: 3, move: 1 };
+function nearCols(m) {
+  const c = m.near;
+  if (c && c.field === m.field && Math.abs(m.x - c.x) < NEAR.move && Math.abs(m.z - c.z) < NEAR.move) return c.cols;
+  m.near = { field: m.field, x: m.x, z: m.z, cols: colsNear(m.field.cols, m.x, m.z, m.x, m.z, NEAR.r) };
+  return m.near.cols;
+}
+
+/**
+ * 走路的一步（追人、衝刺、被推開滑行、劍迴旋、互相讓開）：照碰撞走到 (x, z)，會走路的
+ * 腳跟著地板（settle）。
+ *
+ * 有允許區（m.field.roam，見 roam.js）的時候，會走路的怪物站在允許區裡，每一小步就只准
+ * 走到允許區裡：踏空的話看掉下去的地方（照被打飛同一支預跑 landing，只在踏空的那一步跑），
+ * 沒踏空就看走到的地方。不准的那一步不走：先試只走 x、只走 z（沿著邊緣滑），都不行就站住。
+ * 井圈往內、牆頭往外、台子往死角、從石塊與黑牆之間的縫擠出去（碰撞一個一個推，石塊往外推、
+ * 黑牆往內夾，身體就沿著黑牆滑進石塊後面）——對怪物來說都是一道牆。
+ * 被打飛、跳過去也只落在允許區裡，所以會走路的怪物永遠待在允許區裡。
+ */
+export function walkTo(m, x, z) {
+  const fly = !!kindOf(m).fly;
+  const go = (tx, tz) => {
+    const cols = nearCols(m);
+    const [nx, nz] = solveXZ(cols, tx, tz, m.y, m.field.doors);
+    if (!fly && m.field.roam && !safeStep(m, nx, nz, cols)) return false;
+    m.x = nx; m.z = nz;
+    return true;
+  };
+  /* 一步最多 STRIDE：碰撞是把身體推回最近的那一面，一步跨過一道牆（加上身體半徑）的一半，
+     最近的那一面就在另一側。20 幀的衝刺一幀 0.8 公尺，會穿過關著的鐵閘。 */
+  const n = Math.max(1, Math.ceil(Math.hypot(x - m.x, z - m.z) / STRIDE));
+  const sx = (x - m.x) / n, sz = (z - m.z) / n;
+  for (let i = 0; i < n; i++) {
+    const tx = m.x + sx, tz = m.z + sz;
+    if (!(go(tx, tz) || go(tx, m.z) || go(m.x, tz))) break;
+    if (!fly) settle(m);
+    if (m.air) break;
+  }
+}
+
+/** walkTo 一步最多走多遠。比任何碰撞體加上身體半徑之後的半寬（至少一個半徑 0.3）短。 */
+const STRIDE = 0.25;
+
+/** 走到 (x, z) 准不准：落腳的地方（踏空的話是掉下去的地方）在允許區裡。已經不在允許區裡
+    （不該發生）就不攔，讓牠走得回來。 */
+function safeStep(m, x, z, cols) {
+  const roam = m.field.roam;
+  if (!roam.has(m.x, m.y, m.z)) return true;
+  const f = supportInfo(cols, x, z, m.y).y;
+  if (f >= m.y - 0.05) return roam.has(x, f, z);
+  const g = landing({ x, y: m.y, z, vx: m.vx, vy: 0, vz: m.vz, field: m.field });
+  return !!g && roam.has(g.x, g.y, g.z, ROAM.near - SLACK);
 }
 
 /** 破防之後的窗口多長（秒）：亮圓從淡圓的大小縮到消失的時間。 */
@@ -601,9 +657,8 @@ export function monsterStep(m, dt, target) {
     const ns = Math.max(0, sp - BREAK_ATK.push.decel * dt);
     const k = sp > 1e-9 ? ns / sp : 0;
     m.vx *= k; m.vz *= k;
-    [m.x, m.z] = solveXZ(m.field.cols, m.x + m.vx * dt, m.z + m.vz * dt, m.y, m.field.doors);
+    walkTo(m, m.x + m.vx * dt, m.z + m.vz * dt);      // 會飛的在原本的高度滑開
     if (ns <= 0) m.slide = false;
-    if (!kindOf(m).fly) settle(m);      // 會飛的在原本的高度滑開
     return;
   }
   if (m.air && kindOf(m).fly) { driftStep(m, dt); return; }
@@ -644,8 +699,7 @@ export function monsterStep(m, dt, target) {
   } else {
     [m.vx, m.vz] = steer(m.vx, m.vz, m.aimX, m.aimZ, kindOf(m).speed, dt);
   }
-  [m.x, m.z] = solveXZ(m.field.cols, m.x + m.vx * dt, m.z + m.vz * dt, m.y, m.field.doors);
-  if (!fly) settle(m);
+  walkTo(m, m.x + m.vx * dt, m.z + m.vz * dt);
 }
 
 /** 在空中一步多長（見 monsterStep）。預跑落點用的是同一個，所以兩邊一步一步完全一樣。 */
@@ -738,8 +792,7 @@ function lungeStep(m, dt) {
   L.hot = step > 0;
   if (step > 0) {
     if (dy) m.y = flyY(m, m.y + dy * step);
-    [m.x, m.z] = solveXZ(m.field.cols, m.x + L.dirX * step, m.z + L.dirZ * step, m.y, m.field.doors);
-    if (!kindOf(m).fly) settle(m);
+    walkTo(m, m.x + L.dirX * step, m.z + L.dirZ * step);
   }
 }
 
@@ -759,7 +812,10 @@ export function touching(a, b) {
  * 怪物彼此不重疊：兩隻的身體碰在一起（touching），就沿著兩者的連線各退一半，
  * 退到剛好相切。三隻追同一個人，不擋的話會從三個方向收進同一個點、疊成一隻。
  *
- * 被破防攻擊定住的那一隻不動，另一隻退全部；推完夾回黑牆裡面。
+ * 被破防攻擊定住的那一隻不動，另一隻退全部。退是走路的一步（walkTo）：會被牆擋、不會被
+ * 擠進柱子裡或擠出牆外，也不會被擠下允許區的邊緣。在空中的、正在放招的不推：空中那一段
+ * 是擊退那一刻就預跑好落點的路線（推一下就不是那一條了），放招的路線是招式自己給的——
+ * 落地、收招之後下一幀再讓開。
  */
 export function separate(monsters) {
   const R2 = PHYS.radius * 2;
@@ -777,12 +833,16 @@ export function separate(monsters) {
       const gap = R2 - d;
       const wa = a.held ? 0 : b.held ? 1 : 0.5;
       const wb = 1 - wa;
-      a.x -= dx * gap * wa; a.z -= dz * gap * wa;
-      b.x += dx * gap * wb; b.z += dz * gap * wb;
-      [a.x, a.z] = clampArena(a.field.arena, a.x, a.z, PHYS.radius);
-      [b.x, b.z] = clampArena(b.field.arena, b.x, b.z, PHYS.radius);
+      shove(a, -dx * gap * wa, -dz * gap * wa);
+      shove(b, dx * gap * wb, dz * gap * wb);
     }
   }
+}
+
+/** separate 的一推。 */
+function shove(m, dx, dz) {
+  if ((!dx && !dz) || m.air || m.cast) return;
+  walkTo(m, m.x + dx, m.z + dz);
 }
 
 /**

@@ -16,7 +16,7 @@
 
 import { buildRuins } from '../public/test/src/blocks.js';
 import { PHYS, MOUNT, solveXZ, supportInfo, arenaGap } from '../public/test/src/walk.js';
-import { makeMonster, monsterStep, knock, KNOCK, KNOCK_SCALE, KINDS } from '../public/test/src/combat.js';
+import { makeMonster, monsterStep, knock, separate, KNOCK, KNOCK_SCALE, KINDS } from '../public/test/src/combat.js';
 import { bossStep, makeWorld } from '../public/test/src/skills.js';
 import { roamMap } from '../public/test/src/roam.js';
 import { STAGES, foesOf } from '../public/test/src/route.js';
@@ -179,6 +179,55 @@ for (const [id, skill] of [['alley', 'cleave'], ['courtyard', 'leap']]) {
     }
   }
   ok(n > 50 && out === 0, `${STAGES[k].name}的${skill === 'cleave' ? '跳砍' : '跳砸'}：${n} 次落點都在允許區裡（${out} 次沒有${worst ? `，例如 ${worst}` : ''}）`);
+}
+
+console.log('\n5. 走下邊緣');
+/* 每一個台子頂（含井圈）上放一隻，追八個方向五公尺外地上的主角三秒：追、衝刺都會走到邊上，
+   踏空之後落的地方不在允許區裡（井裡、死角）就走不下去。 */
+for (const id of ['barracks', 'courtyard', 'alley', 'throne']) {
+  const k = stageOf(id), room = STAGES[k].room.split(':')[0], roam = ROAMS.get(room);
+  const m = makeMonster(foesOf(k)[0], fieldIn(room));
+  let out = 0, n = 0, worst = '';
+  for (const c of roam.cells.filter((q) => q.top)) {
+    for (let a = 0; a < 8; a++) {
+      const th = (a / 8) * Math.PI * 2;
+      const target = { x: c.x + Math.cos(th) * 5, y: 0, z: c.z + Math.sin(th) * 5 };
+      for (const dt of [1 / 60, 0.05]) {
+        Object.assign(m, { x: c.x, y: c.y, z: c.z, vx: 0, vy: 0, vz: 0, air: false, airT: 0, grounded: true, cast: null, lunge: null, stun: 0, slide: false });
+        let bad = false;
+        for (let t = 0; t < 3 && !bad; t += dt) {
+          monsterStep(m, dt, target);
+          if (m.y < roam.low - 0.5 || (!m.air && !roam.has(m.x, m.y, m.z))) bad = true;
+        }
+        n++;
+        if (bad) { out++; worst = `(${c.x.toFixed(2)}, ${c.y.toFixed(2)}, ${c.z.toFixed(2)}) → (${m.x.toFixed(2)}, ${m.y.toFixed(2)}, ${m.z.toFixed(2)})`; }
+      }
+    }
+  }
+  ok(out === 0, `${STAGES[k].name}：從台子頂追 ${n} 次都留在允許區裡（${out} 次沒有${worst ? `，例如 ${worst}` : ''}）`);
+}
+{
+  /* 兵營三隻擠在一起：放在允許區裡三個挨著、一樣高的格子上（身體重疊），互相讓開（separate）、
+     追人兩秒，每一隻都留在允許區裡——讓開不會把誰擠進牆裡、擠下台子。 */
+  const k = stageOf('barracks'), room = STAGES[k].room.split(':')[0], roam = ROAMS.get(room);
+  const ms = foesOf(k).map((f) => makeMonster(f, fieldIn(room)));
+  let out = 0, n = 0;
+  for (let i = 0; i < roam.cells.length; i += 5) {
+    const c = roam.cells[i];
+    const trio = [c, ...roam.cells.filter((q) => q !== c && Math.abs(q.y - c.y) < 0.01 && Math.hypot(q.x - c.x, q.z - c.z) < 0.6)].slice(0, 3);
+    if (trio.length < 3) continue;
+    ms.forEach((m, j) => Object.assign(m, { x: trio[j].x, y: trio[j].y, z: trio[j].z, vx: 0, vy: 0, vz: 0, air: false, airT: 0, grounded: true, cast: null, lunge: null, stun: 0, slide: false }));
+    const target = { x: c.x + 3, y: 0, z: c.z };
+    let bad = false;
+    for (let t = 0; t < 2 && !bad; t += 1 / 30) {
+      for (const m of ms) monsterStep(m, 1 / 30, target);
+      separate(ms);
+      bad = ms.some((m) => m.y < roam.low - 0.5 || (!m.air && !roam.has(m.x, m.y, m.z)));
+    }
+    n++;
+    if (bad) out++;
+  }
+  ok(out === 0, `兵營三隻擠在一起讓開 ${n} 次都留在允許區裡（${out} 次沒有）`);
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

@@ -104,8 +104,8 @@
    打中人的球就炸掉消失。玩家無敵的時候（第三段、破防攻擊）碰到不算，球穿過去。
    ------------------------------------------------------------------ */
 
-import { PHYS, arenaGap, supportInfo, solveXZ, overlapXZ, roundTop, clampArena } from './walk.js';
-import { FIELD, DOG_H, REACH, SWING, STILL, kindOf, busy, settle, inFan } from './combat.js';
+import { PHYS, arenaGap, supportInfo, overlapXZ, roundTop, clampArena } from './walk.js';
+import { FIELD, DOG_H, REACH, SWING, STILL, kindOf, busy, walkTo, inFan } from './combat.js';
 import { QUAKE, quakeTop } from './dust.js';
 import { hullOf, TRAILS } from './trail.js';
 import { shadeOf, reachAt, farthestOf } from './occlude.js';
@@ -389,8 +389,7 @@ const CAST = {
     const step = whirlDist(s) - whirlDist(c.s || 0);
     c.s = s;
     const x0 = m.x, z0 = m.z;
-    [m.x, m.z] = solveXZ(m.field.cols, m.x + c.dirX * step, m.z + c.dirZ * step, m.y, m.field.doors);
-    settle(m);
+    walkTo(m, m.x + c.dirX * step, m.z + c.dirZ * step);
     if (s >= S.time) m.cast = null;
     return { shape: 'capsule', x: x0, y: m.y, z: z0, x1: m.x, z1: m.z, r: S.radius, waist: m.y + S.waist, dmg: S.damage };
   },

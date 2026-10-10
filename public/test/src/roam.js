@@ -8,8 +8,8 @@
 
    ── 准許哪裡 ────────────────────────────────────────────────────
      地面   從這一場的入口往外淹（ROAM.cell 一格）：一格走得過去是身體擺得下
-            （solveXZ 不推它，四周 ROAM.clear 也不推）、跟上一格的地板差不到
-            一階。跟主角走路、folk.js 的 walkCells 同一套。
+            （solveXZ 不推它）、跟上一格的地板差不到一階。跟主角走路、folk.js 的
+            walkCells 同一套，只是不在身體四周另外留空——貼著牆走得到的地方也要算。
      台子   緊鄰地面、頂面比那一格地面高一階以上、但不超過 ROAM.rise（主角跳得
             上去的最高 MOUNT）的平頂。上限取 MOUNT，於是怪物站到哪裡主角都打得到。
             台子頂上只往同一個高度擴，**不往下擴**：牆頭、高台的另一側往下是牆外，
@@ -20,8 +20,8 @@
    ── 查 ──────────────────────────────────────────────────────────
      has(x, y, z, near) 這一點算不算在允許區裡：水平 near（預設 ROAM.near）以內
                         有一格、高低差不到一階。ROAM.near 小於「牆內那一格的中心到
-                        牆外的身體」的最短距離（ROAM.clear + 兩個身體半徑），
-                        所以牆的另一側永遠不算。
+                        牆外的身體」的最短距離（兩個身體半徑加上牆厚），所以牆的
+                        另一側不算——牆至少要 0.1 公尺厚。
      low                最低的那一格多高（往下掉得比它低，就不會落在允許區裡）。
      nearest(x, y, z, ok)  離這一點最近的一格（水平距離加高低差），可以再給一個
                         條件。ROAM.far 公尺以內找不到就是 null。
@@ -32,13 +32,13 @@
 import { PHYS, MOUNT, solveXZ, supportInfo, arenaGap, colsNear } from './walk.js';
 
 /**
- * cell   一格多大（公尺）；clear 身體四周再留多少（跟 folk.js 的人民一樣）
+ * cell   一格多大（公尺）
  * rise   台子頂面最多比旁邊地面高多少：主角跳得上去的最高（MOUNT）
  * flat   台子頂上往旁邊擴的時候，高低差在這以內才算同一個頂
  * near   has 的容忍：一點離最近那一格的中心多遠以內算在裡面
  * far    nearest 最遠找多遠
  */
-export const ROAM = { cell: 0.5, clear: 0.3, rise: MOUNT, flat: 0.05, near: 0.7, far: 6 };
+export const ROAM = { cell: 0.5, rise: MOUNT, flat: 0.05, near: 0.7, far: 6 };
 
 /**
  * 一張圖裡怪物准許待的地方，從 `start`（{x, y, z}，這一場的入口）往外淹。
@@ -53,11 +53,11 @@ export function roamMap(cols, arena, start, doors = {}) {
     ? [arena.x - arena.r, arena.z - arena.r, arena.x + arena.r, arena.z + arena.r]
     : [arena.x0, arena.z0, arena.x1, arena.z1];
   const near = colsNear(cols, x0, z0, x1, z1, 1);
-  const R = ROAM.clear, PROBE = [[0, 0], [R, 0], [-R, 0], [0, R], [0, -R]];
-  const free = (x, z, y) => arenaGap(arena, x, z) > PHYS.radius + R && PROBE.every(([ox, oz]) => {
-    const [px, pz] = solveXZ(near, x + ox, z + oz, y, doors);
-    return Math.abs(px - x - ox) < 1e-4 && Math.abs(pz - z - oz) < 1e-4;
-  });
+  const free = (x, z, y) => {
+    if (arenaGap(arena, x, z) <= PHYS.radius) return false;
+    const [px, pz] = solveXZ(near, x, z, y, doors);
+    return Math.abs(px - x) < 1e-4 && Math.abs(pz - z) < 1e-4;
+  };
   const at = (i, j) => [x0 + i * C, z0 + j * C];
 
   /** (i, j) → 這一欄裡准許的那幾格（地面與台子頂可能疊在同一欄）。 */
