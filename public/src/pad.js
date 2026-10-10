@@ -21,6 +21,12 @@ const easeIO = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
 const DEADZONE = 0.12;
 const SWAP_T = 0.30;    // 左右對調的飛行時間（秒）
 const THROW = 0.86;     // 推到軌道可動範圍的幾成就滿速
+/* 彈簧一步最長這麼久。這幾條彈簧是半隱式歐拉積分的，旋鈕跟手那一條
+   （k 900、阻尼 46）一步超過約 1/31 秒就發散：手機一掉到 30 幀以下，旋鈕
+   每幀往反方向甩得更遠，畫的時候又被夾回圈上，看起來就是旋鈕在圈邊左右
+   甩、在對角之間閃；幀率回來之後還要一兩秒才收得回來。拆成小步積分，
+   手感就跟幀率無關。 */
+const SPRING_DT = 1 / 120;
 
 function angDiff(a, b) {
   let d = a - b;
@@ -303,8 +309,20 @@ export class Pad {
 
     // 進退場：彈簧給視覺（過衝一點才有彈性），指數給相機（過衝的話畫面會晃）
     const target = this.on ? 1 : 0;
-    this.visv += ((target - this.vis) * 260 - this.visv * 23) * dt;
-    this.vis += this.visv * dt;
+    // 旋鈕：推的時候跟手（硬），放開彈回中心（軟一點，看得到回彈）
+    const jt = this.jOn ? this.jTarget : 0;
+    const kS = this.jOn ? 900 : 420, kD = this.jOn ? 46 : 26;
+    // 按壓：按下瞬間鼓起，按著維持，放開彈回
+    const bt = this.bOn ? 1 : 0;
+    const n = Math.max(1, Math.ceil(dt / SPRING_DT)), h = dt / n;
+    for (let i = 0; i < n; i++) {
+      this.visv += ((target - this.vis) * 260 - this.visv * 23) * h;
+      this.vis += this.visv * h;
+      this.jKv += ((jt - this.jK) * kS - this.jKv * kD) * h;
+      this.jK += this.jKv * h;
+      this.bPressv += ((bt - this.bPress) * 420 - this.bPressv * 26) * h;
+      this.bPress += this.bPressv * h;
+    }
     if (!this.on && this.vis < 0.002 && Math.abs(this.visv) < 0.02) { this.vis = 0; this.visv = 0; }
     this.k += (target - this.k) * (1 - Math.pow(0.0016, dt));
 
@@ -313,18 +331,9 @@ export class Pad {
       this.mix = lerp(this.mixFrom, this.mixTo, easeIO(this.mixT));
     }
 
-    // 旋鈕：推的時候跟手（硬），放開彈回中心（軟一點，看得到回彈）
-    const jt = this.jOn ? this.jTarget : 0;
-    this.jKv += ((jt - this.jK) * (this.jOn ? 900 : 420) - this.jKv * (this.jOn ? 46 : 26)) * dt;
-    this.jK += this.jKv * dt;
-
     const liqK = 1 - Math.pow(0.0006, dt);
     this.jLiq += ((this.jOn ? 1 : 0) - this.jLiq) * liqK;
     this.bLiq += ((this.bOn ? 1 : 0) - this.bLiq) * liqK;
-
-    // 按壓：按下瞬間鼓起，按著維持，放開彈回
-    this.bPressv += (((this.bOn ? 1 : 0) - this.bPress) * 420 - this.bPressv * 26) * dt;
-    this.bPress += this.bPressv * dt;
 
     this._updateDrops(dt);
   }

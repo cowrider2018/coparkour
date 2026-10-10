@@ -92,6 +92,13 @@ move(1, jc.x + travel * 0.5, jc.y);
 ok('中間是類比的', pad.axis > 0.3 && pad.axis < 0.8, `axis=${pad.axis.toFixed(3)}`);
 move(1, jc.x, jc.y - 400);
 ok('純垂直移動不影響左右', pad.axis === 0, `axis=${pad.axis}`);
+/* 手機掉到 20 幀（主迴圈夾的上限 0.05 秒一幀）：旋鈕的彈簧照樣收斂到手指
+   那裡，不會在圈邊來回甩（以前一步超過 1/31 秒就發散）。 */
+move(1, jc.x + travel * 2, jc.y);
+for (let i = 0; i < 60; i++) pad.update(0.05);
+let swing = 0;
+for (let i = 0; i < 20; i++) { pad.update(0.05); swing = Math.max(swing, Math.abs(pad.jK - pad.jTarget)); }
+ok('20 幀的時候旋鈕也穩穩停在手指那裡', swing < 1e-3, `偏差 ${swing.toExponential(1)}`);
 up(1, jc.x, jc.y);
 ok('放開就停', !pad.jOn && pad.axis === 0);
 

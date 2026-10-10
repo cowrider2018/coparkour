@@ -41,6 +41,12 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 /** 死區與滿速門檻，跟遊戲的手把一樣。 */
 const DEADZONE = 0.12;
 const THROW = 0.86;
+/* 彈簧一步最長這麼久。這幾條彈簧是半隱式歐拉積分的，旋鈕跟手那一條
+   （k 900、阻尼 46）一步超過約 1/31 秒就發散：手機一掉到 30 幀以下，旋鈕
+   每幀往反方向甩得更遠，畫的時候又被夾回圈上，看起來就是旋鈕在圈邊左右
+   甩、在對角之間閃；幀率回來之後還要一兩秒才收得回來。拆成小步積分，
+   手感就跟幀率無關。 */
+const SPRING_DT = 1 / 120;
 
 function angDiff(a, b) {
   let d = a - b;
@@ -307,17 +313,20 @@ export class Pad {
     const jtx = this.jOn ? this.jTx : 0;
     const jty = this.jOn ? this.jTy : 0;
     const kS = this.jOn ? 900 : 420, kD = this.jOn ? 46 : 26;
-    this.jKvx += ((jtx - this.jKx) * kS - this.jKvx * kD) * dt;
-    this.jKvy += ((jty - this.jKy) * kS - this.jKvy * kD) * dt;
-    this.jKx += this.jKvx * dt;
-    this.jKy += this.jKvy * dt;
+    const bt = this.bOn ? 1 : 0;
+    const n = Math.max(1, Math.ceil(dt / SPRING_DT)), h = dt / n;
+    for (let i = 0; i < n; i++) {
+      this.jKvx += ((jtx - this.jKx) * kS - this.jKvx * kD) * h;
+      this.jKvy += ((jty - this.jKy) * kS - this.jKvy * kD) * h;
+      this.jKx += this.jKvx * h;
+      this.jKy += this.jKvy * h;
+      this.bPressv += ((bt - this.bPress) * 420 - this.bPressv * 26) * h;
+      this.bPress += this.bPressv * h;
+    }
 
     const liqK = 1 - Math.pow(0.0006, dt);
     this.jLiq += ((this.jOn ? 1 : 0) - this.jLiq) * liqK;
     this.bLiq += ((this.bOn ? 1 : 0) - this.bLiq) * liqK;
-
-    this.bPressv += (((this.bOn ? 1 : 0) - this.bPress) * 420 - this.bPressv * 26) * dt;
-    this.bPress += this.bPressv * dt;
 
     const out = [];
     for (const d of this.drops) {
