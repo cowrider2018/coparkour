@@ -203,21 +203,23 @@ function engage() {
 }
 
 /**
- * 怪物全部打死了：這一場清完，開往下一場的門，演劇情（慢動作、書頁、漫畫）。門現在就開
- * ——開門的那一下在慢動作裡、被書頁蓋住之前看得到。字等書頁走了才浮，不然被蓋住。
+ * 怪物全部打死了：這一場清完，演劇情（慢動作、書頁、漫畫），開往下一場的門。門等書頁整個
+ * 蓋住的那一刻才開：漫畫講完「接下來去哪」，書頁走了門已經開好，路標（signpost.js）這時才
+ * 淡進來。沒有戰後頁的那一場（王座廳）慢動作完才開。字等書頁走了才浮，不然被蓋住。
  */
 function clear() {
   run.active = false;
   run.next++;
   fight.keep();
-  applyDoors();
   const done = run.next >= STAGES.length;
   const k = run.next - 1;
   // 墓室打完不走回去：書頁蓋住的時候直接送到下一場的休息點（route.js 的 warp）。
   const warpTo = STAGES[k].warp && !done ? () => place(restAt(run.next, ruins)) : null;
   const say = () => hud.flash(done ? '六場全部打完——門全開了' : `這一場清完了。下一場：${stageName(run.next)}`);
-  // 沒有戰後頁的那一場（王座廳：要先交靈魂，comic.js 的 SCRIPT.offered）只有慢動作，慢完才浮字。
-  story.start(SCRIPT.after[k] ? pagesOf(SCRIPT.after[k]) : [], { slow: true, cover: warpTo, then: say });
+  // 沒有戰後頁的那一場（王座廳：要先交靈魂，comic.js 的 SCRIPT.offered）只有慢動作，慢完才開門、浮字。
+  const pages = SCRIPT.after[k] ? pagesOf(SCRIPT.after[k]) : [];
+  const cover = () => { applyDoors(); if (warpTo) warpTo(); };
+  story.start(pages, { slow: true, cover: pages.length ? cover : null, then: pages.length ? say : () => { applyDoors(); say(); } });
   if (!done) hud.paint({ block: STAGES[run.next].id });
 }
 
@@ -393,8 +395,8 @@ function frame(now) {
     camera.position.set(rig.pos[0], rig.pos[1], rig.pos[2]);
     camera.lookAt(rig.look[0], rig.look[1], rig.look[2]);
   }
-  // 路標只在不打的時候出現（開打的那一刻淡出去）。
-  signpost.show(signposts(ruins.portals, roomOf(player.block, player.y)), doors, player, camera, real, !run.active);
+  // 路標只在不打、也不在演劇情（慢動作、書頁）的時候出現：開打的那一刻淡出去，漫畫走了才淡進來。
+  signpost.show(signposts(ruins.portals, roomOf(player.block, player.y)), doors, player, camera, real, !run.active && !story.on);
 
   fight.draw(dt, camera, player);
   folk.update(dt, camera, player, player.block);
