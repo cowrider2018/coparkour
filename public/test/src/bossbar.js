@@ -272,15 +272,17 @@ export class BossBar {
    */
   _drawDust(g) {
     const { img, left, span, motes } = this._dust, t = this.t, c = DUST.cell;
-    const edge = left + clamp01(t / DUST.sweep) * span;
-    if (edge < left + span) {
+    // 掃完了（sweeping 是 false）就沒有圖：每一粒都照自己的時間碎——不然掃線停在右端那一格上，
+    // 剛好在那一格的永遠「還沒輪到」。
+    const sweeping = t < DUST.sweep, cut = Math.floor(left + (t / DUST.sweep) * span);
+    if (sweeping) {
       const dpr = img.width / this.el.clientWidth;
-      const sx = Math.max(0, Math.floor(edge));
+      const sx = Math.max(0, cut);
       g.drawImage(img, sx * dpr, 0, img.width - sx * dpr, img.height, sx, 0, img.width / dpr - sx, img.height / dpr);
     }
     let alive = false;
     for (const m of motes) {
-      if (m.x >= Math.floor(edge)) { alive = true; continue; }     // 還在那張圖上
+      if (sweeping && m.x >= cut) { alive = true; continue; }     // 還在那張圖上
       const age = t - m.t0;
       if (age >= m.life) continue;
       alive = true;
