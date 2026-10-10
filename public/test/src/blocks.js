@@ -57,6 +57,14 @@ import {
 export const PITCH = 62;
 
 /**
+ * 門（帶門口 `mouth` 的感測區）的高度範圍：從門檻 `sill` 起 1.5 個狗高。整隻狗（一個狗高）站在
+ * 門檻上就在裡面，跳起來半個狗高以內也還在（walk.js 的 portalAt：整個身體在裡面才送）。路標
+ * （signpost.js）指著感測區高度的 1/3——門的話是門檻上半個狗高，跟主角身高的一半一樣高，指過去
+ * 剛好水平。沒有門口的（井、殘階）照它們自己的範圍，指過去就往下、往上偏。
+ */
+const doorSpan = (sill) => [sill, sill + 1.5 * PHYS.height];
+
+/**
  * 王座廳的王座在哪（區塊的局部座標）：x、z 是座面的中心，y 是台座的頂面（座面再高 0.5）。
  * 階梯的底在 stair，台座從 z = 12.3 開始。復活的國王照這個走上去坐（king.js）。
  */
@@ -215,7 +223,7 @@ function courtyard(B, flames, seed, A) {
   /* 門樓：鐵閘升起來，走進門洞就到王座廳的正門。感測區從門樓牆的內皮往裡 0.5
      起、到黑牆。門前半公尺有一顆大石（碎石撒出來的），進門要從它旁邊繞過去；
      到達點在大石的中庭那一側、面朝中庭。 */
-  B.portalBox(-2.4, A.z0, 2.4, -12.9, -0.5, 3, 'throne.gate', {
+  B.portalBox(-2.4, A.z0, 2.4, -12.9, ...doorSpan(0), 'throne.gate', {
     door: 'courtyard-throne', mouth: { x: 0, y: 0, z: -12.4, n: [0, 1] },
   });
   B.arrive('gate', 0, 0, -9.4, 0);
@@ -233,7 +241,7 @@ function courtyard(B, flames, seed, A) {
     [1, 'wallwalk.fog', 'east', 'courtyard-wallwalk'],
     [-1, 'alley.fog', 'west', 'courtyard-alley'],
   ]) {
-    B.portalBox(sx * (FACE + 0.5), -1.55, sx * A.x1, 1.55, -0.5, 3, to, {
+    B.portalBox(sx * (FACE + 0.5), -1.55, sx * A.x1, 1.55, ...doorSpan(0), to, {
       door, mouth: { x: sx * FACE, y: 0, z: 0, n: [-sx, 0] },
     });
     B.arrive(name, sx * (FACE - 1.5), 0, 0, -sx * Math.PI / 2);
@@ -320,7 +328,7 @@ function throne(B, flames, seed, A) {
   B.detach({ door: 'courtyard-throne', open: true, face: [0, 1] }, () => {});
   B.block(0, HEAP.h / 2, (HEAP.z0 + HEAP.z1) / 2, HEAP.x1 - HEAP.x0, HEAP.h, HEAP.z1 - HEAP.z0 + 0.04,
     { kind: 'block', base: 0, door: 'courtyard-throne' });
-  B.portalBox(-2.6, A.z0, 2.6, FACE - 0.5, -0.5, 3, 'courtyard.gate', {
+  B.portalBox(-2.6, A.z0, 2.6, FACE - 0.5, ...doorSpan(0), 'courtyard.gate', {
     door: 'courtyard-throne', mouth: { x: 0, y: 0, z: FACE, n: [0, 1] },
   });
   B.arrive('gate', 0, 0, -11.4, 0);
@@ -409,7 +417,7 @@ function cistern(B, flames, seed, A) {
         grate(B, { ...bars, lift: 2.2, ceil: intrados(ARCH), group: 'cistern-crypt', face: [-n[0], -n[1]] });
         /* 感測區是圓的（門面是斜的，方的蓋不準）：圓心在黑牆上，半徑讓它從門洞
            內皮往裡 0.5 起算；身體在門洞裡能走到離中線 0.8，那裡也蓋得到。 */
-        B.portal(n[0] * A.r, n[1] * A.r, A.r - face - 0.5, -0.5, 3, 'crypt.gate', {
+        B.portal(n[0] * A.r, n[1] * A.r, A.r - face - 0.5, ...doorSpan(0), 'crypt.gate', {
           door: 'cistern-crypt', mouth: { x: n[0] * face, y: 0, z: n[1] * face, n: [-n[0], -n[1]] },
         });
         B.arrive('gate', n[0] * (face - 1.6), 0, n[1] * (face - 1.6), Math.atan2(-n[0], -n[1]));
@@ -764,7 +772,7 @@ function wallwalk(B, flames, seed, A) {
      它跟中庭的東拱洞是同一扇門（`courtyard-wallwalk`）：關著，走到黑牆腳下就只是
      黑牆。沒有門扇（開不開看主角腳邊的動態路標）。門口在黑牆上、走不進去，所以
      `inset` 是負的：離黑牆 0.6 以內送走就對了。 */
-  B.portalBox(-PATH, -A.r, PATH, -A.r + 0.5, -0.5, 3, 'courtyard.east', {
+  B.portalBox(-PATH, -A.r, PATH, -A.r + 0.5, ...doorSpan(0), 'courtyard.east', {
     door: 'courtyard-wallwalk', mouth: { x: 0, y: 0, z: -A.r, n: [0, 1], inset: -0.6 },
   });
   B.arrive('fog', 0, 0, -A.r + 3.4, 0);
@@ -1028,7 +1036,7 @@ function towerDoor(B, seed, o) {
   const notch = { ...box(-W, W, -D, skin + PHYS.radius + 0.1, y - 0.5, y + DH - LIN), door: group };
 
   const [p0x, , p0z] = at(-0.65, -D, 0), [p1x, , p1z] = at(0.65, -DOG_BACK, 0);
-  B.portalBox(p0x, p0z, p1x, p1z, y - 0.5, y + 2.5, o.to, { door: group, mouth: { x: fx, y, z: fz, n: [nx, nz] } });
+  B.portalBox(p0x, p0z, p1x, p1z, ...doorSpan(y), o.to, { door: group, mouth: { x: fx, y, z: fz, n: [nx, nz] } });
   B.arrive(o.arrive, rx + nx * 1.9, y, rz + nz * 1.9, Math.atan2(nx, nz));
   return notch;
 }
@@ -1201,7 +1209,7 @@ function crypt(B, flames, seed, A) {
     group: 'cistern-crypt', face: [0, 1],
     hole: [[DOOR.s[0], SILL, -Z - 0.45], [DOOR.s[1], DOOR.y[1], -Z + 0.45]],
   });
-  B.portalBox(DOOR.s[0], A.z0, DOOR.s[1], -IZ - 0.5, SILL - 0.5, SILL + 2.5, 'cistern.gate', {
+  B.portalBox(DOOR.s[0], A.z0, DOOR.s[1], -IZ - 0.5, ...doorSpan(SILL), 'cistern.gate', {
     door: 'cistern-crypt', mouth: { x: 0, y: SILL, z: -IZ, n: [0, 1] },
   });
   B.arrive('gate', 0, 0, -7.0, 0);
@@ -1298,7 +1306,7 @@ function alley(B, flames, seed, A) {
   /* 巷子南端沒入黑霧的那一截：一塊橫過巷子的感測區，從黑牆往裡 0.5（跟城牆那條
      小路一樣），送到中庭的西拱洞前。回來的到達點在巷子裡、離黑牆 3.4，面朝廣場。
      跟中庭的西拱洞是同一扇門（`courtyard-alley`），門口跟城牆那條小路一樣。 */
-  B.portalBox(-S, A.z0, S, A.z0 + 0.5, -0.5, 3, 'courtyard.west', {
+  B.portalBox(-S, A.z0, S, A.z0 + 0.5, ...doorSpan(0), 'courtyard.west', {
     door: 'courtyard-alley', mouth: { x: 0, y: 0, z: A.z0, n: [0, 1], inset: -0.6 },
   });
   B.arrive('fog', 0, 0, A.z0 + 3.4, 0);

@@ -444,7 +444,8 @@ export function solveXZ(cols, x0, z0, feetY, doors = {}) {
 
 /**
  * 腳在 (x, y, z) 的身體在不在某一個感測區裡。回傳那一個（blocks.js 砌的，
- * `dest` 是送去的地方），不在就是 null。
+ * `dest` 是送去的地方），不在就是 null。高度是整個身體（腳到頭，PHYS.height）都在
+ * 感測區的 y0～y1 裡面才算——狗整隻進了門才送；水平看身體中心。
  *
  * `doors` 是門的狀態（門的組名 → 開著嗎）。屬於某一組門的感測區，那一組門
  * 開著才存在；沒給 `doors` 就是全部關著。
@@ -454,7 +455,7 @@ export function solveXZ(cols, x0, z0, feetY, doors = {}) {
  */
 export function portalAt(portals, x, y, z, doors = {}) {
   for (const p of portals) {
-    if (y < p.y0 || y > p.y1) continue;
+    if (y < p.y0 || y + PHYS.height > p.y1) continue;
     if (p.door && !doors[p.door]) continue;
     const inside = p.shape === 'box'
       ? x > p.x0 && x < p.x1 && z > p.z0 && z < p.z1
@@ -494,12 +495,13 @@ export function portalGap(p, x, z) {
 
 /**
  * 腳在 (x, y, z) 的身體被附近的感測區推開的速度（x／z，公尺每秒），加在位移上。
- * `doors` 跟 `portalAt` 同一份：門關著的感測區不推。
+ * `doors` 跟 `portalAt` 同一份：門關著的感測區不推。高度看身體（腳到頭）跟感測區的
+ * y0～y1 有沒有重疊：碰得到就推，不必整隻在裡面。
  */
 export function portalDrift(portals, x, y, z, doors = {}) {
   let vx = 0, vz = 0;
   for (const p of portals) {
-    if (p.oneWay || (p.door && !doors[p.door]) || y < p.y0 || y > p.y1) continue;
+    if (p.oneWay || (p.door && !doors[p.door]) || y + PHYS.height < p.y0 || y > p.y1) continue;
     const [d, nx, nz] = portalGap(p, x, z);
     if (d <= 0 || d >= REPEL.zone) continue;
     const v = REPEL.max * (1 - d / REPEL.zone);
