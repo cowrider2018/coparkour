@@ -22,6 +22,12 @@
    窗口裡的每一隻是另外建的（monster.js 也是這樣建怪物的：同一份模型資料、各自一件毛色），
    畫在窗口自己那一張畫布上。選好的那一件交給遊戲的 zoo（mode-flow.js），開始的時候遊戲裡就是
    那一隻。
+
+   ── 為什麼整張表擺在離遺跡很遠的地方（AWAY）─────────────────────────
+   毛皮的著色器會接收投影（light/shadow.js）：拿自己的世界座標去比遊戲那一張陰影深度圖。窗口
+   是另一個 renderer、另一個 GL context，那張深度圖在這裡讀不到；讀不到的深度貼圖比出來是什麼
+   由驅動決定——桌機回「照到光」，不少手機回「在影子裡」，整隻落到最暗那一階，看起來暗沉。
+   落在深度圖的框外面的點一律當成照到光、不看貼圖，所以表擺到任何一張圖的框外面就好。
    ------------------------------------------------------------------ */
 
 import * as THREE from '../vendor/three.module.js';
@@ -57,6 +63,9 @@ export function aimBackdrop(camera, t, cx, cz) {
   camera.position.set(cx, BACKDROP.eye, cz);
   camera.lookAt(cx + fx, BACKDROP.eye - down, cz + fz);
 }
+
+/** 表擺在哪（世界座標）：任何一張圖的陰影框外面（見開頭）。 */
+const AWAY = new THREE.Vector3(1000, 0, 1000);
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -106,6 +115,9 @@ export class Lobby {
       vertexShader: SHADOW_VERT, fragmentShader: SHADOW_FRAG, transparent: true, depthWrite: false,
     });
     this.shadowGeo = shadowGeo;
+    const grid = new THREE.Group();
+    grid.position.copy(AWAY);
+    this.scene.add(grid);
     this.rows = this.zoo.models.map((model) => {
       const own = this.zoo.critters.get(model);
       return own.skins.map((skin) => {
@@ -117,7 +129,7 @@ export class Lobby {
         sh.position.y = 0.002;
         c.root.add(sh);
         c.root.visible = false;
-        this.scene.add(c.root);
+        grid.add(c.root);
         return { look: `${model}/${skin}`, critter: c };
       });
     });
@@ -264,8 +276,8 @@ export class Lobby {
     if (this.axis !== 'h') this.rows.forEach((_, i) => { if (i !== this.r || this.axis === 'v') show(this._cell(i, this.c), this.c, i); });
 
     const cx = this.u * G, cy = -this.v * G + LOBBY.mid;
-    this.camera.position.set(cx, cy, this.dist);
-    this.camera.lookAt(cx, cy, 0);
+    this.camera.position.set(AWAY.x + cx, AWAY.y + cy, AWAY.z + this.dist);
+    this.camera.lookAt(AWAY.x + cx, AWAY.y + cy, AWAY.z);
     for (const row of this.rows) {
       for (const x of row) {
         if (!x.critter.root.visible) continue;
