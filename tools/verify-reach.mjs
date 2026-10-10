@@ -4,13 +4,21 @@
      1. 擊退落地  被打飛的怪物落地那一幀不會被搬走：離井再近也不會被吸進井裡，幀率掉到
                   20（一幀 0.05 秒）也不會被地板的碰撞板橫推到牆外。落點離起點的水平距離
                   就是那一下擊退本身帶走的距離。
+     2. 允許區    每一場有會走路的怪物的房間（roam.js）：站位都在裡面、沒有一格在井底、
+                  沒有一格出了黑牆、台子頂不比旁邊地面高過 MOUNT（主角打得到）。
+     3. 被打飛    從允許區裡的每一個地方（含井圈頂）往每個方向打三段，20～60 幀：落點都在
+                  允許區裡——不掉井、不落在死角或牆外、不停在主角上不去的高台。
+     4. 跳過去    騎士的跳砍隔著井、隔著柱子，BOSS 的跳砸對著站在任何地方的主角：落點都在
+                  允許區裡。
 
    跑法：node tools/verify-reach.mjs
    ------------------------------------------------------------------ */
 
 import { buildRuins } from '../public/test/src/blocks.js';
-import { PHYS, solveXZ, supportInfo } from '../public/test/src/walk.js';
-import { makeMonster, monsterStep, knock, KNOCK, KNOCK_SCALE } from '../public/test/src/combat.js';
+import { PHYS, MOUNT, solveXZ, supportInfo, arenaGap } from '../public/test/src/walk.js';
+import { makeMonster, monsterStep, knock, KNOCK, KNOCK_SCALE, KINDS } from '../public/test/src/combat.js';
+import { bossStep, makeWorld } from '../public/test/src/skills.js';
+import { roamMap } from '../public/test/src/roam.js';
 import { STAGES, foesOf } from '../public/test/src/route.js';
 
 let fails = 0;
@@ -84,6 +92,93 @@ console.log('1. 擊退落地');
     }
   }
   ok(moved === 0, `中庭與王座廳 ${n} 個點、20 幀被挑起：落地沒有被地板推走（${moved} 次）`);
+}
+
+/* 完整流程模式的那一份（mode-flow.js 的 ROAMS）：從這一場的入口往外淹、門全關。 */
+const ROAMS = new Map();
+console.log('\n2. 允許區');
+for (let k = 0; k < STAGES.length; k++) {
+  const st = STAGES[k], foes = foesOf(k);
+  if (foes.every((f) => KINDS[f.kind].fly)) continue;
+  const room = st.room.split(':')[0], arena = fieldOf(room).arena;
+  const at = st.entry ? ruins.arrivals[st.entry.to] : foes[0];
+  const t0 = performance.now();
+  const roam = roamMap(COLS, arena, { x: at.x, y: at.y || 0, z: at.z }, {});
+  const ms = performance.now() - t0;
+  ROAMS.set(room, roam);
+  const tops = roam.cells.filter((c) => c.top);
+  const ground = (c) => Math.min(...roam.cells.filter((g) => !g.top && Math.hypot(g.x - c.x, g.z - c.z) < 0.8).map((g) => g.y));
+  ok(foes.every((f) => roam.has(f.x, f.y || 0, f.z))
+    && roam.cells.every((c) => c.y > -1 && arenaGap(arena, c.x, c.z) > PHYS.radius)
+    && tops.every((c) => c.y - ground(c) <= MOUNT + 1e-6),
+    `${st.name}：${roam.cells.length} 格（台子頂 ${tops.length}），站位在裡面、沒有井底、沒出黑牆、台子不高過 MOUNT（${ms.toFixed(0)} 毫秒）`);
+}
+const fieldIn = (room) => ({ ...fieldOf(room), roam: ROAMS.get(room) });
+
+console.log('\n3. 被打飛');
+for (const id of ['barracks', 'courtyard', 'alley', 'throne']) {
+  const k = stageOf(id), room = STAGES[k].room.split(':')[0], roam = ROAMS.get(room);
+  const m = makeMonster(foesOf(k)[0], fieldIn(room));
+  /* 窄巷井邊 4.5 公尺內的每一格都打，其餘抽樣。 */
+  const from = roam.cells.filter((c, i) => (id === 'alley' && Math.hypot(c.x - WELL.x, c.z - WELL.z) < 4.5) || i % 23 === 0);
+  let out = 0, n = 0, slow = 0, worst = '';
+  for (const c of from) {
+    for (let a = 0; a < 8; a++) {
+      const th = (a / 8) * Math.PI * 2;
+      for (const phase of ['slash', 'rise', 'slam']) {
+        for (const dt of [1 / 60, 0.05]) {
+          m.x = c.x; m.y = c.y; m.z = c.z; m.vx = m.vy = m.vz = 0; m.air = false; m.grounded = true; m.cast = null;
+          const t0 = performance.now();
+          knock(m, c.x - Math.cos(th), c.z - Math.sin(th), Math.cos(th), Math.sin(th), KNOCK_SCALE[phase]);
+          slow = Math.max(slow, performance.now() - t0);
+          for (let i = 0; i < 400 && m.air; i++) monsterStep(m, dt, null);
+          n++;
+          if (!roam.has(m.x, m.y, m.z)) { out++; worst = `(${c.x.toFixed(2)}, ${c.y.toFixed(2)}, ${c.z.toFixed(2)}) ${phase} → (${m.x.toFixed(2)}, ${m.y.toFixed(2)}, ${m.z.toFixed(2)})`; }
+        }
+      }
+    }
+  }
+  ok(out === 0, `${STAGES[k].name}：${n} 次擊退都落在允許區裡（${out} 次沒有${worst ? `，例如 ${worst}` : ''}）；最慢一次 ${slow.toFixed(2)} 毫秒`);
+}
+
+console.log('\n4. 跳過去');
+/* 主角站得住的地方（不只是允許區：比 MOUNT 高的台子、井圈也算），每 0.7 公尺一點。 */
+function stands(arena) {
+  const out = [];
+  const { x0, x1, z0, z1 } = arena.shape === 'circle'
+    ? { x0: arena.x - arena.r, x1: arena.x + arena.r, z0: arena.z - arena.r, z1: arena.z + arena.r } : arena;
+  for (let x = x0 + 0.5; x < x1; x += 0.7) {
+    for (let z = z0 + 0.5; z < z1; z += 0.7) {
+      if (arenaGap(arena, x, z) < 0.6) continue;
+      const y = supportInfo(COLS, x, z, 6).y;
+      const [sx, sz] = solveXZ(COLS, x, z, y, {});
+      if (y > -1 && Math.hypot(sx - x, sz - z) < 1e-6) out.push({ x, y, z });
+    }
+  }
+  return out;
+}
+for (const [id, skill] of [['alley', 'cleave'], ['courtyard', 'leap']]) {
+  const k = stageOf(id), room = STAGES[k].room.split(':')[0], roam = ROAMS.get(room), field = fieldIn(room);
+  const spots = stands(field.arena);
+  const m = makeMonster(foesOf(k)[0], field);
+  const world = makeWorld(field);
+  // 騎士在 3.2 公尺外只剩跳砍挑得到；BOSS 的跳砸 6.9 公尺以內，亂數給 0.4 挑到別招就換下一點
+  const range = skill === 'cleave' ? [3.3, 8] : [0, 6.9];
+  let out = 0, n = 0, worst = '';
+  for (let i = 0; i < roam.cells.length; i += 7) {
+    const c = roam.cells[i];
+    for (let j = (i * 13) % 17; j < spots.length; j += 17) {
+      const p = spots[j], d = Math.hypot(p.x - c.x, p.z - c.z);
+      if (d < range[0] || d > range[1]) continue;
+      Object.assign(m, { x: c.x, y: c.y, z: c.z, cast: null, castT: 0, stun: 0, lunge: null, air: false, held: false, slide: false });
+      bossStep(m, 1e-4, p, world, () => (skill === 'leap' ? 0.4 : 0));
+      if (!m.cast || m.cast.skill !== skill) continue;
+      const [x, y, z] = skill === 'cleave' ? [m.cast.lx, m.cast.ly, m.cast.lz] : [m.cast.tx, m.cast.ty, m.cast.tz];
+      n++;
+      if (!roam.has(x, y, z)) { out++; worst = `(${c.x.toFixed(1)}, ${c.z.toFixed(1)}) → 主角 (${p.x.toFixed(1)}, ${p.y.toFixed(2)}, ${p.z.toFixed(1)})`; }
+    }
+  }
+  ok(n > 50 && out === 0, `${STAGES[k].name}的${skill === 'cleave' ? '跳砍' : '跳砸'}：${n} 次落點都在允許區裡（${out} 次沒有${worst ? `，例如 ${worst}` : ''}）`);
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

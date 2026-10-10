@@ -75,6 +75,7 @@ import { BLOCKS, THRONE } from './blocks.js';
 import { thronePath, pathGap } from './king.js';
 import { STAGES, START, SOULS, roomOf, signposts, foesOf, entranceOf, inStage, makeRun, doorsFor, openPortals, restAt } from './route.js';
 import { Signpost } from './signpost.js';
+import { roamMap } from './roam.js';
 
 const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -95,8 +96,19 @@ const signpost = new Signpost(document.getElementById('signpost'), canvas);
 const COLS = stage.cols;
 /** 光影（light.js）：陰影、火光、霧、後製。 */
 const light = createLight({ scene, renderer, camera, ruins, cols: COLS, arenas: ruins.arenas });
-/** 怪物站在哪一張圖（combat.js 的 FIELD 那一種）：那一張的黑牆、整片遺跡的碰撞、現在的門。 */
-const fieldOf = (block) => ({ arena: ruins.arenas.find((a) => a.id === block), cols: COLS, doors });
+/* 會走路的怪物准許待在哪（roam.js）：每一場有會走路的怪物的房間一份，從這一場的入口（兵營
+   沒有入口，從站位）往外淹、門全關——打的時候就是那樣。一間幾十到一百多毫秒，所以載入的時候
+   一次算好，不在進房間的那一幀算。 */
+const ROAMS = new Map();
+STAGES.forEach((s, k) => {
+  const foes = foesOf(k);
+  if (foes.every((f) => KINDS[f.kind].fly)) return;
+  const room = s.room.split(':')[0];
+  const at = s.entry ? ruins.arrivals[s.entry.to] : foes[0];
+  ROAMS.set(room, roamMap(COLS, ruins.arenas.find((a) => a.id === room), { x: at.x, y: at.y || 0, z: at.z }, {}));
+});
+/** 怪物站在哪一張圖（combat.js 的 FIELD 那一種）：那一張的黑牆、整片遺跡的碰撞、現在的門、准許待的地方。 */
+const fieldOf = (block) => ({ arena: ruins.arenas.find((a) => a.id === block), cols: COLS, doors, roam: ROAMS.get(block) });
 
 /* ── 動物 ────────────────────────────────────────────────────────── */
 const zoo = await loadZoo({ look: 'dog-prick/yellow', height: 1.0 });

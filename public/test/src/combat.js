@@ -90,7 +90,8 @@
              高度在身高中間。
    ------------------------------------------------------------------ */
 
-import { PHYS, solveXZ, steer, clampArena, supportInfo } from './walk.js';
+import { PHYS, solveXZ, steer, clampArena, supportInfo, colsNear } from './walk.js';
+import { ROAM } from './roam.js';
 
 /** 狗有多高。攻擊的長度都用它量，所以跟物理的身體是同一個數字。 */
 export const DOG_H = PHYS.height;
@@ -159,6 +160,9 @@ export const COLS = [{
  * 每一隻怪物帶著自己的那一份（`m.field`），規則一律問牠身上的，不問這個檔案的
  * 常數——所以同一套規則放得進任何一張圖：這一塊空地是 FIELD，完整流程裡是
  * 那一張遺跡的黑牆與碰撞。地板不是 0，是腳下那一塊的頂（牆頂的走道在 5.2）。
+ *
+ * `roam`（可以沒有）：會走路的怪物准許待在哪（roam.js）。有的話，不是走路的移動（被打飛、
+ * 跳砍、跳砸）只落在這裡面；這一塊空地四面平坦、只有黑牆，用不著。
  */
 export const FIELD = { arena: ARENA, cols: COLS, doors: {} };
 
@@ -440,6 +444,8 @@ export function makeMonster(spawn = SPAWN.monsters[0], field = FIELD) {
     x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, grounded: true, aimX: 0, aimZ: 1,
     /* 被擊退、還沒落地。這段時間牠不追人，碰到玩家也不算數。 */
     air: false,
+    /** 在空中還沒走完的那一點時間（不滿 AIR_DT，見 monsterStep）。 */
+    airT: 0,
     /** 挨了幾下。 */
     hits: 0,
     /** 剩多少血。 */
@@ -601,7 +607,14 @@ export function monsterStep(m, dt, target) {
     return;
   }
   if (m.air && kindOf(m).fly) { driftStep(m, dt); return; }
-  if (m.air) { airStep(m, dt); return; }
+  if (m.air) {
+    /* 一步固定 AIR_DT，幀長再長就多走幾步，不滿一步的留到下一幀：被打飛的路線因此跟幀率
+       無關，擊退那一刻預跑的落點（aimLanding）就是牠真的落下的地方。 */
+    m.airT += dt;
+    while (m.air && m.airT >= AIR_DT) { airStep(m, AIR_DT); m.airT -= AIR_DT; }
+    if (!m.air) m.airT = 0;
+    return;
+  }
   // 沒有目標、放招中、出招後的僵直（skills.js）：站著不動。
   if (!target) { m.lunge = null; m.vx = 0; m.vy = 0; m.vz = 0; return; }
   if (m.cast || m.stun > 0) { m.vx = 0; m.vy = 0; m.vz = 0; return; }
@@ -635,8 +648,11 @@ export function monsterStep(m, dt, target) {
   if (!fly) settle(m);
 }
 
+/** 在空中一步多長（見 monsterStep）。預跑落點用的是同一個，所以兩邊一步一步完全一樣。 */
+const AIR_DT = 1 / 60;
+
 /**
- * 被擊退（不會飛的）在空中的一幀：照拋物線飛，落地就停。`cols` 平常是 m.field.cols；
+ * 被擊退（不會飛的）在空中的一步：照拋物線飛，落地就停。`cols` 平常是 m.field.cols；
  * 預跑落點的時候給篩過的那一份（walk.js 的 colsNear），規則是同一支。
  */
 function airStep(m, dt, cols = m.field.cols) {
@@ -796,7 +812,61 @@ export function knock(m, fromX, fromZ, awayX, awayZ, scale = { h: 1, v: 1 }) {
   m.vy = KNOCK.v * scale.v;
   m.slide = false;
   m.air = true;
+  m.airT = 0;
   m.grounded = false;
+  if (m.field.roam && !kindOf(m).fly) aimLanding(m);
+}
+
+/** 預跑落點最多看幾秒（從井口掉到井底也在這以內）。 */
+const FORESEE = 2;
+/** 檢查預跑的落點時放寬多少：飛到一半被別隻推開（separate）會差一點點。 */
+const SLACK = 0.1;
+/** 改過的水平速度最多這麼快：再快就不像被打飛，是被扔出去。 */
+const AIM_MAX = 6;
+
+/**
+ * 被打飛的這一下會落在哪：照 airStep 一步一步（AIR_DT）飛到落地。碰撞只看路線附近（colsNear）：
+ * 落回起跳那一層要飛多久、再多 0.3 秒（落到低一層），水平走得到的範圍再放寬一公尺。
+ * 一次中位數 0.03 毫秒。飛出那個範圍（篩掉的碰撞體可能擋得到）、掉得比允許區最低的那一格
+ * 還低半公尺（往井底掉，不必看到底）、FORESEE 秒還沒落地，都回 null——看不準就當作落不進
+ * 允許區。
+ */
+function landing(m) {
+  const g = { x: m.x, y: m.y, z: m.z, vx: m.vx, vy: m.vy, vz: m.vz, air: true, grounded: false, field: m.field };
+  const span = Math.hypot(m.vx, m.vz) * ((2 * Math.max(0, m.vy)) / PHYS.gravity + 0.3);
+  const cols = colsNear(m.field.cols, m.x, m.z, m.x, m.z, span + 1);
+  for (let t = 0; t < FORESEE && g.air; t += AIR_DT) {
+    airStep(g, AIR_DT, cols);
+    if (Math.abs(g.x - m.x) > span + 0.5 || Math.abs(g.z - m.z) > span + 0.5 || g.y < m.field.roam.low - 0.5) return null;
+  }
+  return g.air ? null : g;
+}
+
+/**
+ * 被打飛之前先看落點：不在允許區（m.field.roam）裡——井裡、柱子後面的死角、牆外——就
+ * 改水平速度，讓牠落在最近的一格上（垂直的初速不動，所以弧線一樣高）。改了還是落不進去
+ * （路上有東西擋），或者要扔得比 AIM_MAX 還快，就只留垂直：原地彈起來，落回起跳的地方。
+ */
+function aimLanding(m) {
+  const roam = m.field.roam;
+  const inside = (g) => !!g && roam.has(g.x, g.y, g.z, ROAM.near - SLACK);
+  const at = landing(m);
+  if (inside(at)) return;
+  const g = PHYS.gravity;
+  const apex = m.y + (m.vy * m.vy) / (2 * g);
+  const from = at || { x: m.x + m.vx * (2 * m.vy / g), y: m.y, z: m.z + m.vz * (2 * m.vy / g) };
+  const c = roam.nearest(from.x, from.y, from.z, (q) => q.y < apex - 0.05);
+  if (c) {
+    const T = (m.vy + Math.sqrt(m.vy * m.vy + 2 * g * (m.y - c.y))) / g;
+    const vx = (c.x - m.x) / T, vz = (c.z - m.z) / T;
+    if (Math.hypot(vx, vz) <= AIM_MAX) {
+      const vx0 = m.vx, vz0 = m.vz;
+      m.vx = vx; m.vz = vz;
+      if (inside(landing(m))) return;
+      m.vx = vx0; m.vz = vz0;
+    }
+  }
+  m.vx = 0; m.vz = 0;
 }
 
 /**

@@ -258,6 +258,9 @@ function begin(m, skill, target, rng) {
   /* 目標點的地板：玩家可能在空中，跳砸落在牠腳下那一塊的頂上。 */
   const ty = supportInfo(m.field.cols, target.x, target.z, target.y).y;
   m.cast = { skill, t: 0, dirX, dirZ, tx: target.x, tz: target.z, ty, x0: m.x, y0: m.y, z0: m.z };
+  /* 跳砸落在那一點上：玩家站得到、怪物不准待的地方（比 MOUNT 高的台子）就落在旁邊最近准許的
+     那一格（allowed）。其他招的 tx / tz 是「鎖定的那一點」（召喚的朝向、跳砍的方向），不動。 */
+  if (skill === 'leap') [m.cast.tx, m.cast.ty, m.cast.tz] = allowed(m, target.x, ty, target.z);
   m.aimX = dirX; m.aimZ = dirZ;
   m.vx = 0; m.vz = 0;
   if (skill === 'cleave' || REAP[skill]) aimCleave(m, d);
@@ -296,9 +299,20 @@ function summonSpots(m, rng) {
 function aimCleave(m, d) {
   const c = m.cast, S = SKILL.cleave;
   const k = Math.max(0, d - S.len / 2);
-  c.lx = m.x + c.dirX * k;
-  c.lz = m.z + c.dirZ * k;
-  c.ly = supportInfo(m.field.cols, c.lx, c.lz, Math.max(m.y, c.ty) + PHYS.step).y;
+  const lx = m.x + c.dirX * k, lz = m.z + c.dirZ * k;
+  [c.lx, c.ly, c.lz] = allowed(m, lx, supportInfo(m.field.cols, lx, lz, Math.max(m.y, c.ty) + PHYS.step).y, lz);
+}
+
+/**
+ * 跳過去的落點（跳砸、跳砍）：不在允許區（m.field.roam，見 roam.js）裡就換成最近的那一格。
+ * 直線上的那一點可能在井口裡、柱子後面的死角、木箱裡面——路線不看碰撞，飛過去就是落在
+ * 那裡。沒有允許區（戰鬥模式那一片空地）、會飛的，照原來的點。
+ */
+function allowed(m, x, y, z) {
+  const roam = m.field.roam;
+  if (!roam || kindOf(m).fly || roam.has(x, y, z)) return [x, y, z];
+  const c = roam.nearest(x, y, z);
+  return c ? [c.x, c.y, c.z] : [x, y, z];
 }
 
 /** 每一招倒數時與倒數完的那一幀要做什麼。 */
