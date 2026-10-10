@@ -2,13 +2,18 @@
    這一場的 BOSS 的血條（route.js 的 STAGES，foes 裡帶 `boss` 的那一隻）：畫面最上方、
    遊戲那一片的正中間，上面一行是牠的名字。不寫數字——剩多少血看橙色那一截還有多長。
 
+   ── 樣子 ──────────────────────────────────────────────────────────
+   一條很圓的圓角長條（兩端是半圓），跟遊戲的卡通著色一樣是分層的、硬邊的：墨線框住，底下
+   墊一道往下偏的影子；槽是凹的（上緣一道更暗的內影），每一層血都是三階——中間是底色、
+   下面一截是暗面、上面一條細的亮面，沒有漸層。沒有別的裝飾。
+
    ── 一生 ──────────────────────────────────────────────────────────
      出現   BOSS 出生的那一刻（開始從地底升上來，或在漫畫底下生好）：從中間往左右
-            長開，0 長到全寬（OPEN 秒），兩端的菱形跟著往外走；名字隨後淡進來。
+            長開，0 長到全寬（OPEN 秒），一直是那個圓角長條的形狀；名字隨後淡進來。
      挨打   三層，由下往上是白、黃、橙（`meter`）。橙色那一截馬上縮到剩下的血；這一下扣掉的
             那一段變黃，黃色 HIT.yellow 秒縮到底，白色 HIT.white 秒才縮到剩下的血。
             連著挨打：黃與白都從它們這一刻的位置重新縮向新的血，不跳回去。
-     死掉   最後一下的黃色縮完，整條（連名字與兩端的菱形）像灰塵一樣由左到右散掉：一條
+     死掉   最後一下的黃色縮完，整條（連名字與影子）像灰塵一樣由左到右散掉：一條
             掃過去的線（DUST.sweep 秒），掃過的那一點碎成小方塊，往右上飄、淡掉。
      收起來 倒下、重玩：直接不見（沒死就不散）。
 
@@ -28,13 +33,35 @@ export const HIT = { yellow: 0.05, white: 0.5 };
  */
 const DUST = { sweep: 0.9, jitter: 0.12, cell: 2, life: [0.45, 0.9], wind: 40, lift: 30 };
 
-/** 版面（CSS 像素）：畫布多高，名字的中線，條的上緣與高，條的寬是遊戲那一片的幾成（夾在 min～max）。 */
-const BOX = { h: 64, name: 20, y: 32, bar: 10, w: 0.56, min: 180, max: 520, cap: 6 };
+/**
+ * 版面（CSS 像素）：畫布多高，名字的中線，條的上緣與高（不含墨線），條的寬是遊戲那一片的幾成
+ * （夾在 min～max），墨線多粗，影子往下偏多少。圓角是高的一半：兩端是半圓。
+ */
+const BOX = { h: 64, name: 18, y: 31, bar: 14, w: 0.56, min: 180, max: 520, line: 2.5, drop: 3 };
 
+/** 每一層三階：底色、暗面（下面那一截）、亮面（上面那一條）。槽的「亮面」是上緣的內影。 */
 const COL = {
-  ink: 'rgb(43, 35, 32)', track: 'rgba(20, 14, 9, 0.82)',
-  white: '#fff6e6', yellow: '#ffd84a', orange: ['#f7a645', '#d8681c'], gold: '#f2c14e', name: '#f7efdd',
+  ink: 'rgb(43, 35, 32)', shadow: 'rgba(0, 0, 0, 0.35)', name: '#f7efdd',
+  track: ['#3a2c22', '#2e231b', '#1d1611'],
+  white: ['#fff6e6', '#ddcdb4', '#ffffff'],
+  yellow: ['#ffd84a', '#e3a922', '#fff3a6'],
+  orange: ['#f39a3a', '#c9621b', '#ffc77e'],
 };
+
+/** 暗面佔下面幾成、亮面在上面幾成到幾成（條的高）。 */
+const BAND = { shade: 0.38, light: [0.16, 0.34] };
+
+/** 圓角長條的路徑：(x, y) 起、寬 w、高 h，圓角半徑是高的一半（不夠寬就更小）。 */
+function pill(g, x, y, w, h) {
+  const r = Math.min(h / 2, w / 2);
+  g.beginPath();
+  g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r);
+  g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r);
+  g.arcTo(x, y, x + w, y, r);
+  g.closePath();
+}
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
@@ -150,42 +177,44 @@ export class BossBar {
     return { cx: W / 2, w: Math.min(BOX.max, Math.max(BOX.min, W * BOX.w)) };
   }
 
-  /** 畫一條：長開了 open（0..1，從中間往兩邊），名字的透明度 alpha。 */
+  /** 畫一條：長開了 open（0..1，從中間往兩邊長，一直是圓角長條），名字的透明度 alpha。 */
   _paint(g, open, alpha) {
-    const { cx, w } = this._geom(), { y, bar: h, cap } = BOX, mt = this.meter;
-    const half = (w / 2) * open, x0 = cx - w / 2;
-    if (half <= 0) return;
-    g.save();
-    g.beginPath();
-    g.rect(cx - half - 2, 0, half * 2 + 4, BOX.h);
-    g.clip();
-    g.fillStyle = COL.ink;
-    g.fillRect(x0 - 2, y - 2, w + 4, h + 4);
-    g.fillStyle = COL.track;
-    g.fillRect(x0, y, w, h);
-    g.fillStyle = COL.white;
-    g.fillRect(x0, y, w * mt.white, h);
-    g.fillStyle = COL.yellow;
-    g.fillRect(x0, y, w * mt.yellow, h);
-    const grad = g.createLinearGradient(0, y, 0, y + h);
-    grad.addColorStop(0, COL.orange[0]);
-    grad.addColorStop(1, COL.orange[1]);
-    g.fillStyle = grad;
-    g.fillRect(x0, y, w * mt.hp, h);
-    g.fillStyle = 'rgba(255, 255, 255, 0.22)';
-    g.fillRect(x0, y, w * mt.hp, 3);
-    g.restore();
-    // 兩端的菱形：跟著長開的邊往外走。
-    for (const s of [-1, 1]) {
-      const x = cx + s * (half + cap + 1), my = y + h / 2;
-      g.beginPath();
-      g.moveTo(x, my - cap); g.lineTo(x + cap, my); g.lineTo(x, my + cap); g.lineTo(x - cap, my);
-      g.closePath();
-      g.lineWidth = 2;
-      g.strokeStyle = COL.ink;
-      g.stroke();
-      g.fillStyle = COL.gold;
+    const { cx, w: full } = this._geom(), { y, bar: h, line, drop } = BOX, mt = this.meter;
+    const w = full * open, x0 = cx - w / 2, o = line / 2;
+    if (w > 1) {
+      // 影子、墨線框（往外 line），裡面是槽與三層血：都剪在條的圓角裡。
+      g.fillStyle = COL.shadow;
+      pill(g, x0 - line, y - line + drop, w + line * 2, h + line * 2);
       g.fill();
+      g.fillStyle = COL.ink;
+      pill(g, x0 - line, y - line, w + line * 2, h + line * 2);
+      g.fill();
+      g.save();
+      pill(g, x0, y, w, h);
+      g.clip();
+      const band = (cols, from, to) => {
+        if (to <= from) return;
+        g.fillStyle = cols[0];
+        g.fillRect(from, y, to - from, h);
+        g.fillStyle = cols[1];
+        g.fillRect(from, y + h * (1 - BAND.shade), to - from, h * BAND.shade);
+        g.fillStyle = cols[2];
+        g.fillRect(from, y + h * BAND.light[0], to - from, h * (BAND.light[1] - BAND.light[0]));
+      };
+      // 槽是凹的：底色、下面一截稍亮，上緣一道內影。
+      g.fillStyle = COL.track[0];
+      g.fillRect(x0, y, w, h);
+      g.fillStyle = COL.track[1];
+      g.fillRect(x0, y + h * (1 - BAND.shade), w, h * BAND.shade);
+      g.fillStyle = COL.track[2];
+      g.fillRect(x0, y, w, h * 0.3);
+      band(COL.white, x0, x0 + w * mt.white);
+      band(COL.yellow, x0, x0 + w * mt.yellow);
+      band(COL.orange, x0, x0 + w * mt.hp);
+      // 每一層的右緣一道墨線：分層是硬邊的。
+      g.fillStyle = COL.ink;
+      for (const v of [mt.hp, mt.yellow, mt.white]) if (v > 0 && v < 1) g.fillRect(x0 + w * v - o / 2, y, o, h);
+      g.restore();
     }
     if (alpha > 0) {
       g.globalAlpha = alpha;
@@ -216,7 +245,7 @@ export class BossBar {
     const g = img.getContext('2d');
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     this._paint(g, 1, 1);
-    const { cx, w } = this._geom(), left = cx - w / 2 - BOX.cap * 2 - 2, span = w + BOX.cap * 4 + 4;
+    const { cx, w } = this._geom(), left = cx - w / 2 - BOX.line - 1, span = w + BOX.line * 2 + 2;
     const data = g.getImageData(0, 0, img.width, img.height).data;
     const W = this.el.clientWidth, c = DUST.cell, motes = [];
     for (let y = 0; y < BOX.h; y += c) {
