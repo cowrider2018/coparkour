@@ -31,9 +31,24 @@
      · 那道從圓心拖到旋鈕的水痕還在，只是方向跟著旋鈕跑。
 
    跳躍鍵一個像素都沒動：細環儀器、按下鼓成水滴、炸出水花、向上的箭頭。
+
+   ── 顏色 ──────────────────────────────────────────────────────────
+   遊戲那邊是葉綠（touch.js 的 tint）；這裡換成黃狗的黃（受光那一階在畫面上的
+   顏色），色階的走法一樣：白 → 黃，張力越大越黃。
    ------------------------------------------------------------------ */
 
-import { waveAt, tint } from '../../src/touch.js';
+import { waveAt } from '../../src/touch.js';
+
+/** 黃狗的黃：毛受光那一階畫在畫面上的顏色（sRGB）。 */
+const GOLD = [229, 166, 42];
+
+/** 白 → 黃，張力 t 越大越黃。touch.js 的 tint 同一條色階，只換了終點的顏色。 */
+function tint(t, a) {
+  const k = t * t;
+  const c = GOLD.map((v) => Math.round(255 + (v - 255) * k));
+  return `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+}
+const gold = (a) => `rgba(${GOLD[0]},${GOLD[1]},${GOLD[2]},${a})`;
 
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -372,7 +387,7 @@ export class Pad {
     ctx.fillStyle = 'rgba(24,18,11,0.46)';
     ctx.fill(track);
     ctx.lineWidth = 1.2;
-    ctx.strokeStyle = `rgba(155,217,78,${(0.14 + 0.16 * liq).toFixed(3)})`;
+    ctx.strokeStyle = gold((0.14 + 0.16 * liq).toFixed(3));
     ctx.stroke(track);
 
     // 十字刻度：只在靜止時看得到，一推就讓位給水
@@ -466,7 +481,7 @@ export class Pad {
 
     // 外環：按著時整圈亮起來——「還按著」就是「還在長高」，這件事要看得到
     ctx.lineWidth = 1.4;
-    ctx.strokeStyle = `rgba(155,217,78,${(0.16 + 0.5 * liq).toFixed(3)})`;
+    ctx.strokeStyle = gold((0.16 + 0.5 * liq).toFixed(3));
     ctx.beginPath();
     ctx.arc(cx, cy, r + 6, 0, TAU);
     ctx.stroke();
