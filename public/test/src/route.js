@@ -9,7 +9,7 @@
      兵營 → 中庭 → 窄巷 → 井（不打）→ 水窖 → 墓室 →（傳送）中庭 → 王座廳
 
    照劇本（STORY.md）：兵營殭屍三隻、中庭 BOSS、窄巷騎士、水窖幽靈六隻、墓室幽靈六隻與
-   一隻幽靈騎士——幽靈從石棺、幽靈騎士從北端的大墓升上來（`rise`）——王座廳國王。「走過不打」不用另外處理：每一場只打一次，清完就是清完。
+   一隻幽靈騎士——幽靈從石棺、幽靈騎士從北端的大墓升上來——王座廳國王。怪物怎麼出場見 `entranceOf`。「走過不打」不用另外處理：每一場只打一次，清完就是清完。
    墓室打完不走回去：漫畫翻過回程那一頁，書頁還蓋著的時候直接送到王座廳那一場
    的休息點（`warp`）。
 
@@ -73,8 +73,9 @@ export function signposts(portals, room, seen = null) {
  *   id, name   給人看的名字；hint 是面板上那一行說明
  *   room       在哪個房間打（roomOf 的那一種）
  *   enter      房間裡還要再滿足這個（區塊的局部座標）才開打；沒有就是一進房間就打
- *   foes       怪物的種類與站位，區塊的局部座標（y 是腳下那一層地板）。帶 `rise` 的不是憑空出現，
- *              是從站位底下升上來、升到站位才上場（fight.js 的 lineup）
+ *   foes       怪物的種類與站位，區塊的局部座標（y 是腳下那一層地板）
+ *   debut      初見模式：這一輪第一次登場的時候怎麼出場（entranceOf）。'comic' 是開場漫畫蓋住
+ *              畫面的那一刻就在站位上生好，漫畫走了才開始動；'rise' 是從站位底下升上來
  *   rest       倒下之後在哪裡休息：一個到達點的名字（blocks.js 的 arrivals）
  *   entry      這一場的入口：感測區在哪個區塊、送到哪個到達點——休息的時候面朝它
  *   warp       打完不走過去：直接送到下一場的休息點（墓室 → 中庭）
@@ -89,18 +90,18 @@ const ring = (kind, n, r, cx = 0, cz = 0, a0 = 0) => Array.from({ length: n }, (
 });
 
 /**
- * 墓室的七隻，都面朝鐵閘、從底下升上來（rise）：兩排石棺各取北邊三具（最南那一對離鐵閘太近，一進門
+ * 墓室的七隻，都面朝鐵閘：兩排石棺各取北邊三具（最南那一對離鐵閘太近，一進門
  * 就貼著人），一具一隻幽靈，站在棺蓋上；幽靈騎士從北端那座大墓（GRAVE）升上來，站在石蓋上。
  */
 const tomb = () => [
-  ...COFFINS.filter((c) => c.i > 0).map((c) => ({ kind: 'ghost', x: c.x, y: c.top, z: c.z, yaw: Math.PI, rise: true })),
-  { kind: 'wraith', x: GRAVE.x, y: GRAVE.top, z: GRAVE.z, yaw: Math.PI, rise: true },
+  ...COFFINS.filter((c) => c.i > 0).map((c) => ({ kind: 'ghost', x: c.x, y: c.top, z: c.z, yaw: Math.PI })),
+  { kind: 'wraith', x: GRAVE.x, y: GRAVE.top, z: GRAVE.z, yaw: Math.PI },
 ];
 
 export const STAGES = [
   {
     id: 'barracks', name: '兵營', hint: '起點。往城門走，殭屍在城門前。',
-    room: 'wallwalk', enter: (x, z) => z > -14,
+    room: 'wallwalk', enter: (x, z) => z > -14, debut: 'rise',
     foes: [
       { kind: 'minion', x: -2.5, y: 0, z: -6.5, yaw: Math.PI },
       { kind: 'minion', x: 0, y: 0, z: -8, yaw: Math.PI },
@@ -110,32 +111,32 @@ export const STAGES = [
   },
   {
     id: 'courtyard', name: '崩塌中庭', hint: '從兵營南邊的黑霧過去。',
-    room: 'courtyard', goal: '調查殭屍來歷',
+    room: 'courtyard', goal: '調查殭屍來歷', debut: 'comic',
     foes: [{ kind: 'boss', x: -4, y: 0, z: 0, yaw: Math.PI / 2 }],
     rest: 'wallwalk.fog', entry: { from: 'wallwalk', to: 'courtyard.east' },
   },
   {
     id: 'alley', name: '城內窄巷', hint: '中庭的西拱洞過去，騎士在井後面。',
-    room: 'alley', goal: '喝水',
+    room: 'alley', goal: '喝水', debut: 'comic',
     foes: [{ kind: 'knight', x: 0, y: 0, z: 11.6, yaw: Math.PI }],
     rest: 'courtyard.west', entry: { from: 'courtyard', to: 'alley.fog' },
   },
   {
     id: 'cistern', name: '圓塔水窖', hint: '跳進窄巷的井裡。',
-    room: 'cistern', goal: '喝水',
+    room: 'cistern', goal: '喝水', debut: 'comic',
     foes: ring('ghost', 6, 7, 0, 0, Math.PI / 6),
     rest: 'alley.stair', entry: { from: 'alley', to: 'cistern.well' },
   },
   {
     id: 'crypt', name: '地下墓室', hint: '水窖南邊的鐵閘。',
-    room: 'crypt', goal: '調查幽靈來歷',
+    room: 'crypt', goal: '調查幽靈來歷', debut: 'rise',
     foes: tomb(),
     rest: 'cistern.gate', entry: { from: 'cistern', to: 'crypt.gate' },
     warp: true,
   },
   {
     id: 'throne', name: '王座廳', hint: '回到中庭，門樓的鐵閘升起來了。',
-    room: 'throne', goal: '見國王',
+    room: 'throne', goal: '見國王', debut: 'rise',
     foes: [{ kind: 'king', x: 0, y: 0, z: 6, yaw: Math.PI }],
     rest: 'courtyard.gate', entry: { from: 'courtyard', to: 'throne.gate' },
   },
@@ -160,10 +161,25 @@ export const START = STAGES[0].rest;
 /** 區塊的原點（世界座標）。 */
 const origin = (room) => BLOCKS.find((b) => b.id === room.split(':')[0]).origin;
 
-/** 第 k 場的怪物與站位，世界座標（combat.js 的 makeMonster 吃的那一種）。 */
-export function foesOf(k) {
+/**
+ * 第 k 場的怪物與站位，世界座標（combat.js 的 makeMonster 吃的那一種）。`rise`：每一隻都從
+ * 站位底下升上來、升到站位才上場（fight.js 的 lineup）；不然一放上場就在站位上。
+ */
+export function foesOf(k, rise = false) {
   const s = STAGES[k], [ox, oz] = origin(s.room);
-  return s.foes.map((f) => ({ ...f, x: f.x + ox, z: f.z + oz }));
+  return s.foes.map((f) => ({ ...f, x: f.x + ox, z: f.z + oz, ...(rise ? { rise: true } : {}) }));
+}
+
+/**
+ * 第 k 場的怪物這一次怎麼出場：
+ *   'comic'  開場漫畫蓋住畫面的那一刻在站位上生好，漫畫走了才開始動。
+ *   'rise'   從站位底下升上來（墓室的在棺蓋與大墓的石蓋上，所以是從棺材裡升上來）。
+ * 看兩件事：這一場的初見模式（`debut`），與這一輪牠們是不是已經登場過（`appeared`：倒下之後
+ * 回來重打）。登場過的一律升上來——第二次進來沒有開場漫畫可以蓋住牠們生出來的那一刻。
+ * `comic`：這一次真的有開場漫畫要翻；初見模式是 'comic' 卻沒有漫畫的話也是升上來。
+ */
+export function entranceOf(k, appeared, comic) {
+  return !appeared && comic && STAGES[k].debut === 'comic' ? 'comic' : 'rise';
 }
 
 /**

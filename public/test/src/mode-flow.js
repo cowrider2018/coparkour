@@ -8,8 +8,10 @@
    ── 一場的一生 ──────────────────────────────────────────────────
      一開始（含 R）      兵營開場那一頁漫畫（comic.js 的 SCRIPT.start）。
      走進第 k 場的範圍   所有的門關上、所有的傳送不通。這一場有開場頁、這一輪還沒翻過的話，
-                         書頁直接進來（不放慢動作）；書頁走了一秒後怪物出現（墓室的七隻是從石棺與大墓裡
-                         升上來，升完才上場，route.js 的 rise）。
+                         書頁直接進來（不放慢動作）。怪物怎麼出場看那一場的初見模式與這一輪登場過沒有
+                         （route.js 的 entranceOf）：中庭、窄巷、水窖第一次是書頁蓋住的那一刻就生好、
+                         書頁走了才動；兵營、墓室（從石棺與大墓）、王座廳第一次，以及每一場倒下之後
+                         回來重打，都是書頁走了（沒有書頁就是進來）一秒後從站位底下升上來。
      打死一隻            不當場消失：跟主角倒下一樣往擊退的方向倒（fight.js 的 _fell）。綠色的
                          躺平落地之後 2 秒沉進地裡 3/4、一直留著；幽靈不落地，0.5 秒炸成一團
                          幽靈血；國王躺著。清完的那一場的屍體一直留著，倒下重打的那一次的收掉。
@@ -71,7 +73,7 @@ import { Music } from './music.js';
 import { resetLife, refill, regen, KINDS } from './combat.js';
 import { BLOCKS, THRONE } from './blocks.js';
 import { thronePath, pathGap } from './king.js';
-import { STAGES, START, SOULS, roomOf, signposts, foesOf, inStage, makeRun, doorsFor, portalsOn, restAt } from './route.js';
+import { STAGES, START, SOULS, roomOf, signposts, foesOf, entranceOf, inStage, makeRun, doorsFor, portalsOn, restAt } from './route.js';
 import { Signpost } from './signpost.js';
 
 const canvas = document.getElementById('view');
@@ -131,11 +133,14 @@ preloadComic();
 
 /* ── 路線 ────────────────────────────────────────────────────────
    run 是路線的狀態（route.js 的 makeRun）：下一場是第幾場、是不是正在打。
-   `spawnIn` 是開打之後離怪物出現還有幾秒（0 = 已經出現或沒在打）。 */
+   `spawnIn` 是開打之後離怪物出現還有幾秒（0 = 已經出現或沒在打；Infinity = 等開場漫畫蓋住畫面，
+   那一刻才出現）。 */
 let run = makeRun();
 let spawnIn = 0;
 /** 這一輪翻過開場頁的那幾場：倒下之後走回去重打不再翻。 */
 let opened = new Set();
+/** 這一輪已經登場過的那幾場（第 k 場）：登場過的再進來一律從地底升上來（route.js 的 entranceOf）。 */
+let appeared = new Set();
 /** 這一輪進過的房間（roomOf）：還沒進過的，路標寫去那裡的目的，不寫地名（route.js 的 signposts）。 */
 let seen = new Set();
 /** 倒下幾次（這一輪）。 */
@@ -175,6 +180,7 @@ function startFrom(k) {
   run = makeRun(k);
   spawnIn = 0;
   opened = new Set();
+  appeared = new Set();
   // 從第 k 場開始：前面那幾場當作打完了，房間也當作進過。
   seen = new Set(STAGES.slice(0, k).map((s) => s.room));
   deaths = 0;
@@ -191,19 +197,32 @@ function startFrom(k) {
 }
 
 /**
- * 走進了下一場：關門、斷傳送，怪物等一下出現。有開場頁的話先翻（這一輪第一次進來才翻），
- * 怪物等書頁走了才開始倒數（見主迴圈）。
+ * 走進了下一場：關門、斷傳送，怪物出場（route.js 的 entranceOf）。有開場頁的話先翻（這一輪第一次
+ * 進來才翻）。
+ *   comic  書頁整個蓋住的那一刻怪物在站位上生好；世界在書頁底下是停的，書頁走了牠們才開始動。
+ *   rise   書頁走了（沒有書頁就是現在）SPAWN_DELAY 秒之後從站位底下升上來（見主迴圈）。
  */
 function engage() {
   const k = run.next;
   run.active = true;
-  spawnIn = SPAWN_DELAY;
   applyDoors();
   const say = () => hud.flash(`第 ${k + 1} 場：${stageName(k)}`);
-  if (SCRIPT.open[k] && !opened.has(k)) {
+  const comic = !!SCRIPT.open[k] && !opened.has(k);
+  const how = entranceOf(k, appeared.has(k), comic);
+  spawnIn = how === 'comic' ? Infinity : SPAWN_DELAY;
+  if (comic) {
     opened.add(k);
-    story.start(pagesOf(SCRIPT.open[k]), { then: say });
+    story.start(pagesOf(SCRIPT.open[k]), { then: say, cover: how === 'comic' ? () => appear(k, false) : null });
   } else say();
+}
+
+/** 第 k 場的怪物上場：`rise` 是從站位底下升上來，不然直接站在站位上。這一場算登場過了。 */
+function appear(k, rise) {
+  spawnIn = 0;
+  appeared.add(k);
+  const foes = foesOf(k, rise);
+  fight.lineup(foes, fieldOf(STAGES[k].room.split(':')[0]));
+  if (rise) hud.flash(`${foes.length > 1 ? '怪物' : KINDS[foes[0].kind].name}出現了`);
 }
 
 /**
@@ -358,13 +377,9 @@ function frame(now) {
 
   // 路線：走進下一場就開打；怪物等一下出現；全部打死就清完。
   if (!run.active && run.next < STAGES.length && inStage(run.next, player.block, player.x, player.y, player.z)) engage();
-  if (run.active && spawnIn > 0 && !story.on) {
+  if (run.active && spawnIn > 0 && spawnIn < Infinity && !story.on) {
     spawnIn -= dt;
-    if (spawnIn <= 0) {
-      spawnIn = 0;
-      fight.lineup(foesOf(run.next), fieldOf(STAGES[run.next].room.split(':')[0]));
-      hud.flash(`${foesOf(run.next).length > 1 ? '怪物' : KINDS[foesOf(run.next)[0].kind].name}出現了`);
-    }
+    if (spawnIn <= 0) appear(run.next, true);
   }
   const { hit, died, souls } = fight.resolve(dt, player);
   if (souls) hud.flash(`撿到靈魂，最大血量 +${souls}`);

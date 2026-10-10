@@ -41,7 +41,7 @@
 import { buildRuins, BLOCKS } from '../public/test/src/blocks.js';
 import { PHYS, arenaGap, solveXZ, supportInfo } from '../public/test/src/walk.js';
 import {
-  STAGES, OPEN, START, SOULS, roomOf, roomName, signposts, foesOf, inStage, makeRun, doorsFor, portalsOn, restAt,
+  STAGES, OPEN, START, SOULS, roomOf, roomName, signposts, foesOf, entranceOf, inStage, makeRun, doorsFor, portalsOn, restAt,
 } from '../public/test/src/route.js';
 import { KINDS } from '../public/test/src/combat.js';
 import { FOLK, walkCells, plan } from '../public/test/src/folk.js';
@@ -102,11 +102,23 @@ STAGES.forEach((s, k) => {
   const k = STAGES.findIndex((s) => s.id === 'crypt'), foes = STAGES[k].foes;
   const ghosts = foes.filter((f) => f.kind === 'ghost'), wraiths = foes.filter((f) => f.kind === 'wraith');
   const on = ghosts.map((f) => COFFINS.findIndex((c) => c.x === f.x && c.z === f.z && c.top === f.y));
-  ok(foes.length === 7 && foes.every((f) => f.rise && f.yaw === Math.PI), '地下墓室：七隻，都面朝鐵閘、從底下升上來');
+  ok(foes.length === 7 && foes.every((f) => f.yaw === Math.PI) && STAGES[k].debut === 'rise', '地下墓室：七隻，都面朝鐵閘，第一次也是從底下升上來');
   ok(ghosts.length === 6 && on.every((i) => i >= 0 && COFFINS[i].i > 0) && new Set(on).size === 6,
     '地下墓室：六隻幽靈各站在一具石棺的棺蓋上（離鐵閘最近那一對不用）');
   ok(wraiths.length === 1 && wraiths[0].x === GRAVE.x && wraiths[0].z === GRAVE.z && wraiths[0].y === GRAVE.top,
     `地下墓室：一隻幽靈騎士從北端的大墓升上來，站在石蓋上（${GRAVE.top} 公尺）`);
+}
+
+{
+  // 出場：初見模式 + 這一輪登場過沒有（route.js 的 entranceOf）。
+  const id = (k) => STAGES[k].id;
+  const comicFirst = STAGES.map((_, k) => k).filter((k) => entranceOf(k, false, true) === 'comic').map(id);
+  ok(comicFirst.join() === 'courtyard,alley,cistern', `第一次進來、有開場漫畫：${comicFirst.join('、')} 在漫畫底下生好，其他（兵營、墓室、王座廳）從地底升上來`);
+  ok(STAGES.every((_, k) => entranceOf(k, true, false) === 'rise' && entranceOf(k, true, true) === 'rise'),
+    '登場過的（倒下之後回來重打）每一場都從地底升上來');
+  ok(STAGES.every((_, k) => entranceOf(k, false, false) === 'rise'), '初見模式是漫畫、這一次卻沒有漫畫可翻的話，也是升上來');
+  ok(foesOf(1, true).every((f) => f.rise) && foesOf(1).every((f) => !f.rise) && STAGES.every((s) => s.foes.every((f) => !('rise' in f))),
+    '升不升上來是出場時決定的（foesOf 的 rise），站位本身不帶');
 }
 
 /* ── 2. 觸發 ─────────────────────────────────────────────────── */
