@@ -34,26 +34,24 @@
    跳躍鍵一個像素都沒動：細環儀器、按下鼓成水滴、炸出水花、向上的箭頭。
 
    ── 顏色 ──────────────────────────────────────────────────────────
-   遊戲那邊兩個都是葉綠（touch.js 的 tint）；這裡各一色，色階的走法一樣（白 → 那一色，
-   張力越大越濃）：
-     跳躍鍵  黃狗的黃（受光那一階在畫面上的顏色）。
-     搖桿    靈魂的藍灰（monster.js 的 GHOST.face：幽靈、倒下浮起來的那一隻的臉色）；靜止時的
-             細線、靶標、空心旋鈕是靈魂身上的淡冰藍（GHOST.body），軌道的底是壓暗的藍灰。
+   遊戲那邊是葉綠（touch.js 的 tint）；這裡搖桿與跳躍鍵都是靈魂的顏色，色階的走法一樣
+   （白 → 那一色，張力越大越濃）：
+     按著    靈魂的藍灰（monster.js 的 GHOST.face：幽靈、倒下浮起來的那一隻的臉色）。
+     靜止    細線、靶標、空心的旋鈕與鍵、鍵上的圖案、水花是靈魂身上的淡冰藍（GHOST.body），
+             軌道與鍵的底是壓暗的藍灰。
    ------------------------------------------------------------------ */
 
 import { waveAt } from '../../src/touch.js';
 
-/** 跳躍鍵：黃狗的黃，毛受光那一階畫在畫面上的顏色（sRGB）。 */
-const GOLD = [229, 166, 42];
-/** 搖桿：靈魂的藍灰，monster.js 的 GHOST.face（0.34, 0.44, 0.60）換成 0～255。 */
+/** 按著的顏色：靈魂的藍灰，monster.js 的 GHOST.face（0.34, 0.44, 0.60）換成 0～255。 */
 const SOUL = [87, 112, 153];
-/** 搖桿靜止時的細線、靶標與空心旋鈕：靈魂身上那一層淡冰藍（monster.js 的 GHOST.body）。 */
+/** 靜止時的細線、靶標、空心的旋鈕與鍵、圖案、水花：靈魂身上那一層淡冰藍（monster.js 的 GHOST.body）。 */
 const SOUL_PALE = [199, 224, 250];
-/** 搖桿軌道的底：壓暗的藍灰。 */
+/** 軌道與鍵的底：壓暗的藍灰。 */
 const SOUL_DEEP = [16, 20, 30];
 
 /** 白 → col，張力 t 越大越濃。touch.js 的 tint 同一條色階，只換了終點的顏色。 */
-function tint(t, a, col = GOLD) {
+function tint(t, a, col = SOUL) {
   const k = t * t;
   const c = col.map((v) => Math.round(255 + (v - 255) * k));
   return `rgba(${c[0]},${c[1]},${c[2]},${a})`;
@@ -109,7 +107,7 @@ function blobPath(cx, cy, r, tilt, pull, t, ph, wa) {
 }
 
 /* 水的菲涅耳 + 高光。src/pad.js 的 fillLiquid 原文。 */
-function fillLiquid(ctx, p, cx, cy, r, tn, glow, col = GOLD) {
+function fillLiquid(ctx, p, cx, cy, r, tn, glow, col = SOUL) {
   const g = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.34, r * 0.08, cx, cy, r * 1.05);
   g.addColorStop(0, 'rgba(255,255,255,0.26)');
   g.addColorStop(0.45, 'rgba(255,255,255,0.10)');
@@ -486,7 +484,7 @@ export class Pad {
 
     // 外環：按著時整圈亮起來——「還按著」就是「還在長高」，這件事要看得到
     ctx.lineWidth = 1.4;
-    ctx.strokeStyle = solid(GOLD, (0.16 + 0.5 * liq).toFixed(3));
+    ctx.strokeStyle = solid(SOUL, (0.3 + 0.4 * liq).toFixed(3));
     ctx.beginPath();
     ctx.arc(cx, cy, r + 6, 0, TAU);
     ctx.stroke();
@@ -496,10 +494,10 @@ export class Pad {
       ctx.globalAlpha *= 1 - liq;
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, TAU);
-      ctx.fillStyle = 'rgba(24,18,11,0.46)';
+      ctx.fillStyle = solid(SOUL_DEEP, 0.46);
       ctx.fill();
       ctx.lineWidth = 1.6;
-      ctx.strokeStyle = 'rgba(247,239,221,0.42)';
+      ctx.strokeStyle = solid(SOUL_PALE, 0.42);
       ctx.stroke();
       ctx.restore();
     }
@@ -521,7 +519,7 @@ export class Pad {
        透明度就不一致。 */
     const k = this.iconK;
     const lit = liq > 0.02;
-    const rgb = lit ? tint(0.4 + 0.6 * liq, 1) : 'rgb(247,239,221)';
+    const rgb = lit ? tint(0.4 + 0.6 * liq, 1) : solid(SOUL_PALE, 1);
     const alpha = (0.55 + 0.45 * liq) * (lit ? 0.95 : 0.62);
     const lift = press * r * 0.06;
     if (k < 0.99) this._glyph(ctx, cx, cy - lift, r, rgb, alpha * (1 - k), (g) => {
@@ -605,7 +603,7 @@ export class Pad {
       const g = ctx.createRadialGradient(x - rr * 0.3, y - rr * 0.3, 0, x, y, rr);
       g.addColorStop(0, `rgba(255,255,255,${(0.72 * fade).toFixed(3)})`);
       g.addColorStop(0.7, `rgba(255,255,255,${(0.34 * fade).toFixed(3)})`);
-      g.addColorStop(1, `rgba(236,250,196,${(0.5 * fade).toFixed(3)})`);
+      g.addColorStop(1, solid(SOUL_PALE, (0.5 * fade).toFixed(3)));
       ctx.fillStyle = g;
       ctx.beginPath();
       ctx.arc(x, y, rr, 0, TAU);
