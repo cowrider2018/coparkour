@@ -39,14 +39,14 @@ const FADE = 1.0;
  * cool 是陰影往 shade 那個色相拉多少（見 palette.js 的「一組光」）。
  */
 const MOODS = {
-  /* 崩塌中庭：午後，暖，影子偏藍。 */
+  /* 中庭：午後，暖，影子偏藍。 */
   courtyard: { key: 0xffe4bc, keyGain: 2.05, shade: 0x5a6cb0, cool: 0.35, fog: 0xa28a6d },
   /* 王座廳：金色、莊重，環境光收一點讓影子沉。 */
   throne: {
     key: 0xffd596, keyGain: 1.95, sky: 0x8f8fb8, ground: 0x3d2a1a, ambGain: 0.72,
     shade: 0x54508f, cool: 0.45, fog: 0x8a6c4c,
   },
-  /* 圓塔水窖：水氣，冷的青綠。 */
+  /* 水窖：水氣，冷的青綠。 */
   cistern: {
     key: 0xd6f0e6, keyGain: 1.8, sky: 0x7fb8b0, ground: 0x1f302c, ambGain: 0.92,
     shade: 0x3f7a86, cool: 0.5, fog: 0x5c766e,
@@ -61,7 +61,7 @@ const MOODS = {
     key: 0xc6d2ec, keyGain: 1.55, sky: 0x7f8cb0, ground: 0x1e1e26, ambGain: 0.8,
     shade: 0x4a5a9a, cool: 0.45, fog: 0x484c5a,
   },
-  /* 城內窄巷：傍晚，偏紫。 */
+  /* 城鎮窄巷：傍晚，偏紫。 */
   alley: {
     key: 0xf2d2c6, keyGain: 1.85, sky: 0x9a8ac8, ground: 0x2e2230, ambGain: 0.85,
     shade: 0x6a62a0, cool: 0.35, fog: 0x7a6476,

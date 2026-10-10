@@ -34,34 +34,34 @@ export const PAGES = [
     { note: '主角低頭看著腳邊一隻殭屍', say: '這些傢伙從哪來的？', src: 'comic/p2-2.png', focus: '50% 60%' },
     { note: '主角轉向南邊的黑霧', say: '去中庭問問其他人。', src: 'comic/p2-3.png', focus: '30% 55%' },
   ] },
-  { title: '崩塌中庭', panels: [
+  { title: '中庭', panels: [
     { note: '中庭一圈斷柱、兩側拱廊，還是沒有人', say: '有人嗎？', src: 'comic/p3-1.png', capAt: 'bottom', focus: '68% 70%' },
     { note: '地面震一下，碎石跳起來', src: 'comic/p3-2.png', focus: '50% 40%' },
     { note: '殭屍王在門樓前站起來，兩倍大、戴頭盔', say: '……問錯人了。', src: 'comic/p3-3.png', capAt: 'bottom', focus: '50% 35%' },
   ] },
-  { title: '崩塌中庭', panels: [
+  { title: '中庭', panels: [
     { note: '殭屍王倒下，靈魂從身上浮出來', src: 'comic/p4-1.png', focus: '50% 45%' },
     { note: '主角坐在斷柱上，舌頭伸出來喘', say: '好渴……', src: 'comic/p4-2.png', focus: '45% 45%' },
     { note: '從西拱洞望出去，窄巷盡頭的井', say: '窄巷有口井。', src: 'comic/p4-3.png', focus: '55% 55%' },
   ] },
-  { title: '城內窄巷', panels: [
+  { title: '城鎮窄巷', panels: [
     { note: '兩側木構連棟屋夾著窄巷，盡頭小廣場上的井', say: '找到了。', src: 'comic/p5-1.png', focus: '50% 60%' },
     { note: '井口特寫，繩子垂下去', src: 'comic/p5-2.png', focus: '35% 50%' },
     { note: '井後面一隻殭屍騎士背對著遊蕩，嘴裡咬著雙刃劍', src: 'comic/p5-3.png', focus: '50% 55%' },
     { note: '騎士轉頭，看見主角', src: 'comic/p5-4.png', focus: '62% 50%' },
   ] },
-  { title: '城內窄巷', panels: [
+  { title: '城鎮窄巷', panels: [
     { note: '騎士倒下，劍掉在井邊', src: 'comic/p6-1.png', focus: '50% 50%' },
     { note: '主角再次看向井口', src: 'comic/p6-2.png', focus: '55% 55%' },
     { note: '從井底往上：主角的臉探進井口', say: '水……', src: 'comic/p6-3.png', focus: '50% 70%' },
   ] },
-  { title: '圓塔水窖', panels: [
+  { title: '水窖', panels: [
     { note: '主角趴在井緣，脖子伸得長長的往下', src: 'comic/p7-1.png', focus: '50% 40%' },
     { note: '腳下的石頭鬆脫，前腳一滑', src: 'comic/p7-2.png', focus: '60% 35%' },
     { note: '主角四腳朝天往下掉', say: '啊——', src: 'comic/p7-3.png', focus: '50% 50%' },
     { note: '摔在水窖地上，四隻幽靈從四個角落盯著牠', src: 'comic/p7-4.png', focus: '50% 50%' },
   ] },
-  { title: '圓塔水窖', panels: [
+  { title: '水窖', panels: [
     { note: '最後一隻幽靈散成霧', src: 'comic/p8-1.png', focus: '50% 45%' },
     { note: '霧往南邊的鐵閘飄，鐵閘後面透出冷光', src: 'comic/p8-2.png', focus: '45% 55%' },
     { note: '主角盯著那扇鐵閘', say: '牠們是從那裡來的。', src: 'comic/p8-3.png', focus: '35% 65%' },
@@ -84,7 +84,7 @@ export const PAGES = [
     { note: '主角跑過窄巷，經過井邊那把劍', src: 'comic/p11-2.png', focus: '60% 50%' },
     { note: '主角衝進中庭', src: 'comic/p11-3.png', focus: '50% 50%' },
   ] },
-  { title: '崩塌中庭', panels: [
+  { title: '中庭', panels: [
     { note: '主角站在中庭中央，抬頭看門樓', src: 'comic/p12-1.png', focus: '45% 60%' },
     { note: '王座廳正門的鐵閘緩緩升起', src: 'comic/p12-2.png', focus: '50% 55%' },
     { note: '主角往門走', say: '國王。', src: 'comic/p12-3.png', focus: '45% 50%' },

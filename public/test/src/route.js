@@ -109,19 +109,19 @@ export const STAGES = [
     rest: 'wallwalk.fog', entry: null,
   },
   {
-    id: 'courtyard', name: '崩塌中庭', hint: '從兵營南邊的黑霧過去。',
+    id: 'courtyard', name: '中庭', hint: '從兵營南邊的黑霧過去。',
     room: 'courtyard', goal: '調查殭屍來歷', debut: 'comic',
     foes: [{ kind: 'boss', x: -4, y: 0, z: 0, yaw: Math.PI / 2, boss: true }],
     rest: 'wallwalk.fog', entry: { from: 'wallwalk', to: 'courtyard.east' },
   },
   {
-    id: 'alley', name: '城內窄巷', hint: '中庭的西拱洞過去，騎士在井後面。',
+    id: 'alley', name: '城鎮窄巷', hint: '中庭的西拱洞過去，騎士在井後面。',
     room: 'alley', goal: '喝水', debut: 'comic',
     foes: [{ kind: 'knight', x: 0, y: 0, z: 11.6, yaw: Math.PI, boss: true }],
     rest: 'courtyard.west', entry: { from: 'courtyard', to: 'alley.fog' },
   },
   {
-    id: 'cistern', name: '圓塔水窖', hint: '跳進窄巷的井裡。',
+    id: 'cistern', name: '水窖', hint: '跳進窄巷的井裡。',
     room: 'cistern', goal: '喝水', debut: 'comic',
     foes: ring('ghost', 6, 7, 0, 0, Math.PI / 6),
     rest: 'alley.stair', entry: { from: 'alley', to: 'cistern.well' },

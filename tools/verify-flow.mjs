@@ -345,9 +345,9 @@ console.log('9. 路標');
   ok(all.every((sp) => sp.name === roomName(sp.to) && sp.to === roomOf(sp.portal.dest.block, sp.portal.dest.y)),
     '每一支路標的字是它通到的那個房間');
   const say = (room) => signposts(ruins.portals, room).map((sp) => sp.name).sort().join('、');
-  ok(say('wallwalk') === ['城牆上', '崩塌中庭'].sort().join('、') && say('wallwalk:top') === '兵營',
+  ok(say('wallwalk') === ['城牆上', '中庭'].sort().join('、') && say('wallwalk:top') === '兵營',
     `兵營指 ${say('wallwalk')}，城牆上只指 ${say('wallwalk:top')}：圓塔另一層的那扇門在同一張圖裡，但走不到，不指`);
-  ok(say('courtyard') === ['王座廳', '兵營', '城內窄巷'].sort().join('、'), `崩塌中庭指 ${say('courtyard')}`);
+  ok(say('courtyard') === ['王座廳', '兵營', '城鎮窄巷'].sort().join('、'), `中庭指 ${say('courtyard')}`);
   {
     // 箭頭指每個感測區登記的那一點（aim）：門是感測區高度的 1/6、門檻上 1/4 個狗高——箭頭在主角身高的 1/4，站在門前那一層就水平。
     const posts = rooms.flatMap((r) => signposts(ruins.portals, r));
@@ -370,8 +370,8 @@ console.log('9. 路標');
     };
     ok(at(0, 'wallwalk') === ['城牆上', '調查殭屍來歷'].sort().join('、'), `兵營打完：往中庭的霧口寫「調查殭屍來歷」（${at(0, 'wallwalk')}）`);
     ok(at(1, 'courtyard') === ['兵營', '喝水', '見國王'].sort().join('、'), `中庭打完：去過的兵營寫地名，窄巷寫「喝水」、王座廳寫「見國王」（${at(1, 'courtyard')}）`);
-    ok(at(2, 'alley') === ['喝水', '崩塌中庭'].sort().join('、'), `窄巷打完：井寫「喝水」（${at(2, 'alley')}）`);
-    ok(at(3, 'cistern') === ['城內窄巷', '調查幽靈來歷'].sort().join('、'), `水窖打完：往墓室的鐵閘寫「調查幽靈來歷」（${at(3, 'cistern')}）`);
+    ok(at(2, 'alley') === ['喝水', '中庭'].sort().join('、'), `窄巷打完：井寫「喝水」（${at(2, 'alley')}）`);
+    ok(at(3, 'cistern') === ['城鎮窄巷', '調查幽靈來歷'].sort().join('、'), `水窖打完：往墓室的鐵閘寫「調查幽靈來歷」（${at(3, 'cistern')}）`);
     const all = new Set(STAGES.map((s) => s.room));
     ok(['wallwalk', 'courtyard', 'alley', 'cistern', 'crypt', 'throne'].every((r) => signposts(ruins.portals, r, all).every((sp) => sp.name === roomName(sp.to))),
       '全部進過之後一律寫地名');
