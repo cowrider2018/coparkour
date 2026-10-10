@@ -15,7 +15,7 @@
    玩家對望。排哪幾隻由「陣容」決定（MODES）：
 
      3 殭屍          中線上一隻、左右各 4 公尺一隻。
-     1 BOSS          中線上。
+     1 殭屍王          中線上。
      1 幽靈騎士      中線上（預設）。
      3 幽靈          跟 3 殭屍同樣的站位。
      1 騎士          中線上。
@@ -26,7 +26,7 @@
    有事——傷害是一次一次的攻擊（衝刺，見 LUNGE）：追到 LUNGE.range 以內，
    站著發呆（蓄力）0.25 秒，然後朝那時鎖定的方向衝一下（速度 16、0.25 秒內
    減到 0），衝完僵直 0.75 秒才回去追。只有衝的那 0.25 秒裡碰到玩家，玩家
-   才被咬到、扣血（小怪 1、騎士 2、BOSS 3、國王 2，見 KINDS 的 `bite` 與下面的「玩家的血」）。
+   才被咬到、扣血（小怪 1、騎士 2、殭屍王 3、國王 2，見 KINDS 的 `bite` 與下面的「玩家的血」）。
    國王（KINDS 的 `lunges`）一次衝兩下：衝完第一下不僵直，重新蓄力 0.25 秒、朝玩家那時
    的位置再衝一下，第二下衝完才僵直。兩下之間不到 LIFE.guard，所以第一下咬到的話第二下
    不再扣血——第二下是給躲過第一下的人的。
@@ -36,9 +36,9 @@
    `shieldEvery` 秒沒再挨打，補回一面，補到滿為止。
 
    攻擊中（attacking：放招、或衝刺的蓄力加衝，不含之後的僵直）被打會怎樣看類別
-   （KINDS 的 `steady`）：小怪一打就取消；BOSS 不會被打斷——跟放招的倒數一樣
+   （KINDS 的 `steady`）：小怪一打就取消；殭屍王不會被打斷——跟放招的倒數一樣
    打不退、傷害減半（armored）。畫面上攻擊中墨線變紅，跟 armored 出自同一個
-   attacking，所以 BOSS 的不可打斷與紅色永遠是同一段。
+   attacking，所以殭屍王的不可打斷與紅色永遠是同一段。
 
    幽靈（KINDS 的 `fly`）不受重力、會飛：y 跟 x、z 是同一回事。追人是朝玩家
    的腳在三維裡追、衝刺朝三維的方向衝；被擊退的時候速度一樣照那一段給，但不
@@ -65,10 +65,10 @@
            地面滑出去、滑到停；在空中被定住的，放開之後帶著這一份水平速度落下。
 
    ── 玩家的血 ────────────────────────────────────────────────────
-   一開始 LIFE.start（3）顆心。被咬、被 BOSS 的招打到都扣血，扣多少看是哪一下
-   （小怪衝刺 1、騎士衝刺 2、BOSS 衝刺 3、BOSS 的其他招 5，見 KINDS 的 `bite` 與 skills.js
+   一開始 LIFE.start（3）顆心。被咬、被殭屍王的招打到都扣血，扣多少看是哪一下
+   （小怪衝刺 1、騎士衝刺 2、殭屍王衝刺 3、殭屍王的其他招 5，見 KINDS 的 `bite` 與 skills.js
    的 SKILL）；扣到 0 才倒下。挨了一下之後 LIFE.guard 秒不再被打中（見 harm）。
-   BOSS 死掉會掉出一顆靈魂（發光的狗頭），撿起來最大血量 +1（見 SOUL）。不在戰鬥中的
+   殭屍王死掉會掉出一顆靈魂（發光的狗頭），撿起來最大血量 +1（見 SOUL）。不在戰鬥中的
    時候（由模式決定，見 regen）很快回血回到最大血量。
 
    從按下去到跳離之後落地，玩家都是無敵的——整招都貼在怪物身上。飛在空中（被擊退、還沒落地）的怪物碰到玩家不算數。
@@ -119,7 +119,7 @@ const post = (kind, dx) => {
  */
 export const MODES = [
   { id: 'minions', name: '3 殭屍', hint: '三隻殭屍。', monsters: [post('minion', -4), post('minion', 0), post('minion', 4)] },
-  { id: 'boss', name: '1 BOSS', hint: '一隻兩倍大的 BOSS。', monsters: [post('boss', 0)] },
+  { id: 'boss', name: '1 殭屍王', hint: '一隻兩倍大的殭屍王。', monsters: [post('boss', 0)] },
   {
     id: 'wraith', name: '1 幽靈騎士',
     hint: '一隻半透明、會飛的騎士，兩套連斬：下劈、上挑、在空中轉一圈（對空），或下劈、在地上轉一圈、上挑（對地）。',
@@ -134,8 +134,8 @@ export const MODES = [
 export const DEFAULT_MODE = 'wraith';
 
 /**
- * 站位：玩家在中線 2/3；`monsters` 是標準陣容——大隻的 BOSS 在中線上、兩隻殭屍在左右各 4 公尺
- * （離線驗證拿它當標準陣容用，makeMonster 不給站位就是那隻 BOSS）。面板上已經沒有這一種了。
+ * 站位：玩家在中線 2/3；`monsters` 是標準陣容——大隻的殭屍王在中線上、兩隻殭屍在左右各 4 公尺
+ * （離線驗證拿它當標準陣容用，makeMonster 不給站位就是那隻殭屍王）。面板上已經沒有這一種了。
  * yaw 是 atan2(x, z) 那一種。
  */
 export const SPAWN = {
@@ -173,7 +173,7 @@ export const FIELD = { arena: ARENA, cols: COLS, doors: {} };
  *
  *   minion  殭屍（綠色的小怪）。血 4——第一段加第二段剛好打死，破不了防。腳程 3.4：
  *           走路是 PHYS.walk（4），所以放開手就會被追上。
- *   boss    BOSS（畫成兩倍大）。血 20。腳程 4。不會一直追：每 `every` 秒從 `skills`
+ *   boss    殭屍王（畫成兩倍大）。血 20。腳程 4。不會一直追：每 `every` 秒從 `skills`
  *           裡隨機放一招（規則在 skills.js），放招的時候站著不動。`steady`：
  *           衝刺（蓄力與衝）不會被打斷（見 armored）。
  *   ghost   幽靈（半透明的小怪）。血、腳程跟殭屍一樣。`fly`：不受重力，
@@ -190,9 +190,9 @@ export const FIELD = { arena: ARENA, cols: COLS, doors: {} };
  *           每 `shieldEvery` 秒沒挨打補一面（見 parry）。衝刺跟小怪一樣一打就取消。每 `every`
  *           秒從 `skills` 裡挑一招（skills.js）。
  *
- * 碰撞的身體一樣大（同一個 PHYS 的圓柱）；外觀（同一件毛、BOSS 畫兩倍大、騎士 1.2 倍）在 monster.js。
+ * 碰撞的身體一樣大（同一個 PHYS 的圓柱）；外觀（同一件毛、殭屍王畫兩倍大、騎士 1.2 倍）在 monster.js。
  *
- * `bite` 是衝刺咬到玩家扣幾點血：小怪 1、騎士 2、BOSS 3。`soul`：死掉的時候掉出一顆靈魂（見 SOUL）——殭屍與幽靈以外都會掉。
+ * `bite` 是衝刺咬到玩家扣幾點血：小怪 1、騎士 2、殭屍王 3。`soul`：死掉的時候掉出一顆靈魂（見 SOUL）——殭屍與幽靈以外都會掉。
  *
  * `breakAt` 是破防門檻。現在每一類都是 BREAK_AT，但它是逐類登記的——哪天某一類
  * 要比較硬，改那一筆就好。
@@ -200,7 +200,7 @@ export const FIELD = { arena: ARENA, cols: COLS, doors: {} };
 export const BREAK_AT = 8;
 export const KINDS = {
   minion: { name: '殭屍', hp: 4, speed: 3.4, breakAt: BREAK_AT, bite: 1 },
-  boss: { name: 'BOSS', hp: 20, speed: 4, breakAt: BREAK_AT, bite: 3, soul: true, steady: true, skills: ['orb', 'leap', 'cone'], every: 3 },
+  boss: { name: '殭屍王', hp: 20, speed: 4, breakAt: BREAK_AT, bite: 3, soul: true, steady: true, skills: ['orb', 'leap', 'cone'], every: 3 },
   ghost: { name: '幽靈', hp: 4, speed: 3.4, breakAt: BREAK_AT, bite: 1, fly: true },
   knight: { name: '騎士', hp: 10, speed: 3.6, breakAt: BREAK_AT, bite: 2, soul: true, skills: ['whirl', 'cleave'], every: 3 },
   wraith: { name: '幽靈騎士', hp: 10, speed: 3.6, breakAt: BREAK_AT, bite: 2, soul: true, fly: true, skills: ['reapAir', 'reapGround'], every: 4 },
@@ -269,7 +269,7 @@ export function harm(p, dmg) {
 }
 
 /**
- * 靈魂：KINDS 裡帶 `soul` 的那幾類（BOSS、騎士）死掉的那一刻掉出一顆靈魂（畫成一顆
+ * 靈魂：KINDS 裡帶 `soul` 的那幾類（殭屍王、騎士）死掉的那一刻掉出一顆靈魂（畫成一顆
  * 半透明、發光的狗頭，眼睛是黑色的叉叉，見 soul.js）。
  *
  *   從牠（畫成兩倍大的）身體中間那個高度受重力往下掉，落到腳下那一層地板上
@@ -595,7 +595,7 @@ export const attacking = (m) => !busy(m)
 /**
  * 不可打斷：不會被擊退，受到的傷害減半。就是攻擊中——只有
  *   · 放招（m.cast）一律算；
- *   · 衝刺只有 `steady` 那一類（BOSS）算。小怪的衝刺一打就取消。
+ *   · 衝刺只有 `steady` 那一類（殭屍王）算。小怪的衝刺一打就取消。
  */
 export const armored = (m) => attacking(m) && (!!m.cast || !!kindOf(m).steady);
 
@@ -678,8 +678,8 @@ export function monsterStep(m, dt, target) {
   const L0 = m.lunge;
   if (L0 && L0.t >= LUNGE.windup + LUNGE.time && L0.n < (kindOf(m).lunges || 1)) { lockLunge(m, target, L0.n + 1); return; }
   /* 衝完、再發呆 recover 秒之後收掉。收掉的這一幀站著不動、不接著衝下一次：
-     BOSS 的 bossStep 在 monsterStep 之前，牠要看到一幀「沒在衝」才挑得了招，
-     不然貼著人的 BOSS 會一次接一次地衝，永遠輪不到放招。 */
+     殭屍王的 bossStep 在 monsterStep 之前，牠要看到一幀「沒在衝」才挑得了招，
+     不然貼著人的殭屍王會一次接一次地衝，永遠輪不到放招。 */
   if (m.lunge && m.lunge.t >= LUNGE.windup + LUNGE.time + LUNGE.recover) { m.lunge = null; m.vx = 0; m.vy = 0; m.vz = 0; return; }
   if (m.lunge) { lungeStep(m, dt); return; }
   /* 朝玩家的腳追。會飛的連高低一起追（三維的方向），走路的只看水平。 */

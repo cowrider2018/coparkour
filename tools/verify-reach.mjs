@@ -8,7 +8,7 @@
                   沒有一格出了黑牆、台子頂不比旁邊地面高過 MOUNT（主角打得到）。
      3. 被打飛    從允許區裡的每一個地方（含井圈頂）往每個方向打三段，20～60 幀：落點都在
                   允許區裡——不掉井、不落在死角或牆外、不停在主角上不去的高台。
-     4. 跳過去    騎士的跳砍隔著井、隔著柱子，BOSS 的跳砸對著站在任何地方的主角：落點都在
+     4. 跳過去    騎士的跳砍隔著井、隔著柱子，殭屍王的跳砸對著站在任何地方的主角：落點都在
                   允許區裡。
 
    跑法：node tools/verify-reach.mjs
@@ -162,7 +162,7 @@ for (const [id, skill] of [['alley', 'cleave'], ['courtyard', 'leap']]) {
   const spots = stands(field.arena);
   const m = makeMonster(foesOf(k)[0], field);
   const world = makeWorld(field);
-  // 騎士在 3.2 公尺外只剩跳砍挑得到；BOSS 的跳砸 6.9 公尺以內，亂數給 0.4 挑到別招就換下一點
+  // 騎士在 3.2 公尺外只剩跳砍挑得到；殭屍王的跳砸 6.9 公尺以內，亂數給 0.4 挑到別招就換下一點
   const range = skill === 'cleave' ? [3.3, 8] : [0, 6.9];
   let out = 0, n = 0, worst = '';
   for (let i = 0; i < roam.cells.length; i += 7) {

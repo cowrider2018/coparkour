@@ -111,7 +111,7 @@ const screenCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
    幽靈一樣半透明），頭盔、王冠、盾照 fight.js 那樣戴上去。
 
      hero         主角                       king         活著的國王
-     zombie       殭屍                       boss         殭屍 BOSS（兩倍大、頭盔）
+     zombie       殭屍                       boss         殭屍王（兩倍大、頭盔）
      knight       騎士（1.2 倍高、頭盔）     ghost        幽靈
      ghostKing    國王的亡魂（幽靈那一件、王冠、shields 幾面盾繞著轉）
      knightGhost  騎士幽靈（幽靈加頭盔，劇本說的「先拼」：幽靈＋頭盔＋劍）

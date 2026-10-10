@@ -37,10 +37,10 @@ export const PAGES = [
   { title: '崩塌中庭', panels: [
     { note: '中庭一圈斷柱、兩側拱廊，還是沒有人', say: '有人嗎？', src: 'comic/p3-1.png', capAt: 'bottom', focus: '68% 70%' },
     { note: '地面震一下，碎石跳起來', src: 'comic/p3-2.png', focus: '50% 40%' },
-    { note: 'BOSS 在門樓前站起來，兩倍大、戴頭盔', say: '……問錯人了。', src: 'comic/p3-3.png', capAt: 'bottom', focus: '50% 35%' },
+    { note: '殭屍王在門樓前站起來，兩倍大、戴頭盔', say: '……問錯人了。', src: 'comic/p3-3.png', capAt: 'bottom', focus: '50% 35%' },
   ] },
   { title: '崩塌中庭', panels: [
-    { note: 'BOSS 倒下，靈魂從身上浮出來', src: 'comic/p4-1.png', focus: '50% 45%' },
+    { note: '殭屍王倒下，靈魂從身上浮出來', src: 'comic/p4-1.png', focus: '50% 45%' },
     { note: '主角坐在斷柱上，舌頭伸出來喘', say: '好渴……', src: 'comic/p4-2.png', focus: '45% 45%' },
     { note: '從西拱洞望出去，窄巷盡頭的井', say: '窄巷有口井。', src: 'comic/p4-3.png', focus: '55% 55%' },
   ] },

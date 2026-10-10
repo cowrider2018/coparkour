@@ -24,7 +24,7 @@
      9. 打一整套    用真的物理跑：站著等怪物走過來、第一段自動、視窗裡按跳、
                     空中再按跳——在視窗的前段按要三段都中、整套打完之前一次都
                     沒被咬（中段、後段只列出結果：衝刺夠長，拖到後段會被衝到；
-                    BOSS 衝完僵直 0.5 秒，中段按的話牠下一次蓄力剛好在第三段
+                    殭屍王衝完僵直 0.5 秒，中段按的話牠下一次蓄力剛好在第三段
                     落地的時候，蓄力打不退，收招就被衝到）。
     10. 名冊與血    每一類怪物的數值登記在 KINDS；三段各扣 1、3、2；扣到 0 就死，
                     在牠自己的重生點重生（血滿、破防歸零、擊退與定住都清掉）；
@@ -36,9 +36,9 @@
                     瞬間牠被往突進的方向推開（只有水平）；整招無敵；在空中也
                     按得出來——被第二段打破防的那一刻玩家就在空中，接得上。
     13. 怪物不疊    三隻追同一個站著不動的人，身體一直不重疊、不出牆。
-    14. 陣容        六種陣容：3 殭屍、1 BOSS、1 幽靈騎士、3 幽靈、1 騎士、1 國王，預設是第三種；
+    14. 陣容        六種陣容：3 殭屍、1 殭屍王、1 幽靈騎士、3 幽靈、1 騎士、1 國王，預設是第三種；
                     每一隻都在中線 1/3 那條橫線上、面向中心，不疊在一起。
-    15. BOSS 放招   腳程 4；每 3 秒挑一招，挑的那一刻鎖定玩家的位置，放招中站著
+    15. 殭屍王放招   腳程 4；每 3 秒挑一招，挑的那一刻鎖定玩家的位置，放招中站著
                     不動；被擊退、定住、推開就打斷。球：倒數 0.75 秒、半徑 0.75
                     狗高、每秒 6 公尺、直線、碰到黑牆消失，站著不動會被打中、
                     倒數裡橫移一步就躲得掉。跳砸：倒數 1.5 秒、最後 0.6 秒起跳、
@@ -49,7 +49,7 @@
     16. 衝刺        碰到不再有事，傷害是一次一次的衝刺：追到 1.8 公尺以內停下來
                     蓄力 0.25 秒，朝那時鎖定的方向衝（16 → 0，0.25 秒，2.0 公尺，
                     跟幀長無關），衝完僵直 0.5 秒；只有衝的時候碰到才死。小怪
-                    蓄力被打就取消；BOSS 蓄力打不退、傷害減半。
+                    蓄力被打就取消；殭屍王蓄力打不退、傷害減半。
     17. 幽靈        不受重力：朝玩家的腳在三維裡追、朝三維的方向衝 2.0 公尺；
                     被擊退往上飛得跟殭屍一樣高，但停在半空、不落下，停了再追；
                     高度夾在地板與蓋子底下；破防攻擊的迴旋之後在原本的高度被
@@ -58,11 +58,11 @@
                     被擊退落回台上；走出台緣會掉下去、落在底下的地板；踏得上
                     一級台階；關著的門擋住、開著的不擋；圓的黑牆量得出球道多長、
                     球飛到它就消失；跳砸落在目標腳下那一塊的頂上，打的是那一層。
-    19. 玩家的血    一開始 3 點；小怪咬 1、騎士咬 2、BOSS 咬 3、BOSS 的三招各 5（球與範圍攻擊
+    19. 玩家的血    一開始 3 點；小怪咬 1、騎士咬 2、殭屍王咬 3、殭屍王的三招各 5（球與範圍攻擊
                     身上帶著這個數）；扣到 0 為止、不會變負的；挨一下之後 1 秒內
                     不再扣，所以一次衝刺從頭衝到尾只扣一次。撿到靈魂最大血量 +1；
                     倒下補滿到最大血量；不在戰鬥中每 0.3 秒回一顆、回到滿為止。
-    20. 靈魂        只有 BOSS 會掉；從身體中間受重力往下掉，落在腳下那一層地板上
+    20. 靈魂        只有殭屍王會掉；從身體中間受重力往下掉，落在腳下那一層地板上
                     0.5 公尺，之後上下 ±0.2 簡諧漂浮、不橫移；碰到身體才撿得到。
     21. 劍光        三段攻擊的範圍畫成的同心三道劍氣（trail.js）：掃的角度就是判定的
                     角度、一路往同一個方向掃；最外那一道的外緣在 REACH 上、最粗，
@@ -73,7 +73,7 @@
     22. 落地粉塵    太輕的落地（比 DUST.min 慢）不起塵；狗普通地跳一下是力道 1；力道有
                     上限；體型越大、落得越重，塵越濃、起塵的那一圈越大、推得越快越遠、
                     留得越久，沒有一項會倒過來；一團塵從全在淡到收掉，不會回來。
-                    BOSS 範圍攻擊（扇形、跳砸）地震的塵：震波從腳下往外走，越外面
+                    殭屍王範圍攻擊（扇形、跳砸）地震的塵：震波從腳下往外走，越外面
                     那一道越晚揚、越濃（所以越高）；最外面那一道揚完之前整片不淡，
                     之後淡到收掉。
     24. 騎士        劍迴旋衝刺：離玩家 3.2 公尺以內才放（夠不到就不放、夠得到的那一幀放）；
@@ -92,7 +92,7 @@
                     不掉，旁邊、背後、太遠的不會；上挑落地才僵直 0.5 秒。動作是
                     cleaveWind → cleaveAir → cleaveLand（頭翻到另一側）→ cleaveUp（主角
                     第二段的左右鏡像，僵直播它的收尾）。
-    26. 頭盔        騎士與 BOSS 戴、小怪與幽靈不戴。量在狗頭上（頭骨座標、靜置姿勢）：
+    26. 頭盔        騎士與殭屍王戴、小怪與幽靈不戴。量在狗頭上（頭骨座標、靜置姿勢）：
                     頭皮與眼睛除了底下的開口與正面的切口，全部包在盔殼內層裡；面罩整片
                     在盔殼的墨線外殼外面、下緣高過吻部；兩隻眼睛各對著一個洞；臉往鏡頭
                     推的那一段讓眼睛正面看在頭皮前、面罩後。頭盔跟著頭骨轉；墨線跟著
@@ -203,10 +203,10 @@ console.log('1. 站位');
   const len = ARENA.z1 - ARENA.z0;
   ok(near(SPAWN.player.z, ARENA.z0 + len * 2 / 3), `玩家在中線 2/3（z = ${SPAWN.player.z.toFixed(2)}）`);
   const [boss, ...minions] = SPAWN.monsters;
-  ok(boss.kind === 'boss' && near(boss.z, ARENA.z0 + len / 3), `BOSS 在中線 1/3（z = ${boss.z.toFixed(2)}）`);
-  ok(near(SPAWN.player.x, (ARENA.x0 + ARENA.x1) / 2) && near(boss.x, SPAWN.player.x), '玩家與 BOSS 都在中線上');
+  ok(boss.kind === 'boss' && near(boss.z, ARENA.z0 + len / 3), `殭屍王在中線 1/3（z = ${boss.z.toFixed(2)}）`);
+  ok(near(SPAWN.player.x, (ARENA.x0 + ARENA.x1) / 2) && near(boss.x, SPAWN.player.x), '玩家與殭屍王都在中線上');
   ok(minions.length === 2 && minions.every((s) => s.kind === 'minion' && near(s.z, boss.z) && near(Math.abs(s.x - boss.x), 4))
-    && minions[0].x !== minions[1].x, '兩隻小怪在 BOSS 左右各 4 公尺');
+    && minions[0].x !== minions[1].x, '兩隻小怪在殭屍王左右各 4 公尺');
   const cz = (ARENA.z0 + ARENA.z1) / 2;
   ok(Math.cos(SPAWN.player.yaw) * (cz - SPAWN.player.z) > 0, '玩家面向中心');
   const cx = (ARENA.x0 + ARENA.x1) / 2;
@@ -479,7 +479,7 @@ console.log('9. 打一整套');
     const line = `收招後 ${at.toFixed(2)} 秒按：${set3.join(' → ') || '沒有'}${r.bitten ? '，被咬了' : '，沒被咬'}`
       + `${r.shielded ? `（第三段的無敵擋掉了 ${r.shielded} 幀）` : ''}`;
     /* 視窗中段、後段按不保證：衝刺 2.0 公尺，拖到後段，落地收招的那一刻牠已經衝得到你；
-       中段按的話，BOSS 衝完僵直 0.5 秒之後的下一次蓄力剛好疊在第三段落地上（蓄力打不退）。
+       中段按的話，殭屍王衝完僵直 0.5 秒之後的下一次蓄力剛好疊在第三段落地上（蓄力打不退）。
        這是數值的結果，列出來看，不算沒過。 */
     if (at > WINDOW[0] + 0.1) console.log(`   ·  ${line}`);
     else ok(set3.join(' ') === 'slash rise slam' && !r.bitten, line);
@@ -489,7 +489,7 @@ console.log('9. 打一整套');
 /* ── 10. 名冊與血 ────────────────────────────────────────────── */
 console.log('10. 名冊與血');
 {
-  ok(KINDS.minion.hp === 4 && KINDS.boss.hp === 20, '名冊裡兩類：小怪血 4、BOSS 血 20');
+  ok(KINDS.minion.hp === 4 && KINDS.boss.hp === 20, '名冊裡兩類：小怪血 4、殭屍王血 20');
   ok(KINDS.knight.hp === 10 && KINDS.knight.speed === 3.6 && !KINDS.knight.steady && !KINDS.knight.fly && sizeOf('knight') === 1.2,
     '騎士：血 10、腳程 3.6、衝刺打得斷、不會飛、畫成 1.2 倍高');
   ok(SPAWN.monsters.map((s) => makeMonster(s)).every((q) => q.hp === KINDS[q.kind].hp), '每一隻生出來是自己那一類的滿血');
@@ -717,11 +717,11 @@ console.log('14. 陣容');
 {
   const tally = (md) => md.monsters.reduce((o, s) => ({ ...o, [s.kind]: (o[s.kind] || 0) + 1 }), {});
   const want = { minions: { minion: 3 }, boss: { boss: 1 }, wraith: { wraith: 1 }, ghosts: { ghost: 3 }, knight: { knight: 1 }, king: { king: 1 } };
-  ok(MODES.map((md) => md.id).join() === 'minions,boss,wraith,ghosts,knight,king', '六種陣容，面板上依序是 3 殭屍、1 BOSS、1 幽靈騎士、3 幽靈、1 騎士、1 國王');
+  ok(MODES.map((md) => md.id).join() === 'minions,boss,wraith,ghosts,knight,king', '六種陣容，面板上依序是 3 殭屍、1 殭屍王、1 幽靈騎士、3 幽靈、1 騎士、1 國王');
   for (const md of MODES) ok(JSON.stringify(tally(md)) === JSON.stringify(want[md.id]), `${md.name}：${JSON.stringify(tally(md))}`);
   ok(DEFAULT_MODE === 'wraith' && MODES[2].id === DEFAULT_MODE, '預設是 1 幽靈騎士（第三種）');
   ok(SPAWN.monsters.map((s) => s.kind).join() === 'boss,minion,minion' && MODES.every((md) => md.monsters !== SPAWN.monsters),
-    '標準陣容（離線驗證用）還是 BOSS 加兩隻殭屍，但面板上沒有這一種');
+    '標準陣容（離線驗證用）還是殭屍王加兩隻殭屍，但面板上沒有這一種');
   const cx = (ARENA.x0 + ARENA.x1) / 2, cz = (ARENA.z0 + ARENA.z1) / 2;
   const row = ARENA.z0 + (ARENA.z1 - ARENA.z0) / 3;
   const good = MODES.every((md) => md.monsters.every((s, i) => near(s.z, row)
@@ -730,16 +730,16 @@ console.log('14. 陣容');
   ok(good, '每一種陣容：都在中線 1/3 那條橫線上、面向中心、不疊在一起');
 }
 
-/* ── 15. BOSS 放招 ───────────────────────────────────────────── */
-console.log('15. BOSS 放招');
+/* ── 15. 殭屍王放招 ───────────────────────────────────────────── */
+console.log('15. 殭屍王放招');
 {
   const bossAt = (x, z) => { const m = makeMonster({ kind: 'boss', x, z, yaw: 0 }); return m; };
   ok(KINDS.boss.speed === 4 && KINDS.boss.every === 3 && KINDS.boss.skills.includes('orb') && !KINDS.minion.skills,
-    'BOSS 腳程 4、每 3 秒放一招；小怪沒有技能');
+    '殭屍王腳程 4、每 3 秒放一招；小怪沒有技能');
   ok(near(SKILL.orb.radius, 0.75 * DOG_H) && SKILL.orb.speed === 6 && SKILL.orb.windup === 0.75, '球：半徑 0.75 狗高、每秒 6 公尺、倒數 0.75 秒');
 
   // 循環：3 秒才放第一招；放招中站著不動；下一招是 3 秒之後。人站在場地另一頭，
-  // BOSS 這 6 秒追不到——不然貼著人衝刺的時候，招會等衝完才放。
+  // 殭屍王這 6 秒追不到——不然貼著人衝刺的時候，招會等衝完才放。
   const w = makeWorld();
   const m = bossAt(0, -11);
   const p = body(0, 11.5);
@@ -855,7 +855,7 @@ console.log('15. BOSS 放招');
   ok(L.st && L.st.shape === 'circle' && near(L.st.x, 0) && near(L.st.z, 3), '打在開始那一刻鎖定的點上');
   ok(Math.abs(L.at - SKILL.leap.windup) < 2 * DT && Math.abs(L.tookOff - (SKILL.leap.windup - SKILL.leap.air)) < 2 * DT,
     `第 ${L.tookOff.toFixed(2)} 秒起跳、第 ${L.at.toFixed(2)} 秒落地打下去，最高 ${L.peak.toFixed(2)} 公尺`);
-  ok(near(L.b.x, 0) && near(L.b.z, 3) && L.b.y === 0 && !L.b.cast, 'BOSS 落在目標點上，放完了');
+  ok(near(L.b.x, 0) && near(L.b.z, 3) && L.b.y === 0 && !L.b.cast, '殭屍王落在目標點上，放完了');
   ok(strikeHits(L.st, L.q), '站著不動：被砸到');
   const swept = (st) => ({ ...st, from: 0, to: st.r });              // 震波走完了整片
   const Lf = swept(L.st);
@@ -1049,20 +1049,20 @@ console.log('16. 衝刺');
     }
   });
   ok(cutOk === true, '小怪蓄力的時候被打：擊退，這一下取消');
-  // BOSS 蓄力的時候被打：打不退、傷害減半，照樣衝。
+  // 殭屍王蓄力的時候被打：打不退、傷害減半，照樣衝。
   let hurtTook = -1;
   const firm = run('boss', -4, DT, (q, m, t, stopAt) => {
     if (hurtTook < 0 && stopAt >= 0 && m.lunge && m.lunge.t < LUNGE.windup && m.lunge.t > 0.1) {
       const h = m.hp; knock(m, 0, 0, 0, -1); hurt(m, DAMAGE.rise); hurtTook = h - m.hp;
     }
   });
-  ok(firm.dashAt > 0 && !firm.m.air && hurtTook === 1, 'BOSS 蓄力的時候被打：打不退、第二段的 3 只扣 1，照樣衝');
-  // BOSS 衝完之後的發呆不是蓄力：打得退、傷害照算。
+  ok(firm.dashAt > 0 && !firm.m.air && hurtTook === 1, '殭屍王蓄力的時候被打：打不退、第二段的 3 只扣 1，照樣衝');
+  // 殭屍王衝完之後的發呆不是蓄力：打得退、傷害照算。
   const loose = makeMonster({ kind: 'boss', x: 0, z: -4, yaw: 0 });
   loose.lunge = { t: LUNGE.windup + LUNGE.time + 0.1, dirX: 0, dirZ: 1 };
-  ok(!armored(loose), 'BOSS 衝完之後的發呆：不是蓄力');
+  ok(!armored(loose), '殭屍王衝完之後的發呆：不是蓄力');
 
-  /* 紅色墨線（fight.js）與不可打斷都從 attacking 來。BOSS 每一招與衝刺輪流放，
+  /* 紅色墨線（fight.js）與不可打斷都從 attacking 來。殭屍王每一招與衝刺輪流放，
      每一幀：不可打斷＝攻擊中；僵直與衝完的發呆不算；攻擊中一定有 cast 或還沒衝完的 lunge。
      新增技能時這一條自己會把關。 */
   {
@@ -1082,7 +1082,7 @@ console.log('16. 衝刺');
         seen.add(bm.cast ? bm.cast.skill : 'lunge');
       }
     }
-    ok(mismatch === 0, 'BOSS：不可打斷與紅色（attacking）每一幀都一樣');
+    ok(mismatch === 0, '殭屍王：不可打斷與紅色（attacking）每一幀都一樣');
     ok(redStun === 0 && redRecover === 0 && redNoCause === 0 && redFrames > 0, '紅色不含出招後的僵直與衝完的發呆');
     ok(['orb', 'leap', 'cone', 'lunge'].every((s) => seen.has(s)), `每一招與衝刺都出現過紅色（${[...seen].join('、')}）`);
     const mn = makeMonster({ kind: 'minion', x: 0, z: 0, yaw: 0 });
@@ -1282,7 +1282,7 @@ console.log('18. 場地');
   for (let i = 0; i < 30 && hitAt < 0; i++) if (shotsStep(wp, DT).length) hitAt = wp.shots.length === 0 ? i : -2;
   ok(hitAt >= 0, '飛向高台的球：撞上的那一幀炸掉、不再在場上');
 
-  // 跳砸：BOSS 在地上、玩家站在台上。rng 0.5 挑三招的中間那一招（leap）。
+  // 跳砸：殭屍王在地上、玩家站在台上。rng 0.5 挑三招的中間那一招（leap）。
   const boss = on({ kind: 'boss', x: -6, z: 0, yaw: Math.PI / 2 });
   boss.castT = 0;
   const p = { ...body(0, 0, 2), vx: 0, vy: 0, vz: 0, grounded: true };
@@ -1299,15 +1299,15 @@ console.log('19. 玩家的血');
   const p = {};
   resetLife(p);
   ok(LIFE.start === 3 && p.hp === 3 && p.guard === 0, '一開始 3 點血');
-  ok(KINDS.minion.bite === 1 && KINDS.ghost.bite === 1 && KINDS.knight.bite === 2 && KINDS.boss.bite === 3, '小怪咬 1、騎士咬 2、BOSS 咬 3');
-  ok(['orb', 'leap', 'cone'].every((k) => SKILL[k].damage === 5), 'BOSS 的三招各 5');
+  ok(KINDS.minion.bite === 1 && KINDS.ghost.bite === 1 && KINDS.knight.bite === 2 && KINDS.boss.bite === 3, '小怪咬 1、騎士咬 2、殭屍王咬 3');
+  ok(['orb', 'leap', 'cone'].every((k) => SKILL[k].damage === 5), '殭屍王的三招各 5');
 
   ok(harm(p, KINDS.minion.bite) && p.hp === 2 && p.guard === LIFE.guard, '被小怪咬到：3 → 2，開 guard');
   ok(!harm(p, 5) && p.hp === 2, 'guard 還開著：再被打到不扣');
   for (let t = 0; t < LIFE.guard + DT; t += DT) lifeStep(p, DT);
   ok(p.guard === 0 && harm(p, 5) && p.hp === 0, 'guard 過了：挨 5 扣到 0，不會變負的');
   resetLife(p);
-  ok(harm(p, KINDS.boss.bite) && p.hp === 0, '滿血被 BOSS 咬到一下：3 → 0，倒下');
+  ok(harm(p, KINDS.boss.bite) && p.hp === 0, '滿血被殭屍王咬到一下：3 → 0，倒下');
 
   // 一次衝刺從頭衝到尾：站著不動的人只扣一次。
   const q = { ...body(0, 0), vx: 0, vy: 0, vz: 0, grounded: true };
@@ -1361,7 +1361,7 @@ console.log('19. 玩家的血');
 console.log('20. 靈魂');
 {
   ok(KINDS.boss.soul && KINDS.knight.soul && !KINDS.king.soul && !KINDS.minion.soul && !KINDS.ghost.soul,
-    'BOSS、騎士會掉靈魂；殭屍、幽靈、國王不掉（國王是收靈魂的那一個）');
+    '殭屍王、騎士會掉靈魂；殭屍、幽靈、國王不掉（國王是收靈魂的那一個）');
   {
     const p = { hp: 2, max: 3 }, at = (x) => dropSoul({ x, y: 0, z: 0, field: FIELD });
     const souls = [at(0), at(50), at(1), at(60)], away = (s) => s.x > 10, near0 = souls[2];
@@ -1544,7 +1544,7 @@ console.log('22. 落地粉塵');
   ok(!bySpeed.length, `落得越重，塵越濃越大越久${bySpeed.length ? '——' + bySpeed[0] : ''}`);
   ok(!bySize.length, `體型越大，塵越濃越大越久${bySize.length ? '——' + bySize[0] : ''}`);
   const dog = dustOf(1, PHYS.jump), boss = dustOf(2, PHYS.jump);
-  ok(boss.amount > dog.amount && boss.half > dog.half, `同樣的落地速度，BOSS（體型 2）的塵比狗濃、比狗大（力道 ${boss.power.toFixed(1)} 對 ${dog.power.toFixed(1)}）`);
+  ok(boss.amount > dog.amount && boss.half > dog.half, `同樣的落地速度，殭屍王（體型 2）的塵比狗濃、比狗大（力道 ${boss.power.toFixed(1)} 對 ${dog.power.toFixed(1)}）`);
 
   /* 那一片煙裝得下推出去的塵：往外推 push、留 life 秒，推到的地方還在 half 以內。 */
   let fits = true;
@@ -1595,7 +1595,7 @@ console.log('23. 噴血');
     if (Math.abs(sum / volumeOf(s) - 1) > 1e-9) exact = false;
   }
   ok(exact, '一次噴出去的血總量正好是 volume · 體型³（0.7、1、2 倍都是）');
-  ok(near(volumeOf(2) / volumeOf(1), 8), 'BOSS（體型 2）的出血量是狗的 8 倍');
+  ok(near(volumeOf(2) / volumeOf(1), 8), '殭屍王（體型 2）的出血量是狗的 8 倍');
   const n1 = spurtOf(sheetOf(1, 0), { x: 0, y: 0, z: 0 }, 1, 'blood', rng), n2 = spurtOf(sheetOf(1, 0), { x: 0, y: 0, z: 0 }, 2, 'blood', rng);
   ok(n1.length === BLEED.drops && n2.length === dropCount(2) && n2.length === Math.round(BLEED.drops * 2 ** 1.5),
     `滴數跟著體型的 1.5 次方：${n1.length} → ${n2.length}`);
@@ -1773,7 +1773,7 @@ console.log('23. 噴血');
   ok(splats.length === 0, '縮掉之後收起來');
 
   // 幽靈的靈質：初速快、減速快、沒有重力、不留一灘，停在半空中留得比血久，最後縮掉。
-  ok(bloodOf('ghost') === 'ecto' && bloodOf('minion') === 'blood' && bloodOf('boss') === 'blood', '幽靈噴的是靈質，殭屍與 BOSS 是血');
+  ok(bloodOf('ghost') === 'ecto' && bloodOf('minion') === 'blood' && bloodOf('boss') === 'blood', '幽靈噴的是靈質，殭屍與殭屍王是血');
   ok(near(speedOf(0.04, 1, 'ecto'), speedOf(0.04, 1) * STYLE.ecto.speed) && STYLE.ecto.speed > 1, `靈質的初速是血的 ${STYLE.ecto.speed} 倍`);
   const open = { arena: { shape: 'circle', x: 0, z: 0, r: 50 }, cols: [] };
   const ecto = spurtOf(sheetOf(1, 0), { x: 0, y: 0, z: 0 }, 1, 'ecto', rng).map((o) => ({ ...o, field: open, y0: o.y, v0: Math.hypot(o.vx, o.vy, o.vz) }));
@@ -2062,7 +2062,7 @@ console.log('25. 騎士的跳砍');
 /* ── 26. 頭盔 ────────────────────────────────────────────────── */
 console.log('26. 頭盔');
 {
-  ok(helmOf('knight') && helmOf('boss') && !helmOf('minion') && !helmOf('ghost'), '騎士與 BOSS 戴頭盔，小怪與幽靈不戴');
+  ok(helmOf('knight') && helmOf('boss') && !helmOf('minion') && !helmOf('ghost'), '騎士與殭屍王戴頭盔，小怪與幽靈不戴');
   const buf = readFileSync('public/assets/cat.bin');
   const zoo = await loadZoo({ buffer: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) });
   const { SHELL, SHELL_FLOOR, NOTCH, VISOR, FACE_LIFT, INK_OUT } = HELM;

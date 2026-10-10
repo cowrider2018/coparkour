@@ -1,6 +1,6 @@
 /* ── test/src/fight.js ───────────────────────────────────────────────
    一場戰鬥在畫面上跑起來的那一層：場上的怪物與牠們的外觀、玩家的連段、
-   打中與被打中、BOSS 的招與球、刀與出招的動作。
+   打中與被打中、殭屍王的招與球、刀與出招的動作。
 
    規則全在 combat.js 與 skills.js（node 驗得動）；這裡把規則接到一幀一幀的
    迴圈上，並且擺好 three 的東西。戰鬥模式（一塊空地）與完整流程模式（遺跡）
@@ -12,7 +12,7 @@
               因為破防攻擊一發動就接管速度。
      （模式自己操控、移動玩家：`breaking` 的時候不操控，`spinning` 的時候不移動）
      resolve  怪物追人、放招、球往前飛（撞到東西就炸掉），然後才判打中——兩個身體都走完這一幀了，
-              範圍是對著畫面上的位置判的。打死 BOSS、騎士掉出靈魂，靈魂往下掉、漂，碰到
+              範圍是對著畫面上的位置判的。打死殭屍王、騎士掉出靈魂，靈魂往下掉、漂，碰到
               就撿起來。回報玩家挨了哪一下、倒下沒有、打死了誰、撿了幾顆靈魂。
               不重生的怪物（完整流程、召喚出來的）打死了不是當場消失，而是變成屍體（_fell）：
               跟主角倒下一樣（death.js）往擊退的方向倒、帶著那一下的擊退飛，躺平而且落地的那一刻
@@ -22,7 +22,7 @@
               交出去的那一顆拋到牠身上。交滿、最後一顆落到牠身上（拋物線的終點）的那一刻，國王復甦（REVIVE）：屍體炸成一團
               幽靈血，血慢下來之後再加速聚攏回來（bleed.js 的 GATHER），聚到的那一刻活著的國王
               從 0 長到原本大小。演完的那一幀回報 risen。
-     draw     怪物、屍體、劍光（攻擊範圍）、國王劈砍的斬痕與氣流、旋風斬的熱氣流、粉塵（落地、BOSS 範圍攻擊的地震）、BOSS 的預告與球、靈魂、破防的兩圈、國王的盾、刀、
+     draw     怪物、屍體、劍光（攻擊範圍）、國王劈砍的斬痕與氣流、旋風斬的熱氣流、粉塵（落地、殭屍王範圍攻擊的地震）、殭屍王的預告與球、靈魂、破防的兩圈、國王的盾、刀、
               頭頂的愛心。
               在相機擺好之後（破防的兩圈與愛心正對這一幀的鏡頭）；流體場也在這裡
               往前推一幀，所以要在 renderer.render 之前。
@@ -183,7 +183,7 @@ export class Fight {
     this._pool = new Map();
     this._inkPx = null;
 
-    /* BOSS 放出來的球：畫成火球（fireball.js）；尾巴的火粒要 renderer 畫場。 */
+    /* 殭屍王放出來的球：畫成火球（fireball.js）；尾巴的火粒要 renderer 畫場。 */
     this.world = makeWorld();
     this._fire = new Fireballs(scene, SKILL.orb.radius, renderer);
 
@@ -218,7 +218,7 @@ export class Fight {
     /** 國王劈砍的氣流犁地揚起的塵：每一道氣流沿路每一段一片（dust.js 的 PLOW）。 */
     this._plows = [];
     this._feet = new WeakMap();
-    /** BOSS 的範圍攻擊（扇形、跳砸的圓）打下去揚起的地震塵：還看得到的每一片，與這一幀
+    /** 殭屍王的範圍攻擊（扇形、跳砸的圓）打下去揚起的地震塵：還看得到的每一片，與這一幀
         剛打下去、還沒揚的。跳砸落地的那一隻這一幀不揚落地的塵（_quiet）——那一下是地震。 */
     this._quakes = [];
     this._stomps = [];
@@ -245,7 +245,7 @@ export class Fight {
     this._revival = null;
     this._king = souls > 0 ? new LivingKing(scene, zoo) : null;
 
-    /* BOSS、騎士掉出來的靈魂（combat.js 的 dropSoul）。換陣容不清——完整流程裡打完一場就換
+    /* 殭屍王、騎士掉出來的靈魂（combat.js 的 dropSoul）。換陣容不清——完整流程裡打完一場就換
        下一場，沒撿的留在原地，到主角換房間的那一刻才全部算撿到（bank）；回到站位（reset）也清。
        一顆一個 mesh，不夠就多做。 */
     this.souls = [];
@@ -271,7 +271,7 @@ export class Fight {
 
   /**
    * 載入的時候叫：這個模式會出現的每一個陣容（每一個是站位的清單），每一類照最多要的那麼多份
-   * 先把外觀建好。建一隻要上百毫秒，而換陣容（完整流程是進場之後 BOSS 才上場）與召喚都在
+   * 先把外觀建好。建一隻要上百毫秒，而換陣容（完整流程是進場之後殭屍王才上場）與召喚都在
    * 遊戲中，那時候才建就是一頓。建好的藏著，下一幀跟其他東西一起編、預先畫一次（_compile）。
    *
    * @param {object[][]} lineups
@@ -321,7 +321,7 @@ export class Fight {
       };
       // 咬著劍的那幾類（騎士、國王）：劍掛在牠自己的頭上，跟主角那把一樣每幀跟著頭。
       if (swordOf(kind)) { slot.blade = new Blade(swordOf(kind)); slot.blade.follow(slot.critter); }
-      // 戴頭盔的那幾類（騎士、BOSS）：一樣掛在頭上，墨線跟著牠的墨色換。
+      // 戴頭盔的那幾類（騎士、殭屍王）：一樣掛在頭上，墨線跟著牠的墨色換。
       if (helmOf(kind)) { slot.helm = new Helm(); slot.helm.follow(slot.critter); }
       // 戴王冠的（國王）：一樣掛在頭上。
       if (crownOf(kind)) { slot.crown = new Crown(); slot.crown.follow(slot.critter); }
@@ -763,7 +763,7 @@ export class Fight {
     // 每一隻召喚出來、還在場上的有幾隻（召喚挑不挑得到、召幾隻看它，skills.js）。
     for (const { m } of foes) m.brood = 0;
     for (const { m } of foes) if (m.by) m.by.brood++;
-    // BOSS 先決定這一幀在不在放招（放招中 monsterStep 讓牠站著），球往前飛。
+    // 殭屍王先決定這一幀在不在放招（放招中 monsterStep 讓牠站著），球往前飛。
     const strikes = [];
     for (const f of foes) {
       const m = f.m, cast = m.cast, shots = this.world.shots.length;
@@ -1323,8 +1323,8 @@ export class Fight {
 
   /**
    * 落地：每一個踩地的身體（玩家、不會飛的怪物與屍體）上一幀在空中、這一幀站住了，就在
-   * 腳下揚一團塵，多濃照體型與落地速度（dust.js）。BOSS 跳砸落地不算：那一下揚的是地震的塵。落地速度用上一幀的高度差算，
-   * 不讀身上的 vy——BOSS 跳砸是一幀一幀直接擺位置的，vy 一直是 0；落地那一幀的
+   * 腳下揚一團塵，多濃照體型與落地速度（dust.js）。殭屍王跳砸落地不算：那一下揚的是地震的塵。落地速度用上一幀的高度差算，
+   * 不讀身上的 vy——殭屍王跳砸是一幀一幀直接擺位置的，vy 一直是 0；落地那一幀的
    * vy 也已經被歸零了。
    */
   _land(dt, player) {
