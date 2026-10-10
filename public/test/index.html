@@ -158,6 +158,17 @@
   body.pad-port #railA::after { bottom: 0; }
   body.pad-port #railB::after { top: 0; }
 
+  /* 完整遊戲：操作列不是色塊，遊戲一路畫到螢幕邊；只留一層從畫面外緣往中間淡掉的陰影，
+     搖桿與跳躍鍵壓在上面才看得清楚。沒有底色、沒有模糊、沒有髮絲線。 */
+  body[data-mode="game"] .rail::before {
+    background: linear-gradient(to right, rgba(0, 0, 0, .5), rgba(0, 0, 0, 0));
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  body[data-mode="game"] .rail::after { display: none; }
+  body[data-mode="game"].pad-land #railB::before { background: linear-gradient(to left, rgba(0, 0, 0, .5), rgba(0, 0, 0, 0)); }
+  body[data-mode="game"].pad-port #railA::before { background: linear-gradient(to bottom, rgba(0, 0, 0, .5), rgba(0, 0, 0, 0)); }
+  body[data-mode="game"].pad-port #railB::before { background: linear-gradient(to top, rgba(0, 0, 0, .5), rgba(0, 0, 0, 0)); }
+
   /* ── 面板：收在操作列的上半段 ───────────────────────────── */
   .panel {
     position: fixed;
