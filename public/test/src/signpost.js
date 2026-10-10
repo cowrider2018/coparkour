@@ -5,8 +5,9 @@
    主角走到哪，那一圈跟到哪；換了房間就換一套。
 
    箭頭照門的高度上下偏：指的那一點是感測區高度的 1/6（門是門檻上 1/4 個狗高），從主角身高的
-   1/4 指過去——站在門前的那一層就是水平的；水窖往窄巷的殘階在上面，箭頭往上翹，窄巷的井
-   在底下，箭頭往下壓。圈本身還是水平的（箭頭排在 xz 平面的一圈上），只有箭頭轉向。
+   1/4 指過去——站在門前的那一層就是水平的；水窖往窄巷的殘階在上面，箭頭往上翹。偏轉的軸心
+   是主角 xz 的中心、身高 1/4 的那一點：箭頭與字整個沿著指過去的方向擺在離軸心 RING、LABEL
+   遠的地方，所以往上指的那一支整支抬起來，不是在水平那一圈上原地翹頭。
 
    什麼時候有：不在打（模式給 `calm`）、門開著（沒有門的井與殘階一直開著）、主角
    還沒站到門口（離門口 NEAR 公尺以內就不指）。關著的門不指。每一支自己淡進淡出
@@ -22,8 +23,8 @@ import * as THREE from '../vendor/three.module.js';
 import { PHYS } from './walk.js';
 
 /**
- * 箭頭在離主角中心多遠的那一圈上（公尺，水平量，指的是箭頭的中心）、箭頭多長多寬、字在多遠、
- * 站得多近就不指，淡進淡出幾秒，以及圈比腳高多少（主角身高的 1/4）。
+ * 箭頭的中心離軸心多遠（公尺，沿著指過去的方向量）、箭頭多長多寬、字在多遠、
+ * 站得多近就不指，淡進淡出幾秒，以及軸心比腳高多少（主角身高的 1/4）。
  */
 const HEIGHT = PHYS.height / 4;
 const RING = 1.0;
@@ -108,16 +109,14 @@ export class Signpost {
     const { x, z } = player, y = player.y + HEIGHT;
     for (const o of this._posts.values()) {
       const dx = o.x - x, dy = o.y - y, dz = o.z - z, h = Math.hypot(dx, dz) || 1, d = Math.hypot(h, dy);
-      const hx = dx / h, hz = dz / h;                              // 水平往門：箭頭排在圈上的哪裡
-      const ux = dx / d, uy = dy / d, uz = dz / d, vx = -hz, vz = hx;   // 箭頭的長軸（往門，含上下）、橫軸（水平）
-      // 箭頭：中心在圈上，長軸指著門（上下偏），四個點是尖、右後角、尾巴的凹、左後角。
-      const cx = x + hx * RING, cz = z + hz * RING;
+      const ux = dx / d, uy = dy / d, uz = dz / d, vx = -dz / h, vz = dx / h;   // 往門（含上下）、橫軸（水平）
+      // 從軸心 (x, y, z) 沿著往門的方向 along 公尺、往旁邊 side 公尺的那一點。
       const at = (along, side) => this._screen(camera, rect,
-        cx + ux * along + vx * side, y + uy * along, cz + uz * along + vz * side);
+        x + ux * along + vx * side, y + uy * along, z + uz * along + vz * side);
+      // 箭頭：中心離軸心 RING，四個點是尖、右後角、尾巴的凹、左後角。字在同一條線上更遠的 LABEL。
       const L = ARROW.len / 2;
-      const pts = [at(L, 0), at(-L, ARROW.half), at(-L + ARROW.notch, 0), at(-L, -ARROW.half)];
-      // 字在箭頭外面，順著箭頭的方向（往上翹的箭頭，字也在上面）。
-      const label = at(LABEL - RING, 0);
+      const pts = [at(RING + L, 0), at(RING - L, ARROW.half), at(RING - L + ARROW.notch, 0), at(RING - L, -ARROW.half)];
+      const label = at(LABEL, 0);
       if (pts.some((p) => !p) || !label) continue;
       g.globalAlpha = o.a;
       g.beginPath();
