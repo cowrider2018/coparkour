@@ -53,6 +53,11 @@
    音樂：開打（門關上）到清完或倒下放戰鬥那一首，其餘的時候放探索那一首（music.js）。
 
    這一頁跟其他模式一樣不存檔：重新整理就是重玩。
+
+   ── 完整遊戲（沒給模式）──────────────────────────────────────────
+   同一支程式，`GAME` 為真：沒有面板、不浮任何提示字（toast 與右上那一行統計都不建），
+   BOSS 的血條不寫名字，沒有開發用的鍵（R、P、1–6、H／C／X）。留下來的字只有倒下醒來的
+   那幾句（death.js）、路標（signpost.js）與漫畫。
    ------------------------------------------------------------------ */
 
 import * as THREE from '../vendor/three.module.js';
@@ -80,6 +85,9 @@ import { STAGES, START, SOULS, roomOf, signposts, foesOf, entranceOf, inStage, m
 import { Signpost } from './signpost.js';
 import { BossBar } from './bossbar.js';
 import { roamMap } from './roam.js';
+
+/** 完整遊戲（boot.js 的 game）：完整流程去掉面板、提示字與開發用的鍵。 */
+const GAME = document.body.dataset.mode === 'game';
 
 const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -154,7 +162,7 @@ let bossAt = null;
 function trackBoss() {
   const b = fight.boss();
   if (b && b.spawn !== bossAt && story.on) return;
-  if (b && b.spawn !== bossAt) bossBar.show(KINDS[b.kind].name);
+  if (b && b.spawn !== bossAt) bossBar.show(GAME ? '' : KINDS[b.kind].name);
   else if (!b && bossAt) bossBar.die();
   bossAt = b ? b.spawn : null;
   if (b) bossBar.set(b.hp / KINDS[b.kind].hp);
@@ -352,12 +360,15 @@ function warp(dest) {
    右邊那塊面板列出六場：亮的是下一場，點一下（或 1–6）從那一場開始。
    這個模式自己的鍵：R 重玩、1–6 從第幾場開始、P 傳送範圍。 */
 const looks = wardrobe(zoo, () => hud, () => fight.follow());
-const hud = new Hud({
+/** 完整遊戲沒有面板也不浮字：同一套介面，什麼都不做。 */
+const SILENT = { flash() {}, paint() {}, tick() {}, fit() {} };
+const hud = GAME ? SILENT : new Hud({
   zoo, blocks: STAGES, onLook: looks.setLook, onHat: looks.toggleHat,
   onBlock: (id) => startFrom(STAGES.findIndex((s) => s.id === id)),
 });
 const pad = new Pad(document.getElementById('pad'));
 const controls = new Controls(canvas, pad, cam, (k, e) => {
+  if (GAME) return;
   if (looks.key(k, e)) return;
   if (k === 'r') startFrom(0);
   if (k === 'p') hud.flash(stage.togglePortalLines() ? '顯示傳送範圍' : '隱藏傳送範圍');

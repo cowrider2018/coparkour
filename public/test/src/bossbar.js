@@ -1,6 +1,7 @@
 /* ── test/src/bossbar.js ─────────────────────────────────────────────
    這一場的 BOSS 的血條（route.js 的 STAGES，foes 裡帶 `boss` 的那一隻）：畫面最上方、
-   遊戲那一片的正中間，上面一行是牠的名字。不寫數字——剩多少血看橙色那一截還有多長。
+   遊戲那一片的正中間，上面一行是牠的名字（給的名字是空的就不寫，完整遊戲是這樣）。不寫數字——
+   剩多少血看橙色那一截還有多長。
 
    ── 樣子 ──────────────────────────────────────────────────────────
    一條很圓的圓角長條（兩端是半圓），跟遊戲的卡通著色一樣是分層的、硬邊的：墨線框住，底下
@@ -216,7 +217,7 @@ export class BossBar {
       for (const v of [mt.hp, mt.yellow, mt.white]) if (v > 0 && v < 1) g.fillRect(x0 + w * v - o / 2, y, o, h);
       g.restore();
     }
-    if (alpha > 0) {
+    if (alpha > 0 && this.name) {
       g.globalAlpha = alpha;
       g.font = '600 15px system-ui, "Noto Sans TC", sans-serif';
       if ('letterSpacing' in g) g.letterSpacing = '4px';

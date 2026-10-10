@@ -9,7 +9,7 @@
    模式的就在這裡拿掉——拿掉而不是藏起來，各模式的主程式用 id 找元素
    （#keys 兩個模式各一份），留著會找到別人的那一份。
 
-   沒給模式、或給了不認得的，就是 DEFAULT。
+   沒給模式（`?mode=` 空的也算）、或給了不認得的，就是 DEFAULT。
    ------------------------------------------------------------------ */
 
 import { installFullscreen } from '../../src/fullscreen.js';
@@ -19,10 +19,12 @@ export const MODES = {
   terrain: { title: '試玩場：城堡遺跡', entry: './mode-terrain.js' },
   combat: { title: '試打場', entry: './mode-combat.js' },
   flow: { title: '完整流程', entry: './mode-flow.js' },
+  /* 完整遊戲：就是完整流程，但不帶面板、提示字與開發用的鍵，一開始是開始畫面（mode-flow.js 的 GAME）。 */
+  game: { title: 'Coparkour', entry: './mode-flow.js' },
 };
 
-/** 沒給模式的時候：完整流程——另外兩個是它的零件各自拿出來試。 */
-export const DEFAULT = 'flow';
+/** 沒給模式的時候：完整遊戲——其他幾個是它的零件或開發版，各自拿出來試。 */
+export const DEFAULT = 'game';
 
 const asked = new URLSearchParams(location.search).get('mode');
 const mode = Object.hasOwn(MODES, asked) ? asked : DEFAULT;

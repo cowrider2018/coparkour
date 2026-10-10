@@ -20,7 +20,9 @@
     ?mode=terrain  地形：四個城堡遺跡關卡區塊，走上去看看（src/mode-terrain.js）
     ?mode=combat   戰鬥：一塊黑牆圍起來的空地，試打怪物（src/mode-combat.js）
     ?mode=flow     完整流程：在遺跡裡照路線一場一場打，怪物照劇本（STORY.md）
-                   （src/mode-flow.js，路線在 src/route.js）。沒給模式就是這個。
+                   （src/mode-flow.js，路線在 src/route.js）。
+    （沒給模式）   完整遊戲：完整流程包成遊戲——沒有面板、沒有提示字，一開始是開始
+                   畫面（src/mode-flow.js 的 GAME）。`?mode=` 空的也是這個。
 
   選模式的是 src/boot.js：它讀網址、拿掉不屬於這個模式的面板內容（標了
   `data-for` 的元素），再載入那個模式的主程式。三個模式共用同一份走路、
@@ -54,7 +56,7 @@
   想細看動物就把鏡頭拉近再繞著轉：中間那片畫面拖曳＝轉視角、滾輪或
   雙指＝縮放。沒有另外的觀賞模式。
 
-  網址：/test/?mode=terrain、/test/?mode=combat、/test/?mode=flow
+  網址：/test/、/test/?mode=terrain、/test/?mode=combat、/test/?mode=flow
 -->
 <style>
   :root {
@@ -462,9 +464,9 @@
 <body class="pad-land">
 <canvas id="view"></canvas>
 <canvas id="signpost"></canvas>
-<canvas id="bossbar" data-for="flow"></canvas>
+<canvas id="bossbar" data-for="flow game"></canvas>
 <div id="fade"></div>
-<div id="dream" data-for="flow"></div>
+<div id="dream" data-for="flow game"></div>
 <div class="rail" id="railA"></div>
 <div class="rail" id="railB"></div>
 <canvas id="pad"></canvas>
@@ -475,13 +477,13 @@
   <div data-for="combat"><b>正在放狗…</b><br />cat.bin 那三隻動物，外加兩隻綠的、一隻紫的</div>
 </div>
 
-<section class="panel" id="creatures">
+<section class="panel" id="creatures" data-for="terrain combat flow">
   <h2>生物<span id="look-name"></span></h2>
   <div id="looks"></div>
   <div id="hat-row"></div>
 </section>
 
-<section class="panel" id="terrains">
+<section class="panel" id="terrains" data-for="terrain combat flow">
   <h2><span data-for="terrain">地形</span><span data-for="combat">陣容</span><span data-for="flow">路線</span></h2>
   <div id="terrain"></div>
   <div id="terrain-hint"></div>
@@ -507,8 +509,8 @@
   <div id="stats"></div>
 </section>
 
-<div id="toast"></div>
-<div id="story" data-for="flow"></div>
+<div id="toast" data-for="terrain combat flow"></div>
+<div id="story" data-for="flow game"></div>
 
 <script type="module" src="./src/boot.js"></script>
 </body>
