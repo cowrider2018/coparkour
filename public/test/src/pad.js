@@ -514,62 +514,85 @@ export class Pad {
     }
 
     /* 圖案：這顆鍵在說什麼，一眼就懂。平常是向上的箭頭（跳）；第二、三段攻擊的那一段是一把
-       往右上斜指的刀（按下去是出招）。兩個交叉淡換（iconK）。 */
+       往右上斜指的刀（按下去是出招）。兩個交叉淡換（iconK）。
+
+       每個圖案先用不透明的顏色畫進一張離屏的小畫布（_glyph），再整張用一個透明度貼上來：
+       直接用半透明的線畫的話，刀身、護手、刀柄疊在一起的地方會疊出比較濃的一塊，剪影的
+       透明度就不一致。 */
     const k = this.iconK;
-    const q = r * 0.30;
-    ctx.save();
-    ctx.globalAlpha *= 0.55 + 0.45 * liq;
-    ctx.strokeStyle = liq > 0.02 ? tint(0.4 + 0.6 * liq, 0.95) : 'rgba(247,239,221,0.62)';
-    ctx.lineWidth = Math.max(2, r * 0.09);
-    if (k < 0.99) {
-      ctx.save();
-      ctx.globalAlpha *= 1 - k;
-      const y = cy + q * 0.45 - press * r * 0.06;
-      ctx.beginPath();
-      ctx.moveTo(cx - q, y);
-      ctx.lineTo(cx, y - q * 0.95);
-      ctx.lineTo(cx + q, y);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(cx, y - q * 0.8);
-      ctx.lineTo(cx, y + q * 0.62);
-      ctx.stroke();
-      ctx.restore();
-    }
-    if (k > 0.01) {
-      ctx.save();
-      ctx.globalAlpha *= k;
-      // 刀的座標：u 沿著刀身（往刀尖），v 橫過刀身；整把轉 −45°，刀尖朝右上。斜擺的刀比箭頭
-      // 細，放大一點才跟箭頭一樣搶眼。
+    const lit = liq > 0.02;
+    const rgb = lit ? tint(0.4 + 0.6 * liq, 1) : 'rgb(247,239,221)';
+    const alpha = (0.55 + 0.45 * liq) * (lit ? 0.95 : 0.62);
+    const lift = press * r * 0.06;
+    if (k < 0.99) this._glyph(ctx, cx, cy - lift, r, rgb, alpha * (1 - k), (g) => {
+      const q = r * 0.30;
+      g.lineWidth = Math.max(2, r * 0.09);
+      g.beginPath();
+      g.moveTo(-q, q * 0.45);
+      g.lineTo(0, q * 0.45 - q * 0.95);
+      g.lineTo(q, q * 0.45);
+      g.moveTo(0, q * 0.45 - q * 0.8);
+      g.lineTo(0, q * 0.45 + q * 0.62);
+      g.stroke();
+    });
+    if (k > 0.01) this._glyph(ctx, cx, cy - lift, r, rgb, alpha * k, (g) => {
+      /* 刀的座標：u 沿著刀身（往刀尖），v 橫過刀身；整把轉 −45°，刀尖朝右上。斜擺的刀比箭頭
+         細，放大一點才跟箭頭一樣搶眼。v 是對稱的；u 從柄頭的外緣到刀尖，取那一段的中點對在
+         圓心上，整把刀的外框就置中。 */
       const q = r * 0.42;
-      ctx.translate(cx, cy - press * r * 0.06);
-      ctx.rotate(-Math.PI / 4);
-      ctx.translate(-q * 0.12, 0);
-      ctx.lineWidth = Math.max(1.6, r * 0.07);
-      const w = q * 0.17, g = -q * 0.35;
-      ctx.beginPath();                                   // 刀身：兩條刃、斜切的刀尖
-      ctx.moveTo(g, -w);
-      ctx.lineTo(q * 0.78, -w);
-      ctx.lineTo(q * 1.08, 0);
-      ctx.lineTo(q * 0.78, w);
-      ctx.lineTo(g, w);
-      ctx.closePath();
-      ctx.stroke();
-      ctx.lineWidth = Math.max(2, r * 0.09);
-      ctx.beginPath();                                   // 護手
-      ctx.moveTo(g, -q * 0.46);
-      ctx.lineTo(g, q * 0.46);
-      ctx.moveTo(g, 0);                                  // 刀柄
-      ctx.lineTo(-q * 0.8, 0);
-      ctx.stroke();
-      ctx.beginPath();                                   // 柄頭
-      ctx.arc(-q * 0.93, 0, q * 0.1, 0, TAU);
-      ctx.stroke();
-      ctx.restore();
-    }
-    ctx.restore();
+      const thin = Math.max(1.6, r * 0.07), thick = Math.max(2, r * 0.09);
+      const w = q * 0.17, guard = -q * 0.35, tip = q * 1.08, pommel = -q * 0.93, knob = q * 0.1;
+      const mid = (tip + thin / 2 + pommel - knob - thick / 2) / 2;
+      g.rotate(-Math.PI / 4);
+      g.translate(-mid, 0);
+      g.lineWidth = thin;
+      g.beginPath();                                     // 刀身：兩條刃、斜切的刀尖
+      g.moveTo(guard, -w);
+      g.lineTo(q * 0.78, -w);
+      g.lineTo(tip, 0);
+      g.lineTo(q * 0.78, w);
+      g.lineTo(guard, w);
+      g.closePath();
+      g.stroke();
+      g.lineWidth = thick;
+      g.beginPath();
+      g.moveTo(guard, -q * 0.46);                        // 護手
+      g.lineTo(guard, q * 0.46);
+      g.moveTo(guard, 0);                                // 刀柄
+      g.lineTo(pommel + knob, 0);
+      g.stroke();
+      g.beginPath();                                     // 柄頭
+      g.arc(pommel, 0, knob, 0, TAU);
+      g.stroke();
+    });
 
     this._drawDrops(ctx, cx, cy);
+  }
+
+  /**
+   * 畫一個圖案：在離屏的小畫布上以 (0, 0) 為圓心、用不透明的 color 畫 draw(g)，再整張以
+   * alpha 貼到 (cx, cy)。重疊的筆畫因此是同一個透明度。小畫布是跳躍鍵那麼大（2r 見方，
+   * 照 dpr 放大），不夠大才重新配。
+   */
+  _glyph(ctx, cx, cy, r, color, alpha, draw) {
+    if (alpha <= 0.002) return;
+    const dpr = this.dpr, half = Math.ceil(r);
+    const px = Math.ceil(half * 2 * dpr);
+    if (!this._glyphCv) this._glyphCv = document.createElement('canvas');
+    const cv = this._glyphCv;
+    if (cv.width < px || cv.height < px) { cv.width = px; cv.height = px; }
+    const g = cv.getContext('2d');
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, cv.width, cv.height);
+    g.setTransform(dpr, 0, 0, dpr, half * dpr, half * dpr);
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
+    g.strokeStyle = color;
+    draw(g);
+    ctx.save();
+    ctx.globalAlpha *= alpha;
+    ctx.drawImage(cv, 0, 0, px, px, cx - half, cy - half, half * 2, half * 2);
+    ctx.restore();
   }
 
   /* 水滴存的是「相對跳躍鍵中心」的位移。src/pad.js 的原文。 */
