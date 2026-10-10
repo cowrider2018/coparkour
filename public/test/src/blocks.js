@@ -59,8 +59,8 @@ export const PITCH = 62;
 /**
  * 門（帶門口 `mouth` 的感測區）的高度範圍：從門檻 `sill` 起 1.5 個狗高。整隻狗（一個狗高）站在
  * 門檻上就在裡面，跳起來半個狗高以內也還在（walk.js 的 portalAt：整個身體在裡面才送）。路標
- * （signpost.js）指著感測區高度的 1/6——門的話是門檻上 1/4 個狗高，跟路標的箭頭一樣高，指過去
- * 剛好水平。沒有門口的（井、殘階）照它們自己的範圍，指過去就往下、往上偏。
+ * （signpost.js）預設指著感測區高度的 1/6（geom.js 的 `aim`）——門的話是門檻上 1/4 個狗高，跟路標的
+ * 箭頭一樣高，指過去剛好水平。水窖往窄巷的殘階照它自己的範圍，指過去往上偏；井另外登記成井口。
  */
 const doorSpan = (sill) => [sill, sill + 1.5 * PHYS.height];
 
@@ -1300,7 +1300,8 @@ function alley(B, flames, seed, A) {
      就碰到感測區，送到水窖——從水窖的半空中掉下來。井底沒有路上來，這條路
      是單向的：人掉進去的那一瞬間是整個畫面一片黑，那一片黑就是這條通道。 */
   well(B, { x: 0, z: WZ, y: 0, r: 1.15, seed: seed + 3, open: true });
-  B.portal(0, WZ, 1.15 * 0.78, -8.5, -3, 'cistern.well', { oneWay: true });
+  // 路標指井口（井的中心、地面那麼高）：感測區在地下三公尺，指那裡箭頭會插進地裡。
+  B.portal(0, WZ, 1.15 * 0.78, -8.5, -3, 'cistern.well', { oneWay: true, aim: { x: 0, y: 0, z: WZ } });
   /* 從水窖的殘階爬上來的地方：井的南邊、離井心 2.4，面朝井。 */
   B.arrive('stair', 0, 0, WZ - 2.4, 0);
   /* 巷子南端沒入黑霧的那一截：一塊橫過巷子的感測區，從黑牆往裡 0.5（跟城牆那條
@@ -1587,6 +1588,7 @@ function shift(B, fromPos, ox, oz, flames, id) {
     const p = B.portals[i];
     if (p.shape === 'box') { p.x0 += ox; p.x1 += ox; p.z0 += oz; p.z1 += oz; } else { p.x += ox; p.z += oz; }
     if (p.mouth) { p.mouth.x += ox; p.mouth.z += oz; }
+    p.aim.x += ox; p.aim.z += oz;
     if (p.to === 'spawn') p.to = id;
     else if (p.to.startsWith('.')) p.to = own(p.to.slice(1));
     mine(p.door, id);

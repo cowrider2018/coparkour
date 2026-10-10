@@ -336,7 +336,7 @@ console.log('9. 路標');
     `兵營指 ${say('wallwalk')}，城牆上只指 ${say('wallwalk:top')}：圓塔另一層的那扇門在同一張圖裡，但走不到，不指`);
   ok(say('courtyard') === ['王座廳', '兵營', '城內窄巷'].sort().join('、'), `崩塌中庭指 ${say('courtyard')}`);
   {
-    // 箭頭的上下：指感測區高度的 1/6，箭頭在主角身高的 1/4。門是門檻上 1/4 個狗高——站在門前那一層就水平。
+    // 箭頭指每個感測區登記的那一點（aim）：門是感測區高度的 1/6、門檻上 1/4 個狗高——箭頭在主角身高的 1/4，站在門前那一層就水平。
     const posts = rooms.flatMap((r) => signposts(ruins.portals, r));
     const doorsOk = posts.filter((sp) => sp.portal.mouth).every((sp) => Math.abs(sp.y - (sp.portal.mouth.y + PHYS.height / 4)) < 1e-9);
     ok(doorsOk, '每一扇門：路標指門檻上 1/4 個狗高（站在門前那一層、從身高 1/4 指過去是水平的）');
@@ -346,7 +346,8 @@ console.log('9. 路標');
     const cis = ruins.spawns.cistern, al = ruins.spawns.alley;
     const pitch = (sp, at) => Math.atan2(sp.y - (at[1] + PHYS.height / 4), hx(sp, at[0], at[2])) * 180 / Math.PI;
     ok(pitch(up, cis) > 15, `水窖往窄巷的殘階在上面：從水窖的出生點指過去往上 ${pitch(up, cis).toFixed(0)}°`);
-    ok(pitch(down, al) < -15, `窄巷的井在底下：從窄巷的出生點指過去往下 ${(-pitch(down, al)).toFixed(0)}°`);
+    ok(down.y === 0 && down.x === down.portal.x && down.z === down.portal.z,
+      `窄巷的井指井口：井的中心、地面那麼高（感測區在地下 ${-down.portal.y1} 公尺；從出生點指過去往下 ${(-pitch(down, al)).toFixed(0)}°）`);
   }
   {
     // 照路線走到第 k 場的時候（前面的房間都進過）：每一個房間的路標寫什麼。

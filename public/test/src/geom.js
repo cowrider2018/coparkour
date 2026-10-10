@@ -715,12 +715,16 @@ export class Build {
    * 的中心要在門面內超過 `inset`（預設是狗的後半身，整隻走進門洞；貼在牆上
    * 的門走不進去，給負的，意思是「離門面這麼近就送」）。
    *
+   * `o.aim`：路標（signpost.js）的箭頭指著哪一點 `{ x, y, z }`。沒給就是門口（沒有門口是感測區的
+   * 中心）、感測區高度的 1/6——門從門檻起 1.5 狗高，所以是門檻上 1/4 個狗高，跟箭頭一樣高。
+   * 指的地方不在那裡的（井：人是從井口掉下去的，感測區在地下）自己登記。
+   *
    * 它不是碰撞體，不進 `colliders`：那張清單上的每一支程式（走路、鏡頭、
    * 驗證）都在問「擋不擋」，而感測區什麼都不擋。混進去的話，每一支都得
    * 學會跳過它，漏一支就是一面看不見的牆。
    */
   portal(x, z, r, y0, y1, to = 'spawn', o = {}) {
-    this.portals.push({ shape: 'circle', x, z, r, y0, y1, to, ...gate(o) });
+    this.portals.push(aimed({ shape: 'circle', x, z, r, y0, y1, to, ...gate(o) }, o));
     return this;
   }
 
@@ -729,10 +733,10 @@ export class Build {
    * 一條路沒入黑霧的那一截都是方的——用圓去蓋一扇門，圓會凸到走道上。
    */
   portalBox(x0, z0, x1, z1, y0, y1, to, o = {}) {
-    this.portals.push({
+    this.portals.push(aimed({
       shape: 'box', x0: Math.min(x0, x1), x1: Math.max(x0, x1),
       z0: Math.min(z0, z1), z1: Math.max(z0, z1), y0, y1, to, ...gate(o),
-    });
+    }, o));
     return this;
   }
 
@@ -910,6 +914,13 @@ export class Build {
       inkLines: this.ink.length / 6,
     };
   }
+}
+
+/** 感測區登記路標指的那一點（`aim`，見 `portal()`）：給了就用給的，沒給照門口與高度的 1/6。 */
+function aimed(p, o) {
+  if (o.aim) return { ...p, aim: { ...o.aim } };
+  const [x, z] = p.mouth ? [p.mouth.x, p.mouth.z] : p.shape === 'box' ? [(p.x0 + p.x1) / 2, (p.z0 + p.z1) / 2] : [p.x, p.z];
+  return { ...p, aim: { x, y: p.y0 + (p.y1 - p.y0) / 6, z } };
 }
 
 /** 感測區的旗標：屬於哪一組門、是不是單向的、門口在哪。沒給就不帶這幾個欄位。 */
