@@ -46,7 +46,8 @@ export function roomName(room) {
 
 /**
  * 動態路標（signpost.js 畫）：房間 `room` 裡的每一個感測區——門、霧口、井、殘階，全部都算——
- * 一筆：指向哪一點（有門口指門口，沒有指感測區的中心）、通到哪個房間（`to`，給人看的名字是
+ * 一筆：指向哪一點（水平：有門口指門口，沒有指感測區的中心；高度：感測區高度的 1/3，門的話是
+ * 門檻上半個狗高）、通到哪個房間（`to`，給人看的名字是
  * `name`）、屬於哪一扇門（沒有門的一直通）。感測區算在它自己那一層：城牆步道的圓塔兩扇門
  * 在同一張圖裡，但站在兵營走不到牆頂那一扇，反過來也是，所以各自只出現在自己那一層。
  *
@@ -62,7 +63,8 @@ export function signposts(portals, room, seen = null) {
       : p.shape === 'box' ? [(p.x0 + p.x1) / 2, (p.z0 + p.z1) / 2] : [p.x, p.z];
     const to = roomOf(p.dest.block, p.dest.y);
     const goal = seen && !seen.has(to) ? STAGES.find((s) => s.room === to)?.goal : null;
-    out.push({ portal: p, x, z, to, name: goal || roomName(to), door: p.door || null });
+    const y = p.y0 + (p.y1 - p.y0) / 3;
+    out.push({ portal: p, x, y, z, to, name: goal || roomName(to), door: p.door || null });
   }
   return out;
 }
