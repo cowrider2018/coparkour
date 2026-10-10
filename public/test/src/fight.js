@@ -55,7 +55,7 @@ import {
 import { SoulLook } from './soul.js';
 import { OFFER, makeOffer, offerStep, offerDone, blinkOf, throwSoul, flySoul } from './offer.js';
 import { DEATH, tipAngle, footprint, fallSide, fallHalf, tipNode } from './death.js';
-import { SKILL, GUST, WHIRL_LEN, REAP, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, ringsStep, shotHits, strikeHits, gustHits, ringHits, laneLength } from './skills.js';
+import { SKILL, GUST, WHIRL_LEN, REAP, REND, makeWorld, bossStep, wavesStep, shotsStep, gustsStep, ringsStep, shotHits, strikeHits, gustHits, ringHits, laneLength } from './skills.js';
 import { Hearts } from './hearts.js';
 import { Fluid, Sheet } from './fluid.js';
 import { TRAILS } from './trail.js';
@@ -318,6 +318,7 @@ export class Fight {
         // pts：身體的輪廓，倒下的支點照它算（death.js）。要趁還沒動過、在待機姿勢的時候量。
         critter, pts: footprint(critter), breakFx: breakFx(),
         lane: laneFx(SKILL.orb.radius), circle: circleFx(SKILL.leap.radius), cone: coneFx(SKILL.cone.radius, SKILL.cone.half),
+        rend: circleFx(REND.radius),
         whirl: stripFx(SKILL.whirl.radius, true), cleave: stripFx(SKILL.cleave.width / 2, false),
         hew: stripFx(SKILL.hew.width / 2, false), gale: galeFx(SKILL.gale.radius, SHADE_N),
         blade: null, helm: null, crown: null, shields: null,
@@ -331,7 +332,7 @@ export class Fight {
       // 有盾的（國王）：幾面盾繞著牠轉，墨線一樣跟著牠的墨色換。
       if (KINDS[kind].shields) { slot.shields = new ShieldRing(KINDS[kind].shields); slot.shields.follow(slot.critter); this.scene.add(slot.shields.node); }
       if (this._inkPx) slot.critter.setInkPx(...this._inkPx);
-      this.scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node, slot.cone.node, slot.whirl.node, slot.cleave.node, slot.hew.node, slot.gale.node);
+      this.scene.add(slot.critter.root, slot.breakFx.node, slot.lane.node, slot.circle.node, slot.rend.node, slot.cone.node, slot.whirl.node, slot.cleave.node, slot.hew.node, slot.gale.node);
       list.push(slot);
       this._cold = true;
     }
@@ -350,6 +351,7 @@ export class Fight {
     s.breakFx.node.visible = false;
     s.lane.node.visible = false;
     s.circle.node.visible = false;
+    s.rend.node.visible = false;
     s.cone.node.visible = false;
     s.whirl.node.visible = false;
     s.cleave.node.visible = false;
@@ -1016,7 +1018,7 @@ export class Fight {
 
     // 怪物技能的預告：貼在牠（或跳砸的落點）那一層地板上。
     for (const f of this.foes) {
-      const { m, lane, circle, cone, whirl, cleave } = f;
+      const { m, lane, circle, rend, cone, whirl, cleave } = f;
       const c = m.cast;
       this._hew(f);
       this._gale(f);
@@ -1029,13 +1031,22 @@ export class Fight {
         wh ? Math.min(WHIRL_LEN, Math.max(0, laneLength(c.x0, c.z0, c.dirX, c.dirZ, m.field.arena) - PHYS.radius)) : 0, c ? c.y0 : 0);
       /* 跳砍：從落點往前的那一條（正中間是主角被鎖定的地方），貼在落點那一層地板上；飛的時候
          亮著滿的。落地之後換成上挑那一條（從牠腳下往主角、長 REACH），等的那 gap 秒從牠腳下長滿，
-         打得到的那 swing 秒亮著滿的，之後收掉。 */
-      const cl = !!c && (c.skill === 'cleave' || !!REAP[c.skill]), CL = SKILL.cleave;
+         打得到的那 swing 秒亮著滿的，之後收掉。
+         幽靈騎士的連斬（REAP）後兩下各有各的預告：上挑是那一條，原地轉一圈是一個圓（半徑是轉的
+         那一圈 REND.radius，在牠轉的那個高度——腰那麼高，跟國王旋風斬的亮圓一樣）。先出的那一下
+         從落地起長，後出的那一下從先出的那一下出手起長，各自長到自己出手、打得到的時候亮著滿的。 */
+      const cl = !!c && (c.skill === 'cleave' || !!REAP[c.skill]), CL = SKILL.cleave, P = cl ? REAP[c.skill] : null;
+      let spinOn = false, spinFrac = 0;
       if (cl && c.up) {
-        // 對地的連斬先轉再上挑：那一條等到上挑起跳才長滿。
-        const u = c.t - CL.windup - CL.air, wait = CL.up.gap + (REAP[c.skill]?.up ?? 0);
-        showStrip(cleave, u <= wait + CL.up.swing, Math.min(1, u / wait), c.up.x, c.up.z,
-          Math.atan2(c.up.dirX, c.up.dirZ), REACH, c.up.y);
+        const u = c.t - CL.windup - CL.air;
+        /** 這一下的預告：at 是牠出手的時刻（落地起算），from 是預告開始長的時刻，swing 是打得到多久。 */
+        const cue = (at, swing) => {
+          const from = at > CL.up.gap ? CL.up.gap : 0;
+          return { on: u >= from && u <= at + swing, frac: Math.min(1, Math.max(0, (u - from) / Math.max(1e-6, at - from))) };
+        };
+        const up = cue(CL.up.gap + (P?.up ?? 0), CL.up.swing);
+        showStrip(cleave, up.on, up.frac, c.up.x, c.up.z, Math.atan2(c.up.dirX, c.up.dirZ), REACH, c.up.y);
+        if (P) ({ on: spinOn, frac: spinFrac } = cue(CL.up.gap + P.spin, REND.swing));
       } else {
         showStrip(cleave, cl, cl ? Math.min(1, c.t / CL.windup) : 0, cl ? c.lx : 0, cl ? c.lz : 0,
           cl ? Math.atan2(c.dirX, c.dirZ) : 0, CL.len, cl ? c.ly : 0);
@@ -1043,6 +1054,7 @@ export class Fight {
       showLane(lane, orb, orb ? Math.min(1, c.t / SKILL.orb.windup) : 0, m.x, m.z,
         orb ? Math.atan2(c.dirX, c.dirZ) : 0, orb ? laneLength(m.x, m.z, c.dirX, c.dirZ, m.field.arena) : 0, m.y);
       showCircle(circle, leap, leap ? Math.min(1, c.t / SKILL.leap.windup) : 0, leap ? c.tx : 0, leap ? c.tz : 0, leap ? c.ty : 0);
+      showCircle(rend, spinOn, spinFrac, m.x, m.z, m.y + REND.waist);
       showCone(cone, fan, fan ? Math.min(1, c.t / SKILL.cone.windup) : 0, m.x, m.z, fan ? Math.atan2(c.dirX, c.dirZ) : 0, m.y);
     }
 
