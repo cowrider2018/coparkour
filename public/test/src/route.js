@@ -49,8 +49,12 @@ export function roomName(room) {
  * 一筆：指向哪一點（有門口指門口，沒有指感測區的中心）、通到哪個房間（`to`，給人看的名字是
  * `name`）、屬於哪一扇門（沒有門的一直通）。感測區算在它自己那一層：城牆步道的圓塔兩扇門
  * 在同一張圖裡，但站在兵營走不到牆頂那一扇，反過來也是，所以各自只出現在自己那一層。
+ *
+ * `seen`：這一輪進過的房間（完整流程模式記的）。通到一個還沒進過、而且是某一場的房間，
+ * 字寫去那裡的目的（那一場的 `goal`），不寫地名——還沒去過，主角只知道為什麼要去。
+ * 沒給 `seen`（地形模式）就一律寫地名。
  */
-export function signposts(portals, room) {
+export function signposts(portals, room, seen = null) {
   const out = [];
   for (const p of portals) {
     const y = p.mouth ? p.mouth.y : p.y0 + 0.5;
@@ -58,7 +62,8 @@ export function signposts(portals, room) {
     const [x, z] = p.mouth ? [p.mouth.x, p.mouth.z]
       : p.shape === 'box' ? [(p.x0 + p.x1) / 2, (p.z0 + p.z1) / 2] : [p.x, p.z];
     const to = roomOf(p.dest.block, p.dest.y);
-    out.push({ portal: p, x, z, to, name: roomName(to), door: p.door || null });
+    const goal = seen && !seen.has(to) ? STAGES.find((s) => s.room === to)?.goal : null;
+    out.push({ portal: p, x, z, to, name: goal || roomName(to), door: p.door || null });
   }
   return out;
 }
@@ -73,6 +78,8 @@ export function signposts(portals, room) {
  *   rest       倒下之後在哪裡休息：一個到達點的名字（blocks.js 的 arrivals）
  *   entry      這一場的入口：感測區在哪個區塊、送到哪個到達點——休息的時候面朝它
  *   warp       打完不走過去：直接送到下一場的休息點（墓室 → 中庭）
+ *   goal       為什麼要去這一場（照上一場的戰後漫畫）：還沒進過這個房間的時候，路標指著通往它的
+ *              門寫這個，不寫地名（signposts）
  */
 /** 一圈 n 隻：半徑 r、中心 (cx, cz)，都面朝中心。 */
 const ring = (kind, n, r, cx = 0, cz = 0, a0 = 0) => Array.from({ length: n }, (_, i) => {
@@ -103,32 +110,32 @@ export const STAGES = [
   },
   {
     id: 'courtyard', name: '崩塌中庭', hint: '從兵營南邊的黑霧過去。',
-    room: 'courtyard',
+    room: 'courtyard', goal: '調查殭屍來歷',
     foes: [{ kind: 'boss', x: -4, y: 0, z: 0, yaw: Math.PI / 2 }],
     rest: 'wallwalk.fog', entry: { from: 'wallwalk', to: 'courtyard.east' },
   },
   {
     id: 'alley', name: '城內窄巷', hint: '中庭的西拱洞過去，騎士在井後面。',
-    room: 'alley',
+    room: 'alley', goal: '喝水',
     foes: [{ kind: 'knight', x: 0, y: 0, z: 11.6, yaw: Math.PI }],
     rest: 'courtyard.west', entry: { from: 'courtyard', to: 'alley.fog' },
   },
   {
     id: 'cistern', name: '圓塔水窖', hint: '跳進窄巷的井裡。',
-    room: 'cistern',
+    room: 'cistern', goal: '喝水',
     foes: ring('ghost', 6, 7, 0, 0, Math.PI / 6),
     rest: 'alley.stair', entry: { from: 'alley', to: 'cistern.well' },
   },
   {
     id: 'crypt', name: '地下墓室', hint: '水窖南邊的鐵閘。',
-    room: 'crypt',
+    room: 'crypt', goal: '調查幽靈來歷',
     foes: tomb(),
     rest: 'cistern.gate', entry: { from: 'cistern', to: 'crypt.gate' },
     warp: true,
   },
   {
     id: 'throne', name: '王座廳', hint: '回到中庭，門樓的鐵閘升起來了。',
-    room: 'throne',
+    room: 'throne', goal: '見國王',
     foes: [{ kind: 'king', x: 0, y: 0, z: 6, yaw: Math.PI }],
     rest: 'courtyard.gate', entry: { from: 'courtyard', to: 'throne.gate' },
   },

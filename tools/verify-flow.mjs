@@ -29,7 +29,8 @@
                   不穿過柱子與牆，一級一級爬上台座（階梯是反著砌的，見 king.js），轉身背對王座，
                   最後坐在座面中心、座面那麼高、面朝廳裡，而且是坐姿。
      9. 路標      主角腳邊的動態路標（route.js 的 signposts）：每一個感測區剛好出現在一個房間的
-                  路標裡——它自己門口那一層；城牆步道兩層各只指自己那一層的圓塔門；字是通到的房間。
+                  路標裡——它自己門口那一層；城牆步道兩層各只指自己那一層的圓塔門；字是通到的房間，
+                  還沒進過、是某一場的房間寫去那裡的目的（STAGES 的 goal）。
 
    房間裡面走不走得通不在這裡驗——那是 verify:terrain 的事（每張圖從出生點
    真的走到中心、感測區都踩得到）。這裡只驗房間與房間之間。
@@ -306,6 +307,20 @@ console.log('9. 路標');
   ok(say('wallwalk') === ['城牆上', '崩塌中庭'].sort().join('、') && say('wallwalk:top') === '兵營',
     `兵營指 ${say('wallwalk')}，城牆上只指 ${say('wallwalk:top')}：圓塔另一層的那扇門在同一張圖裡，但走不到，不指`);
   ok(say('courtyard') === ['王座廳', '兵營', '城內窄巷'].sort().join('、'), `崩塌中庭指 ${say('courtyard')}`);
+  {
+    // 照路線走到第 k 場的時候（前面的房間都進過）：每一個房間的路標寫什麼。
+    const at = (k, room) => {
+      const seen = new Set(STAGES.slice(0, k + 1).map((s) => s.room));
+      return signposts(ruins.portals, room, seen).map((sp) => sp.name).sort().join('、');
+    };
+    ok(at(0, 'wallwalk') === ['城牆上', '調查殭屍來歷'].sort().join('、'), `兵營打完：往中庭的霧口寫「調查殭屍來歷」（${at(0, 'wallwalk')}）`);
+    ok(at(1, 'courtyard') === ['兵營', '喝水', '見國王'].sort().join('、'), `中庭打完：去過的兵營寫地名，窄巷寫「喝水」、王座廳寫「見國王」（${at(1, 'courtyard')}）`);
+    ok(at(2, 'alley') === ['喝水', '崩塌中庭'].sort().join('、'), `窄巷打完：井寫「喝水」（${at(2, 'alley')}）`);
+    ok(at(3, 'cistern') === ['城內窄巷', '調查幽靈來歷'].sort().join('、'), `水窖打完：往墓室的鐵閘寫「調查幽靈來歷」（${at(3, 'cistern')}）`);
+    const all = new Set(STAGES.map((s) => s.room));
+    ok(['wallwalk', 'courtyard', 'alley', 'cistern', 'crypt', 'throne'].every((r) => signposts(ruins.portals, r, all).every((sp) => sp.name === roomName(sp.to))),
+      '全部進過之後一律寫地名');
+  }
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

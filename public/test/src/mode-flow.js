@@ -136,6 +136,8 @@ let run = makeRun();
 let spawnIn = 0;
 /** 這一輪翻過開場頁的那幾場：倒下之後走回去重打不再翻。 */
 let opened = new Set();
+/** 這一輪進過的房間（roomOf）：還沒進過的，路標寫去那裡的目的，不寫地名（route.js 的 signposts）。 */
+let seen = new Set();
 /** 倒下幾次（這一輪）。 */
 let deaths = 0;
 /** 上一幀在不在國王身邊（獻靈魂）：走過去的那一刻提示一次怎麼交。 */
@@ -173,6 +175,8 @@ function startFrom(k) {
   run = makeRun(k);
   spawnIn = 0;
   opened = new Set();
+  // 從第 k 場開始：前面那幾場當作打完了，房間也當作進過。
+  seen = new Set(STAGES.slice(0, k).map((s) => s.room));
   deaths = 0;
   resetLife(player);
   fight.lineup([], fieldOf('wallwalk'));
@@ -396,7 +400,8 @@ function frame(now) {
     camera.lookAt(rig.look[0], rig.look[1], rig.look[2]);
   }
   // 路標只在不打、也不在演劇情（慢動作、書頁）的時候出現：開打的那一刻淡出去，漫畫走了才淡進來。
-  signpost.show(signposts(ruins.portals, roomOf(player.block, player.y)), doors, player, camera, real, !run.active && !story.on);
+  seen.add(roomOf(player.block, player.y));
+  signpost.show(signposts(ruins.portals, roomOf(player.block, player.y), seen), doors, player, camera, real, !run.active && !story.on);
 
   fight.draw(dt, camera, player);
   folk.update(dt, camera, player, player.block);

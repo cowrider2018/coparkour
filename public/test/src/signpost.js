@@ -1,6 +1,7 @@
 /* ── test/src/signpost.js ───────────────────────────────────────────
    動態路標：主角腳邊、地面上（xz 平面）的一圈，這個房間裡每一扇開著的門（route.js 的
-   signposts：門、霧口、井、殘階）一支平躺的箭頭指著它，箭頭外面一行小字是通到哪裡。
+   signposts：門、霧口、井、殘階）一支平躺的箭頭指著它，箭頭外面一行小字是通到哪裡
+   （還沒去過的寫去那裡的目的）。
    主角走到哪，那一圈跟到哪；換了房間就換一套。
 
    什麼時候有：不在打（模式給 `calm`）、門開著（沒有門的井與殘階一直開著）、主角
@@ -62,7 +63,7 @@ export class Signpost {
       if (!calm || !open || Math.hypot(sp.x - x, sp.z - z) < NEAR) continue;
       want.add(sp.portal);
       const o = this._posts.get(sp.portal);
-      if (o) Object.assign(o, { x: sp.x, z: sp.z });
+      if (o) Object.assign(o, { x: sp.x, z: sp.z, name: sp.name });
       else this._posts.set(sp.portal, { a: 0, name: sp.name, x: sp.x, z: sp.z });
     }
     for (const [p, o] of this._posts) {
