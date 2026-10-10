@@ -15,7 +15,7 @@
      打死一隻            不當場消失：跟主角倒下一樣往擊退的方向倒（fight.js 的 _fell）。綠色的
                          躺平落地之後 2 秒沉進地裡 3/4、一直留著；幽靈不落地，0.5 秒炸成一團
                          幽靈血；國王躺著。清完的那一場的屍體一直留著，倒下重打的那一次的收掉。
-     打死全部            這一場清完：只開通往下一場的門（route.js 的 OPEN）。斬殺的那一刻起
+     打死全部            這一場清完：只開從這張圖往下一場的那一步（route.js 的 openPortals，每進一張圖重算）。斬殺的那一刻起
                          演一段劇情（story.js）：慢動作，一大張書頁跑進來蓋住畫面，上面是
                          戰後那一頁漫畫；點一下（或按跳）翻頁、最後一頁書頁跑走，接著玩。
                          沒有戰後頁的那一場（王座廳）只有慢動作，慢完回到正常速度。
@@ -73,7 +73,7 @@ import { Music } from './music.js';
 import { resetLife, refill, regen, KINDS } from './combat.js';
 import { BLOCKS, THRONE } from './blocks.js';
 import { thronePath, pathGap } from './king.js';
-import { STAGES, START, SOULS, roomOf, signposts, foesOf, entranceOf, inStage, makeRun, doorsFor, portalsOn, restAt } from './route.js';
+import { STAGES, START, SOULS, roomOf, signposts, foesOf, entranceOf, inStage, makeRun, doorsFor, openPortals, restAt } from './route.js';
 import { Signpost } from './signpost.js';
 
 const canvas = document.getElementById('view');
@@ -95,7 +95,6 @@ const signpost = new Signpost(document.getElementById('signpost'), canvas);
 const COLS = stage.cols;
 /** 光影（light.js）：陰影、火光、霧、後製。 */
 const light = createLight({ scene, renderer, camera, ruins, cols: COLS, arenas: ruins.arenas });
-const NO_PORTALS = [];
 /** 怪物站在哪一張圖（combat.js 的 FIELD 那一種）：那一張的黑牆、整片遺跡的碰撞、現在的門。 */
 const fieldOf = (block) => ({ arena: ruins.arenas.find((a) => a.id === block), cols: COLS, doors });
 
@@ -152,9 +151,16 @@ const SPAWN_DELAY = 1.0;
 
 const stageName = (k) => (k < STAGES.length ? STAGES[k].name : '全部打完');
 
-/** 門照路線的狀態開關。 */
+/**
+ * 門與傳送照路線的狀態、主角站在哪個房間重算（route.js 的 openPortals）：打的時候全關，國王打完
+ * 全開，其他時候只開從這個房間往下一場的那一步。換了房間（主迴圈）、開打、清完、倒下、重玩都叫。
+ */
+let passable = [];
+let doorRoom = null;
 function applyDoors() {
-  const want = doorsFor(run);
+  doorRoom = roomOf(player.block, player.y);
+  passable = openPortals(ruins.portals, doorRoom, run);
+  const want = doorsFor(ruins.portals, doorRoom, run);
   for (const [id, open] of Object.entries(want)) if (doors[id] !== open) setDoor(id, open);
 }
 
@@ -188,8 +194,8 @@ function startFrom(k) {
   fight.lineup([], fieldOf('wallwalk'));
   fight.reset();                          // 地上沒撿的靈魂一起清掉
   folk.clear();
-  applyDoors();
   place(k === 0 ? { ...ruins.arrivals[START] } : restAt(k, ruins));
+  applyDoors();
   const say = k === 0 ? `從頭開始：${STAGES[0].name}` : `從第 ${k + 1} 場開始：${STAGES[k].name}`;
   if (k === 0) story.start(pagesOf(SCRIPT.start), { then: () => hud.flash(say) });
   else hud.flash(say);
@@ -241,7 +247,7 @@ function clear() {
   const say = () => hud.flash(done ? '六場全部打完——門全開了' : `這一場清完了。下一場：${stageName(run.next)}`);
   // 沒有戰後頁的那一場（王座廳：要先交靈魂，comic.js 的 SCRIPT.offered）只有慢動作，慢完才開門、浮字。
   const pages = SCRIPT.after[k] ? pagesOf(SCRIPT.after[k]) : [];
-  const cover = () => { applyDoors(); if (warpTo) warpTo(); };
+  const cover = () => { if (warpTo) warpTo(); applyDoors(); };
   story.start(pages, { slow: true, cover: pages.length ? cover : null, then: pages.length ? say : () => { applyDoors(); say(); } });
   if (!done) hud.paint({ block: STAGES[run.next].id });
 }
@@ -272,8 +278,8 @@ function rest() {
   run.active = false;
   spawnIn = 0;
   fight.lineup([], fieldOf(player.block));
-  applyDoors();
   place(k === 0 ? { ...ruins.arrivals[START] } : restAt(k, ruins));
+  applyDoors();
 }
 
 /** 王座（世界座標）：blocks.js 的 THRONE 加上王座廳的位置。 */
@@ -355,10 +361,10 @@ function frame(now) {
   if (!death.busy) fight.lead(dt, player, pressed && !sliding && !altar);
   // 被擊退的那一段（combat.js 的 knockHero）也不操控：照那一下的速度飛，落地才還回來。
   if (!fight.breaking && !player.knocked) steerHero(player, dt, controls, input);
-  const portals = portalsOn(run) ? ruins.portals : NO_PORTALS;
+  const portals = passable;
   const speed = fight.spinning ? 0 : moveHero(player, dt, COLS, portals, doors);
 
-  // 感測區：打的時候全部不通。畫面先暗下去，全黑的時候才送（transit.js）。
+  // 感測區：只有往下一場的那一步通（applyDoors）。畫面先暗下去，全黑的時候才送（transit.js）。
   // 劇情的慢動作裡也不問：門剛開，暗下去的黑幕跟書頁搶同一個畫面。
   {
     const due = transit.update(dt);
@@ -367,6 +373,8 @@ function frame(now) {
     if (gate) transit.go(gate.dest);
   }
   player.block = arenaAt(player.x, player.z).id;
+  // 進了另一張圖：門全部重算——來時的門關上，只開往下一場的那一步。
+  if (roomOf(player.block, player.y) !== doorRoom) applyDoors();
   /* 離開有靈魂的房間就是撿了（走過去、被送過去、倒下回到休息點都算）：不在主角這個房間的靈魂——
      還沒從屍體掉出來的也算——直接收下。每一幀問，所以主角走了才掉出來的那一顆也是一掉就收。 */
   {
@@ -416,7 +424,7 @@ function frame(now) {
   }
   // 路標只在不打、也不在演劇情（慢動作、書頁）的時候出現：開打的那一刻淡出去，漫畫走了才淡進來。
   seen.add(roomOf(player.block, player.y));
-  signpost.show(signposts(ruins.portals, roomOf(player.block, player.y), seen), doors, player, camera, real, !run.active && !story.on);
+  signpost.show(signposts(passable, roomOf(player.block, player.y), seen), doors, player, camera, real, !run.active && !story.on);
 
   fight.draw(dt, camera, player);
   folk.update(dt, camera, player, player.block);

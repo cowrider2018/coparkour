@@ -17,7 +17,7 @@
      4. 往下一場  第 k 場打完，照那時的門走得到第 k + 1 場、走不到更後面任何一場
                   （墓室打完是直接送到下一場的休息點，從那裡走）；
                   打的時候哪裡都去不了（門全關、傳送全不通）；全部打完之後
-                  每一個房間都走得到。
+                  每一個房間都走得到。門跟模式一樣每進一個房間重算（只開往前的那一步）。
      5. 靈魂      一輪掉得出幾顆靈魂（route.js 的 SOULS，國王要收的數）＝每一場會掉靈魂的怪物
                   一隻一顆加起來。
      6. 人民      國王復活之後每一張圖撒的人民（folk.js）：每一張 1～3 叢、每一叢 2～4 隻，
@@ -41,7 +41,7 @@
 import { buildRuins, BLOCKS } from '../public/test/src/blocks.js';
 import { PHYS, arenaGap, solveXZ, supportInfo } from '../public/test/src/walk.js';
 import {
-  STAGES, OPEN, START, SOULS, roomOf, roomName, signposts, foesOf, entranceOf, inStage, makeRun, doorsFor, portalsOn, restAt,
+  STAGES, START, SOULS, roomOf, roomName, signposts, foesOf, entranceOf, inStage, makeRun, doorsFor, openPortals, portalRoom, restAt,
 } from '../public/test/src/route.js';
 import { KINDS } from '../public/test/src/combat.js';
 import { FOLK, walkCells, plan } from '../public/test/src/folk.js';
@@ -61,24 +61,25 @@ const COLS = ruins.colliders;
 const arenaOf = (id) => ruins.arenas.find((a) => a.id === id);
 const shut = Object.fromEntries(Object.keys(ruins.doors).map((d) => [d, false]));
 
-/* 感測區 → 邊：從哪個房間（感測區的底在哪一層）送到哪個房間（到達點在哪一層）。 */
-const edges = ruins.portals.map((p) => ({
-  p, from: roomOf(p.block, p.y0 + 0.5), to: roomOf(p.dest.block, p.dest.y),
-}));
+/* 感測區 → 邊：從哪個房間（感測區門口那一層）送到哪個房間（到達點在哪一層）。 */
+const edges = ruins.portals.map((p) => ({ p, from: portalRoom(p), to: roomOf(p.dest.block, p.dest.y) }));
+
 
 /**
- * 照這一組門與傳送開關，從 `start` 走得到的房間。`stop` 是走進去就停的房間：下一場的
- * 房間一走進去就開打、門全關，不會從那裡再走到別處（窄巷的井就在窄巷這一場裡）。
+ * 照路線的這個狀態，從 `start` 走得到的房間。門跟模式一樣每進一個房間重算（route.js 的
+ * openPortals）。`stop` 是走進去就停的房間：下一場的房間一走進去就開打、門全關，不會從那裡
+ * 再走到別處（窄巷的井就在窄巷這一場裡）。
  */
-function reach(start, doors, portals, stop = null) {
+function reach(start, run, stop = null) {
   const seen = new Set([start]), todo = [start];
   while (todo.length) {
     const r = todo.pop();
-    if (!portals || (r === stop && r !== start)) continue;
-    for (const e of edges) {
-      if (e.from !== r || (e.p.door && !doors[e.p.door]) || seen.has(e.to)) continue;
-      seen.add(e.to);
-      todo.push(e.to);
+    if (r === stop && r !== start) continue;
+    for (const p of openPortals(ruins.portals, r, run)) {
+      const to = roomOf(p.dest.block, p.dest.y);
+      if (seen.has(to)) continue;
+      seen.add(to);
+      todo.push(to);
     }
   }
   return seen;
@@ -148,7 +149,7 @@ console.log('3. 休息點');
 STAGES.forEach((s, k) => {
   const r = restAt(k, ruins);
   const home = roomOf(r.block, r.y);
-  const back = reach(home, doorsFor(makeRun(k)), portalsOn(makeRun(k)));
+  const back = reach(home, makeRun(k));
   // 第一場沒有入口：休息點就是起點，在同一個房間裡、觸發範圍外面（見 2.）。
   ok((home !== s.room || !s.entry) && back.has(s.room), `${s.name}：在 ${s.rest}（${home}）休息，走得回去`);
   if (s.entry) {
@@ -161,20 +162,19 @@ STAGES.forEach((s, k) => {
 
 /* ── 4. 往下一場 ─────────────────────────────────────────────── */
 console.log('4. 往下一場');
-ok(OPEN.length === STAGES.length, `每一場都有一組門（${OPEN.length} 組、${STAGES.length} 場）`);
 {
-  const first = reach(roomOf(ruins.arrivals[START].block, ruins.arrivals[START].y), doorsFor(makeRun(0)), true);
+  const first = reach(roomOf(ruins.arrivals[START].block, ruins.arrivals[START].y), makeRun(0));
   ok(first.has(STAGES[0].room) && STAGES.slice(1).every((s) => !first.has(s.room)),
     `一開始：只到得了${STAGES[0].name}（${[...first].join('、')}）`);
 }
 STAGES.forEach((s, k) => {
   const fighting = { next: k, active: true };
-  const stuck = reach(s.room, doorsFor(fighting), portalsOn(fighting));
-  ok(stuck.size === 1 && Object.values(doorsFor(fighting)).every((o) => !o), `${s.name}：打的時候門全關、哪裡都去不了`);
+  const stuck = reach(s.room, fighting);
+  ok(stuck.size === 1 && Object.values(doorsFor(ruins.portals, s.room, fighting)).every((o) => !o), `${s.name}：打的時候門全關、哪裡都去不了`);
   const after = makeRun(k + 1);
   const to = s.warp && restAt(k + 1, ruins);
   const next = k + 1 < STAGES.length ? STAGES[k + 1].room : null;
-  const got = reach(to ? roomOf(to.block, to.y) : s.room, doorsFor(after), portalsOn(after), next);
+  const got = reach(to ? roomOf(to.block, to.y) : s.room, after, next);
   if (k + 1 < STAGES.length) {
     const early = STAGES.slice(k + 2).filter((t) => got.has(t.room) && t.room !== STAGES[k + 1].room);
     ok(got.has(STAGES[k + 1].room) && early.length === 0,
@@ -184,6 +184,22 @@ STAGES.forEach((s, k) => {
     ok([...all].every((r) => got.has(r)), `${s.name}打完：全部的門都開，${all.size} 個房間都走得到`);
   }
 });
+
+{
+  // 一條路：每進一張圖只開往下一場的那一步，回頭的門、沒門的殘階都不通。
+  const k = STAGES.findIndex((s) => s.id === 'crypt'), run = makeRun(k);
+  const from = (room) => openPortals(ruins.portals, room, run).map((p) => p.to).join('、');
+  ok(from('cistern') === 'crypt.gate', `水窖打完：水窖裡只通往墓室的鐵閘（${from('cistern')}），回窄巷的殘階不通`);
+  ok(from('alley') === 'cistern.well' && from('courtyard') === 'alley.fog',
+    `那時候不管站在哪，都只開往前的那一步：窄巷只通井、中庭只通窄巷（${from('alley')}；${from('courtyard')}）`);
+  const throne = makeRun(STAGES.findIndex((s) => s.id === 'throne'));
+  ok(openPortals(ruins.portals, 'courtyard', throne).map((p) => p.to).join() === 'throne.gate'
+    && Object.entries(doorsFor(ruins.portals, 'courtyard', throne)).filter(([, o]) => o).map(([d]) => d).join() === 'courtyard-throne',
+    '墓室打完回到中庭：只開王座廳正門，往兵營與窄巷的拱洞都關著');
+  const done = makeRun(STAGES.length);
+  ok(openPortals(ruins.portals, 'cistern', done).length === ruins.portals.length && Object.values(doorsFor(ruins.portals, 'cistern', done)).every(Boolean),
+    '國王打完：所有的門、所有的傳送一次全開');
+}
 
 console.log('5. 靈魂');
 {

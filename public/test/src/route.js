@@ -15,9 +15,9 @@
 
    ── 門 ──────────────────────────────────────────────────────────
      打的時候    所有的門都關上，所有的傳送（包括井與水窖殘階這兩條單向的）都不通。
-     沒在打的時候 只開通往下一場的那幾扇（`OPEN`）——下一場在好幾張圖之外的時候，
-                 整條路上的門一起開。
-     全部打完    所有的門都開，隨便逛。
+     沒在打的時候 每進一張圖就重算：全部關上，只開從這張圖往下一場的那一步（`openPortals`）。
+                 來時的門在背後關上，沒門的殘階也不通——永遠只有一條路往前走。
+     全部打完    國王打完的那一刻所有的門都開，隨便逛。
 
    ── 倒下 ────────────────────────────────────────────────────────
    不在同一個房間裡重生：回到這一場的入口外面（`rest`，那個入口另一頭的到達點），
@@ -57,8 +57,7 @@ export function roomName(room) {
 export function signposts(portals, room, seen = null) {
   const out = [];
   for (const p of portals) {
-    const y = p.mouth ? p.mouth.y : p.y0 + 0.5;
-    if (roomOf(p.block, y) !== room) continue;
+    if (portalRoom(p) !== room) continue;
     const [x, z] = p.mouth ? [p.mouth.x, p.mouth.z]
       : p.shape === 'box' ? [(p.x0 + p.x1) / 2, (p.z0 + p.z1) / 2] : [p.x, p.z];
     const to = roomOf(p.dest.block, p.dest.y);
@@ -142,19 +141,6 @@ export const STAGES = [
   },
 ];
 
-/**
- * 沒在打的時候開哪幾扇門：下一場是第 k 場就開 OPEN[k]——從上一場走到這一場的
- * 路上所有的門。窄巷到水窖是井（單向，沒有門）；墓室到王座廳是傳送過去的，只開中庭到王座廳那一扇。
- */
-export const OPEN = [
-  [],
-  ['courtyard-wallwalk'],
-  ['courtyard-alley'],
-  [],
-  ['cistern-crypt'],
-  ['courtyard-throne'],
-];
-
 /** 一開始站在哪：第一場的休息點（兵營南端，黑霧前、面朝城門）。 */
 export const START = STAGES[0].rest;
 
@@ -203,15 +189,41 @@ export function inStage(k, block, x, y, z) {
  */
 export const makeRun = (next = 0) => ({ next, active: false });
 
-/** 這個狀態底下每一扇門開不開（門的 id → 開著嗎）。 */
-export function doorsFor(run) {
-  const done = run.next >= STAGES.length;
-  const open = new Set(run.active || done ? [] : OPEN[run.next]);
-  return Object.fromEntries(DOORS.map((d) => [d.id, !run.active && (done || open.has(d.id))]));
+/** 感測區在哪個房間：它門口那一層（沒有門口的看感測區的底）。 */
+export const portalRoom = (p) => roomOf(p.block, p.mouth ? p.mouth.y : p.y0 + 0.5);
+
+/**
+ * 這個狀態底下、站在房間 `room` 的時候，走得通的感測區（門、霧口、井、殘階一視同仁）：
+ *   打的時候      一個都不通。
+ *   全部打完      全部都通（國王打完的那一刻起）。
+ *   其他時候      只有往下一場的那一步：從這個房間沿最短的路（不管門開不開）走到下一場的
+ *                 房間，第一步走的那幾個感測區。所以每進一張圖，來時的門就關上、只剩往前的
+ *                 那一條路——走回頭路的門、沒門的殘階都不通。已經在下一場的房間裡（還沒走進
+ *                 觸發範圍，例如兵營）就一個都不通。
+ */
+export function openPortals(portals, room, run) {
+  if (run.active) return [];
+  if (run.next >= STAGES.length) return portals;
+  const to = (p) => roomOf(p.dest.block, p.dest.y);
+  // 每個房間離下一場的房間幾步：從終點往回一圈一圈擴。
+  const dist = new Map([[STAGES[run.next].room, 0]]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const p of portals) {
+      const a = portalRoom(p), d = dist.get(to(p));
+      if (d !== undefined && !(dist.get(a) <= d + 1)) { dist.set(a, d + 1); grew = true; }
+    }
+  }
+  const here = dist.get(room);
+  if (!here) return [];
+  return portals.filter((p) => portalRoom(p) === room && dist.get(to(p)) === here - 1);
 }
 
-/** 這個狀態底下傳送通不通：打的時候全部不通（單向的井與殘階也是）。 */
-export const portalsOn = (run) => !run.active;
+/** 這個狀態底下、站在 `room` 的時候每一扇門開不開（門的 id → 開著嗎）：openPortals 用得到的那幾扇開。 */
+export function doorsFor(portals, room, run) {
+  const open = new Set(openPortals(portals, room, run).map((p) => p.door).filter(Boolean));
+  return Object.fromEntries(DOORS.map((d) => [d.id, open.has(d.id)]));
+}
 
 /**
  * 倒下之後的休息點：到達點的位置，面朝這一場的入口（入口的感測區的中心）。
