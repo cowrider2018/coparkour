@@ -71,7 +71,8 @@ export function signposts(portals, room, seen = null) {
  *   id, name   給人看的名字；hint 是面板上那一行說明
  *   room       在哪個房間打（roomOf 的那一種）
  *   enter      房間裡還要再滿足這個（區塊的局部座標）才開打；沒有就是一進房間就打
- *   foes       怪物的種類與站位，區塊的局部座標（y 是腳下那一層地板）
+ *   foes       怪物的種類與站位，區塊的局部座標（y 是腳下那一層地板）。帶 `boss` 的那一隻是這一場的
+ *              BOSS（最多一隻）：牠出場的時候畫面最上方展開牠的血條（bossbar.js）。沒有帶的那一場沒有 BOSS
  *   debut      初見模式：這一輪第一次登場的時候怎麼出場（entranceOf）。'comic' 是開場漫畫蓋住
  *              畫面的那一刻就在站位上生好，漫畫走了才開始動；'rise' 是從站位底下升上來
  *   rest       倒下之後在哪裡休息：一個到達點的名字（blocks.js 的 arrivals）
@@ -93,7 +94,7 @@ const ring = (kind, n, r, cx = 0, cz = 0, a0 = 0) => Array.from({ length: n }, (
  */
 const tomb = () => [
   ...COFFINS.filter((c) => c.i > 0).map((c) => ({ kind: 'ghost', x: c.x, y: c.top, z: c.z, yaw: Math.PI })),
-  { kind: 'wraith', x: GRAVE.x, y: GRAVE.top, z: GRAVE.z, yaw: Math.PI },
+  { kind: 'wraith', x: GRAVE.x, y: GRAVE.top, z: GRAVE.z, yaw: Math.PI, boss: true },
 ];
 
 export const STAGES = [
@@ -110,13 +111,13 @@ export const STAGES = [
   {
     id: 'courtyard', name: '崩塌中庭', hint: '從兵營南邊的黑霧過去。',
     room: 'courtyard', goal: '調查殭屍來歷', debut: 'comic',
-    foes: [{ kind: 'boss', x: -4, y: 0, z: 0, yaw: Math.PI / 2 }],
+    foes: [{ kind: 'boss', x: -4, y: 0, z: 0, yaw: Math.PI / 2, boss: true }],
     rest: 'wallwalk.fog', entry: { from: 'wallwalk', to: 'courtyard.east' },
   },
   {
     id: 'alley', name: '城內窄巷', hint: '中庭的西拱洞過去，騎士在井後面。',
     room: 'alley', goal: '喝水', debut: 'comic',
-    foes: [{ kind: 'knight', x: 0, y: 0, z: 11.6, yaw: Math.PI }],
+    foes: [{ kind: 'knight', x: 0, y: 0, z: 11.6, yaw: Math.PI, boss: true }],
     rest: 'courtyard.west', entry: { from: 'courtyard', to: 'alley.fog' },
   },
   {
@@ -135,7 +136,7 @@ export const STAGES = [
   {
     id: 'throne', name: '王座廳', hint: '回到中庭，門樓的鐵閘升起來了。',
     room: 'throne', goal: '見國王', debut: 'rise',
-    foes: [{ kind: 'king', x: 0, y: 0, z: 6, yaw: Math.PI }],
+    foes: [{ kind: 'king', x: 0, y: 0, z: 6, yaw: Math.PI, boss: true }],
     rest: 'courtyard.gate', entry: { from: 'courtyard', to: 'throne.gate' },
   },
 ];

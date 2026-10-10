@@ -31,6 +31,9 @@
      9. 路標      主角腳邊的動態路標（route.js 的 signposts）：每一個感測區剛好出現在一個房間的
                   路標裡——它自己門口那一層；城牆步道兩層各只指自己那一層的圓塔門；字是通到的房間，
                   還沒進過、是某一場的房間寫去那裡的目的（STAGES 的 goal）。
+    10. 血條      BOSS 的血條（bossbar.js）：橙色馬上縮到剩下的血，扣掉的那一段黃色 0.05 秒縮到底、
+                  白色 0.5 秒才縮到；連著挨打的話黃與白從當下的位置接著縮，不跳。每一場最多一隻 BOSS，
+                  殭屍、幽靈以外的都是（在 1. 站位）。
 
    房間裡面走不走得通不在這裡驗——那是 verify:terrain 的事（每張圖從出生點
    真的走到中心、感測區都踩得到）。這裡只驗房間與房間之間。
@@ -49,6 +52,7 @@ import { GAZE, Gaze, aimHead } from '../public/test/src/gaze.js';
 import { portalGap } from '../public/test/src/walk.js';
 import { THRONE, COFFINS, GRAVE } from '../public/test/src/blocks.js';
 import { LivingKing, KING, thronePath, pathGap } from '../public/test/src/king.js';
+import { HIT, makeMeter, meterSet, meterStep } from '../public/test/src/bossbar.js';
 
 let fails = 0;
 const ok = (cond, msg) => {
@@ -120,6 +124,15 @@ STAGES.forEach((s, k) => {
   ok(STAGES.every((_, k) => entranceOf(k, false, false) === 'rise'), '初見模式是漫畫、這一次卻沒有漫畫可翻的話，也是升上來');
   ok(foesOf(1, true).every((f) => f.rise) && foesOf(1).every((f) => !f.rise) && STAGES.every((s) => s.foes.every((f) => !('rise' in f))),
     '升不升上來是出場時決定的（foesOf 的 rise），站位本身不帶');
+}
+
+{
+  // BOSS：每一場最多一隻（bossbar.js 一次只畫一條），殭屍與幽靈以外的都是；foesOf 帶得出去。
+  const names = STAGES.map((s) => `${s.name} ${s.foes.filter((f) => f.boss).map((f) => KINDS[f.kind].name).join('') || '無'}`);
+  ok(STAGES.every((s) => s.foes.filter((f) => f.boss).length <= 1), '每一場最多一隻 BOSS');
+  ok(STAGES.every((s) => s.foes.every((f) => !!f.boss === !['minion', 'ghost'].includes(f.kind))),
+    `殭屍、幽靈以外的都登記成 BOSS：${names.join('、')}`);
+  ok(STAGES.every((s, k) => foesOf(k).filter((f) => f.boss).length === s.foes.filter((f) => f.boss).length), 'foesOf 帶著 boss');
 }
 
 /* ── 2. 觸發 ─────────────────────────────────────────────────── */
@@ -363,6 +376,36 @@ console.log('9. 路標');
     ok(['wallwalk', 'courtyard', 'alley', 'cistern', 'crypt', 'throne'].every((r) => signposts(ruins.portals, r, all).every((sp) => sp.name === roomName(sp.to))),
       '全部進過之後一律寫地名');
   }
+}
+
+/* ── 10. 血條 ────────────────────────────────────────────────── */
+console.log('10. 血條');
+{
+  const DT = 0.01, near = (a, b) => Math.abs(a - b) < 1e-6;
+  const run = (mt, t) => { for (let i = 0; i < Math.round(t / DT); i++) meterStep(mt, DT); };
+  const mt = makeMeter();
+  meterSet(mt, 0.7);
+  ok(mt.hp === 0.7 && mt.yellow === 1 && mt.white === 1, '挨一下：橙色馬上到 0.7，扣掉的那一段是黃的，底下是白的');
+  run(mt, HIT.yellow);
+  ok(near(mt.yellow, 0.7) && mt.white > 0.9, `黃色 ${HIT.yellow} 秒縮到底，白色還在（${mt.white.toFixed(2)}）`);
+  run(mt, HIT.white - HIT.yellow - DT);
+  ok(mt.white > 0.7 && !near(mt.white, 0.7), `白色 ${HIT.white} 秒前還沒縮到（${mt.white.toFixed(3)}）`);
+  run(mt, DT);
+  ok(near(mt.white, 0.7), `白色 ${HIT.white} 秒縮到剩下的血`);
+
+  // 連著挨打：第二下在白色縮到一半的時候。
+  const c = makeMeter();
+  meterSet(c, 0.8);
+  run(c, 0.2);
+  const w0 = c.white;
+  meterSet(c, 0.5);
+  ok(c.white === w0 && c.yellow === 0.8, `第二下：白色從當下的 ${w0.toFixed(2)} 接著縮、不跳，黃色是這一下扣掉的那一段（0.8 → 0.5）`);
+  meterSet(c, 0.4);
+  ok(c.yellow === 0.8, '黃色還沒縮完又挨一下：從黃色當下的位置接著縮');
+  run(c, HIT.yellow);
+  ok(near(c.yellow, 0.4) && c.white > 0.5, '黃色照樣 0.05 秒縮到底');
+  run(c, HIT.white);
+  ok(near(c.white, 0.4) && c.hp === 0.4, '白色在最後一下之後 0.5 秒縮到剩下的血');
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

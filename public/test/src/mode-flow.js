@@ -12,6 +12,9 @@
                          （route.js 的 entranceOf）：中庭、窄巷、水窖第一次是書頁蓋住的那一刻就生好、
                          書頁走了才動；兵營、墓室（從石棺與大墓）、王座廳第一次，以及每一場倒下之後
                          回來重打，都是書頁走了（沒有書頁就是進來）一秒後從站位底下升上來。
+     BOSS                這一場登記的那一隻（route.js 的 STAGES，殭屍王、騎士、幽靈騎士、國王；兵營與水窖沒有）
+                         出生的那一刻，畫面最上方從中間往左右展開牠的血條（不寫數字）；挨打的那一段先黃後白
+                         縮下去；打死的那一刻像灰塵一樣由左到右散掉（bossbar.js）。倒下、重玩收起來的直接不見。
      打死一隻            不當場消失：跟主角倒下一樣往擊退的方向倒（fight.js 的 _fell）。綠色的
                          躺平落地之後 2 秒沉進地裡 3/4、一直留著；幽靈不落地，0.5 秒炸成一團
                          幽靈血；國王躺著。清完的那一場的屍體一直留著，倒下重打的那一次的收掉。
@@ -75,6 +78,7 @@ import { BLOCKS, THRONE } from './blocks.js';
 import { thronePath, pathGap } from './king.js';
 import { STAGES, START, SOULS, roomOf, signposts, foesOf, entranceOf, inStage, makeRun, doorsFor, openPortals, restAt } from './route.js';
 import { Signpost } from './signpost.js';
+import { BossBar } from './bossbar.js';
 import { roamMap } from './roam.js';
 
 const canvas = document.getElementById('view');
@@ -137,6 +141,28 @@ const STILL = { ix: 0, iz: 0, mag: 0 };
 const death = new Death(scene, zoo, {
   fade: document.getElementById('fade'), view: canvas, words: document.getElementById('dream'),
 });
+
+/** 畫面最上方，這一場的 BOSS 的血條（bossbar.js）。`bossAt` 是血條正在畫的那一隻的站位（Fight.boss）。 */
+const bossBar = new BossBar(document.getElementById('bossbar'));
+let bossAt = null;
+
+/**
+ * 血條跟著這一場的 BOSS：出生（開始升上來，或在漫畫底下生好）的那一刻展開，挨打照剩下的血縮，
+ * 不在了就是死了——散掉。倒下、重玩把牠收起來的時候先叫 dropBoss，那就不散。
+ */
+function trackBoss() {
+  const b = fight.boss();
+  if (b && b.spawn !== bossAt) bossBar.show(KINDS[b.kind].name);
+  else if (!b && bossAt) bossBar.die();
+  bossAt = b ? b.spawn : null;
+  if (b) bossBar.set(b.hp / KINDS[b.kind].hp);
+}
+
+/** BOSS 被收起來（不是打死）：血條馬上不見。 */
+function dropBoss() {
+  bossAt = null;
+  bossBar.hide();
+}
 
 /** 場與場之間的漫畫：書頁、翻頁、戰後的慢動作（story.js），翻哪幾頁照 comic.js。 */
 const story = new Story(document.getElementById('story'));
@@ -204,6 +230,7 @@ function startFrom(k) {
   deaths = 0;
   resetLife(player);
   fight.lineup([], fieldOf('wallwalk'));
+  dropBoss();
   fight.reset();                          // 地上沒撿的靈魂一起清掉
   folk.clear();
   place(k === 0 ? { ...ruins.arrivals[START] } : restAt(k, ruins));
@@ -290,6 +317,7 @@ function rest() {
   run.active = false;
   spawnIn = 0;
   fight.lineup([], fieldOf(player.block));
+  dropBoss();
   place(k === 0 ? { ...ruins.arrivals[START] } : restAt(k, ruins));
   applyDoors();
 }
@@ -353,6 +381,7 @@ function frame(now) {
   const dt = real * story.update(real, tapped);
   if (story.covered) {
     hud.tick(real, null);
+    bossBar.update(real);
     signpost.hide();
     requestAnimationFrame(frame);
     return;
@@ -439,6 +468,8 @@ function frame(now) {
   signpost.show(signposts(passable, roomOf(player.block, player.y), seen), doors, player, camera, real, !run.active && !story.on);
 
   fight.draw(dt, camera, player);
+  trackBoss();
+  bossBar.update(real);
   folk.update(dt, camera, player, player.block);
   if (death.update(dt, player, viewYaw)) rest();
   const king = fight.king && fight.king.body();
@@ -476,7 +507,7 @@ requestAnimationFrame(frame);
 
 // 給主控台一個把手，方便手動看東西。run 會被換掉，所以是 getter。
 window.flowArea = {
-  scene, camera, renderer, zoo, player, ruins, cam, pad, hud, fight, folk, music, doors, death, story, startFrom,
+  scene, camera, renderer, zoo, player, ruins, cam, pad, hud, fight, folk, music, doors, death, story, bossBar, startFrom,
   get run() { return run; },
   get foes() { return fight.foes; },
 };

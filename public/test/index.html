@@ -100,6 +100,12 @@
   /* 主角腳邊指著門的箭頭與字（signpost.js 每幀畫）：跟 GL 同一層、排在它後面，
      所以在黑幕、書頁、操作列底下。 */
   #signpost { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+  /* 這一場的 BOSS 的血條（bossbar.js 每幀畫）：畫面最上方、遊戲那一片（兩根操作列之間、上面那條橫帶底下）
+     的正中間。跟黑幕同一層、排在它前面，所以暗下去、翻漫畫的時候一起被蓋住。 */
+  #bossbar {
+    inset: auto; top: calc(var(--barT) + var(--sa-t)); left: calc(var(--rail) + var(--sa-l));
+    width: calc(100% - 2 * var(--rail) - var(--sa-l) - var(--sa-r)); height: 64px; z-index: 1; pointer-events: none;
+  }
   /* 穿過感測區時那一層黑（transit.js）：蓋遊戲那一片，不蓋操作列、面板與 toast
      ——同一層 z-index，排在操作列前面，所以在它們底下。 */
   #fade { position: fixed; inset: 0; z-index: 1; background: #000; pointer-events: none; opacity: 0; visibility: hidden; }
@@ -293,6 +299,8 @@
     backdrop-filter: blur(10px);
   }
   #toast.on { opacity: 1; }
+  /* 這一場的 BOSS 的血條在的時候往下讓，不蓋住它（bossbar.js）。 */
+  body.boss #toast { top: max(10%, calc(var(--barT) + var(--sa-t) + 64px)); }
 
   /* ── 關卡之間的書頁（story.js）──────────────────────────────
      蓋住整個畫面，連操作列、面板、toast 一起：那一刻只有這一頁。書頁比畫面大一圈
@@ -454,6 +462,7 @@
 <body class="pad-land">
 <canvas id="view"></canvas>
 <canvas id="signpost"></canvas>
+<canvas id="bossbar" data-for="flow"></canvas>
 <div id="fade"></div>
 <div id="dream" data-for="flow"></div>
 <div class="rail" id="railA"></div>

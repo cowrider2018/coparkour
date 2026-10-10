@@ -606,6 +606,18 @@ export class Fight {
   /** 還有怪物正在從站位底下升上來（還沒上場）：場上沒有怪物也還不算清完。 */
   get emerging() { return this._emerging.length > 0; }
 
+  /**
+   * 這一場的 BOSS（站位帶 `boss` 的那一隻，route.js 的 STAGES）：在場上的，或正在從站位底下升上來的
+   * （升的時候血是滿的）。`spawn` 是牠的站位——同一次出場從升上來到上場都是同一份，認得出是不是同一隻。
+   * 沒有（還沒出生、死了、收起來了）是 null。
+   */
+  boss() {
+    const f = this.foes.find((x) => x.m.spawn.boss);
+    if (f) return { spawn: f.m.spawn, kind: f.m.kind, hp: f.m.hp };
+    const e = this._emerging.find((x) => x.spawn.boss);
+    return e ? { spawn: e.spawn, kind: e.spawn.kind, hp: KINDS[e.spawn.kind].hp } : null;
+  }
+
   /** 復活的國王（king.js）；沒有要收靈魂（戰鬥模式）是 null。 */
   get king() { return this._king; }
 
@@ -1455,9 +1467,9 @@ export class Fight {
     this._quiet.clear();
   }
 
-  /** 右上那一行小字的戰鬥那幾段：每一隻怪物的血與破防、連段在哪。 */
+  /** 右上那一行小字的戰鬥那幾段：每一隻怪物的血（BOSS 不寫，看血條，bossbar.js）與破防、連段在哪。 */
   status() {
-    const foeLine = this.foes.filter(({ m }) => !m.by).map(({ m }) => `${KINDS[m.kind].name} 血 ${m.hp}/${KINDS[m.kind].hp}`
+    const foeLine = this.foes.filter(({ m }) => !m.by).map(({ m }) => `${KINDS[m.kind].name}${m.spawn.boss ? '' : ` 血 ${m.hp}/${KINDS[m.kind].hp}`}`
       + `${KINDS[m.kind].shields ? ` 盾 ${m.shields}/${KINDS[m.kind].shields}` : ''}${m.brood ? ` 召喚 ${m.brood}` : ''}`
       + `${m.deaths ? `（打死 ${m.deaths}）` : ''} 破防 ${m.breakT > 0 ? '中' : `${m.gauge}/${KINDS[m.kind].breakAt}`}`).join(' ・ ');
     const phase = `${PHASE_NAME[this.combo.phase]}${invulnerable(this.combo) ? '（無敵）' : ''}`;
