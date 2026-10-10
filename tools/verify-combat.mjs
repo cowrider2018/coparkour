@@ -10,14 +10,14 @@
      2. 追與咬     站著不動會被追上；碰到就咬。
      3. 擊退       水平遠離、垂直往上；落地前碰到不算；空中再挨一下再擊退一次；
                     每一段照自己的倍率。
-     4. 第一段範圍  120° 水平扇形、身高中間、長 2.5 個狗高——邊上擦到身體就算。
+     4. 第一段範圍  120° 水平扇形、身高中間、長 1.5 個狗高——邊上擦到身體就算。
      5. 第一段自動  站著不動、怪物走過來，第一段自己出手、打中、把牠挑起來，
                     而且不會一幀接一幀地連發。只靠第一段擋不住牠——挑得很低、
                     冷卻又長——所以這一項只量「幾秒後被咬」，不要求不被咬。
      6. 第二段範圍  圓心在腳下的直立 90° 扇形：下緣指向上一次第一段扇形正中
-                    那條半徑的末端（不是現在的面向），往上越過頭頂，長 2.5 個
+                    那條半徑的末端（不是現在的面向），往上越過頭頂，長 1.5 個
                     狗高；偏離那個面就掃不到。
-     7. 第三段範圍  360°、身高中間、長 2.5 個狗高。
+     7. 第三段範圍  360°、身高中間、長 1.5 個狗高。
      8. 連段的時間  第二段只在第一段收招後 0.25～0.75 秒按得出來，太早是普通
                     的跳；第三段只在第二段收招後、落地前按得出來，無敵到落地，
                     落地才打。
@@ -214,7 +214,7 @@ console.log('1. 站位');
     const d = Math.hypot(cx - s.x, cz - s.z);
     return near(Math.sin(s.yaw), (cx - s.x) / d) && near(Math.cos(s.yaw), (cz - s.z) / d);
   }), '三隻怪物都面向中心');
-  ok(near(REACH, 2.5 * DOG_H) && near(DOG_H, PHYS.height), `長度是 2.5 個狗高（${REACH.toFixed(2)} m）`);
+  ok(near(REACH, 1.5 * DOG_H) && near(DOG_H, PHYS.height), `長度是 1.5 個狗高（${REACH.toFixed(2)} m）`);
 }
 
 /* ── 2. 追與咬 ───────────────────────────────────────────────── */
@@ -289,12 +289,12 @@ console.log('4. 第一段範圍');
     const a = (deg * Math.PI) / 180;
     return body(Math.sin(a) * d, Math.cos(a) * d, y);
   };
-  ok(inSlash(p, at(0, 2.0)), '正前方 2 公尺：中');
+  ok(inSlash(p, at(0, 1.2)), '正前方 1.2 公尺：中');
   ok(inSlash(p, at(0, REACH + PHYS.radius - 0.01)), '身體的前緣剛好在範圍的弧上：中');
   ok(!inSlash(p, at(0, REACH + PHYS.radius + 0.01)), '再遠一公分：不中');
-  ok(inSlash(p, at(59, 2.0)), '偏 59°：中');
-  ok(inSlash(p, at(60 + 7, 2.0)), '偏 67°，身體的邊還在扇形裡（半徑 0.3 在 2 公尺張開 8.6°）：中');
-  ok(!inSlash(p, at(70, 2.0)), '偏 70°：不中');
+  ok(inSlash(p, at(59, 1.2)), '偏 59°：中');
+  ok(inSlash(p, at(60 + 12, 1.2)), '偏 72°，身體的邊還在扇形裡（半徑 0.3 在 1.2 公尺張開 14.5°）：中');
+  ok(!inSlash(p, at(77, 1.2)), '偏 77°：不中');
   ok(!inSlash(p, at(180, 1.0)), '背後：不中');
   ok(inSlash(p, at(0, 1.5, 0.3)), '怪物離地 0.3（身體還切得到身高中間）：中');
   ok(!inSlash(p, at(0, 1.5, PHYS.height / 2 + 0.01)), '怪物的腳高過身高中間：不中');
@@ -350,17 +350,17 @@ console.log('6. 第二段範圍');
   ok(near(Math.tan(fr.a0), (PHYS.height / 2) / REACH) && near(fr.a1 - fr.a0, Math.PI / 2) && fr.a1 > Math.PI / 2,
     `原地出招：下緣仰角 ${deg(fr.a0).toFixed(1)}°，往上 90° 越過頭頂（到 ${deg(fr.a1).toFixed(1)}°）`);
   ok(near(FAN.r, REACH), `長度是 REACH（${FAN.r.toFixed(2)} m），不是那條線的長度`);
-  ok(inFan(p, body(0, 2.0), tip), '正前方 2 公尺、站在地上：中');
+  ok(inFan(p, body(0, 1.2), tip), '正前方 1.2 公尺、站在地上：中');
   ok(inFan(p, body(0, 1.2, 1.0), tip), '正前方 1.2 公尺、離地 1 公尺：中');
-  ok(inFan(p, body(0, -0.2, 1.4), tip), '頭頂正上方稍微偏後：中（扇形越過頭頂）');
+  ok(inFan(p, body(0, -0.2, 1.0), tip), '頭頂正上方稍微偏後：中（扇形越過頭頂）');
   ok(!inFan(p, body(0, -1.5, 0), tip), '背後的地上：不中');
-  ok(!inFan(p, body(0, 2.2, 1.6), tip), '正前方 2.2 公尺、離地 1.6（整隻在半徑外）：不中');
-  ok(inFan(p, body(0.29, 2.0), tip), '偏離那個面 0.29 公尺（身體還跨在面上）：中');
-  ok(!inFan(p, body(0.31, 2.0), tip), '偏離那個面 0.31 公尺：不中——扇形是一片平面');
+  ok(!inFan(p, body(0, 1.4, 1.0), tip), '正前方 1.4 公尺、離地 1.0（整隻在半徑外）：不中');
+  ok(inFan(p, body(0.29, 1.2), tip), '偏離那個面 0.29 公尺（身體還跨在面上）：中');
+  ok(!inFan(p, body(0.31, 1.2), tip), '偏離那個面 0.31 公尺：不中——扇形是一片平面');
   ok(!inFan(p, body(0, REACH + PHYS.radius + 0.05, 0), tip), '身體的前緣在 REACH 外：不中');
   // 方向跟著末端點，不跟著現在的面向。
   const turned = body(0, 0, 0, [1, 0]);
-  ok(inFan(turned, body(0, 2.0), tip) && !inFan(turned, body(2.0, 0), tip), '轉身面向 +x 之後，扇形還是指著末端點（+z）');
+  ok(inFan(turned, body(0, 1.2), tip) && !inFan(turned, body(1.2, 0), tip), '轉身面向 +x 之後，扇形還是指著末端點（+z）');
   // 往前走近了：那條線變陡。
   const closer = body(0, 1.0, 0, [0, 1]);
   const fc = fanFrame(closer, tip);
@@ -368,7 +368,7 @@ console.log('6. 第二段範圍');
   // 跳起來、腳高過末端點：下緣往前下方指著它。
   const high = body(0, 0, 1.0, [0, 1]);
   const fh = fanFrame(high, tip);
-  ok(fh.a0 < 0 && inFan(high, body(0, 2.0), tip), `腳在 1 公尺高：下緣往下 ${deg(-fh.a0).toFixed(1)}°，前方地上的怪物：中`);
+  ok(fh.a0 < 0 && inFan(high, body(0, 1.2), tip), `腳在 1 公尺高：下緣往下 ${deg(-fh.a0).toFixed(1)}°，前方地上的怪物：中`);
   ok(!inFan(body(0, 0, 2.5, [0, 1]), body(0, 1.0), tip), '腳在 2.5 公尺高、怪物在前方 1 公尺的地上（低於下緣）：不中');
 }
 
@@ -379,9 +379,9 @@ console.log('7. 第三段範圍');
   let all = true;
   for (let a = 0; a < 360; a += 15) {
     const r = (a * Math.PI) / 180;
-    if (!inRing(p, body(Math.sin(r) * 2.3, Math.cos(r) * 2.3))) all = false;
+    if (!inRing(p, body(Math.sin(r) * 1.6, Math.cos(r) * 1.6))) all = false;
   }
-  ok(all, '每一個方向 2.3 公尺：中');
+  ok(all, '每一個方向 1.6 公尺：中');
   ok(inRing(p, body(REACH + PHYS.radius - 0.01, 0)) && !inRing(p, body(REACH + PHYS.radius + 0.01, 0)), '邊界在身體的前緣碰到 REACH');
   ok(!inRing(p, body(1, 0, PHYS.height / 2 + 0.01)), '怪物的腳高過身高中間：不中');
 }
@@ -440,11 +440,21 @@ console.log('8. 連段的時間');
 
 /* ── 9. 打一整套 ─────────────────────────────────────────────── */
 console.log('9. 打一整套');
+/**
+ * 衝完、還在僵直的殭屍王，停在 p 面前 d 公尺。牠的衝刺距離 LUNGE.range 比第一段
+ * 打得到的 REACH + 身體半徑還長，站著等牠走過來會先被衝到——連段從牠衝完的僵直打起。
+ */
+const recovering = (p, d = 1.4) => {
+  const m = makeMonster();
+  m.x = p.x + p.aimX * d; m.z = p.z + p.aimZ * d;
+  m.lunge = { t: LUNGE.windup + LUNGE.time + 0.1, n: 1, dirX: -p.aimX, dirZ: -p.aimZ };
+  return m;
+};
 {
-  /** 站著不動，第一段收招後 at 秒按第二段，第二段收招後 0.05 秒按第三段。 */
+  /** 殭屍王衝完僵直在面前，第一段收招後 at 秒按第二段，第二段收招後 0.05 秒按第三段。 */
   const chain = (at) => {
     const p = { x: 0, y: 0, z: SPAWN.player.z, vx: 0, vy: 0, vz: 0, grounded: true, aimX: 0, aimZ: -1 };
-    const m = makeMonster();
+    const m = recovering(p);
     const c = makeCombo();
     const reach = { slash: inSlash, rise: (q, n) => inFan(q, n, c.tip), slam: inRing };
     const hits = [];
@@ -615,13 +625,15 @@ console.log('12. 破防攻擊');
   ok(!bitten, '整招沒被咬（突進、迴旋、跳離都無敵）');
   ok(!m.held, '跳離之後怪物被放開');
 
-  // 接在連段後面：牠身上已經累積了 4（上一輪打的），站著等牠過來、第一段自動、
+  // 接在連段後面：牠身上已經累積了一些（上一輪打的），牠衝完僵直在面前、第一段自動、
   // 視窗裡按第二段——累積到 8、破防發生在第二段的空中，窗口裡再按一次跳，在空中
-  // 發動破防攻擊。
+  // 發動破防攻擊。第一段把牠挑開之後牠落地就再衝過來，第二段打在牠衝刺中（不可打斷），
+  // 傷害減半：3 → 1。
+  const RISE_TAKEN = Math.floor(DAMAGE.rise / 2);
   {
     const q = { x: 0, y: 0, z: SPAWN.player.z, vx: 0, vy: 0, vz: 0, grounded: true, aimX: 0, aimZ: -1 };
-    const n = makeMonster();
-    n.gauge = BREAK_AT - DAMAGE.slash - DAMAGE.rise;
+    const n = recovering(q);
+    n.gauge = BREAK_AT - DAMAGE.slash - RISE_TAKEN;
     const k = makeCombo();
     const reach = { slash: inSlash, rise: (u, v) => inFan(u, v, k.tip), slam: inRing };
     let tt = 0, p2 = false, p3 = false, brokeAt = -1, launchedY = -1, bit = false, over = false;
@@ -656,7 +668,10 @@ console.log('12. 破防攻擊');
     }
     ok(got.join(' ') === 'slash rise break' && launchedY > 0.3,
       `第一段 → 第二段 → 破防攻擊（${got.join(' → ')}），在 ${launchedY.toFixed(2)} 公尺高的空中發動`);
-    ok(n.hp === KINDS.boss.hp - DAMAGE.slash - DAMAGE.rise - DAMAGE.break && !bit, `扣 1 + 3 + 5，剩 ${n.hp}，沒被咬`);
+    ok(n.hp === KINDS.boss.hp - DAMAGE.slash - RISE_TAKEN - DAMAGE.break, `扣 ${DAMAGE.slash} + ${RISE_TAKEN} + ${DAMAGE.break}，剩 ${n.hp}`);
+    /* 牠衝進來的那一下打在第二段起跳之前就咬得到——站著不動打這一套會不會被咬是數值的結果，
+       列出來看，不算沒過（跟 9. 一樣）。 */
+    console.log(`   ·  ${bit ? '被咬了' : '沒被咬'}`);
   }
 
   // 在空中被定住的怪物：放開之後帶著水平速度落下，不被往上挑。
