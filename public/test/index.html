@@ -97,6 +97,20 @@
      因為同一次拖曳要嘛是搖桿要嘛是鏡頭），面板在最上面。 */
   #view { z-index: 0; touch-action: none; -webkit-touch-callout: none; }
   #pad { z-index: 2; pointer-events: none; }
+  /* 主角身邊指著門的箭頭與字（signpost.js，位置每幀寫 transform）：跟 GL 同一層、排在它後面，
+     所以在黑幕、書頁、操作列底下。開著金色，關著灰色；描一圈墨色，地上亮暗都讀得出來。 */
+  #signpost { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+  #signpost > * { position: absolute; left: 0; top: 0; will-change: transform; }
+  #signpost i { display: block; width: 24px; height: 24px; }
+  #signpost path { stroke: rgb(43, 35, 32); stroke-width: 2.4; stroke-linejoin: round; }
+  #signpost i.open path { fill: var(--accent2); }
+  #signpost i.shut path { fill: #8d877d; }
+  #signpost span {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.06em; white-space: nowrap;
+    text-shadow: 0 0 3px rgb(43, 35, 32), 0 0 2px rgb(43, 35, 32), 0 1px 2px rgb(43, 35, 32);
+  }
+  #signpost span.open { color: var(--accent2); }
+  #signpost span.shut { color: #b4ada2; }
   /* 穿過感測區時那一層黑（transit.js）：蓋遊戲那一片，不蓋操作列、面板與 toast
      ——同一層 z-index，排在操作列前面，所以在它們底下。 */
   #fade { position: fixed; inset: 0; z-index: 1; background: #000; pointer-events: none; opacity: 0; visibility: hidden; }
@@ -450,6 +464,7 @@
 </head>
 <body class="pad-land">
 <canvas id="view"></canvas>
+<div id="signpost"></div>
 <div id="fade"></div>
 <div id="dream" data-for="flow"></div>
 <div class="rail" id="railA"></div>

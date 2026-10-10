@@ -47,6 +47,8 @@ import { buildStage } from './stage.js';
 import { createLight } from './light.js';
 import { makeHero, steerHero, moveHero } from './hero.js';
 import { Transit } from './transit.js';
+import { roomOf, signposts } from './route.js';
+import { Signpost } from './signpost.js';
 
 const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -59,9 +61,11 @@ scene.fog = new THREE.Fog(0xa28a6d, 42, 165);
 const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 420);
 
 /* ── 遺跡 ────────────────────────────────────────────────────────
-   地面、砌體、門、路標、黑牆、火焰：stage.js（完整流程模式站的是同一片）。 */
+   地面、砌體、門、黑牆、火焰：stage.js（完整流程模式站的是同一片）。 */
 const stage = buildStage(scene, renderer);
 const { ruins, doors, setDoor, arenaAt } = stage;
+/** 主角腳邊指著這個房間每一扇門的箭頭與字（signpost.js）。 */
+const signpost = new Signpost(document.getElementById('signpost'), canvas);
 const COLS = stage.cols;
 /** 光影（light.js）：陰影、火光、霧、後製。 */
 const light = createLight({ scene, renderer, camera, ruins, cols: COLS, arenas: ruins.arenas });
@@ -215,6 +219,7 @@ function frame(now) {
     camera.position.set(rig.pos[0], rig.pos[1], rig.pos[2]);
     camera.lookAt(rig.look[0], rig.look[1], rig.look[2]);
   }
+  signpost.show(signposts(ruins.portals, roomOf(player.block, player.y)), doors, player, camera);
 
   light.update({ dt, now, player, block: player.block });
   light.render();

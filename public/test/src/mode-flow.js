@@ -71,7 +71,8 @@ import { Music } from './music.js';
 import { resetLife, refill, regen, KINDS } from './combat.js';
 import { BLOCKS, THRONE } from './blocks.js';
 import { thronePath, pathGap } from './king.js';
-import { STAGES, START, SOULS, roomOf, foesOf, inStage, makeRun, doorsFor, portalsOn, restAt } from './route.js';
+import { STAGES, START, SOULS, roomOf, signposts, foesOf, inStage, makeRun, doorsFor, portalsOn, restAt } from './route.js';
+import { Signpost } from './signpost.js';
 
 const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -87,6 +88,8 @@ const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 420);
    地形模式那一片（stage.js）。門不再用 O 開關，由路線決定（`applyDoors`）。 */
 const stage = buildStage(scene, renderer);
 const { ruins, doors, setDoor, arenaAt } = stage;
+/** 主角腳邊指著這個房間每一扇門的箭頭與字（signpost.js）。 */
+const signpost = new Signpost(document.getElementById('signpost'), canvas);
 const COLS = stage.cols;
 /** 光影（light.js）：陰影、火光、霧、後製。 */
 const light = createLight({ scene, renderer, camera, ruins, cols: COLS, arenas: ruins.arenas });
@@ -307,6 +310,7 @@ function frame(now) {
   const dt = real * story.update(real, tapped);
   if (story.covered) {
     hud.tick(real, null);
+    signpost.hide();
     requestAnimationFrame(frame);
     return;
   }
@@ -389,6 +393,7 @@ function frame(now) {
     camera.position.set(rig.pos[0], rig.pos[1], rig.pos[2]);
     camera.lookAt(rig.look[0], rig.look[1], rig.look[2]);
   }
+  signpost.show(signposts(ruins.portals, roomOf(player.block, player.y)), doors, player, camera);
 
   fight.draw(dt, camera, player);
   folk.update(dt, camera, player, player.block);

@@ -472,7 +472,6 @@ export class Build {
     this.portals = [];       // 感測區：走進去就被送到別的地方（見 `portal()`）
     this.arrivals = [];      // 到達點：感測區送人去的地方（見 `arrive()`）
     this.pieces = [];        // 不進合併緩衝區的幾何（門的兩種狀態，見 `detach()`）
-    this.signs = [];         // 懸浮的路標（見 `sign()`）
     /* 會壓在地上的那幾塊，在頂點緩衝區裡的範圍（兩個數一組：起點、終點，
        單位是 pos 的索引）。ao.js 拿它找出「石頭跟地面接觸的那一圈」——
        記範圍而不是記座標，因為區塊砌完才整段平移（blocks.js 的 shift），
@@ -748,18 +747,6 @@ export class Build {
   }
 
   /**
-   * 一塊懸浮的路標：一行字，字的中線在 (x, y, z)。它不是幾何，不進合併的那一份，
-   * 也不擋任何東西——頁面把它畫成一張永遠朝著鏡頭的字卡（stage.js）。
-   *
-   * `o.door`：屬於一組門，那一組門開著才看得到。沒有門扇的門（中庭兩側的拱洞）
-   * 就靠它：看得到就是「走進去會被送走」，看不到就是走進去什麼都不會發生。
-   */
-  sign(x, y, z, text, o = {}) {
-    this.signs.push({ x, y, z, text, ...(o.door ? { door: o.door } : {}) });
-    return this;
-  }
-
-  /**
    * 這一段之內 `add` 進來的幾何**不進合併的那一份**，另外成一塊。
    *
    * 整張地圖是一個 mesh，因為它是靜態的——但門不是：一扇門關著是木門、
@@ -896,7 +883,7 @@ export class Build {
     return this;
   }
 
-  /** @returns {{geometry, ink, colliders, parts, walls, floors, portals, arrivals, pieces, signs, feet, tris, inkLines}} */
+  /** @returns {{geometry, ink, colliders, parts, walls, floors, portals, arrivals, pieces, feet, tris, inkLines}} */
   finish() {
     const { geometry, ink } = toGeometry({
       pos: this.pos, nrm: this.nrm, col: this.col, ink: this.ink, inkA: this.inkA, inkB: this.inkB,
@@ -918,7 +905,6 @@ export class Build {
       portals: this.portals,
       arrivals: this.arrivals,
       pieces,
-      signs: this.signs,
       feet: this.feet,
       tris: this.pos.length / 9,
       inkLines: this.ink.length / 6,

@@ -28,6 +28,8 @@
      8. 王座      復活的國王走回王座（king.js 的 enthrone）：從王座廳裡幾個地方出發，走的那一條路
                   不穿過柱子與牆，一級一級爬上台座（階梯是反著砌的，見 king.js），轉身背對王座，
                   最後坐在座面中心、座面那麼高、面朝廳裡，而且是坐姿。
+     9. 路標      主角腳邊的動態路標（route.js 的 signposts）：每一個感測區剛好出現在一個房間的
+                  路標裡——它自己門口那一層；城牆步道兩層各只指自己那一層的圓塔門；字是通到的房間。
 
    房間裡面走不走得通不在這裡驗——那是 verify:terrain 的事（每張圖從出生點
    真的走到中心、感測區都踩得到）。這裡只驗房間與房間之間。
@@ -38,7 +40,7 @@
 import { buildRuins, BLOCKS } from '../public/test/src/blocks.js';
 import { PHYS, arenaGap, solveXZ, supportInfo } from '../public/test/src/walk.js';
 import {
-  STAGES, OPEN, START, SOULS, roomOf, foesOf, inStage, makeRun, doorsFor, portalsOn, restAt,
+  STAGES, OPEN, START, SOULS, roomOf, roomName, signposts, foesOf, inStage, makeRun, doorsFor, portalsOn, restAt,
 } from '../public/test/src/route.js';
 import { KINDS } from '../public/test/src/combat.js';
 import { FOLK, walkCells, plan } from '../public/test/src/folk.js';
@@ -290,6 +292,20 @@ console.log('8. 王座');
   const from = { x: ox + 4, z: oz }, path = thronePath(from, seat);
   ok(pathGap(from, path, seat.x, seat.z - KING.front) < 1e-9 && pathGap(from, path, ox + 4, oz) < 1e-9 && pathGap(from, path, ox - 3, oz) > 2.9,
     'pathGap：路上的點是 0，路外面的照到路的距離');
+}
+
+console.log('9. 路標');
+{
+  const rooms = [...new Set(ruins.portals.map((p) => roomOf(p.block, p.mouth ? p.mouth.y : p.y0 + 0.5)))];
+  const all = rooms.flatMap((r) => signposts(ruins.portals, r));
+  ok(ruins.portals.every((p) => all.filter((sp) => sp.portal === p).length === 1),
+    `${ruins.portals.length} 個感測區（門、霧口、井、殘階）各在一個房間的路標裡出現一次（${rooms.length} 個房間）`);
+  ok(all.every((sp) => sp.name === roomName(sp.to) && sp.to === roomOf(sp.portal.dest.block, sp.portal.dest.y)),
+    '每一支路標的字是它通到的那個房間');
+  const say = (room) => signposts(ruins.portals, room).map((sp) => sp.name).sort().join('、');
+  ok(say('wallwalk') === ['城牆上', '崩塌中庭'].sort().join('、') && say('wallwalk:top') === '兵營',
+    `兵營指 ${say('wallwalk')}，城牆上只指 ${say('wallwalk:top')}：圓塔另一層的那扇門在同一張圖裡，但走不到，不指`);
+  ok(say('courtyard') === ['王座廳', '兵營', '城內窄巷'].sort().join('、'), `崩塌中庭指 ${say('courtyard')}`);
 }
 
 console.log(fails ? `\n${fails} 項沒過` : '\n全部通過');

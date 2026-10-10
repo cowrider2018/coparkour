@@ -37,6 +37,32 @@ const TOP = 3.5;
  */
 export const roomOf = (block, y) => (block === 'wallwalk' && y > TOP ? 'wallwalk:top' : block);
 
+/** 房間給人看的名字：區塊的名字；城牆步道那兩層分開叫（地面是兵營，上面是城牆上）。 */
+export function roomName(room) {
+  if (room === 'wallwalk') return '兵營';
+  if (room === 'wallwalk:top') return '城牆上';
+  return BLOCKS.find((b) => b.id === room).name;
+}
+
+/**
+ * 動態路標（signpost.js 畫）：房間 `room` 裡的每一個感測區——門、霧口、井、殘階，全部都算——
+ * 一筆：指向哪一點（有門口指門口，沒有指感測區的中心）、通到哪個房間（`to`，給人看的名字是
+ * `name`）、屬於哪一扇門（沒有門的一直通）。感測區算在它自己那一層：城牆步道的圓塔兩扇門
+ * 在同一張圖裡，但站在兵營走不到牆頂那一扇，反過來也是，所以各自只出現在自己那一層。
+ */
+export function signposts(portals, room) {
+  const out = [];
+  for (const p of portals) {
+    const y = p.mouth ? p.mouth.y : p.y0 + 0.5;
+    if (roomOf(p.block, y) !== room) continue;
+    const [x, z] = p.mouth ? [p.mouth.x, p.mouth.z]
+      : p.shape === 'box' ? [(p.x0 + p.x1) / 2, (p.z0 + p.z1) / 2] : [p.x, p.z];
+    const to = roomOf(p.dest.block, p.dest.y);
+    out.push({ portal: p, x, z, to, name: roomName(to), door: p.door || null });
+  }
+  return out;
+}
+
 /**
  * 每一場：
  *   id, name   給人看的名字；hint 是面板上那一行說明

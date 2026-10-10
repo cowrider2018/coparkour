@@ -79,6 +79,7 @@ import { readFileSync } from 'node:fs';
 import { loadZoo, TURN_RATE } from '../public/test/src/critter.js';
 import { Pad } from '../public/test/src/pad.js';
 import { railTier } from '../public/test/src/hud.js';
+import { roomOf, signposts } from '../public/test/src/route.js';
 
 let fails = 0;
 const ok = (cond, label, detail = '') => {
@@ -1303,11 +1304,12 @@ head('門');
 
      · 至少一個感測區，而且每一個都登記了門口（`mouth`）。
      · 看得出開關：每一扇門（每一個感測區的門口）旁邊，有一塊會隨著開關換掉的
-       門扇（`pieces`），或者一塊路標（`signs`）。有門扇的門，兩種狀態各一塊
+       門扇（`pieces`），或者站在那個房間裡的時候主角腳邊有一支指著它的動態路標
+       （route.js 的 signposts，開著金色、關著灰色）。有門扇的門，兩種狀態各一塊
        （關著的木門、放下的鐵閘、堵住的亂石；開著的門洞、升起的鐵閘）——開著那一塊
-       可以是空的：亂石清走了，看得出來的是它不見了。只有路標的門沒有門扇：關著就是
-       一個走得進去、什麼都不會發生的拱洞。
-     · 門扇、門洞的黑霧與路標都在自己那個區塊的黑牆裡（它們不進合併的那一份，
+       可以是空的：亂石清走了，看得出來的是它不見了。沒有門扇的門（中庭的拱洞、霧口）
+       只靠路標：關著就是一個走得進去、什麼都不會發生的拱洞。
+     · 門扇與門洞的黑霧都在自己那個區塊的黑牆裡（它們不進合併的那一份，
        「黑牆沒有切到任何幾何」那一項看不到它們）。
 
    開著的門洞裡有黑霧的（圓塔的門），要再成立三件事：
@@ -1372,16 +1374,14 @@ head('門');
     return best;
   };
   const DOG_BACK = 0.48;
-  const signs = R.signs || [];
   for (const [g, open0] of Object.entries(R.doors)) {
     const mine = R.pieces.filter((q) => q.door === g);
-    const marks = signs.filter((s) => s.door === g);
     const nOpen = mine.filter((q) => q.open).length, nShut = mine.length - nOpen;
-    ok(nOpen === nShut, `${g}：有門扇的門兩種狀態各一塊`, `開 ${nOpen}、關 ${nShut}、路標 ${marks.length}`);
+    ok(nOpen === nShut, `${g}：有門扇的門兩種狀態各一塊`, `開 ${nOpen}、關 ${nShut}`);
     const gates = R.portals.filter((p) => p.door === g);
     ok(gates.length >= 1 && gates.every((p) => p.mouth), `${g}：開著的時候有感測區，每一個都登記了門口`,
       `${gates.length} 個感測區`);
-    // 一扇門可以連著兩個區塊：每一塊門扇、每一塊路標，量的是它自己所在那個區塊的黑牆。
+    // 一扇門可以連著兩個區塊：每一塊門扇量的是它自己所在那個區塊的黑牆。
     const arenaOf = (id) => R.arenas.find((a) => a.id === id);
     let worst = Infinity;
     for (const q of mine) {
@@ -1390,8 +1390,7 @@ head('門');
         for (let i = 0; i < V.length; i += 3) worst = Math.min(worst, arenaGap(A, V[i], V[i + 2]));
       }
     }
-    for (const s of marks) worst = Math.min(worst, arenaGap(arenaOf(s.block), s.x, s.z));
-    ok(worst > 0, `${g}：門扇、門洞的黑霧與路標在黑牆裡`, `離黑牆最近 ${worst.toFixed(2)} m`);
+    ok(worst > 0, `${g}：門扇與門洞的黑霧在黑牆裡`, `離黑牆最近 ${worst.toFixed(2)} m`);
 
     for (const q of mine.filter((m) => m.open && m.haze.alpha.length)) {
       const H = q.haze, [fx, fz] = q.face;
@@ -1426,8 +1425,8 @@ head('門');
       const m = (x, z) => fx * (x - mx) + fz * (z - mz);
       const where = `往 ${p.to} 的那一扇`;
       const shown = mine.some((q) => nearest(q, mx, mz) < 4)
-        || marks.some((s) => Math.hypot(s.x - mx, s.z - mz) < 4);
-      ok(shown, `${g}：${where}看得出開關`, shown ? '' : '門口四公尺內沒有門扇，也沒有路標');
+        || signposts(R.portals, roomOf(p.block, sill)).some((sp) => sp.portal === p && sp.door === g);
+      ok(shown, `${g}：${where}看得出開關`, shown ? '' : '門口四公尺內沒有門扇，也沒有指著它的路標');
       const walkIn = (doors) => {
         const dt = 1 / 60;
         const q = { x: mx + fx * 2, z: mz + fz * 2, y: sill };
@@ -1442,7 +1441,7 @@ head('門');
         return { sent: false, other: null, m: m(q.x, q.z) };
       };
       /* 關著的門扇：門口四公尺內、關著那一塊的頂點裡最靠門外的那一個（木門最外面
-         那一點是鐵條，鐵閘是柵條與尖刺）。只有路標的門沒有門扇。 */
+         那一點是鐵條，鐵閘是柵條與尖刺）。沒有門扇的門只靠路標。 */
       let leaf = -Infinity;
       for (const q of mine.filter((k) => !k.open)) {
         const V = q.geometry.attributes.position.array;
