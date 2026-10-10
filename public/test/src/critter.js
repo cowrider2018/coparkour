@@ -1367,7 +1367,9 @@ export class Critter {
     this.root.rotation.y = this._yaw;
 
     /* 步頻跟著實際速度走。speed01 是 Driver 要的「有多用力在跑」，
-       遊戲那邊是除以 REF_SPEED，這裡除以自己世界的衝刺速度。 */
+       遊戲那邊是除以 REF_SPEED，這裡除以 8（以前衝刺的速度）。衝刺拿掉
+       之後沒跟著改：玩家全速 4 只到一半，步態是小跑，不是狂奔——跑得
+       更快的只有怪物。 */
     const speed01 = moving ? Math.min(1, speed / 8) : 0;
     const strideHz = moving
       ? Math.min(STRIDE_HZ_MAX, Math.max(STRIDE_HZ_MIN, speed / STRIDE_LEN))

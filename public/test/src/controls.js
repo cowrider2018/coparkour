@@ -21,16 +21,12 @@ import { CAM } from './camera.js';
 import { lookInfo } from '../../src/cat/looks.js';
 
 /**
- * 這一幀的軸 → 想要的速度。
- *
- * 走與衝是兩件事，不是同一條斜坡的兩段：軸的長度只管走（搖桿推多少就
- * 走多快，到底是 PHYS.walk），衝刺是另外一個開關——鍵盤是 ⇧，搖桿是
- * 手指整個出了搖桿圈（見 pad.js 的 `_aim`）。開著的時候不管推多深都是
- * PHYS.run，所以圈內推得再滿也不會衝。
+ * 這一幀的軸 → 想要的速度。軸的長度就是速度：搖桿推多少就走多快，到底是
+ * PHYS.walk，那也是最快——沒有衝刺。
  */
-export function speedFor({ mag, sprint }) {
+export function speedFor({ mag }) {
   if (mag <= 0) return 0;
-  return sprint ? PHYS.run : PHYS.walk * mag;
+  return PHYS.walk * mag;
 }
 
 /** 搶走瀏覽器預設動作的鍵（捲頁）。 */
@@ -115,8 +111,7 @@ export class Controls {
   /**
    * 這一幀的軸：鍵盤先湊成一個向量再正規化（斜著按兩個鍵不會比直著按快
    * 41%），再加上搖桿。搖桿往畫面下方推＝往後走，所以 z 取負。
-   * `sprint`：按著 ⇧，或手指在搖桿圈外（見 speedFor）。
-   * @returns {{ix: number, iz: number, mag: number, sprint: boolean}}
+   * @returns {{ix: number, iz: number, mag: number}}
    */
   axis() {
     let ix = 0, iz = 0;
@@ -130,7 +125,7 @@ export class Controls {
     if (pad.mag > 0) { ix += pad.axis.x; iz -= pad.axis.y; }
     let mag = Math.hypot(ix, iz);
     if (mag > 1) { ix /= mag; iz /= mag; mag = 1; }
-    return { ix, iz, mag, sprint: this.held('shift') || pad.sprint };
+    return { ix, iz, mag };
   }
 
   /**

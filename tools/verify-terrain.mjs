@@ -837,18 +837,18 @@ head('轉向不欠帳');
 
   /* 全速往 +z 跑，然後推 +x。舊的向量加速要 0.33 秒才轉完，這段期間
      往 +z 還會多滑 1.3 公尺——那 1.3 公尺就是操作誤差。 */
-  const turn = drive([0, PHYS.run], [1, 0], PHYS.run, 1);
+  const turn = drive([0, PHYS.walk], [1, 0], PHYS.walk, 1);
   const side = Math.max(...turn.map((p) => Math.abs(p.z)));
   ok(side < 1e-9, '轉 90° 之後一公分都不往舊方向跑', `側移 ${side.toExponential(1)} m`);
   ok(turn[0].x > 0 && turn.every((p) => p.vx >= 0), '轉 90° 的第一幀就已經往新方向走');
 
   /* 直線反向：轉向雖然是瞬間的，動量還在——沿著新方向的那一份投影是
-     −8，所以照舊要減速到 0 再加速。這一項是「只有轉向沒有延遲」的另
+     −4，所以照舊要減速到 0 再加速。這一項是「只有轉向沒有延遲」的另
      一半，少了它，全速反向會變成瞬移。 */
-  const rev = drive([0, PHYS.run], [0, -1], PHYS.run, 1);
+  const rev = drive([0, PHYS.walk], [0, -1], PHYS.walk, 1);
   const cross = rev.find((p) => p.vz <= 0).t;
-  const full = rev.find((p) => p.vz <= -PHYS.run + 1e-9).t;
-  const wantCross = PHYS.run / PHYS.accel, wantFull = (2 * PHYS.run) / PHYS.accel;
+  const full = rev.find((p) => p.vz <= -PHYS.walk + 1e-9).t;
+  const wantCross = PHYS.walk / PHYS.accel, wantFull = (2 * PHYS.walk) / PHYS.accel;
   ok(Math.abs(cross - wantCross) < 2 * dt, '直線反向仍然要先減速到 0',
     `${cross.toFixed(3)} 秒 / 該是 ${wantCross.toFixed(3)}`);
   ok(Math.abs(full - wantFull) < 2 * dt, '反向到全速的時間沒有變',
@@ -856,24 +856,24 @@ head('轉向不欠帳');
   const over = Math.max(...rev.map((p) => p.z));
   /* v²/2a。逐幀積分會比它少半幀的位移（每幀先減速再位移），所以容差
      給一幀的位移量，不是「差不多就好」。 */
-  const wantOver = (PHYS.run * PHYS.run) / (2 * PHYS.accel);
-  ok(Math.abs(over - wantOver) < PHYS.run * dt, '反向期間還會往前多跑一段（動量沒有被偷走）',
+  const wantOver = (PHYS.walk * PHYS.walk) / (2 * PHYS.accel);
+  ok(Math.abs(over - wantOver) < PHYS.walk * dt, '反向期間還會往前多跑一段（動量沒有被偷走）',
     `${over.toFixed(2)} m / 連續的算法是 ${wantOver.toFixed(2)}`);
 
   /* 放開手：方向留著（player.aim 不會被清掉），所以是沿著原來那條線
      減速，不是原地亂飄。 */
-  const stop = drive([0, PHYS.run], [0, 1], 0, 1);
+  const stop = drive([0, PHYS.walk], [0, 1], 0, 1);
   ok(stop.every((p) => p.x === 0 && p.vx === 0), '放開手是沿著原來那條線減速');
   const stopT = stop.find((p) => p.vz <= 1e-9).t;
-  ok(Math.abs(stopT - PHYS.run / PHYS.brake) < 2 * dt, '煞停的時間沒有變',
-    `${stopT.toFixed(3)} 秒 / 該是 ${(PHYS.run / PHYS.brake).toFixed(3)}`);
+  ok(Math.abs(stopT - PHYS.walk / PHYS.brake) < 2 * dt, '煞停的時間沒有變',
+    `${stopT.toFixed(3)} 秒 / 該是 ${(PHYS.walk / PHYS.brake).toFixed(3)}`);
 
   /* 轉向本身只是一次投影，所以小角度幾乎不損速。單看投影，不讓加速
      插手（想要的速率就給成投影後的速率）——不然一幀的 accel 0.57 比
      11.5° 的損失 0.16 還大，一幀就補回來了，什麼也量不到。 */
   const th = 0.2, k = Math.cos(th);
-  const [lx, lz] = steer(0, PHYS.run, Math.sin(th), Math.cos(th), PHYS.run * k, dt);
-  ok(Math.abs(Math.hypot(lx, lz) - PHYS.run * k) < 1e-9
+  const [lx, lz] = steer(0, PHYS.walk, Math.sin(th), Math.cos(th), PHYS.walk * k, dt);
+  ok(Math.abs(Math.hypot(lx, lz) - PHYS.walk * k) < 1e-9
     && Math.abs(Math.atan2(lx, lz) - th) < 1e-9,
     `轉向只是一次投影：轉 ${(th * 180 / Math.PI).toFixed(1)}° 只損失 ${((1 - k) * 100).toFixed(1)}%`);
 }
@@ -1866,8 +1866,8 @@ head('鏡頭的吊臂');
         cam.yaw = yaw;
         // 先站定幾幀讓吊臂收到該有的長度，再開始繞
         for (let i = 0; i < 30; i++) updateCam(cam, dt, player, a, []);
-        for (let i = 0; i < Math.ceil(per / (PHYS.run * dt)); i++) {
-          s += (dir * PHYS.run * dt) / per;
+        for (let i = 0; i < Math.ceil(per / (PHYS.walk * dt)); i++) {
+          s += (dir * PHYS.walk * dt) / per;
           [player.x, player.z] = hug(a, (s % 1 + 1) % 1);
           const rig = updateCam(cam, dt, player, a, []);
           const gp = arenaGap(a, cam.px, cam.pz);
