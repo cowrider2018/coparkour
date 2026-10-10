@@ -529,7 +529,7 @@ const STAND = { x: COURT.x, y: 0, z: COURT.z, hp: 1, max: 1 };
 let lobby = null;
 let lobbyT = 0;
 
-/** 開始畫面的一幀：主角那一張與糊掉的背景。世界不走——只有旗子、火這些照時鐘動的。 */
+/** 開始畫面的一幀：卡片的窗口與糊掉的背景。世界不走——只有旗子、火這些照時鐘動的。 */
 function lobbyFrame(real) {
   controls.jumpPressed();                 // 開始畫面上按的空白不留到遊戲裡
   lobby.update(real);
@@ -542,11 +542,11 @@ function lobbyFrame(real) {
   lobby.render();
 }
 
-/** 按了開始：主角還回遊戲的場景，從兵營那一頁漫畫開始。 */
+/** 按了開始：主角換成選好的那一件（刀跟著掛過去），從兵營那一頁漫畫開始。 */
 function begin() {
   lobby.end();
   lobby = null;
-  scene.add(zoo.root);
+  fight.follow();
   document.body.classList.remove('lobby');
   pad.releaseAll();
   controls.jumpPressed();
@@ -562,8 +562,7 @@ document.getElementById('boot').remove();
 if (GAME) {
   document.body.classList.add('lobby');
   lobby = new Lobby({
-    zoo, layer: document.getElementById('lobby'), start: document.getElementById('start'),
-    onLook: () => fight.follow(), onStart: begin,
+    zoo, view: document.getElementById('lobby-view'), start: document.getElementById('start'), onStart: begin,
   });
 } else startFrom(0);
 requestAnimationFrame(frame);

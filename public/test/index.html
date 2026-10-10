@@ -122,26 +122,48 @@
   }
 
   /* ── 開始畫面（完整遊戲，lobby.js）─────────────────────────────
-     body 帶 `lobby` 的時候：遊戲那一張畫布糊掉、稍微放大（糊掉的邊不露出黑框），主角畫在
-     最上面那一張透明畫布（#lobby）上，它接所有的滑動；操作列、搖桿、路標、血條都不在。
-     底下正中間一顆開始鈕：細環、半透明的底、一個三角形。 */
-  #lobby { z-index: 6; display: none; touch-action: none; }
-  body.lobby #lobby { display: block; }
-  body.lobby #view { filter: blur(7px) brightness(.85); transform: scale(1.06); }
-  body.lobby #pad, body.lobby .rail, body.lobby #signpost, body.lobby #bossbar { visibility: hidden; }
-  #start {
-    position: fixed; z-index: 7; left: 50%; bottom: calc(var(--sa-b) + 4vh);
-    width: 76px; height: 76px; margin-left: -38px; padding: 0;
-    display: none; place-items: center;
-    border-radius: 50%; border: 2px solid rgba(247, 239, 221, .8);
-    background: rgba(0, 0, 0, .32);
-    box-shadow: 0 0 0 6px rgba(247, 239, 221, .14), 0 6px 18px rgba(0, 0, 0, .35);
-    transition: transform .15s var(--ease-out), background .15s;
+     版面照 2D 跑酷的開始選單：body 帶 `lobby` 的時候，遊戲那一張畫布糊掉、稍微放大（糊掉的
+     邊不露出黑框），正中間一張卡片。卡片是一頁漫畫的紙（跟 #story 的書頁同一種紙），上面
+     一格正方形的窗口（漫畫的一格：墨線框、紙色的底），窗口裡畫主角（#lobby-view，所有的拖
+     都在它上面）；下面是 START，2D 那顆「開始跑」的樣子。操作列、搖桿、路標、血條都不在。 */
+  #lobby {
+    position: fixed; inset: 0; z-index: 6;
+    display: none; place-items: center; padding: 16px;
+    --paper: #efe3c6; --ink-page: rgb(43, 35, 32);
   }
-  #start:hover { border-color: #fff; background: rgba(0, 0, 0, .42); }
-  #start:active { transform: scale(.93); }
-  #start svg { width: 30px; height: 30px; margin-left: 5px; fill: rgba(247, 239, 221, .92); }
-  body.lobby #start { display: grid; }
+  body.lobby #lobby { display: grid; }
+  body.lobby #view { filter: blur(7px) brightness(.8); transform: scale(1.06); }
+  body.lobby #pad, body.lobby .rail, body.lobby #signpost, body.lobby #bossbar { visibility: hidden; }
+  #lobby .card {
+    --win: min(300px, 74vw, calc(100vh - 32px - 2 * 18px - 16px - 58px));
+    width: calc(var(--win) + 2 * 18px);
+    padding: 18px; display: flex; flex-direction: column; gap: 16px;
+    border-radius: 3px; transform: rotate(-1.2deg);
+    background-color: var(--paper);
+    background-image:
+      radial-gradient(ellipse 70% 60% at 35% 30%, rgba(255, 250, 235, .55), transparent 70%),
+      radial-gradient(ellipse 60% 50% at 80% 85%, rgba(150, 110, 60, .16), transparent 70%),
+      repeating-linear-gradient(90deg, rgba(110, 85, 50, .035) 0 1px, transparent 1px 4px);
+    box-shadow: inset 0 0 28px rgba(120, 88, 45, .38), 0 14px 34px rgba(0, 0, 0, .5);
+  }
+  #lobby .window {
+    width: var(--win); aspect-ratio: 1; overflow: hidden;
+    border: 3px solid var(--ink-page); background: #f7eedb;
+  }
+  #lobby-view {
+    position: static; display: block; width: 100%; height: 100%;
+    touch-action: none; cursor: grab;
+  }
+  #lobby-view:active { cursor: grabbing; }
+  #start {
+    width: 100%; padding: 13px; border: 0; border-radius: 12px;
+    font: 700 18px/1 system-ui, sans-serif; letter-spacing: .24em; text-indent: .24em;
+    background: #9bd94e; color: #22300c; cursor: pointer;
+    box-shadow: 0 4px 0 #5c9628;
+    transition: transform 90ms var(--ease-out), box-shadow 90ms var(--ease-out);
+  }
+  #start:hover { filter: brightness(1.08); border: 0; }
+  #start:active { transform: translateY(4px); box-shadow: 0 0 0 #5c9628; }
 
   /* ── 操作列 ──────────────────────────────────────────────
      底板是一整塊單色，內緣用一條同色髮絲線切。邊界是硬的：操作列就是
@@ -503,8 +525,12 @@
 <div class="rail" id="railA"></div>
 <div class="rail" id="railB"></div>
 <canvas id="pad"></canvas>
-<canvas id="lobby" data-for="game"></canvas>
-<button id="start" data-for="game" aria-label="開始"><svg viewBox="0 0 24 24"><path d="M5 2.5 21 12 5 21.5z" /></svg></button>
+<div id="lobby" data-for="game">
+  <div class="card">
+    <div class="window"><canvas id="lobby-view"></canvas></div>
+    <button id="start">START</button>
+  </div>
+</div>
 
 <div id="boot">
   <div data-for="terrain"><b>正在砌城堡…</b><br />四個區塊約三十萬個三角形，外加 cat.bin 那三隻動物</div>
