@@ -601,25 +601,7 @@ export function monsterStep(m, dt, target) {
     return;
   }
   if (m.air && kindOf(m).fly) { driftStep(m, dt); return; }
-  if (m.air) {
-    /* 先水平、後垂直，跟玩家（hero.js 的 moveHero）同一個順序：水平的碰撞用的是這一幀
-       開始時的腳高。倒過來的話，落地那一幀腳已經陷到地板底下（一幀掉 vy·dt，20 幀的時候
-       超過半公尺），碰撞拿那個高度去問：井口以下的身體會被方圓 r + 3 公尺內的井壁吸進井裡，
-       陷得比一階還深的時候整片地板的碰撞板變成一道牆，把身體橫推到板子邊上——牆外。 */
-    const prevY = m.y;
-    [m.x, m.z] = solveXZ(m.field.cols, m.x + m.vx * dt, m.z + m.vz * dt, prevY, m.field.doors);
-    m.vy -= PHYS.gravity * dt;
-    m.y += m.vy * dt;
-    const f = floorAt(m, prevY);
-    if (m.y <= f && m.vy <= 0) {
-      /* 落地：水平的擊退一起停掉，從靜止重新起步追人。不停的話牠落地
-         之後還會往後滑一段，而那段時間碰到牠算不算數說不清楚。 */
-      m.y = f; m.vy = 0; m.vx = 0; m.vz = 0;
-      m.air = false;
-      m.grounded = true;
-    }
-    return;
-  }
+  if (m.air) { airStep(m, dt); return; }
   // 沒有目標、放招中、出招後的僵直（skills.js）：站著不動。
   if (!target) { m.lunge = null; m.vx = 0; m.vy = 0; m.vz = 0; return; }
   if (m.cast || m.stun > 0) { m.vx = 0; m.vy = 0; m.vz = 0; return; }
@@ -651,6 +633,29 @@ export function monsterStep(m, dt, target) {
   }
   [m.x, m.z] = solveXZ(m.field.cols, m.x + m.vx * dt, m.z + m.vz * dt, m.y, m.field.doors);
   if (!fly) settle(m);
+}
+
+/**
+ * 被擊退（不會飛的）在空中的一幀：照拋物線飛，落地就停。`cols` 平常是 m.field.cols；
+ * 預跑落點的時候給篩過的那一份（walk.js 的 colsNear），規則是同一支。
+ */
+function airStep(m, dt, cols = m.field.cols) {
+  /* 先水平、後垂直，跟玩家（hero.js 的 moveHero）同一個順序：水平的碰撞用的是這一幀
+     開始時的腳高。倒過來的話，落地那一幀腳已經陷到地板底下（一幀掉 vy·dt，20 幀的時候
+     超過半公尺），碰撞拿那個高度去問：井口以下的身體會被方圓 r + 3 公尺內的井壁吸進井裡，
+     陷得比一階還深的時候整片地板的碰撞板變成一道牆，把身體橫推到板子邊上——牆外。 */
+  const prevY = m.y;
+  [m.x, m.z] = solveXZ(cols, m.x + m.vx * dt, m.z + m.vz * dt, prevY, m.field.doors);
+  m.vy -= PHYS.gravity * dt;
+  m.y += m.vy * dt;
+  const f = supportInfo(cols, m.x, m.z, prevY).y;
+  if (m.y <= f && m.vy <= 0) {
+    /* 落地：水平的擊退一起停掉，從靜止重新起步追人。不停的話牠落地
+       之後還會往後滑一段，而那段時間碰到牠算不算數說不清楚。 */
+    m.y = f; m.vy = 0; m.vx = 0; m.vz = 0;
+    m.air = false;
+    m.grounded = true;
+  }
 }
 
 /**

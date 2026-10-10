@@ -358,6 +358,20 @@ export function nearXZ(b, x, z, pad) {
 }
 
 /**
+ * 碰撞清單裡落在一塊水平範圍（x0～x1、z0～z1，四周再放寬 pad）附近的那些。黑牆一律留著
+ * ——它由內往外擋，範圍再小也可能碰到。
+ *
+ * 整片遺跡有近千個碰撞體，solveXZ 與 supportInfo 每問一次都要全部看一遍（一次約 50 µs）；
+ * 一個動作只會碰到附近幾公尺，先篩一次（約 30 µs）之後每問一次只剩一兩 µs。篩出來的
+ * 那一份問到的答案跟整份一樣，只要問的點都在範圍裡。
+ */
+export function colsNear(cols, x0, z0, x1, z1, pad) {
+  return cols.filter((b) => b.kind === 'bound' || (b.max
+    ? b.max[0] > x0 - pad && b.min[0] < x1 + pad && b.max[2] > z0 - pad && b.min[2] < z1 + pad
+    : b.x > x0 - b.r - pad && b.x < x1 + b.r + pad && b.z > z0 - b.r - pad && b.z < z1 + b.r + pad));
+}
+
+/**
  * 水平推出。
  *
  * 高度差在 STEP 以內的盒子在這一步不算牆——所以身體會先走進台階裡，

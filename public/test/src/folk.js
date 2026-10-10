@@ -21,7 +21,7 @@
    ------------------------------------------------------------------ */
 
 import { Critter } from './critter.js';
-import { solveXZ, supportInfo, arenaGap, portalGap, PHYS } from './walk.js';
+import { solveXZ, supportInfo, arenaGap, portalGap, colsNear, PHYS } from './walk.js';
 import { Gaze, aimHead, GAZE } from './gaze.js';
 
 /**
@@ -54,9 +54,7 @@ export function walkCells(cols, arena, start, doors) {
   const [x0, z0, x1, z1] = arena.shape === 'circle'
     ? [arena.x - arena.r, arena.z - arena.r, arena.x + arena.r, arena.z + arena.r]
     : [arena.x0, arena.z0, arena.x1, arena.z1];
-  const near = cols.filter((b) => b.kind === 'bound' || (b.max
-    ? b.max[0] > x0 - 1 && b.min[0] < x1 + 1 && b.max[2] > z0 - 1 && b.min[2] < z1 + 1
-    : b.x > x0 - b.r - 1 && b.x < x1 + b.r + 1 && b.z > z0 - b.r - 1 && b.z < z1 + b.r + 1));
+  const near = colsNear(cols, x0, z0, x1, z1, 1);
   const nx = Math.ceil((x1 - x0) / C) + 1;
   const key = (i, j) => i + j * nx;
   // 身體擺得下：中間與四周 clear 都不被推。
