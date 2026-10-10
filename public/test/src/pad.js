@@ -157,6 +157,10 @@ export class Pad {
     this.bPh = [0, 0, 0];
     this.drops = [];
     this._queued = false;
+    /** 跳躍鍵上畫什麼：'arrow'（跳）或 'sword'（第二、三段攻擊），模式的主程式每幀給。 */
+    this.icon = 'arrow';
+    /** 刀淡進來多少（0 = 箭頭，1 = 刀）。 */
+    this.iconK = 0;
 
     this.W = 0; this.H = 0; this.dpr = 1;
     this.portrait = false;
@@ -343,6 +347,7 @@ export class Pad {
     const liqK = 1 - Math.pow(0.0006, dt);
     this.jLiq += ((this.jOn ? 1 : 0) - this.jLiq) * liqK;
     this.bLiq += ((this.bOn ? 1 : 0) - this.bLiq) * liqK;
+    this.iconK += ((this.icon === 'sword' ? 1 : 0) - this.iconK) * (1 - Math.exp(-14 * dt));
 
     const out = [];
     for (const d of this.drops) {
@@ -499,21 +504,60 @@ export class Pad {
       ctx.restore();
     }
 
-    // 向上的箭頭：這顆鍵在說什麼，一眼就懂
+    /* 圖案：這顆鍵在說什麼，一眼就懂。平常是向上的箭頭（跳）；第二、三段攻擊的那一段是一把
+       往右上斜指的刀（按下去是出招）。兩個交叉淡換（iconK）。 */
+    const k = this.iconK;
+    const q = r * 0.30;
     ctx.save();
     ctx.globalAlpha *= 0.55 + 0.45 * liq;
     ctx.strokeStyle = liq > 0.02 ? tint(0.4 + 0.6 * liq, 0.95) : 'rgba(247,239,221,0.62)';
     ctx.lineWidth = Math.max(2, r * 0.09);
-    const q = r * 0.30, y = cy + q * 0.45 - press * r * 0.06;
-    ctx.beginPath();
-    ctx.moveTo(cx - q, y);
-    ctx.lineTo(cx, y - q * 0.95);
-    ctx.lineTo(cx + q, y);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(cx, y - q * 0.8);
-    ctx.lineTo(cx, y + q * 0.62);
-    ctx.stroke();
+    if (k < 0.99) {
+      ctx.save();
+      ctx.globalAlpha *= 1 - k;
+      const y = cy + q * 0.45 - press * r * 0.06;
+      ctx.beginPath();
+      ctx.moveTo(cx - q, y);
+      ctx.lineTo(cx, y - q * 0.95);
+      ctx.lineTo(cx + q, y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx, y - q * 0.8);
+      ctx.lineTo(cx, y + q * 0.62);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (k > 0.01) {
+      ctx.save();
+      ctx.globalAlpha *= k;
+      // 刀的座標：u 沿著刀身（往刀尖），v 橫過刀身；整把轉 −45°，刀尖朝右上。斜擺的刀比箭頭
+      // 細，放大一點才跟箭頭一樣搶眼。
+      const q = r * 0.42;
+      ctx.translate(cx, cy - press * r * 0.06);
+      ctx.rotate(-Math.PI / 4);
+      ctx.translate(-q * 0.12, 0);
+      ctx.lineWidth = Math.max(1.6, r * 0.07);
+      const w = q * 0.17, g = -q * 0.35;
+      ctx.beginPath();                                   // 刀身：兩條刃、斜切的刀尖
+      ctx.moveTo(g, -w);
+      ctx.lineTo(q * 0.78, -w);
+      ctx.lineTo(q * 1.08, 0);
+      ctx.lineTo(q * 0.78, w);
+      ctx.lineTo(g, w);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.lineWidth = Math.max(2, r * 0.09);
+      ctx.beginPath();                                   // 護手
+      ctx.moveTo(g, -q * 0.46);
+      ctx.lineTo(g, q * 0.46);
+      ctx.moveTo(g, 0);                                  // 刀柄
+      ctx.lineTo(-q * 0.8, 0);
+      ctx.stroke();
+      ctx.beginPath();                                   // 柄頭
+      ctx.arc(-q * 0.93, 0, q * 0.1, 0, TAU);
+      ctx.stroke();
+      ctx.restore();
+    }
     ctx.restore();
 
     this._drawDrops(ctx, cx, cy);

@@ -141,6 +141,9 @@ export const DEATH_TEXT = { bitten: '被咬到了', shot: '被球打中了', str
  */
 const plowHalf = (g) => Math.max(g.w / 2, SCAR_REACH);
 
+/** 第二、三段攻擊進行中的那幾個連段階段（Fight.striking）。 */
+const STRIKING = new Set(['rise', 'air', 'leap', 'slam']);
+
 export class Fight {
   /**
    * @param {THREE.Scene} scene
@@ -707,6 +710,12 @@ export class Fight {
 
   /** 迴旋中：玩家的位置由 spinStep 擺，模式不要移動玩家。 */
   get spinning() { return this.combo.phase === 'spin'; }
+
+  /**
+   * 第二、三段攻擊的那一整段：從第二段的視窗打開（按跳就是第二段）到第三段收招。跳躍鍵在這一段
+   * 畫一把刀，不畫箭頭（pad.js 的 icon）。
+   */
+  get striking() { return cueing(this.combo) || STRIKING.has(this.combo.phase); }
 
   /**
    * 出招的那個身體：位置是玩家的，面向是出手那一刻鎖住的。

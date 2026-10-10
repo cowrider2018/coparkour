@@ -197,6 +197,7 @@ function frame(now) {
   fight.draw(dt, camera, player);
   light.update({ dt, now, player, block: ARENA.id, foes: fight.foes.map((f) => f.m) });
   light.render();
+  pad.icon = fight.striking ? 'sword' : 'arrow';
   pad.draw();
 
   fpsAcc += dt; fpsN++; hudAcc += dt;

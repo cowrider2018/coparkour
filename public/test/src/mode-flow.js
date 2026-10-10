@@ -500,6 +500,7 @@ function frame(now) {
     crowd: king ? [...folk.here(player.block), king] : folk.here(player.block),
   });
   light.render();
+  pad.icon = fight.striking ? 'sword' : 'arrow';
   pad.draw();
 
   fpsAcc += real; fpsN++; hudAcc += real;
