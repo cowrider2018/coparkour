@@ -28,7 +28,8 @@
        靜止時的中線刻度變成一個十字。
      · 旋鈕可動範圍是「圓心到軌道內緣」，軸夾在單位圓裡——夾方的話對角
        線長 1.41，斜著跑會比直著跑快 41%。
-     · 那道從圓心拖到旋鈕的水痕還在，只是方向跟著旋鈕跑。
+     · 推桿量不是一道從圓心拖到旋鈕的水痕，是一片鋪滿整個軌道的放射漸層，
+       圓心就在旋鈕的中心：推到哪裡，那裡最亮。
 
    跳躍鍵一個像素都沒動：細環儀器、按下鼓成水滴、炸出水花、向上的箭頭。
 
@@ -423,25 +424,15 @@ export class Pad {
     };
     chev(-1, 0); chev(1, 0); chev(0, -1); chev(0, 1);
 
-    // 推桿量：從中心拖到旋鈕的一道水痕
+    /* 推桿量：一片鋪滿整個軌道的放射漸層，圓心在旋鈕的中心——推到哪裡哪裡最亮，往外淡到
+       軌道最遠的那一側。半徑取旋鈕中心到軌道最遠一點的距離，整個圓都在漸層裡。 */
     const kx = cx + ax * travel, ky = cy + ay * travel;
     if (am > 0.02) {
-      ctx.save();
-      ctx.clip(track);
-      const g = ctx.createLinearGradient(cx, cy, kx, ky);
-      g.addColorStop(0, tint(tn, 0.04));
-      g.addColorStop(1, tint(tn, 0.30));
+      const g = ctx.createRadialGradient(kx, ky, 0, kx, ky, R + am * travel);
+      g.addColorStop(0, tint(tn, 0.34));
+      g.addColorStop(1, tint(tn, 0.03));
       ctx.fillStyle = g;
-      const w = kr * 1.5;
-      const px = -ay / Math.max(am, 1e-6), py = ax / Math.max(am, 1e-6);
-      const p = new Path2D();
-      p.moveTo(cx + px * w, cy + py * w);
-      p.lineTo(kx + px * w * 0.8, ky + py * w * 0.8);
-      p.lineTo(kx - px * w * 0.8, ky - py * w * 0.8);
-      p.lineTo(cx - px * w, cy - py * w);
-      p.closePath();
-      ctx.fill(p);
-      ctx.restore();
+      ctx.fill(track);
     }
 
     /* 旋鈕：靜止是空心環，被按住就液化。兩者交叉淡入，中間那一刻正好是
