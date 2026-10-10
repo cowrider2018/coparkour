@@ -121,6 +121,28 @@
     text-indent: 0.35em; text-shadow: 0 0 18px rgba(0, 0, 0, 0.55), 0 2px 4px rgba(0, 0, 0, 0.5);
   }
 
+  /* ── 開始畫面（完整遊戲，lobby.js）─────────────────────────────
+     body 帶 `lobby` 的時候：遊戲那一張畫布糊掉、稍微放大（糊掉的邊不露出黑框），主角畫在
+     最上面那一張透明畫布（#lobby）上，它接所有的滑動；操作列、搖桿、路標、血條都不在。
+     底下正中間一顆開始鈕：細環、半透明的底、一個三角形。 */
+  #lobby { z-index: 6; display: none; touch-action: none; }
+  body.lobby #lobby { display: block; }
+  body.lobby #view { filter: blur(7px) brightness(.85); transform: scale(1.06); }
+  body.lobby #pad, body.lobby .rail, body.lobby #signpost, body.lobby #bossbar { visibility: hidden; }
+  #start {
+    position: fixed; z-index: 7; left: 50%; bottom: calc(var(--sa-b) + 4vh);
+    width: 76px; height: 76px; margin-left: -38px; padding: 0;
+    display: none; place-items: center;
+    border-radius: 50%; border: 2px solid rgba(247, 239, 221, .8);
+    background: rgba(0, 0, 0, .32);
+    box-shadow: 0 0 0 6px rgba(247, 239, 221, .14), 0 6px 18px rgba(0, 0, 0, .35);
+    transition: transform .15s var(--ease-out), background .15s;
+  }
+  #start:hover { border-color: #fff; background: rgba(0, 0, 0, .42); }
+  #start:active { transform: scale(.93); }
+  #start svg { width: 30px; height: 30px; margin-left: 5px; fill: rgba(247, 239, 221, .92); }
+  body.lobby #start { display: grid; }
+
   /* ── 操作列 ──────────────────────────────────────────────
      底板是一整塊單色，內緣用一條同色髮絲線切。邊界是硬的：操作列就是
      一塊色塊，中間那片才是遊戲。底下襯模糊，不然地形的亮邊會從色塊底下
@@ -481,6 +503,8 @@
 <div class="rail" id="railA"></div>
 <div class="rail" id="railB"></div>
 <canvas id="pad"></canvas>
+<canvas id="lobby" data-for="game"></canvas>
+<button id="start" data-for="game" aria-label="開始"><svg viewBox="0 0 24 24"><path d="M5 2.5 21 12 5 21.5z" /></svg></button>
 
 <div id="boot">
   <div data-for="terrain"><b>正在砌城堡…</b><br />四個區塊約三十萬個三角形，外加 cat.bin 那三隻動物</div>

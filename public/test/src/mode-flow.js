@@ -58,6 +58,8 @@
    同一支程式，`GAME` 為真：沒有面板、不浮任何提示字（toast 與右上那一行統計都不建），
    BOSS 的血條不寫名字，沒有開發用的鍵（R、P、1–6、H／C／X）。留下來的字只有倒下醒來的
    那幾句（death.js）、路標（signpost.js）與漫畫。
+   載入之後先是開始畫面（lobby.js）：選造型、按開始，才從兵營那一頁漫畫開始。開始畫面上世界
+   不走，只畫背景。
    ------------------------------------------------------------------ */
 
 import * as THREE from '../vendor/three.module.js';
@@ -85,6 +87,7 @@ import { STAGES, START, SOULS, roomOf, signposts, foesOf, entranceOf, inStage, m
 import { Signpost } from './signpost.js';
 import { BossBar } from './bossbar.js';
 import { roamMap } from './roam.js';
+import { Lobby, aimBackdrop } from './lobby.js';
 
 /** 完整遊戲（boot.js 的 game）：完整流程去掉面板、提示字與開發用的鍵。 */
 const GAME = document.body.dataset.mode === 'game';
@@ -387,6 +390,12 @@ function frame(now) {
   last = now;
   pad.update(real);
 
+  if (lobby) {
+    lobbyFrame(real);
+    requestAnimationFrame(frame);
+    return;
+  }
+
   /* 劇情（story.js）先決定世界這一幀走多快：慢動作的時候慢、書頁整個蓋住的時候停——
      那時候整幀不算也不畫，畫面上反正只有書頁。這一下跳是給書頁的還是給連段的，
      也是它先問。 */
@@ -509,13 +518,54 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+/* ── 開始畫面（完整遊戲）────────────────────────────────────────────
+   背景是中庭（BLOCKS 的 courtyard）：鏡頭在那張圖的正中間繞（lobby.js 的 aimBackdrop）。
+   光影照中庭打，假裝主角站在正中間的地上——火光挑最近的那幾盆、暗角對著它。 */
+const COURT = (() => {
+  const a = ruins.arenas.find((r) => r.id === 'courtyard');
+  return { x: (a.x0 + a.x1) / 2, z: (a.z0 + a.z1) / 2 };
+})();
+const STAND = { x: COURT.x, y: 0, z: COURT.z, hp: 1, max: 1 };
+let lobby = null;
+let lobbyT = 0;
+
+/** 開始畫面的一幀：主角那一張與糊掉的背景。世界不走——只有旗子、火這些照時鐘動的。 */
+function lobbyFrame(real) {
+  controls.jumpPressed();                 // 開始畫面上按的空白不留到遊戲裡
+  lobby.update(real);
+  lobbyT += real;
+  clock += real * 1000;
+  aimBackdrop(camera, lobbyT, COURT.x, COURT.z);
+  stage.animate(clock);
+  light.update({ dt: real, now: clock, player: STAND, block: 'courtyard' });
+  light.render();
+  lobby.render();
+}
+
+/** 按了開始：主角還回遊戲的場景，從兵營那一頁漫畫開始。 */
+function begin() {
+  lobby.end();
+  lobby = null;
+  scene.add(zoo.root);
+  document.body.classList.remove('lobby');
+  pad.releaseAll();
+  controls.jumpPressed();
+  startFrom(0);
+}
+
 fitView({
   renderer, camera, pad, hud,
   ink: (px, h) => { zoo.setInkPx(px, h); fight.setInkPx(px, h); death.setInkPx(px, h); folk.setInkPx(px, h); },
 });
 
 document.getElementById('boot').remove();
-startFrom(0);
+if (GAME) {
+  document.body.classList.add('lobby');
+  lobby = new Lobby({
+    zoo, layer: document.getElementById('lobby'), start: document.getElementById('start'),
+    onLook: () => fight.follow(), onStart: begin,
+  });
+} else startFrom(0);
 requestAnimationFrame(frame);
 
 // 給主控台一個把手，方便手動看東西。run 會被換掉，所以是 getter。
