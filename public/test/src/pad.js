@@ -34,22 +34,31 @@
    跳躍鍵一個像素都沒動：細環儀器、按下鼓成水滴、炸出水花、向上的箭頭。
 
    ── 顏色 ──────────────────────────────────────────────────────────
-   遊戲那邊是葉綠（touch.js 的 tint）；這裡換成黃狗的黃（受光那一階在畫面上的
-   顏色），色階的走法一樣：白 → 黃，張力越大越黃。
+   遊戲那邊兩個都是葉綠（touch.js 的 tint）；這裡各一色，色階的走法一樣（白 → 那一色，
+   張力越大越濃）：
+     跳躍鍵  黃狗的黃（受光那一階在畫面上的顏色）。
+     搖桿    靈魂的藍灰（monster.js 的 GHOST.face：幽靈、倒下浮起來的那一隻的臉色）；靜止時的
+             細線、靶標、空心旋鈕是靈魂身上的淡冰藍（GHOST.body），軌道的底是壓暗的藍灰。
    ------------------------------------------------------------------ */
 
 import { waveAt } from '../../src/touch.js';
 
-/** 黃狗的黃：毛受光那一階畫在畫面上的顏色（sRGB）。 */
+/** 跳躍鍵：黃狗的黃，毛受光那一階畫在畫面上的顏色（sRGB）。 */
 const GOLD = [229, 166, 42];
+/** 搖桿：靈魂的藍灰，monster.js 的 GHOST.face（0.34, 0.44, 0.60）換成 0～255。 */
+const SOUL = [87, 112, 153];
+/** 搖桿靜止時的細線、靶標與空心旋鈕：靈魂身上那一層淡冰藍（monster.js 的 GHOST.body）。 */
+const SOUL_PALE = [199, 224, 250];
+/** 搖桿軌道的底：壓暗的藍灰。 */
+const SOUL_DEEP = [16, 20, 30];
 
-/** 白 → 黃，張力 t 越大越黃。touch.js 的 tint 同一條色階，只換了終點的顏色。 */
-function tint(t, a) {
+/** 白 → col，張力 t 越大越濃。touch.js 的 tint 同一條色階，只換了終點的顏色。 */
+function tint(t, a, col = GOLD) {
   const k = t * t;
-  const c = GOLD.map((v) => Math.round(255 + (v - 255) * k));
+  const c = col.map((v) => Math.round(255 + (v - 255) * k));
   return `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 }
-const gold = (a) => `rgba(${GOLD[0]},${GOLD[1]},${GOLD[2]},${a})`;
+const solid = (col, a) => `rgba(${col[0]},${col[1]},${col[2]},${a})`;
 
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -100,12 +109,12 @@ function blobPath(cx, cy, r, tilt, pull, t, ph, wa) {
 }
 
 /* 水的菲涅耳 + 高光。src/pad.js 的 fillLiquid 原文。 */
-function fillLiquid(ctx, p, cx, cy, r, tn, glow) {
+function fillLiquid(ctx, p, cx, cy, r, tn, glow, col = GOLD) {
   const g = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.34, r * 0.08, cx, cy, r * 1.05);
   g.addColorStop(0, 'rgba(255,255,255,0.26)');
   g.addColorStop(0.45, 'rgba(255,255,255,0.10)');
   g.addColorStop(0.82, 'rgba(255,255,255,0.14)');
-  g.addColorStop(1, tint(tn, 0.3));
+  g.addColorStop(1, tint(tn, 0.3, col));
   ctx.fillStyle = g;
   ctx.fill(p);
 
@@ -120,8 +129,8 @@ function fillLiquid(ctx, p, cx, cy, r, tn, glow) {
   ctx.restore();
 
   ctx.lineWidth = 1.6;
-  ctx.strokeStyle = tint(tn, 0.5 + 0.35 * tn);
-  ctx.shadowColor = tint(tn, 0.45);
+  ctx.strokeStyle = tint(tn, 0.5 + 0.35 * tn, col);
+  ctx.shadowColor = tint(tn, 0.45, col);
   ctx.shadowBlur = glow;
   ctx.stroke(p);
   ctx.shadowBlur = 0;
@@ -390,10 +399,10 @@ export class Pad {
     // 軌道
     const track = new Path2D();
     track.arc(cx, cy, R, 0, TAU);
-    ctx.fillStyle = 'rgba(24,18,11,0.46)';
+    ctx.fillStyle = solid(SOUL_DEEP, 0.46);
     ctx.fill(track);
     ctx.lineWidth = 1.2;
-    ctx.strokeStyle = gold((0.14 + 0.16 * liq).toFixed(3));
+    ctx.strokeStyle = solid(SOUL, (0.3 + 0.3 * liq).toFixed(3));
     ctx.stroke(track);
 
     // 十字刻度：只在靜止時看得到，一推就讓位給水
@@ -401,7 +410,7 @@ export class Pad {
     ctx.globalAlpha *= 0.5 - 0.4 * liq;
     ctx.setLineDash([2, 5]);
     ctx.lineWidth = 1;
-    ctx.strokeStyle = 'rgba(226,196,142,0.5)';
+    ctx.strokeStyle = solid(SOUL_PALE, 0.5);
     ctx.beginPath();
     ctx.moveTo(cx - travel, cy); ctx.lineTo(cx + travel, cy);
     ctx.moveTo(cx, cy - travel); ctx.lineTo(cx, cy + travel);
@@ -414,7 +423,7 @@ export class Pad {
       const on = Math.max(0, ax * dx + ay * dy);
       ctx.save();
       ctx.globalAlpha *= 0.34 * (1 - on * 0.92);
-      ctx.strokeStyle = 'rgba(226,196,142,0.75)';
+      ctx.strokeStyle = solid(SOUL_PALE, 0.75);
       ctx.lineWidth = 1.8;
       const q = R * 0.10;
       const ex = cx + dx * (R - R * 0.16), ey = cy + dy * (R - R * 0.16);
@@ -434,8 +443,8 @@ export class Pad {
     const kx = cx + ax * travel, ky = cy + ay * travel;
     if (am > 0.02) {
       const g = ctx.createRadialGradient(kx, ky, 0, kx, ky, R + am * travel);
-      g.addColorStop(0, tint(tn, 0.34));
-      g.addColorStop(1, tint(tn, 0.03));
+      g.addColorStop(0, tint(tn, 0.45, SOUL));
+      g.addColorStop(1, tint(tn, 0.03, SOUL));
       ctx.fillStyle = g;
       ctx.fill(track);
     }
@@ -447,14 +456,14 @@ export class Pad {
       ctx.globalAlpha *= 1 - liq;
       ctx.beginPath();
       ctx.arc(kx, ky, kr, 0, TAU);
-      ctx.fillStyle = 'rgba(247,239,221,0.07)';
+      ctx.fillStyle = solid(SOUL_PALE, 0.07);
       ctx.fill();
       ctx.lineWidth = 1.8;
-      ctx.strokeStyle = 'rgba(247,239,221,0.5)';
+      ctx.strokeStyle = solid(SOUL_PALE, 0.5);
       ctx.stroke();
       ctx.beginPath();
       ctx.arc(kx, ky, 2.2, 0, TAU);
-      ctx.fillStyle = 'rgba(247,239,221,0.75)';
+      ctx.fillStyle = solid(SOUL_PALE, 0.75);
       ctx.fill();
       ctx.restore();
     }
@@ -464,7 +473,7 @@ export class Pad {
       // 被推的時候朝行進方向鼓起，像被水流帶著跑
       const tilt = Math.atan2(ay, ax);
       const p = blobPath(kx, ky, kr, tilt, tn * 0.85 * liq, this.t, this.jPh, 0.03 + 0.06 * tn);
-      fillLiquid(ctx, p, kx, ky, kr, tn, 8 + 14 * tn);
+      fillLiquid(ctx, p, kx, ky, kr, tn, 8 + 14 * tn, SOUL);
       ctx.restore();
     }
   }
@@ -477,7 +486,7 @@ export class Pad {
 
     // 外環：按著時整圈亮起來——「還按著」就是「還在長高」，這件事要看得到
     ctx.lineWidth = 1.4;
-    ctx.strokeStyle = gold((0.16 + 0.5 * liq).toFixed(3));
+    ctx.strokeStyle = solid(GOLD, (0.16 + 0.5 * liq).toFixed(3));
     ctx.beginPath();
     ctx.arc(cx, cy, r + 6, 0, TAU);
     ctx.stroke();
